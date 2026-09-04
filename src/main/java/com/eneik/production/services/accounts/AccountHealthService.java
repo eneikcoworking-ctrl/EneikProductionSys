@@ -55,12 +55,15 @@ public class AccountHealthService {
      * <p>It is the same distinction §4.2 drew for briefs: UNREACHED is about the factory, REFUSED is about
      * the subject. This is that distinction applied to dispatch.
      */
-    public enum DispatchOutcome { SUCCESS, DAILY_LIMIT, PRECONDITION_BLOCKED, REQUEST_REJECTED,
-        PRECONDITION_UNSPECIFIED }
+    public enum DispatchOutcome { SUCCESS, DAILY_LIMIT, CONCURRENT_CAPACITY_EXHAUSTED, PRECONDITION_BLOCKED, REQUEST_REJECTED,
+        PRECONDITION_UNSPECIFIED, UNCLASSIFIED }
 
     private static final String RECOVERY_DURATION_DEFECT_TYPE = "ACCOUNT_RECOVERY_DURATION";
     private static final String PRECONDITION_DEFECT_TYPE = "API_PRECONDITION_BLOCKED";
     private static final String DAILY_LIMIT_DEFECT_TYPE = "DAILY_LIMIT";
+    private static final String CONCURRENT_CAPACITY_DEFECT_TYPE = "CONCURRENT_CAPACITY_EXHAUSTED";
+    private static final String CONCURRENT_CAPACITY_EXPANDED_TYPE = "CONCURRENT_CAPACITY_EXPANDED";
+    private static final String DAILY_CAPACITY_EXPANDED_TYPE = "DAILY_CAPACITY_EXPANDED";
     private static final String HEALTH_CATEGORY = "ACCOUNT_HEALTH";
     private static final int POOLED_SAMPLE_LIMIT = 50;
 
@@ -109,6 +112,12 @@ public class AccountHealthService {
     // Bayesian-style update from real evidence, not a return to the old unverified constant.
     @Value("${jules.daily-capacity-backoff-factor:0.7}")
     private double dailyCapacityBackoffFactor;
+
+    @Value("${jules.concurrent-capacity-probe-step:1}")
+    private int concurrentCapacityProbeStep = 1;
+
+    @Value("${jules.concurrent-capacity-backoff-factor:0.7}")
+    private double concurrentCapacityBackoffFactor = 0.7;
 
     @Value("${jules.precondition-block-escalation-threshold:2}")
     private int preconditionBlockEscalationThreshold;
@@ -229,17 +238,23 @@ public class AccountHealthService {
                                     + "success at count={} - revised estimate upward to {}.",
                             account.getName(), currentCeiling, newDailyCount, account.getEstimatedDailyCapacity());
                 }
-                // Invariant 15, the same shape one field over (2026-08-29, action plan 4.4). A session Jules
-                // actually accepted while this account already held its believed ceiling open is a bold
-                // conjecture that survived; an acceptance well below it tests nothing.
+                // Invariant 15 / Law 14: concurrent capacity upward revision
                 int openNow = accountRepository.countOpenSessions(account.getId());
                 int concurrentCeiling = concurrentCeilingOf(account);
                 if (openNow >= concurrentCeiling) {
-                    account.setEstimatedConcurrentCapacity(concurrentCeiling + dailyCapacityProbeStep);
+                    int revisedConcurrent = concurrentCeiling + concurrentCapacityProbeStep;
+                    account.setEstimatedConcurrentCapacity(revisedConcurrent);
                     log.info("[ACCOUNT-CAPACITY] Account '{}' held {} session(s) open at its believed "
                                     + "concurrent ceiling of {} and Jules still accepted - revised upward to {}.",
                             account.getName(), openNow, concurrentCeiling,
-                            account.getEstimatedConcurrentCapacity());
+                            revisedConcurrent);
+                    defectJournalRepository.save(new DefectJournalEntity(
+                            projectId, null, null, "INFO", HEALTH_CATEGORY, account.getName(),
+                            CONCURRENT_CAPACITY_EXPANDED_TYPE,
+                            "Account '" + account.getName() + "' revised concurrent capacity upward: prior="
+                                    + concurrentCeiling + ", revised=" + revisedConcurrent
+                                    + ", observed_open=" + openNow,
+                            (double) revisedConcurrent));
                 }
                 accountRepository.save(account);
             }
@@ -260,38 +275,38 @@ public class AccountHealthService {
                 accountRepository.save(account);
                 defectJournalRepository.save(new DefectJournalEntity(
                         projectId, null, null, "MEDIUM", HEALTH_CATEGORY, account.getName(),
-                        DAILY_LIMIT_DEFECT_TYPE, rawReason == null ? "" : rawReason, null));
+                        DAILY_LIMIT_DEFECT_TYPE, rawReason == null ? "" : rawReason, (double) revisedCeiling));
             }
-            case PRECONDITION_UNSPECIFIED -> {
-                // 2026-08-29, action plan 4.4. The operator established that this refusal is Jules turning
-                // down a session because too many are already open. That is the falsifier invariant 15 said
-                // was missing for the concurrency belief, so the belief revises down from the ACTUAL point
-                // it was refused at - never back to the unverified constant - with the same backoff factor
-                // the daily belief already uses. Nothing else about the account is charged: its status, its
-                // block counter and its cooldown stay untouched, because being full is not being at fault.
+            case CONCURRENT_CAPACITY_EXHAUSTED -> {
+                // Law 14 (Popper/Gerdenfors): external refusal of concurrent capacity
+                // revises estimatedConcurrentCapacity down from the ACTUAL observed point (countOpenSessions),
+                // never back to an unverified constant.
                 int refusedAt = accountRepository.countOpenSessions(account.getId());
                 int priorConcurrent = concurrentCeilingOf(account);
-                int revisedConcurrent = Math.max(1, (int) Math.round(refusedAt * dailyCapacityBackoffFactor));
+                int calculated = (int) Math.round(refusedAt * concurrentCapacityBackoffFactor);
+                int revisedConcurrent = Math.max(1, Math.min(priorConcurrent - 1, calculated));
                 if (revisedConcurrent < priorConcurrent) {
                     account.setEstimatedConcurrentCapacity(revisedConcurrent);
                     accountRepository.save(account);
-                    log.warn("[ACCOUNT-CAPACITY] Account '{}' was refused a session while holding {} open - "
+                    log.warn("[ACCOUNT-CAPACITY] Account '{}' was refused a session due to concurrent capacity exhaustion while holding {} open - "
                                     + "revised concurrent estimate from {} down to {}.",
                             account.getName(), refusedAt, priorConcurrent, revisedConcurrent);
                 }
-                // §12. Jules said a precondition failed and did not say which. Measured 2026-08-29: 41 such
-                // refusals, all carrying "Precondition check failed." and nothing else. The same status also
-                // arrives as "Repository access is not ready", which IS about the account - so the bare form
-                // establishes nothing about anybody.
-                //
-                // Therefore nothing is charged: not the account (no evidence it is at fault) and not the
-                // factory (no evidence either). Recorded ignorance, the shape §3 uses for UNDECIDABLE and
-                // §4.1 for NEITHER. The first draft of §12 read these as a concurrent-session ceiling on the
-                // strength of the Jules UI saying so elsewhere; that was an inference from another surface,
-                // which this plan's own rule forbids, and it is retracted.
+                defectJournalRepository.save(new DefectJournalEntity(
+                        projectId, null, null, "MEDIUM", HEALTH_CATEGORY, account.getName(),
+                        CONCURRENT_CAPACITY_DEFECT_TYPE,
+                        "Account '" + account.getName() + "' concurrent capacity refusal: prior=" + priorConcurrent
+                                + ", revised=" + revisedConcurrent + ", observed_open=" + refusedAt
+                                + ", detail=" + (rawReason == null ? "" : rawReason),
+                        (double) revisedConcurrent));
+            }
+            case PRECONDITION_UNSPECIFIED, UNCLASSIFIED -> {
+                // §12, §14 & Carnap's evidence distinction:
+                // Jules said a precondition failed or returned an unclassified refusal without naming whose condition failed.
+                // UNCLASSIFIED does not masquerade as causal knowledge: it charges nobody and does NOT move
+                // estimatedDailyCapacity or estimatedConcurrentCapacity in either direction.
                 log.warn("AccountHealthService: Jules refused a session through account '{}' citing an "
-                                + "unspecified precondition. Charged to nobody - the answer does not say whose "
-                                + "condition failed (\u00a712). Detail: {}",
+                                + "unspecified or unclassified condition. Charged to nobody (§12, §14). Detail: {}",
                         account.getName(), rawReason);
             }
             case REQUEST_REJECTED -> {

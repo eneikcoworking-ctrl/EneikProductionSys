@@ -787,34 +787,31 @@ public class JulesDispatchService {
                     + (createResult.compactError().isBlank() ? "" : " " + createResult.compactError()));
             UUID dispatchProjectId = task.getProject() != null ? task.getProject().getId() : null;
             String dispatchRoleTag = task.getRole() != null ? task.getRole().getTag() : null;
-            if (accountId != null && createResult.dailyLimitOrQuota()) {
+            com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome outcome = createResult.classifyOutcome();
+            if (accountId != null) {
                 accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
-                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.DAILY_LIMIT,
-                        createResult.compactError(), dispatchRoleTag);
-                session.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit. "
-                        + session.getClosureReason());
-            } else if (accountId != null && createResult.preconditionUnspecified()) {
-                // §12: a precondition failed and Jules did not say which. Charged to nobody; recorded so the
-                // gap is findable and can be measured when the answer carries more.
-                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
-                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_UNSPECIFIED,
-                        createResult.compactError(), dispatchRoleTag);
-                session.setClosureReason("jules_precondition_unspecified: Jules cited a precondition without "
-                        + "naming it; whose condition failed is not established. " + session.getClosureReason());
-            } else if (accountId != null && createResult.requestRejected()) {
-                // §10: Jules refused the CONTENT of our request. Reported so the defect is findable, and
-                // charged to nobody - the account carried the request, it did not compose it.
-                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
-                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.REQUEST_REJECTED,
-                        createResult.compactError(), dispatchRoleTag);
-                session.setClosureReason("jules_request_rejected: Jules refused the request itself, not the account. "
-                        + session.getClosureReason());
-            } else if (accountId != null && createResult.apiPreconditionOrAuthorizationBlocked()) {
-                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
-                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_BLOCKED,
-                        createResult.compactError(), dispatchRoleTag);
-                session.setClosureReason("jules_api_blocked: Jules refused session creation because of API precondition, authorization, or request setup. "
-                        + "This is not a daily limit. " + session.getClosureReason());
+                        outcome, createResult.compactError(), dispatchRoleTag);
+            }
+            switch (outcome) {
+                case CONCURRENT_CAPACITY_EXHAUSTED ->
+                    session.setClosureReason("jules_concurrent_capacity_exhausted: account reached Jules concurrent session limit. "
+                            + session.getClosureReason());
+                case DAILY_LIMIT ->
+                    session.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit. "
+                            + session.getClosureReason());
+                case PRECONDITION_UNSPECIFIED ->
+                    session.setClosureReason("jules_precondition_unspecified: Jules cited a precondition without "
+                            + "naming it; whose condition failed is not established. " + session.getClosureReason());
+                case REQUEST_REJECTED ->
+                    session.setClosureReason("jules_request_rejected: Jules refused the request itself, not the account. "
+                            + session.getClosureReason());
+                case PRECONDITION_BLOCKED ->
+                    session.setClosureReason("jules_api_blocked: Jules refused session creation because of API precondition, authorization, or request setup. "
+                            + "This is not a daily limit. " + session.getClosureReason());
+                case UNCLASSIFIED ->
+                    session.setClosureReason("jules_unclassified: refusal not classified into known categories. "
+                            + session.getClosureReason());
+                default -> {}
             }
         } else {
             session.setExternalSessionId(externalId);

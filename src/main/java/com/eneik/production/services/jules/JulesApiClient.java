@@ -239,7 +239,25 @@ public class JulesApiClient {
             return lower.contains("jules_source_not_found");
         }
 
+        /**
+         * Law 14 (Popper / Carnap / Gerdenfors): explicit concurrent-session capacity refusal from Jules API.
+         * Must be distinct from daily limit and unclassified precondition errors.
+         */
+        public boolean concurrentCapacityExhausted() {
+            String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
+            return lower.contains("concurrent")
+                    || lower.contains("too many open sessions")
+                    || lower.contains("too many active sessions")
+                    || lower.contains("active session limit")
+                    || lower.contains("concurrent session limit")
+                    || lower.contains("concurrency limit")
+                    || lower.contains("maximum concurrent");
+        }
+
         public boolean dailyLimitOrQuota() {
+            if (concurrentCapacityExhausted()) {
+                return false;
+            }
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
             return statusCode == 429
                     || lower.contains("quota")
@@ -261,6 +279,9 @@ public class JulesApiClient {
          * the account whatever its status code claims.
          */
         public boolean requestRejected() {
+            if (concurrentCapacityExhausted()) {
+                return false;
+            }
             // §12: narrowed to the status Jules itself declares. The first version took any 400 without an
             // authorization word, which swallowed FAILED_PRECONDITION - a statement about the ACCOUNT being
             // at its concurrent-session limit, not about our request. Measured 2026-08-29: 45 refusals in
@@ -283,6 +304,9 @@ public class JulesApiClient {
          * for NEITHER.
          */
         public boolean preconditionUnspecified() {
+            if (concurrentCapacityExhausted()) {
+                return false;
+            }
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
             return statusCode == 400
                     && lower.contains("failed_precondition")
@@ -307,6 +331,9 @@ public class JulesApiClient {
          * is a real one, recorded by an earlier incident and asserted by JulesDispatchServiceTest.
          */
         public boolean apiPreconditionOrAuthorizationBlocked() {
+            if (concurrentCapacityExhausted()) {
+                return false;
+            }
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
             return statusCode == 401
                     || statusCode == 403
@@ -318,6 +345,29 @@ public class JulesApiClient {
                     // it is claimed by preconditionUnspecified above, which claims nothing.
                     || lower.contains("repository access is not ready")
                     || lower.contains("repository access");
+        }
+
+        /**
+         * Law 14: Partitioning of external refusal into mutually exclusive outcome.
+         * Unclassified falls back to UNCLASSIFIED instead of guessing into a wrong bucket.
+         */
+        public com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome classifyOutcome() {
+            if (concurrentCapacityExhausted()) {
+                return com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.CONCURRENT_CAPACITY_EXHAUSTED;
+            }
+            if (dailyLimitOrQuota()) {
+                return com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.DAILY_LIMIT;
+            }
+            if (requestRejected()) {
+                return com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.REQUEST_REJECTED;
+            }
+            if (apiPreconditionOrAuthorizationBlocked()) {
+                return com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_BLOCKED;
+            }
+            if (preconditionUnspecified()) {
+                return com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_UNSPECIFIED;
+            }
+            return com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.UNCLASSIFIED;
         }
 
         public String compactError() {

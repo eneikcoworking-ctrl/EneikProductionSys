@@ -98,4 +98,32 @@ class JulesRefusalKindsTest {
         assertFalse(r.requestRejected());
         assertFalse(r.preconditionUnspecified());
     }
+
+    @Test
+    void concurrentCapacityExhaustionIsRecognizedDistinctly() {
+        var r = result(400, "{\"error\":{\"message\":\"Account has reached maximum concurrent sessions limit\",\"status\":\"FAILED_PRECONDITION\"}}");
+
+        assertTrue(r.concurrentCapacityExhausted());
+        assertFalse(r.dailyLimitOrQuota());
+        assertFalse(r.preconditionUnspecified());
+        assertFalse(r.requestRejected());
+        assertFalse(r.apiPreconditionOrAuthorizationBlocked());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.CONCURRENT_CAPACITY_EXHAUSTED,
+                r.classifyOutcome());
+    }
+
+    @Test
+    void unclassifiedRefusalFallsBackToUnclassifiedOutcome() {
+        var r = result(500, "{\"error\":{\"message\":\"Internal backend mystery error\"}}");
+
+        assertFalse(r.concurrentCapacityExhausted());
+        assertFalse(r.dailyLimitOrQuota());
+        assertFalse(r.preconditionUnspecified());
+        assertFalse(r.requestRejected());
+        assertFalse(r.apiPreconditionOrAuthorizationBlocked());
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.UNCLASSIFIED,
+                r.classifyOutcome());
+    }
 }
