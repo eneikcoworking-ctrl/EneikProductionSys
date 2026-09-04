@@ -188,24 +188,14 @@ public class PlannedWorkRecoveryService {
         // `blocked`, which is a terminating path; this gate must not race it.
         TaskEntity dependency = task.getDependsOn();
         if (dependency != null && !readinessService.isDependencySatisfied(dependency)) {
-            // A dependency that is merely unsatisfied is waited for. One that nothing will ever resume is a
-            // dead end, and the dependent belongs in `blocked` - a terminating status - not in `failed`,
-            // where it holds BLOCKED_BY_FAILED_FRONTIER for the whole project forever while this gate
-            // refuses it every tick. The routing existed already, on the queued path only: a rule with one
-            // consumer enumerated instead of all of them (ACP-103), and this is the failed path.
-            //
-            // Measured 04.09 on test-fiftieth: the project globally blocked by exactly one failed task,
-            // whose dependency this same service had already refused as work it may never resume.
-            if (isDeadForGood(dependency)) {
-                int blocked = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed,
-                        TaskStatus.blocked);
-                if (blocked > 0) {
-                    log.info("PlannedWorkRecoveryService: task {} blocked - its dependency {} is failed and "
-                            + "is not work this service may ever resume, so waiting for it cannot end",
-                            task.getId(), dependency.getId());
-                }
-                return false;
-            }
+            // A dependency that is merely unsatisfied is waited for; one nothing will ever resume makes
+            // the wait endless. That fact belongs to the DENOMINATOR, not to this task's status: writing
+            // `blocked` here fought ProjectFlowService, which retires blocked tasks, and produced a cycle
+            // with no decreasing measure (8.4) - measured 04.09, 128 blocks against 129 retirements of the
+            // same task inside one container's life. Charter invariant 8, cited by the gate itself, is the
+            // resolution: an element that can structurally never reach done leaves the denominator. The
+            // refusal stays exactly as it was; what changed is that the gate no longer counts it as work
+            // its resolver can act on (8.6).
             return refuse(refusals, task, "its dependency " + dependency.getId() + " (" + dependency.getStatus()
                     + ") is not satisfied");
         }
@@ -324,6 +314,13 @@ public class PlannedWorkRecoveryService {
      * is worth waiting for, while one nothing will revive makes the wait endless. Asked with the same
      * durable predicate the BLOCKED_BY_FAILED_FRONTIER gate itself uses, so the two cannot disagree.
      */
+    public static boolean isDeadForGood(TaskEntity dependency, WishlistEntity dependencyBrief) {
+        return dependency != null
+                && dependency.getStatus() == TaskStatus.failed
+                && (!isProductWorkThisMayResume(dependency, dependencyBrief)
+                        || !hasResumeBudgetLeft(dependency));
+    }
+
     boolean isDeadForGood(TaskEntity dependency) {
         // Two ways nothing will ever revive it, and both end the wait. Either it is not work this service
         // resumes at all, or it is - and its single automatic resume is already spent. The second was

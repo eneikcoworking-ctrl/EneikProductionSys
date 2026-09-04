@@ -402,11 +402,7 @@ public class FlowSpineService {
         // it, and 8.6's second line forbids removing what is merely unknown.
         java.util.Map<java.util.UUID, WishlistEntity> briefById = wishlist.stream()
                 .collect(java.util.stream.Collectors.toMap(WishlistEntity::getId, item -> item, (a, b) -> a));
-        long failed = tasks.stream()
-                .filter(task -> com.eneik.production.services.PlannedWorkRecoveryService.isProductWorkThisMayResume(
-                        task, task.getSourceWishlistId() == null ? null : briefById.get(task.getSourceWishlistId())))
-                .filter(com.eneik.production.services.PlannedWorkRecoveryService::hasResumeBudgetLeft)
-                .count();
+        long failed = countFailedTheResolverCanAct(tasks, briefById);
         long blocked = countStatus(tasks, TaskStatus.blocked);
         // Charter invariant 8: an element that can structurally never reach done leaves the denominator,
         // or any code deciding on this metric blocks silently. A brief whose budget is spent AND which
@@ -1203,6 +1199,29 @@ public class FlowSpineService {
                 .filter(TaskEntity::isDeliveryVerificationAbsent)
                 .filter(task -> !task.deliveryQuestionPutButUnsettled())
                 .filter(task -> task.getStatus() == com.eneik.production.models.persistence.TaskStatus.done)
+                .count();
+    }
+
+    /**
+     * Failed work the gate's own resolver can actually act on (model rule 8.6, Charter invariant 8).
+     *
+     * <p>BLOCKED_BY_FAILED_FRONTIER names PlannedWorkRecoveryService as its resolver, so the gate asks that
+     * service's own predicates rather than re-implementing them. Two things leave the denominator: work the
+     * resolver never resumes or whose single resume is spent, and work waiting on a dependency of that same
+     * kind - resumable on its own terms and still unable to run. Counting the second held the whole project
+     * in a globally blocking state for 17103 minutes with no path out, and the attempt to fix it by writing
+     * the task's status instead produced 128 blocks against 129 retirements of the same row.
+     */
+    static long countFailedTheResolverCanAct(java.util.List<TaskEntity> tasks,
+            java.util.Map<java.util.UUID, WishlistEntity> briefById) {
+        return tasks.stream()
+                .filter(task -> com.eneik.production.services.PlannedWorkRecoveryService.isProductWorkThisMayResume(
+                        task, task.getSourceWishlistId() == null ? null : briefById.get(task.getSourceWishlistId())))
+                .filter(com.eneik.production.services.PlannedWorkRecoveryService::hasResumeBudgetLeft)
+                .filter(task -> !com.eneik.production.services.PlannedWorkRecoveryService.isDeadForGood(
+                        task.getDependsOn(),
+                        task.getDependsOn() == null || task.getDependsOn().getSourceWishlistId() == null
+                                ? null : briefById.get(task.getDependsOn().getSourceWishlistId())))
                 .count();
     }
 

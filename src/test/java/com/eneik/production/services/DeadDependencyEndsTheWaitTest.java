@@ -80,14 +80,18 @@ class DeadDependencyEndsTheWaitTest {
         dependency.setPayload(new com.fasterxml.jackson.databind.ObjectMapper()
                 .createObjectNode().put("ems_bounded_plan_resume_count", 1));
 
-        assertTrue(service().isDeadForGood(dependency),
+        WishlistEntity clientBrief = new WishlistEntity();
+        clientBrief.setSource(WishlistSource.client);
+        assertTrue(PlannedWorkRecoveryService.isDeadForGood(dependency, clientBrief),
                 "a resumable dependency past its only resume still ends the wait");
     }
 
     @Test
     void aDependencyWithItsResumeStillUnspentIsWorthWaitingFor() {
         // The mandatory reverse case: a dependency that can still be revived must not end its dependent.
-        assertFalse(service().isDeadForGood(resumableDependency()));
+        WishlistEntity clientBrief = new WishlistEntity();
+        clientBrief.setSource(WishlistSource.client);
+        assertFalse(PlannedWorkRecoveryService.isDeadForGood(resumableDependency(), clientBrief));
     }
 
     private TaskEntity resumableDependency() {
