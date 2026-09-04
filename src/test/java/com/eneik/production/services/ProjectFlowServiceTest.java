@@ -1008,7 +1008,7 @@ class ProjectFlowServiceTest {
         when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(false);
         when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
 
-        List<com.eneik.production.models.dto.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
+        List<com.eneik.production.dto.dashboard.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
 
         assertEquals(1, blocked.size());
         assertEquals(task.getId(), blocked.get(0).taskId());
@@ -1035,7 +1035,7 @@ class ProjectFlowServiceTest {
         when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(true);
         when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
 
-        List<com.eneik.production.models.dto.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
+        List<com.eneik.production.dto.dashboard.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
 
         assertTrue(blocked.isEmpty());
     }
