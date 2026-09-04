@@ -5386,7 +5386,7 @@ public class JulesDispatchService {
         return sweepSnapshots.computeIfAbsent(project.getId(), id -> gitHubPullRequestService.pullRequestSnapshot(project));
     }
 
-    private void reconcileDoneTasksNotReachedMain(
+    void reconcileDoneTasksNotReachedMain(
             Map<UUID, GitHubPullRequestService.PullRequestSnapshot> sweepSnapshots) {
         List<TaskEntity> doneTasks = taskRepository.findByStatus(TaskStatus.done);
         for (TaskEntity task : doneTasks) {

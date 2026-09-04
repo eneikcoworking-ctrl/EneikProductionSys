@@ -177,7 +177,14 @@
     * Подтверждено удержание в коде:
       - `OperationalPolicyService` изолировал запреты: для `ORCHESTRATE` отказ выносится строго через `deniesCompilation(snapshot.currentState())` (только `BLOCKED_BY_DUPLICATE_CONTENT`, `GITHUB_RATE_LIMITED`, `BLOCKED_BY_FAILED_FRONTIER`). Состояния отдельных задач и ревью (`BLOCKED_BY_REVIEW`, `BLOCKED_BY_TASK`) не запрещают компиляцию независимых брифов.
       - Доказано тестами `OperationalPolicyServiceTest` (`aFailingReviewDoesNotDenyCompilingAnUnrelatedBrief`, `duplicateContentStillDeniesCompilingBecauseCompilationProducesIt`, `aFrozenProjectStillDeniesCompiling`).
-      - Закон 12 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится».
+15. **Закон 4 (Закон предмета слияния / Полный тестовый заслон третьего читателя):**
+    * Метод `reconcileDoneTasksNotReachedMain` в `JulesDispatchService` переведён в пакетную видимость.
+    * Разработан и подтверждён чистым выполнением модульный тестовый гарнитур `JulesDispatchServiceLaw4MergeEvidenceTest` (4 теста, 0 отказов):
+      - Задача со свидетельством слияния кода (`hasRequiredMergeEvidence == true`) обходит опрос сессий и PR-снимков;
+      - Задача без свидетельства слияния кода со статусом `done` направляется на инспекцию сессий и closed PR;
+      - Вспомогательные задачи (`isAuxiliaryTask`) и задачи с `project == null` безопасно обходятся.
+    * Все три читателя Закона 4 теперь полностью заслонены тестами на оба случая (`DeliveryRealityProducerServiceTest`, `ProjectFlowServiceTest`, `JulesDispatchServiceLaw4MergeEvidenceTest`).
+    * Закон 4 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится у всех трёх читателей, заслон стоит у всех трёх» и снят из шапки недержащихся законов.
 
 ---
 
