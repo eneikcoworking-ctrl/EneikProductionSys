@@ -5,6 +5,7 @@ import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.gate.GateOrchestrator;
 import org.slf4j.Logger;
@@ -41,19 +42,70 @@ public class ClaimService {
     private final JulesSessionRepository julesSessionRepository;
     private final GateOrchestrator gateOrchestrator;
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
+    private final PrReviewRepository prReviewRepository;
 
+    public enum ReviewAdmissionDecision {
+        ADMIT("Review artifact present or role does not require code"),
+        DEFER("Session is active but review artifact has not landed yet"),
+        REJECT("Implementer session is terminal (or absent) without producing a review artifact");
+
+        private final String reason;
+
+        ReviewAdmissionDecision(String reason) {
+            this.reason = reason;
+        }
+
+        public String getReason() {
+            return reason;
+        }
+    }
+
+    /**
+     * Pure Belnap 4-valued review admission decision evaluator (NUEL_BELNAP_03_TRUTH_STATUS_TABLE,
+     * NUEL_BELNAP_05_LAMBDA_CORE_REDUCTION).
+     *
+     * <p>Law 16: review(&tau;) &rArr; &exist; r: review artifact belonging to &tau;.
+     */
+    public static ReviewAdmissionDecision evaluateReviewAdmission(
+            boolean requiresCode,
+            boolean hasReviewArtifact,
+            boolean hasLiveSession) {
+        if (!requiresCode) {
+            return ReviewAdmissionDecision.ADMIT;
+        }
+        if (hasReviewArtifact) {
+            return ReviewAdmissionDecision.ADMIT;
+        }
+        if (hasLiveSession) {
+            return ReviewAdmissionDecision.DEFER;
+        }
+        return ReviewAdmissionDecision.REJECT;
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
     public ClaimService(ClaimRepository claimRepository,
-                            TaskRepository taskRepository,
-                            AccountRepository accountRepository,
-                            JulesSessionRepository julesSessionRepository,
-                            GateOrchestrator gateOrchestrator,
-                        com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
+                        TaskRepository taskRepository,
+                        AccountRepository accountRepository,
+                        JulesSessionRepository julesSessionRepository,
+                        GateOrchestrator gateOrchestrator,
+                        com.eneik.production.services.ClientDeliverableReadinessService readinessService,
+                        PrReviewRepository prReviewRepository) {
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.gateOrchestrator = gateOrchestrator;
         this.readinessService = readinessService;
+        this.prReviewRepository = prReviewRepository;
+    }
+
+    public ClaimService(ClaimRepository claimRepository,
+                        TaskRepository taskRepository,
+                        AccountRepository accountRepository,
+                        JulesSessionRepository julesSessionRepository,
+                        GateOrchestrator gateOrchestrator,
+                        com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
+        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, null);
     }
 
     /**
@@ -248,33 +300,79 @@ public class ClaimService {
             taskRepository.save(task);
             refreshAccountStatusAfterClaimRelease(claim.getAccount());
         } else {
-            // Implementer finished, move to review stage
-            task.setStatus(TaskStatus.review);
-            gateOrchestrator.runQualityGate(task);
+            // Implementer finished, evaluate admission to review stage (Law 16 / Belnap 4-valued review admission)
+            boolean requiresCode = readinessService != null && readinessService.requiresCodeForDelivery(task);
+            List<JulesSessionEntity> sessions = julesSessionRepository != null
+                    ? julesSessionRepository.findByTaskId(task.getId())
+                    : List.of();
+            List<UUID> sessionIds = sessions.stream()
+                    .map(JulesSessionEntity::getId)
+                    .filter(java.util.Objects::nonNull)
+                    .toList();
+            boolean hasReviewArtifact = sessions.stream().anyMatch(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank())
+                    || (prReviewRepository != null && !sessionIds.isEmpty() && !prReviewRepository.findByJulesSessionIdIn(sessionIds).isEmpty());
+            boolean hasLiveSession = sessions.stream().anyMatch(JulesSessionEntity::isActive);
 
-            if (!task.isQualityGatePassed()) {
-                // Task failed the quality gate. Increment retry count.
-                task.setRetryCount(task.getRetryCount() + 1);
-                if (task.getRetryCount() >= 3) {
-                    task.setStatus(TaskStatus.blocked);
-                } else {
-                    task.setStatus(TaskStatus.queued);
+            ReviewAdmissionDecision decision = evaluateReviewAdmission(requiresCode, hasReviewArtifact, hasLiveSession);
+
+            switch (decision) {
+                case REJECT -> {
+                    // Law 16: review(τ) ⟹ ∃ r: review artifact belonging to τ.
+                    // An attempt that ended without delivering is failed (model rule 8.20 / 8.12).
+                    // Moving to review without an artifact would create a state without exits (black hole).
+                    // Transitioning to failed provides a state that has exits: bounded resume via
+                    // PlannedWorkRecoveryService or re-ordering via DeliveryRealityProducerService.
+                    claim.setReleasedAt(Instant.now());
+                    claim.setResultStatus(ClaimResultStatus.failed);
+                    claimRepository.save(claim);
+
+                    task.setStatus(TaskStatus.failed);
+                    task.setJulesDispatchStatus("Implementer finished without review artifact (Law 16, Belnap told-false): "
+                            + decision.getReason());
+                    task.setUpdatedAt(Instant.now());
+                    taskRepository.save(task);
+                    refreshAccountStatusAfterClaimRelease(claim.getAccount());
+                    log.warn("Task {} ({}) failed review admission: role requires code, but no review artifact was produced and no active session remains.",
+                            task.getId(), task.getRole() != null ? task.getRole().getTag() : "?");
+                    return;
                 }
-                taskRepository.save(task);
+                case DEFER -> {
+                    // Belnap told-neither / indeterminate: session is active, PR may still land.
+                    // Defer decision to avoid killing live work on race (Law 11) or forcing into review (Law 16).
+                    log.info("Task {} ({}) review admission deferred: session is active and review artifact has not landed yet.",
+                            task.getId(), task.getRole() != null ? task.getRole().getTag() : "?");
+                    return;
+                }
+                case ADMIT -> {
+                    // Belnap told-true (review artifact verified, or spec/document role): admit to review stage.
+                    task.setStatus(TaskStatus.review);
+                    gateOrchestrator.runQualityGate(task);
 
-                // Re-use logic similar to fail() to properly clean up the failed claim
-                claim.setReleasedAt(Instant.now());
-                claim.setResultStatus(ClaimResultStatus.failed);
-                claimRepository.save(claim);
-                refreshAccountStatusAfterClaimRelease(claim.getAccount());
-            } else {
-                // Task passed the quality gate. Move to manual/AI review normally.
-                claim.setReleasedAt(Instant.now());
-                claim.setResultStatus(ClaimResultStatus.done);
-                claimRepository.save(claim);
+                    if (!task.isQualityGatePassed()) {
+                        // Task failed the quality gate. Increment retry count.
+                        task.setRetryCount(task.getRetryCount() + 1);
+                        if (task.getRetryCount() >= 3) {
+                            task.setStatus(TaskStatus.blocked);
+                        } else {
+                            task.setStatus(TaskStatus.queued);
+                        }
+                        taskRepository.save(task);
 
-                taskRepository.save(task);
-                refreshAccountStatusAfterClaimRelease(claim.getAccount());
+                        // Re-use logic similar to fail() to properly clean up the failed claim
+                        claim.setReleasedAt(Instant.now());
+                        claim.setResultStatus(ClaimResultStatus.failed);
+                        claimRepository.save(claim);
+                        refreshAccountStatusAfterClaimRelease(claim.getAccount());
+                    } else {
+                        // Task passed the quality gate. Move to manual/AI review normally.
+                        claim.setReleasedAt(Instant.now());
+                        claim.setResultStatus(ClaimResultStatus.done);
+                        claimRepository.save(claim);
+
+                        taskRepository.save(task);
+                        refreshAccountStatusAfterClaimRelease(claim.getAccount());
+                    }
+                }
             }
         }
     }
