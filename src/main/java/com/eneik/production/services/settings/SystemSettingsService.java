@@ -294,6 +294,7 @@ public class SystemSettingsService {
         Map<String, SettingDefinition> definitions = new LinkedHashMap<>();
         definitions.put("github_enabled", flag("github_enabled", "GITHUB_ENABLED", "github.enabled"));
         definitions.put("github_token", secret("github_token", "GITHUB_TOKEN", "github.token"));
+        definitions.put("github_pr_snapshot_ttl_seconds", plain("github_pr_snapshot_ttl_seconds", "GITHUB_PR_SNAPSHOT_TTL_SECONDS", "github.pr.snapshot.ttl.seconds"));
         definitions.put("linear_enabled", flag("linear_enabled", "LINEAR_ENABLED", "linear.enabled"));
         definitions.put("linear_api_key", secret("linear_api_key", "LINEAR_API_KEY", "linear.api-key"));
         definitions.put("linear_team_id", plain("linear_team_id", "LINEAR_TEAM_ID", "linear.team-id"));

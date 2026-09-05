@@ -64,11 +64,13 @@ public class GitHubPullRequestService {
     }
 
     private Duration getSnapshotTtl() {
-        String customSeconds = settingsService.effectiveValue("github_pr_snapshot_ttl_seconds");
-        if (customSeconds != null && !customSeconds.isBlank()) {
+        if (settingsService != null) {
             try {
-                return Duration.ofSeconds(Long.parseLong(customSeconds.trim()));
-            } catch (NumberFormatException ignored) {}
+                String customSeconds = settingsService.effectiveValue("github_pr_snapshot_ttl_seconds");
+                if (customSeconds != null && !customSeconds.isBlank()) {
+                    return Duration.ofSeconds(Long.parseLong(customSeconds.trim()));
+                }
+            } catch (Exception ignored) {}
         }
         return Duration.ofSeconds(20);
     }
