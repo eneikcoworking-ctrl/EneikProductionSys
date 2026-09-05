@@ -485,6 +485,26 @@ public class PlannedWorkRecoveryService {
                 t.getStatus() == TaskStatus.blocked);
         if (!allProductFeaturesFinished) return 0;
 
+        // The message this sweep writes says the product is complete and merged in main. Until now the only
+        // ground for that was task status, and done(task) is not delivered(value) - this repository's own
+        // spine carries that as a standing invariant and reports it as a warning on this very project. The
+        // premise was worse than weak: it is satisfied by ABSENCE. Scope whose tasks have not been created
+        // yet contributes no unfinished task, so "every product task is terminal" reads as "there is nothing
+        // left to build" precisely when the work that would create those tasks has not run. And the meta
+        // task swept as orphaned here is exactly the compiler carrier that would have created them: the
+        // sweep removes the mechanism that would refute its own premise, then the guard sees no active
+        // compiler task and a fresh one is created, and the circle turns again - measured live at nine
+        // recoveries of one wishlist, seven compiler tasks and seven completions in forty minutes, each
+        // completion adding to the done count while nothing was delivered.
+        //
+        // The readiness record is already in hand and already answers the question the message claims to
+        // have answered. Ask it.
+        boolean deliveredWhatWasPromised = readiness.completeFeatures() == readiness.totalFeatures()
+                && readiness.mergedDeliverables() == readiness.totalDeliverables();
+        if (!deliveredWhatWasPromised) {
+            return 0;
+        }
+
         List<TaskEntity> activeMetaTasks = projectTasks.stream()
                 .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed || t.getStatus() == TaskStatus.in_progress)
                 .filter(this::isMetaTask)

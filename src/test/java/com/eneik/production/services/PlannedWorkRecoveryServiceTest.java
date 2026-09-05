@@ -157,6 +157,45 @@ class PlannedWorkRecoveryServiceTest {
         verify(claimService).releaseTerminalClaim(compiler.getId());
     }
 
+    /**
+     * The live case this sweep was measured failing on: every product task that EXISTS is terminal, and the
+     * product is nonetheless unfinished - six features of seven, twenty deliverables of twenty-two. The
+     * premise "all product tasks are terminal" is satisfied by absence, because the scope still owed has no
+     * tasks yet; and the meta task swept here is the compiler carrier that would have created them. Sweeping
+     * it removes the mechanism that would refute the premise, the guard then sees no active compiler task,
+     * a fresh one is created, and the circle turns - nine recoveries of one wishlist and seven compiler
+     * tasks in forty minutes on the live circuit, each completion raising the done count while nothing was
+     * delivered. done(task) is not delivered(value).
+     */
+    @Test
+    void cleanoutDoesNotSweepTheCompilerWhileTheProductStillOwesWork() {
+        ProjectEntity project = project();
+        TaskEntity productTask = new TaskEntity();
+        productTask.setId(UUID.randomUUID());
+        productTask.setProject(project);
+        productTask.setTitle("Product feature task");
+        productTask.setStatus(TaskStatus.done);
+
+        TaskEntity compiler = new TaskEntity();
+        compiler.setId(UUID.randomUUID());
+        compiler.setProject(project);
+        compiler.setTitle("Compile 1 wishlist(s) into task graph");
+        compiler.setStatus(TaskStatus.queued);
+
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(7, 6, 22, 20, 20.0 / 22.0, true));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(compiler, productTask));
+
+        assertEquals(0, service.cleanoutOrphanedMetaTasksWhenProductComplete(project),
+                "A product owing two deliverables and one feature is not complete, whatever its existing tasks say");
+        assertEquals(TaskStatus.queued, compiler.getStatus(),
+                "The compiler carrier is what would create the missing work; completing it as orphaned removes "
+                        + "the only mechanism able to refute the premise that nothing is left to build");
+        verify(taskRepository, never()).save(compiler);
+        verify(claimService, never()).releaseTerminalClaim(compiler.getId());
+    }
+
     @Test
     void stuckCompilingWishlistDoesNotConvertBecauseAnotherWishlistConverted() {
         ProjectEntity project = project();
