@@ -64,8 +64,19 @@ public class PrReviewEntity {
     public void setJulesSessionId(UUID julesSessionId) { this.julesSessionId = julesSessionId; }
     public String getPrUrl() { return prUrl; }
     public void setPrUrl(String prUrl) { this.prUrl = prUrl; }
+    public boolean isTerminal() {
+        return "closed_unmerged".equalsIgnoreCase(ciStatus) || Boolean.TRUE.equals(merged);
+    }
+
     public String getCiStatus() { return ciStatus; }
-    public void setCiStatus(String ciStatus) { this.ciStatus = ciStatus; }
+    public void setCiStatus(String ciStatus) {
+        if ("closed_unmerged".equalsIgnoreCase(this.ciStatus)
+                && !"closed_unmerged".equalsIgnoreCase(ciStatus)) {
+            // Law 20 / Invariant S2: terminal review outcome is irreversible
+            return;
+        }
+        this.ciStatus = ciStatus;
+    }
     public String getDiffSummary() { return diffSummary; }
     public void setDiffSummary(String diffSummary) { this.diffSummary = diffSummary; }
     public Integer getLinesChanged() { return linesChanged; }

@@ -1357,14 +1357,12 @@ public class AutoMergeService {
             return;
         }
         // Pushed into the query (2026-08-28): the merged/unmerged split is a column, not a stream filter.
-        // Task 25: Exclude reviews whose PR is already established as closed_unmerged or superseded.
-        // A PR closed without merge is terminal on GitHub and cannot become merged; a superseded review's
-        // task is already satisfied by a winning sibling PR. Polling either burns external rate-limit budget
-        // on history rather than remaining work (Property 1).
+        // Task 25 (Law 20 / Invariant S2): Exclude reviews whose PR is already established as terminal
+        // (closed_unmerged). A PR closed without merge is terminal on GitHub and cannot become merged;
+        // polling it burns external rate-limit budget on history rather than remaining work (Property 1).
         List<PrReviewEntity> unmerged = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(this::belongsToActiveProject)
-                .filter(r -> !"closed_unmerged".equalsIgnoreCase(r.getCiStatus()))
-                .filter(r -> !"superseded".equalsIgnoreCase(r.getCiStatus()))
+                .filter(r -> !r.isTerminal())
                 .toList();
         for (PrReviewEntity review : unmerged) {
             try {
