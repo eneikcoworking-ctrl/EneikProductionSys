@@ -31,6 +31,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -3575,5 +3576,71 @@ class JulesDispatchServiceTest {
                 new JulesDispatchService.PendingFallbackReview(task, "https://github.com/org/repo/pull/9")));
 
         verify(gitHubPullRequestService).fetchDiffText(project, 9);
+    }
+
+    @Test
+    void admitReviewFallbackBatchCreatesTaskUnderAdmissionMutex() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-01");
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setRole(role);
+
+        UUID carrierTaskId = UUID.randomUUID();
+        when(persistentWorkerSessionService.isEnabled()).thenReturn(false);
+        when(projectFlowService.createReviewFallbackBatchTask(anyList(), anyList(), anyList(), anyString(), anyString()))
+                .thenReturn(carrierTaskId);
+
+        JulesDispatchService.ReviewFallbackAdmission admission = julesDispatchService.admitReviewFallbackBatch(
+                projectId,
+                List.of(task),
+                List.of("https://github.com/org/repo/pull/1"),
+                List.of("hash123")
+        );
+
+        assertNotNull(admission);
+        assertEquals(carrierTaskId, admission.carrierTaskId());
+        assertEquals(1, admission.tasks().size());
+        verify(projectFlowService).createReviewFallbackBatchTask(
+                eq(List.of(task)),
+                eq(List.of("https://github.com/org/repo/pull/1")),
+                eq(List.of("hash123")),
+                anyString(),
+                anyString()
+        );
+    }
+
+    @Test
+    void admitAndDispatchReviewFallbackBatchDelegatesAdmissionThenDispatchesOutside() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-01");
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setRole(role);
+
+        UUID carrierTaskId = UUID.randomUUID();
+        when(persistentWorkerSessionService.isEnabled()).thenReturn(false);
+        when(projectFlowService.createReviewFallbackBatchTask(anyList(), anyList(), anyList(), anyString(), anyString()))
+                .thenReturn(carrierTaskId);
+        when(projectFlowService.dispatchReviewFallbackTask(carrierTaskId)).thenReturn(carrierTaskId);
+
+        julesDispatchService.admitAndDispatchReviewFallbackBatch(
+                projectId,
+                List.of(task),
+                List.of("https://github.com/org/repo/pull/1"),
+                List.of("hash123")
+        );
+
+        verify(projectFlowService).dispatchReviewFallbackTask(carrierTaskId);
     }
 }

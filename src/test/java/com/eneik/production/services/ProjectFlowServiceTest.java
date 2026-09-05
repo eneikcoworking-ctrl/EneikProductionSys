@@ -36,9 +36,11 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -1038,5 +1040,92 @@ class ProjectFlowServiceTest {
         List<com.eneik.production.dto.dashboard.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
 
         assertTrue(blocked.isEmpty());
+    }
+
+    private ProjectFlowService serviceWithRoleAndTask(RoleRepository roleRepository, TaskRepository taskRepository) {
+        ProjectFlowService service = new ProjectFlowService(
+                projectRepository,
+                mock(WishlistRepository.class),
+                mock(AccountRepository.class),
+                taskRepository,
+                mock(ClaimRepository.class),
+                roleRepository,
+                mock(ClaimService.class),
+                mock(JulesDispatchService.class),
+                mock(ProjectFactoryService.class),
+                mock(GitHubProjectFactoryClient.class),
+                mock(SystemSettingsService.class),
+                null,
+                null,
+                mock(TechnicalLeadCompiler.class),
+                mock(ClientDeliveryService.class),
+                mock(ProjectFinalReportRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(JulesActivityResponseRepository.class),
+                mock(ProjectGenerationStateRepository.class),
+                new ObjectMapper(),
+                "eneik-test-org",
+                mock(OnboardingAuditService.class),
+                mock(EmsMetricsService.class),
+                mock(ProjectOperationalContextService.class),
+                mock(DesignAssetService.class),
+                gitHubPullRequestService,
+                mock(ClientDeliverableReadinessService.class),
+                mock(FeatureService.class),
+                mock(PersistentWorkerSessionService.class),
+                mock(SelfFalsificationEpicMatcher.class),
+                mock(OperationalPolicyService.class),
+                projectFileClaimRepository,
+                mock(RequirementGroundingService.class),
+                mock(GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskConflictRepository.class),
+                mock(com.eneik.production.repositories.LinearIssueMetadataRepository.class),
+                mock(com.eneik.production.repositories.FeatureRepository.class),
+                mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                plannedWorkRecoveryService,
+                null);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
+        return service;
+    }
+
+    @Test
+    void createReviewFallbackBatchTaskPersistsQueuedCarrierTask() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        com.eneik.production.models.persistence.RoleEntity orchestratorRole = new com.eneik.production.models.persistence.RoleEntity();
+        orchestratorRole.setTag("BARCAN-TAG-09");
+        orchestratorRole.setDescription("Architect");
+        when(roleRepository.findById("BARCAN-TAG-09")).thenReturn(Optional.of(orchestratorRole));
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+
+        TaskEntity originalTask = new TaskEntity();
+        originalTask.setId(UUID.randomUUID());
+        originalTask.setProject(project);
+
+        when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> {
+            TaskEntity saved = invocation.getArgument(0);
+            saved.setId(UUID.randomUUID());
+            return saved;
+        });
+
+        ProjectFlowService service = serviceWithRoleAndTask(roleRepository, taskRepository);
+
+        UUID carrierTaskId = service.createReviewFallbackBatchTask(
+                List.of(originalTask),
+                List.of("https://github.com/org/repo/pull/1"),
+                List.of("hash123"),
+                "Please review PR 1",
+                ".eneik/records/review-verdict-1.json"
+        );
+
+        assertNotNull(carrierTaskId);
+        ArgumentCaptor<TaskEntity> captor = ArgumentCaptor.forClass(TaskEntity.class);
+        verify(taskRepository).save(captor.capture());
+        TaskEntity savedTask = captor.getValue();
+        assertEquals(TaskStatus.queued, savedTask.getStatus());
+        assertTrue(service.isReviewFallbackTask(savedTask));
+        assertEquals(".eneik/records/review-verdict-1.json", service.reviewFallbackVerdictPath(savedTask));
     }
 }

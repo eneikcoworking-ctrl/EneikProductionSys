@@ -3345,16 +3345,22 @@ public class JulesDispatchService {
         self.admitAndDispatchReviewFallbackBatch(projectId, fetchedTasks, fetchedPrUrls, fetchedDiffHashes);
     }
 
+    public record ReviewFallbackAdmission(
+            List<TaskEntity> tasks,
+            List<String> prUrls,
+            List<String> diffHashes,
+            UUID carrierTaskId
+    ) {}
+
     /**
-     * The check-then-create half, in its own short transaction (plan §4.24).
+     * The check-then-create admission step, in its own short transaction (plan §4.24, Charter Invariant 11).
      *
-     * <p>REQUIRES_NEW through self, the same idiom this class already uses for claimAccountForTask and
-     * claimWishlistsForCompilation: the project-row lock below is a genuine admission mutex and needs a
-     * transaction, but it must end when the admission ends - not when the caller's sweep does. Everything
-     * that talks to GitHub has already happened by the time this is called.
+     * <p>REQUIRES_NEW through self: the project-row lock is a genuine admission mutex to prevent duplicate
+     * review-fallback task creation by concurrent sweeps, but it ends when the DB entity is committed -
+     * NEVER spanning external Jules API network calls.
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void admitAndDispatchReviewFallbackBatch(UUID projectId, List<TaskEntity> fetchedTasks,
+    public ReviewFallbackAdmission admitReviewFallbackBatch(UUID projectId, List<TaskEntity> fetchedTasks,
             List<String> fetchedPrUrls, List<String> fetchedDiffHashes) {
         projectRepository.lockProjectForUpdate(projectId);
         Set<String> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
@@ -3376,17 +3382,38 @@ public class JulesDispatchService {
             diffHashes.add(diffHash);
         }
         if (tasks.isEmpty()) {
+            return null;
+        }
+        UUID carrierTaskId = null;
+        if (!persistentWorkerSessionService.isEnabled()) {
+            String verdictPath = ".eneik/records/review-verdict-" + UUID.randomUUID() + ".json";
+            String prompt = reviewerFallbackPromptBatch(tasks, prUrls, verdictPath);
+            carrierTaskId = projectFlowService.createReviewFallbackBatchTask(tasks, prUrls, diffHashes, prompt, verdictPath);
+        }
+        return new ReviewFallbackAdmission(tasks, prUrls, diffHashes, carrierTaskId);
+    }
+
+    /**
+     * Entry point: executes the admission mutex in a short transaction, then performs the network dispatch
+     * with NO transaction open, preventing connection leak timeouts and surplus lock holds (Charter Invariant 11).
+     */
+    public void admitAndDispatchReviewFallbackBatch(UUID projectId, List<TaskEntity> fetchedTasks,
+            List<String> fetchedPrUrls, List<String> fetchedDiffHashes) {
+        ReviewFallbackAdmission admission = self.admitReviewFallbackBatch(projectId, fetchedTasks, fetchedPrUrls, fetchedDiffHashes);
+        if (admission == null || admission.tasks().isEmpty()) {
             return;
         }
         if (persistentWorkerSessionService.isEnabled()) {
-            dispatchToReviewFallbackPersistentWorker(tasks, prUrls, diffHashes);
+            dispatchToReviewFallbackPersistentWorker(admission.tasks(), admission.prUrls(), admission.diffHashes());
             return;
         }
-        String verdictPath = ".eneik/records/review-verdict-" + UUID.randomUUID() + ".json";
-        String prompt = reviewerFallbackPromptBatch(tasks, prUrls, verdictPath);
-        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatch(tasks, prUrls, diffHashes, prompt, verdictPath);
+        if (admission.carrierTaskId() == null) {
+            log.warn("Could not create batched PR review fallback task for {} task(s)", admission.tasks().size());
+            return;
+        }
+        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackTask(admission.carrierTaskId());
         if (reviewTaskId == null) {
-            log.warn("Could not dispatch batched PR review fallback for {} task(s)", tasks.size());
+            log.warn("Could not dispatch batched PR review fallback for {} task(s)", admission.tasks().size());
             return;
         }
         // The ground named here is the standing one, not an outage. Metered per-token review was removed by
@@ -3394,7 +3421,7 @@ public class JulesDispatchService {
         // calls that decision an outage sends the next reader to restore something deliberately retired
         // (Law 12: a message names the conjunct that actually applied, and never a cause that is not one).
         log.info("Dispatched batched PR review task {} covering {} PR(s) - review is Jules-only by standing directive",
-                reviewTaskId, tasks.size());
+                reviewTaskId, admission.tasks().size());
     }
 
     Set<UUID> reviewFallbackTargetsInFlight(UUID projectId) {

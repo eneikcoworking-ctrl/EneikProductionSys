@@ -5232,13 +5232,21 @@ public class ProjectFlowService {
         }
     }
 
-    public UUID dispatchReviewFallbackBatch(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
+    public UUID createReviewFallbackBatchTask(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
+        return createReviewFallbackBatchTask(originalTasks, prUrls, diffHashes, prompt, verdictPath, false);
+    }
+
+    public UUID createReviewFallbackBatchTaskAsPersistentCarrier(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
+        return createReviewFallbackBatchTask(originalTasks, prUrls, diffHashes, prompt, verdictPath, true);
+    }
+
+    public UUID createReviewFallbackBatchTask(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath, boolean isPersistentCarrier) {
         if (originalTasks.isEmpty()) {
             return null;
         }
         RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
         if (compilerRole == null) {
-            log.error("Cannot dispatch batched PR review fallback for {} task(s): role {} not found",
+            log.error("Cannot create batched PR review fallback task for {} task(s): role {} not found",
                     originalTasks.size(), ORCHESTRATOR_ROLE);
             return null;
         }
@@ -5246,16 +5254,23 @@ public class ProjectFlowService {
         TaskEntity reviewTask = new TaskEntity();
         reviewTask.setProject(originalTasks.get(0).getProject());
         reviewTask.setRole(compilerRole);
-        // Suffixed with size + the first reviewed task's short id - same duplicate-title false-positive
-        // reasoning as the compiler/audit task titles above; observed live triggering
-        // ContinuousOrchestrationService's DUPLICATE TASK TITLES alarm after only 3 fallback dispatches.
-        reviewTask.setTitle("PR review by Jules (" + originalTasks.size() + " PR(s), "
-                + shortId(originalTasks.get(0).getId()) + ")");
+        if (isPersistentCarrier) {
+            reviewTask.setTitle("Persistent PR review fallback worker (" + shortId(originalTasks.get(0).getProject().getId()) + ")");
+        } else {
+            // Suffixed with size + the first reviewed task's short id - same duplicate-title false-positive
+            // reasoning as the compiler/audit task titles above; observed live triggering
+            // ContinuousOrchestrationService's DUPLICATE TASK TITLES alarm after only 3 fallback dispatches.
+            reviewTask.setTitle("PR review by Jules (" + originalTasks.size() + " PR(s), "
+                    + shortId(originalTasks.get(0).getId()) + ")");
+        }
         reviewTask.setDescription(prompt);
         reviewTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
+        if (isPersistentCarrier) {
+            payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
+        }
         if (verdictPath != null && !verdictPath.isBlank()) {
             payload.put(PR_REVIEW_FALLBACK_VERDICT_PATH_KEY, verdictPath);
         }
@@ -5273,60 +5288,42 @@ public class ProjectFlowService {
         }
         reviewTask.setPayload(payload);
 
-        reviewTask.setAcceptanceCriteria("Given the pull request urls recorded in this task's payload, When this review ends, Then every one of them carries a verdict naming what was inspected, and the verdict file at the recorded path exists.");
+        if (isPersistentCarrier) {
+            reviewTask.setAcceptanceCriteria("Given the pull request urls recorded in this task's payload, When this worker's session ends, Then none of them is left without a verdict, and each verdict names what was inspected rather than that a review was performed.");
+        } else {
+            reviewTask.setAcceptanceCriteria("Given the pull request urls recorded in this task's payload, When this review ends, Then every one of them carries a verdict naming what was inspected, and the verdict file at the recorded path exists.");
+        }
         reviewTask = taskRepository.save(reviewTask);
-        dispatchToGeneralPool(reviewTask);
         return reviewTask.getId();
     }
 
-    /**
-     * Same as dispatchReviewFallbackBatch, but marks the created task as a persistent-worker carrier (see
-     * PersistentWorkerSessionService/isPersistentWorkerCarrierTask) so its Jules session gets reused across
-     * cycles instead of discarded after this one batch. Called only from
-     * JulesDispatchService.createFreshReviewFallbackPersistentWorker.
-     */
-    public UUID dispatchReviewFallbackBatchAsPersistentCarrier(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
-        if (originalTasks.isEmpty()) {
+    public UUID dispatchReviewFallbackTask(UUID reviewTaskId) {
+        if (reviewTaskId == null) {
             return null;
         }
-        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
-        if (compilerRole == null) {
-            log.error("Cannot create persistent review-fallback worker for {} task(s): role {} not found",
-                    originalTasks.size(), ORCHESTRATOR_ROLE);
+        TaskEntity reviewTask = taskRepository.findById(reviewTaskId).orElse(null);
+        if (reviewTask == null) {
             return null;
         }
-
-        TaskEntity reviewTask = new TaskEntity();
-        reviewTask.setProject(originalTasks.get(0).getProject());
-        reviewTask.setRole(compilerRole);
-        reviewTask.setTitle("Persistent PR review fallback worker (" + shortId(originalTasks.get(0).getProject().getId()) + ")");
-        reviewTask.setDescription(prompt);
-        reviewTask.initializeStatus(TaskStatus.queued);
-
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
-        payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
-        if (verdictPath != null && !verdictPath.isBlank()) {
-            payload.put(PR_REVIEW_FALLBACK_VERDICT_PATH_KEY, verdictPath);
-        }
-        ArrayNode idsArray = payload.putArray(PR_REVIEW_FALLBACK_TASK_IDS_KEY);
-        for (TaskEntity t : originalTasks) {
-            idsArray.add(t.getId().toString());
-        }
-        ArrayNode prUrlsArray = payload.putArray(PR_REVIEW_FALLBACK_PR_URLS_KEY);
-        for (int i = 0; i < originalTasks.size(); i++) {
-            prUrlsArray.add(prUrls != null && i < prUrls.size() ? prUrls.get(i) : "");
-        }
-        ArrayNode diffHashArray = payload.putArray(PR_REVIEW_FALLBACK_DIFF_HASH_KEY);
-        for (int i = 0; i < originalTasks.size(); i++) {
-            diffHashArray.add(diffHashes != null && i < diffHashes.size() ? diffHashes.get(i) : "");
-        }
-        reviewTask.setPayload(payload);
-
-        reviewTask.setAcceptanceCriteria("Given the pull request urls recorded in this task's payload, When this worker's session ends, Then none of them is left without a verdict, and each verdict names what was inspected rather than that a review was performed.");
-        reviewTask = taskRepository.save(reviewTask);
-        dispatchToGeneralPool(reviewTask);
+        java.util.Set<String> excludedAccountNames = implementerAccountNamesForReviewFallback(reviewTask);
+        dispatchToGeneralPool(reviewTask, excludedAccountNames);
         return reviewTask.getId();
+    }
+
+    public UUID dispatchReviewFallbackBatch(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
+        UUID reviewTaskId = createReviewFallbackBatchTask(originalTasks, prUrls, diffHashes, prompt, verdictPath, false);
+        if (reviewTaskId == null) {
+            return null;
+        }
+        return dispatchReviewFallbackTask(reviewTaskId);
+    }
+
+    public UUID dispatchReviewFallbackBatchAsPersistentCarrier(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
+        UUID reviewTaskId = createReviewFallbackBatchTask(originalTasks, prUrls, diffHashes, prompt, verdictPath, true);
+        if (reviewTaskId == null) {
+            return null;
+        }
+        return dispatchReviewFallbackTask(reviewTaskId);
     }
 
     public boolean isReviewFallbackTask(TaskEntity task) {
