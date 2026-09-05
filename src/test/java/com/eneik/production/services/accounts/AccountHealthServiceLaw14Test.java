@@ -102,23 +102,65 @@ class AccountHealthServiceLaw14Test {
         }
     }
 
+    /**
+     * The subject of this obligation is BELIEF: a refusal revises a belief only about what it is evidence
+     * for, and a refusal naming no condition is no evidence about capacity. That is asserted below and holds.
+     *
+     * <p>This test used to assert more than its own law: that the block counter stays at zero, that the
+     * status stays {@code idle}, and that the account is never saved at all. None of those is about belief
+     * about capacity - they are about whether dispatch keeps spending on that account, which belongs to
+     * law 8. By fixing "touch nothing whatsoever" as if it were the law, the screen locked the blindness in
+     * place: an account refused over and over stayed published as available, so "we could not tell why" was
+     * rendered indistinguishable from "all is well", and the run of refusals was measured on the live
+     * circuit while every account still read {@code idle}. A screen may protect a principle only as far as
+     * the principle reaches; past that it protects the defect.
+     */
     @Test
-    @DisplayName("Obligation 2: UNCLASSIFIED and PRECONDITION_UNSPECIFIED do not move ceiling and charge nobody")
+    @DisplayName("Obligation 2: an unnamed refusal revises no belief about capacity, and attributes no cause")
     void unclassifiedDoesNotMoveCeilingOrChargeAccount() {
         AccountEntity account = createAccount("test-account", 3, 2);
+        Integer dailyBefore = account.getEstimatedDailyCapacity();
 
         service.reportDispatchOutcome(accountId, projectId, AccountHealthService.DispatchOutcome.PRECONDITION_UNSPECIFIED, "Precondition check failed.");
 
         assertEquals(3, account.getEstimatedConcurrentCapacity(), "Ceiling must not move down or up on unspecified precondition");
-        assertEquals(AccountStatus.idle, account.getStatus(), "Status must remain idle");
-        assertEquals(0, account.getConsecutiveApiBlockCount(), "Block counter must remain untouched");
-        verify(accountRepository, never()).save(account);
+        assertEquals(dailyBefore, account.getEstimatedDailyCapacity(), "Daily belief must not move on an unnamed refusal");
 
         service.reportDispatchOutcome(accountId, projectId, AccountHealthService.DispatchOutcome.UNCLASSIFIED, "mystery error");
 
         assertEquals(3, account.getEstimatedConcurrentCapacity(), "Ceiling must not move on unclassified error");
-        assertEquals(AccountStatus.idle, account.getStatus());
-        verify(accountRepository, never()).save(account);
+        assertEquals(dailyBefore, account.getEstimatedDailyCapacity(), "Daily belief must not move on an unclassified error");
+    }
+
+    @Test
+    @DisplayName("Law 8 via the third outcome: a run of unnamed refusals does not leave the account published as available")
+    void aRunOfUnnamedRefusalsMakesTheAccountStepAside() {
+        AccountEntity account = createAccount("test-account", 3, 2);
+        assertEquals(AccountStatus.idle, account.getStatus(), "precondition: the account starts available");
+
+        service.reportDispatchOutcome(accountId, projectId, AccountHealthService.DispatchOutcome.PRECONDITION_UNSPECIFIED, "Precondition check failed.");
+        service.reportDispatchOutcome(accountId, projectId, AccountHealthService.DispatchOutcome.PRECONDITION_UNSPECIFIED, "Precondition check failed.");
+
+        assertEquals(2, account.getConsecutiveApiBlockCount(), "the run of refusals is what is established, and it is counted");
+        assertNotEquals(AccountStatus.idle, account.getStatus(),
+                "An account that only refuses must not stay published as available: sending again is a turn of a "
+                        + "cycle with no decreasing quantity behind it (law 8), and 'we could not tell why' must "
+                        + "never read as 'all is well'.");
+        assertEquals(3, account.getEstimatedConcurrentCapacity(), "standing aside is not a revision of belief about capacity");
+    }
+
+    @Test
+    @DisplayName("A real success ends the run: the counter resets, so a transient refusal cannot accumulate forever")
+    void aSuccessResetsTheRunOfUnnamedRefusals() {
+        AccountEntity account = createAccount("test-account", 3, 2);
+
+        service.reportDispatchOutcome(accountId, projectId, AccountHealthService.DispatchOutcome.PRECONDITION_UNSPECIFIED, "Precondition check failed.");
+        assertEquals(1, account.getConsecutiveApiBlockCount());
+
+        service.reportDispatchOutcome(accountId, projectId, AccountHealthService.DispatchOutcome.SUCCESS, null);
+
+        assertEquals(0, account.getConsecutiveApiBlockCount(),
+                "Proof of recovery is a real success, not elapsed time - the run must start over from zero.");
     }
 
     @Test

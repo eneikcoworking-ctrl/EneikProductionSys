@@ -60,6 +60,7 @@ public class AccountHealthService {
 
     private static final String RECOVERY_DURATION_DEFECT_TYPE = "ACCOUNT_RECOVERY_DURATION";
     private static final String PRECONDITION_DEFECT_TYPE = "API_PRECONDITION_BLOCKED";
+    private static final String UNNAMED_REFUSAL_DEFECT_TYPE = "API_REFUSAL_WITHOUT_NAMED_CONDITION";
     private static final String DAILY_LIMIT_DEFECT_TYPE = "DAILY_LIMIT";
     private static final String CONCURRENT_CAPACITY_DEFECT_TYPE = "CONCURRENT_CAPACITY_EXHAUSTED";
     private static final String CONCURRENT_CAPACITY_EXPANDED_TYPE = "CONCURRENT_CAPACITY_EXPANDED";
@@ -312,13 +313,41 @@ public class AccountHealthService {
                         (double) revisedConcurrent));
             }
             case PRECONDITION_UNSPECIFIED, UNCLASSIFIED -> {
-                // §12, §14 & Carnap's evidence distinction:
-                // Jules said a precondition failed or returned an unclassified refusal without naming whose condition failed.
-                // UNCLASSIFIED does not masquerade as causal knowledge: it charges nobody and does NOT move
-                // estimatedDailyCapacity or estimatedConcurrentCapacity in either direction.
-                log.warn("AccountHealthService: Jules refused a session for task {} through account '{}' citing an "
-                                + "unspecified or unclassified condition. Charged to nobody (§12, §14). Detail: {}",
-                        taskId != null ? taskId : "unspecified", account.getName(), rawReason);
+                // §12, §14 & Carnap's evidence distinction: the refusal names no condition, so no cause is
+                // attributed. estimatedDailyCapacity and estimatedConcurrentCapacity are NOT moved in either
+                // direction - a belief is revised by evidence about its subject, and this refusal says
+                // nothing about capacity.
+                //
+                // What IS established is not nothing, and it used to be discarded as if it were. An account
+                // refused N times in a row, with no success in between, is an account that only refuses;
+                // that is an observation, not an interpretation. Leaving its status `idle` publishes the
+                // opposite - "available" - so "we could not tell" was rendered indistinguishable from "all
+                // is well", and dispatch kept spending against it. The third outcome of a check must be
+                // visible in the result, never dissolved into the second.
+                //
+                // So the run is counted and the account steps aside, on the same counter and the same
+                // exponential-backoff recovery as a named block. Standing aside is not a verdict about why:
+                // it says only that sending again, right now, is a turn of a cycle with no decreasing
+                // quantity behind it (law 8).
+                int unnamedRefusals = account.getConsecutiveApiBlockCount() + 1;
+                account.setConsecutiveApiBlockCount(unnamedRefusals);
+                boolean standAside = unnamedRefusals >= preconditionBlockEscalationThreshold;
+                if (standAside) {
+                    account.setStatus(AccountStatus.api_blocked);
+                }
+                accountRepository.save(account);
+                log.warn("AccountHealthService: Jules refused a session for task {} through account '{}' without naming "
+                                + "a condition ({} in a row, no success between). No cause is charged (§12, §14); the "
+                                + "account {} while the run stands. Detail: {}",
+                        taskId != null ? taskId : "unspecified", account.getName(), unnamedRefusals,
+                        standAside ? "steps aside" : "stays in rotation", rawReason);
+                defectJournalRepository.save(new DefectJournalEntity(
+                        projectId, null, null, standAside ? "HIGH" : "MEDIUM", HEALTH_CATEGORY, account.getName(),
+                        UNNAMED_REFUSAL_DEFECT_TYPE,
+                        taskPrefix + "Account '" + account.getName() + "' refused " + unnamedRefusals
+                                + " time(s) in a row without a named condition; no cause attributed. Detail: "
+                                + (rawReason == null ? "" : rawReason),
+                        (double) unnamedRefusals));
             }
             case REQUEST_REJECTED -> {
                 // Deliberately touches nothing on the account: not its status, not its block counter, not
