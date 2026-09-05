@@ -1432,6 +1432,29 @@
 
     **Санитария.** План сверен, открытых пунктов нет, статусы соответствуют коду, правок не потребовалось.
 
+38. **Такт 06:26 UTC (Antigravity). Локализован и устранён второй писатель `ciStatus` (дефект 16 PR). Заслон зелёный, расход 0.**
+
+    **Фактическая дельта:**
+    - `src/main/java/com/eneik/production/services/AutoMergeService.java`:
+      - В `repairTaskForConfirmedMerge()` исправлен фильтр `staleReviews`: исключены строки со статусом `closed_unmerged`. Ранее фильтр проверял лишь `!"superseded".equals(ciStatus)` и на каждом такте перезаписывал терминальный `closed_unmerged` обратно в `superseded`.
+      - В `supersedeOldReviewIfApplicable()` добавлена защита от затирания `closed_unmerged`.
+      - В `resurrectAlreadyMergedReviews()` добавлен фильтр `!"superseded".equalsIgnoreCase(r.getCiStatus())` (у задачи со слиянием сиблинга работа уже на main) и синхронная терминализация всех строк с тем же `prUrl`.
+    - `src/test/java/com/eneik/production/services/GitHubSweepBudgetEfficiencyTest.java`:
+      - Добавлен падающий модульный тест `property1_multiTickTerminalizationSurvivesBetweenTicks`. На старом коде тест строго падал с `expected: <closed_unmerged> but was: <superseded>`. На новом коде — **зелёный** (6 из 6 тестов пакета пройдены, все 64 теста AutoMerge пройдены).
+
+    **Корень дефекта (Закон 1 — два писателя):**
+    У 16 задач в `test-fiftieth` было по два сеанса: старый (с закрытым unmerged PR) и победивший (со слитым PR).
+    На каждом 60-секундном такте:
+    1. Шаг 194 (`reconcileMergedGitHubPullRequests` → `repairTaskForConfirmedMerge`): видит слитый PR победившего сеанса и переводит старый ревью из `closed_unmerged` обратно в `superseded`.
+    2. Шаг 199 (`resurrectAlreadyMergedReviews`): видит статус `superseded` (не `closed_unmerged`), запрашивает GitHub (16 вызовов), получает `closed=true` и перезаписывает статус обратно в `closed_unmerged`.
+    3. На следующем такте цикл повторялся бесконечно. Пометка держалась ровно до шага 194 следующей минуты.
+
+    **Живая проверка и телеметрия фабрики:**
+    - Контейнер бэкенда пересобран и пересоздан (`13bae3fa5a0a`).
+    - `curl -s http://127.0.0.1:8080/actuator/health` → `{"springBootStatus":"UP","status":"ok"}`.
+    - В логах нового контейнера строки «terminalized local review in resurrectAlreadyMergedReviews» зафиксированы на отметке **0** (дефект прекратился, расход на 16 PR упал с 960 вызовов/час до **0**).
+    - **Память:** бэкенд после старта держит **555.7 МиБ из 1 ГиБ (54.3%)**, свободная память хоста стабилизировалась, OOM-угроз нет. Поток остаётся в `SYSTEM_STALLED` из-за внешних отказов Jules HTTP 400.
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)

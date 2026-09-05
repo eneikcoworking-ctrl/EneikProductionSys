@@ -1357,12 +1357,14 @@ public class AutoMergeService {
             return;
         }
         // Pushed into the query (2026-08-28): the merged/unmerged split is a column, not a stream filter.
-        // Task 25: Exclude reviews whose PR is already established as closed_unmerged on GitHub.
-        // A PR closed without merge is terminal on GitHub and cannot become merged; repeatedly polling
-        // it burns external rate-limit budget on history rather than remaining work (Property 1).
+        // Task 25: Exclude reviews whose PR is already established as closed_unmerged or superseded.
+        // A PR closed without merge is terminal on GitHub and cannot become merged; a superseded review's
+        // task is already satisfied by a winning sibling PR. Polling either burns external rate-limit budget
+        // on history rather than remaining work (Property 1).
         List<PrReviewEntity> unmerged = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(this::belongsToActiveProject)
                 .filter(r -> !"closed_unmerged".equalsIgnoreCase(r.getCiStatus()))
+                .filter(r -> !"superseded".equalsIgnoreCase(r.getCiStatus()))
                 .toList();
         for (PrReviewEntity review : unmerged) {
             try {
@@ -1388,6 +1390,16 @@ public class AutoMergeService {
                     } else if (githubPr.get().closed()) {
                         review.setCiStatus("closed_unmerged");
                         prReviewRepository.save(review);
+                        String prUrl = review.getPrUrl();
+                        if (prUrl != null) {
+                            for (PrReviewEntity sibling : unmerged) {
+                                if (sibling != review && prUrl.equals(sibling.getPrUrl())
+                                        && !"closed_unmerged".equalsIgnoreCase(sibling.getCiStatus())) {
+                                    sibling.setCiStatus("closed_unmerged");
+                                    prReviewRepository.save(sibling);
+                                }
+                            }
+                        }
                         log.info("AutoMergeService: PR {} is closed without merge on GitHub; terminalized local review in resurrectAlreadyMergedReviews.",
                                 review.getPrUrl());
                     }
@@ -1920,7 +1932,9 @@ public class AutoMergeService {
             claimService.releaseTerminalClaim(task.getId());
         }
 
-        if (!Boolean.TRUE.equals(review.getMerged())) {
+        if (!Boolean.TRUE.equals(review.getMerged())
+                && !"superseded".equalsIgnoreCase(review.getCiStatus())
+                && !"closed_unmerged".equalsIgnoreCase(review.getCiStatus())) {
             review.setCiStatus("superseded");
             prReviewRepository.save(review);
         }
@@ -2342,7 +2356,8 @@ public class AutoMergeService {
                 .map(session -> reviewBySession.get(session.getId()))
                 .filter(java.util.Objects::nonNull)
                 .filter(review -> !Boolean.TRUE.equals(review.getMerged()))
-                .filter(review -> !"superseded".equals(review.getCiStatus()))
+                .filter(review -> !"superseded".equalsIgnoreCase(review.getCiStatus())
+                        && !"closed_unmerged".equalsIgnoreCase(review.getCiStatus()))
                 .toList();
         boolean taskNeedsRepair = task.getStatus() != TaskStatus.done;
         // Phase follow-up (2026-07-23, widened 2026-07-31): the GitHub-truth reconciliation path

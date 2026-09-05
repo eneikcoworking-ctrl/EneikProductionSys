@@ -335,4 +335,86 @@ class GitHubSweepBudgetEfficiencyTest {
         assertEquals("pending", liveReview.getCiStatus());
         assertEquals(false, liveReview.getMerged());
     }
+
+    @Test
+    @DisplayName("Property 1 (multi-tick terminalization): closed PR terminalized in tick 1 is not rewritten or re-polled in tick 2")
+    void property1_multiTickTerminalizationSurvivesBetweenTicks() {
+        ProjectEntity activeProject = createActiveProject("test-fiftieth");
+        when(projectRepository.findAll()).thenReturn(List.of(activeProject));
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(activeProject));
+
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(activeProject);
+        task.setStatus(TaskStatus.done);
+
+        UUID staleSessionId = UUID.randomUUID();
+        JulesSessionEntity staleSession = new JulesSessionEntity();
+        staleSession.setId(staleSessionId);
+        staleSession.setTaskId(taskId);
+        staleSession.setStatus("closed_rejected");
+        staleSession.setPrUrl("https://github.com/eneikdru/test-fiftieth/pull/10");
+
+        UUID winningSessionId = UUID.randomUUID();
+        JulesSessionEntity winningSession = new JulesSessionEntity();
+        winningSession.setId(winningSessionId);
+        winningSession.setTaskId(taskId);
+        winningSession.setStatus("merged");
+        winningSession.setPrUrl("https://github.com/eneikdru/test-fiftieth/pull/100");
+
+        PrReviewEntity staleReview = createReview("https://github.com/eneikdru/test-fiftieth/pull/10", "superseded", false);
+        staleReview.setJulesSessionId(staleSessionId);
+
+        PrReviewEntity winningReview = createReview("https://github.com/eneikdru/test-fiftieth/pull/100", "success", true);
+        winningReview.setJulesSessionId(winningSessionId);
+
+        when(julesSessionRepository.findById(staleSessionId)).thenReturn(Optional.of(staleSession));
+        when(julesSessionRepository.findById(winningSessionId)).thenReturn(Optional.of(winningSession));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        when(prReviewRepository.findByMergedFalseOrMergedIsNull()).thenAnswer(inv -> List.of(staleReview));
+        when(prReviewRepository.findByJulesSessionIdIsNotNull()).thenAnswer(inv -> List.of(staleReview, winningReview));
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(staleSession, winningSession));
+
+        // GitHub snapshot for project
+        GitHubPullRequestService.GitHubPullRequest mergedPr = new GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/eneikdru/test-fiftieth/pull/100",
+                100, "merged work", "b-100", "jules", true, "main", true, Instant.now()
+        );
+        GitHubPullRequestService.GitHubPullRequest closedPr = new GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/eneikdru/test-fiftieth/pull/10",
+                10, "stale work", "b-10", "jules", false, "main", true, Instant.now()
+        );
+
+        GitHubPullRequestService.PullRequestSnapshot snapshot = new GitHubPullRequestService.PullRequestSnapshot(
+                true, "test-fiftieth", List.of(), List.of(mergedPr, closedPr), Instant.now()
+        );
+        when(gitHubPullRequestService.pullRequestSnapshot(activeProject)).thenReturn(snapshot);
+        when(julesSessionRepository.findByPrUrlIn(any())).thenReturn(List.of(winningSession));
+
+        when(gitHubPullRequestService.fetchPullRequestByNumber("eneikdru", "test-fiftieth", 10))
+                .thenReturn(Optional.of(closedPr));
+
+        // --- TICK 1 ---
+        autoMergeService.reconcileMergedGitHubPullRequests();
+        autoMergeService.resurrectAlreadyMergedReviews();
+
+        // Tick 1 terminalized staleReview to closed_unmerged
+        assertEquals("closed_unmerged", staleReview.getCiStatus());
+        verify(gitHubPullRequestService, times(1))
+                .fetchPullRequestByNumber("eneikdru", "test-fiftieth", 10);
+
+        // --- TICK 2 ---
+        // Simulating second tick: reconcile and resurrect run again
+        autoMergeService.reconcileMergedGitHubPullRequests();
+        autoMergeService.resurrectAlreadyMergedReviews();
+
+        // Stale review MUST REMAIN closed_unmerged (not overwritten to superseded!)
+        assertEquals("closed_unmerged", staleReview.getCiStatus());
+
+        // Zero additional calls to GitHub in tick 2! Still exactly 1 call total.
+        verify(gitHubPullRequestService, times(1))
+                .fetchPullRequestByNumber("eneikdru", "test-fiftieth", 10);
+    }
 }
