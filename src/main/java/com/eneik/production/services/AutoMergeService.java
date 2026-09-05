@@ -70,6 +70,14 @@ public class AutoMergeService {
     private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
     private final com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
 
+    // Tracker for unattributable reviews logged under Laws 11 & 13 synthesis:
+    // ¬attributable(x) ⟹ x stays in decision set ∧ spend(x) = 0 ∧ x named unattributable once.
+    private final java.util.Set<UUID> loggedUnattributableReviews = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    java.util.Set<UUID> getLoggedUnattributableReviews() {
+        return java.util.Collections.unmodifiableSet(loggedUnattributableReviews);
+    }
+
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
 
@@ -327,21 +335,71 @@ public class AutoMergeService {
     }
 
     /**
-     * Resolves a review's project through its session -> task -> project chain and checks it's active.
-     * Fails open (returns true) whenever the chain can't be resolved - an unresolvable review is not
-     * evidence its project is inactive, and this guard must never silently stop reconciling a review it
-     * simply can't trace, only ones it can positively confirm belong to a non-active project.
+     * Resolves a review's project through its session -> task -> project chain or through matching
+     * its repository URL to a registered project in the database, and verifies that project is active.
+     *
+     * <p>Synthesis of Laws 11 and 13:
+     * ¬attributable(x) ⟹ x stays in decision set ∧ spend(x) = 0 ∧ x named unattributable once.
+     * Ignorance forbids a negative verdict on x, but it does not pay for external API expenditure.
+     * When a review cannot be attributed to any known project, spend is 0 (returns false) and it is
+     * recorded/logged once as unattributable, without mutating its state or dropping it from the decision set.
      */
-    private boolean belongsToActiveProject(PrReviewEntity review) {
-        if (review.getJulesSessionId() == null) {
+    boolean belongsToActiveProject(PrReviewEntity review) {
+        if (review == null) {
+            return false;
+        }
+        // 1. Trace through session -> task -> project
+        if (review.getJulesSessionId() != null) {
+            var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
+            if (sessionOpt.isPresent()) {
+                var taskOpt = sessionOpt.flatMap(s -> taskRepository.findById(s.getTaskId()));
+                if (taskOpt.isPresent()) {
+                    var project = taskOpt.get().getProject();
+                    if (project != null) {
+                        return project.getStatus() == ProjectStatus.active;
+                    }
+                }
+            }
+        }
+
+        // 2. Fallback: match repository from PR URL to any known project in database
+        PullRequestTarget target = parseGithubPullRequestUrl(review.getPrUrl());
+        if (target != null && projectRepository != null) {
+            var allProjects = projectRepository.findAll();
+            if (allProjects != null) {
+                var matchingProject = allProjects.stream()
+                        .filter(p -> matchesRepository(p, target))
+                        .findFirst();
+                if (matchingProject.isPresent()) {
+                    return matchingProject.get().getStatus() == ProjectStatus.active;
+                }
+            }
+        }
+
+        // 3. Unattributable: review cannot be mapped to any known project in the factory.
+        // Rule: ¬attributable(x) ⟹ x stays in decision set ∧ spend(x) = 0 ∧ x named unattributable once.
+        if (review.getId() != null && loggedUnattributableReviews.add(review.getId())) {
+            log.warn("AutoMergeService: review {} (PR {}) is unattributable to any known project; withholding external spend (spend=0) while preserving in decision set",
+                    review.getId(), review.getPrUrl());
+        }
+        return false;
+    }
+
+    static boolean matchesRepository(com.eneik.production.models.persistence.ProjectEntity p, PullRequestTarget target) {
+        if (target == null || target.repo() == null || target.repo().isBlank() || p == null) {
+            return false;
+        }
+        if (target.repo().equalsIgnoreCase(p.getRepositoryName()) || target.repo().equalsIgnoreCase(p.getSlug())) {
             return true;
         }
-        return julesSessionRepository.findById(review.getJulesSessionId())
-                .map(com.eneik.production.models.persistence.JulesSessionEntity::getTaskId)
-                .flatMap(taskRepository::findById)
-                .map(com.eneik.production.models.persistence.TaskEntity::getProject)
-                .map(project -> project.getStatus() == ProjectStatus.active)
-                .orElse(true);
+        String repoUrl = p.getRepoUrl() != null ? p.getRepoUrl() : p.getRepositoryUrl();
+        if (repoUrl != null && !repoUrl.isBlank()) {
+            String expected = target.owner() + "/" + target.repo();
+            if (repoUrl.toLowerCase(java.util.Locale.ROOT).contains(expected.toLowerCase(java.util.Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Operator directive 2026-07-24 (live incident, 6 simultaneous escalations on test-thirty-seventh, all
@@ -1217,6 +1275,9 @@ public class AutoMergeService {
             review.setMerged(true);
             prReviewRepository.save(review);
             systemProgressTracker.recordProgress();
+            if (pullRequestTarget != null && gitHubPullRequestService != null) {
+                gitHubPullRequestService.invalidateSnapshotCache(pullRequestTarget.owner(), pullRequestTarget.repo());
+            }
 
             final PullRequestTarget mergedPrTarget = pullRequestTarget;
 
@@ -1296,8 +1357,12 @@ public class AutoMergeService {
             return;
         }
         // Pushed into the query (2026-08-28): the merged/unmerged split is a column, not a stream filter.
+        // Task 25: Exclude reviews whose PR is already established as closed_unmerged on GitHub.
+        // A PR closed without merge is terminal on GitHub and cannot become merged; repeatedly polling
+        // it burns external rate-limit budget on history rather than remaining work (Property 1).
         List<PrReviewEntity> unmerged = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(this::belongsToActiveProject)
+                .filter(r -> !"closed_unmerged".equalsIgnoreCase(r.getCiStatus()))
                 .toList();
         for (PrReviewEntity review : unmerged) {
             try {
@@ -1314,11 +1379,18 @@ public class AutoMergeService {
                     continue;
                 }
                 var githubPr = gitHubPullRequestService.fetchPullRequestByNumber(target.owner(), target.repo(), Integer.parseInt(target.pullNumber()));
-                if (githubPr.isPresent() && githubPr.get().merged()) {
-                    log.info("AutoMergeService: resurrected review for PR {} - was already merged on GitHub but "
-                                    + "stuck at ciStatus={}, never re-checked; recording as merged now.",
-                            review.getPrUrl(), review.getCiStatus());
-                    recordSuccessfulMerge(review, target);
+                if (githubPr.isPresent()) {
+                    if (githubPr.get().merged()) {
+                        log.info("AutoMergeService: resurrected review for PR {} - was already merged on GitHub but "
+                                        + "stuck at ciStatus={}, never re-checked; recording as merged now.",
+                                review.getPrUrl(), review.getCiStatus());
+                        recordSuccessfulMerge(review, target);
+                    } else if (githubPr.get().closed()) {
+                        review.setCiStatus("closed_unmerged");
+                        prReviewRepository.save(review);
+                        log.info("AutoMergeService: PR {} is closed without merge on GitHub; terminalized local review in resurrectAlreadyMergedReviews.",
+                                review.getPrUrl());
+                    }
                 }
             } catch (Exception e) {
                 log.warn("AutoMergeService: resurrectAlreadyMergedReviews failed for review {} (PR {}): {}",

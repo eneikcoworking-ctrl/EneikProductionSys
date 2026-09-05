@@ -123,6 +123,12 @@ class AutoMergeServiceTest {
         var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
         var settings = mock(com.eneik.production.services.settings.SystemSettingsService.class);
         var gitHub = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
+        var activeProject = new com.eneik.production.models.persistence.ProjectEntity();
+        activeProject.setRepositoryName("repo");
+        activeProject.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        when(projects.findAll()).thenReturn(List.of(activeProject));
+
         AutoMergeService service = new AutoMergeService(
                 prReviews,
                 mock(com.eneik.production.repositories.JulesSessionRepository.class),
@@ -140,7 +146,7 @@ class AutoMergeServiceTest {
                 mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
                 mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
-                mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClaimService.class), projects,
                 mock(ClientDeliverableReadinessService.class),
                 mock(com.eneik.production.services.GeminiContextService.class),
                 mock(com.eneik.production.services.ProjectFlowService.class),

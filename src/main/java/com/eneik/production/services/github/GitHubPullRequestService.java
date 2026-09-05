@@ -33,17 +33,65 @@ public class GitHubPullRequestService {
     private final GitHubApiBudgetService githubApiBudgetService;
     private final HttpClient httpClient;
 
+    // Per-tick / short-TTL snapshot cache (Task 25: Property 4 - PR list fetched at most once per tick across all consumers)
+    private final java.util.Map<java.util.UUID, CachedSnapshot> projectSnapshotCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private java.time.Clock clock = java.time.Clock.systemUTC();
+
+    record CachedSnapshot(PullRequestSnapshot snapshot, Instant fetchedAt) {}
+
+    public void setClock(java.time.Clock clock) {
+        this.clock = clock != null ? clock : java.time.Clock.systemUTC();
+    }
+
+    public void invalidateSnapshotCache(java.util.UUID projectId) {
+        if (projectId != null) {
+            projectSnapshotCache.remove(projectId);
+        }
+    }
+
+    public void invalidateSnapshotCache(String owner, String repo) {
+        if (owner == null || repo == null) {
+            return;
+        }
+        projectSnapshotCache.entrySet().removeIf(entry -> {
+            PullRequestSnapshot s = entry.getValue().snapshot();
+            return s != null && owner.equalsIgnoreCase(s.owner()) && repo.equalsIgnoreCase(s.repo());
+        });
+    }
+
+    public void clearSnapshotCache() {
+        projectSnapshotCache.clear();
+    }
+
+    private Duration getSnapshotTtl() {
+        String customSeconds = settingsService.effectiveValue("github_pr_snapshot_ttl_seconds");
+        if (customSeconds != null && !customSeconds.isBlank()) {
+            try {
+                return Duration.ofSeconds(Long.parseLong(customSeconds.trim()));
+            } catch (NumberFormatException ignored) {}
+        }
+        return Duration.ofSeconds(20);
+    }
+
     public GitHubPullRequestService(GithubConfig githubConfig,
                                     SystemSettingsService settingsService,
                                     ObjectMapper objectMapper,
                                     GitHubApiBudgetService githubApiBudgetService) {
+        this(githubConfig, settingsService, objectMapper, githubApiBudgetService, null);
+    }
+
+    public GitHubPullRequestService(GithubConfig githubConfig,
+                            SystemSettingsService settingsService,
+                            ObjectMapper objectMapper,
+                            GitHubApiBudgetService githubApiBudgetService,
+                            HttpClient httpClient) {
         this.githubConfig = githubConfig;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
         this.githubApiBudgetService = githubApiBudgetService;
         // Bounded connect timeout (2026-07-24/25 incident) - see JulesApiClient for the full incident note;
         // same fix applied uniformly across every outbound HTTP client in the codebase.
-        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+        this.httpClient = httpClient != null ? httpClient : HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
     }
 
     /**
@@ -304,8 +352,15 @@ public class GitHubPullRequestService {
             return PullRequestSnapshot.unavailable(repoRef.owner(), repoRef.repo(), "Repository owner/name is missing");
         }
 
+        // Task 25: Property 4 - pull request list is fetched at most once per tick across all consumers
+        CachedSnapshot cached = projectSnapshotCache.get(project.getId());
+        Instant now = clock.instant();
+        if (cached != null && Duration.between(cached.fetchedAt(), now).compareTo(getSnapshotTtl()) < 0) {
+            return cached.snapshot();
+        }
+
         try {
-            return new PullRequestSnapshot(
+            PullRequestSnapshot snapshot = new PullRequestSnapshot(
                     true,
                     repoRef.owner(),
                     repoRef.repo(),
@@ -313,6 +368,8 @@ public class GitHubPullRequestService {
                     fetchPullRequests(repoRef, "closed", token),
                     ""
             );
+            projectSnapshotCache.put(project.getId(), new CachedSnapshot(snapshot, now));
+            return snapshot;
         } catch (Exception e) {
             log.warn("Could not build GitHub PR snapshot for {}/{}: {}", repoRef.owner(), repoRef.repo(), e.getMessage());
             return PullRequestSnapshot.unavailable(repoRef.owner(), repoRef.repo(), e.getMessage());
@@ -337,6 +394,8 @@ public class GitHubPullRequestService {
         if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
             return PullRequestCloseReport.unavailable(repoRef.owner(), repoRef.repo(), "Repository owner/name is missing");
         }
+
+        invalidateSnapshotCache(project.getId());
 
         try {
             List<GitHubPullRequest> openPullRequests = fetchPullRequests(repoRef, "open", token);
@@ -1004,6 +1063,7 @@ public class GitHubPullRequestService {
                     .build();
             HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                invalidateSnapshotCache(project.getId());
                 log.info("Merged record PR {} for {}/{}. reason={}", pullRequest.url(), repoRef.owner(), repoRef.repo(), reason);
                 // Record PRs carry exactly one .eneik/*.json file by construction - never product code -
                 // so the branch is disposable the moment its verdict/report/plan has been merged.
@@ -1223,6 +1283,7 @@ public class GitHubPullRequestService {
             return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, "GitHub token is missing");
         }
         try {
+            invalidateSnapshotCache(project.getId());
             return closePullRequest(repoRef(project), pullRequest, token, reason);
         } catch (Exception e) {
             log.warn("Could not close GitHub PR {} for project {}: {}", pullRequest.url(), project.getId(), e.getMessage());
