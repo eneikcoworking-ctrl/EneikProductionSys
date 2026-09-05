@@ -1188,11 +1188,41 @@
     Прошлое наблюдение про трёхминутную аренду свипа закрыть не удалось: с пересборки новых компиляций не
     было, мерить нечего. Остаётся под наблюдением.
 
+45. **Такт 11:48 UTC (Antigravity, $\mathcal{L}_2$). Спор за строку проекта измерен, доказан и устранён (коммит `f4d7520`).**
+    
+    Ответ на вопрос из пункта 44 («кто держит строку и как долго»):
+    * **Кто держал и сколько:** Поток `task-5`, транзакция `admitAndDispatchReviewFallbackBatch`. Лог штатной
+      телеметрии фабрики зафиксировал точный замер:
+      `Account lock granularity: ACCOUNTS row for eneikdru stayed FOR UPDATE-locked 34777 ms after its claim was already proven and written (new maximum; previous 28092 ms; transaction owned by admitAndDispatchReviewFallbackBatch). The claim is the only part that needs the row - everything after it is surplus hold.`
+    * **Механизм дефекта (нарушение инварианта 11 — гранулярность блокировки):**
+      Метод `admitAndDispatchReviewFallbackBatch` был объявлен как `@Transactional(propagation = Propagation.REQUIRES_NEW)`
+      и брал `projectRepository.lockProjectForUpdate(projectId)`. Внутри этой же открытой транзакции вызывался
+      `projectFlowService.dispatchReviewFallbackBatch` ➔ `dispatchToGeneralPool` ➔ `julesDispatchService.dispatch`,
+      делающий внешний сетевой HTTP POST к API Jules. Сетевое ожидание (34.7 с) удерживало транзакцию,
+      замок на строку `PROJECTS` и замок на строку `ACCOUNTS`.
+    * **Следствие для ожидающих:**
+      Конкурентный свип `checkAndDispatchCoverageAudits` (потоки `task-7`, `task-3`) вызывал
+      `self.admitDueCoverageAudits`, который также требует `projectRepository.lockProjectForUpdate(projectId)`.
+      Ожидание замка превысило порог Hikari (30 с), что привело к принудительному закрытию соединения пулом
+      и ошибкам `Unable to rollback against JDBC Connection / Connection is closed`.
+    * **Архитектурное решение в $\mathcal{L}_2$ (коммит `f4d7520`):**
+      Контур разделен строго по доктрине:
+      1. `admitReviewFallbackBatch` (`REQUIRES_NEW` через `self`): под замком `lockProjectForUpdate` выполняет
+         только дедупликацию и сохранение сущности задачи в БД (`createReviewFallbackBatchTask` со статусом `queued`).
+         Транзакция фиксируется и освобождает замок за миллисекунды.
+      2. `admitAndDispatchReviewFallbackBatch` (без `@Transactional`): вне транзакции вызывает
+         `projectFlowService.dispatchReviewFallbackTask`, где `claimAccountForTask` берет свою ультракороткую транзакцию
+         (удержание 0 мс), а сетевой HTTP-вызов к Jules идет полностью без открытых транзакций БД и замков.
+    * **Заслоны и верификация:**
+      - Юнит-тесты: `admitReviewFallbackBatchCreatesTaskUnderAdmissionMutex`, `admitAndDispatchReviewFallbackBatchDelegatesAdmissionThenDispatchesOutside`, `createReviewFallbackBatchTaskPersistsQueuedCarrierTask`.
+      - Прогон в контейнере Docker (`-m 768m`): `JulesDispatchServiceTest` 97/97, `ProjectFlowServiceTest` 37/37 (всего 134/134 green, 0 failures, 0 errors).
+      - Бэкенд пересобран и перезапущен, healthcheck `UP` (2026-09-05T11:47:22Z), фабрика продолжает исполнение в штатном режиме.
+
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
 
 * **Регламент взаимодействия:** Руководствоваться правилами из `docs/architecture/AUTONOMOUS_OPERATING_REGULATION.md`.
 * **Статус ЯДРА и ПЕРИФЕРИИ:**
-  - Ядро $K$ закрыто и заслонено: 104/104 green.
+  - Ядро $K$ закрыто и заслонено: 104/104 green + 134/134 green в расширенном наборе.
   - Периферия $\Pi$ закрыта и заслонена: Законы 17, 21, 22 (15/15 green).
   - Критерий Куайна подтверждён: $|{k \in K : \text{изменён при работе над } \Pi}| = 0$.
 * **Текущий приоритетный фокус аудита:**
