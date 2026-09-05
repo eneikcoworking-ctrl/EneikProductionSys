@@ -2406,13 +2406,14 @@ public class JulesDispatchService {
         // completeWishlistCompilation gives buildTaskGraphFromSlices a view where un-claimed positions are
         // already marked as "skip", so it never touches a wishlist this invocation doesn't own.
         java.util.Set<UUID> claimedIds = new java.util.HashSet<>();
+        Instant claimTime = Instant.now();
         for (WishlistEntity w : wishlists) {
             if (w.getStatus() == WishlistStatus.converted_to_task || w.getStatus() == WishlistStatus.dismissed) {
                 continue;
             }
-            if (wishlistRepository.compareAndSetStatus(w.getId(), WishlistStatus.compiling, WishlistStatus.finalizing) == 1) {
+            if (wishlistRepository.compareAndSetStatusWithTimestamp(w.getId(), WishlistStatus.compiling, WishlistStatus.finalizing, claimTime) == 1) {
                 claimedIds.add(w.getId());
-            } else if (wishlistRepository.compareAndSetStatus(w.getId(), WishlistStatus.pending, WishlistStatus.finalizing) == 1) {
+            } else if (wishlistRepository.compareAndSetStatusWithTimestamp(w.getId(), WishlistStatus.pending, WishlistStatus.finalizing, claimTime) == 1) {
                 // If earlier sweep or timeout reset the wishlist to pending while this compiler task was
                 // completing its run, this completion holds the PR and plan and is entitled to claim it into finalizing.
                 claimedIds.add(w.getId());

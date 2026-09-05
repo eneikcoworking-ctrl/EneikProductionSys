@@ -31,6 +31,11 @@ public interface WishlistRepository extends JpaRepository<WishlistEntity, UUID> 
     int compareAndSetStatus(@Param("id") UUID id, @Param("expectedStatus") WishlistStatus expectedStatus,
             @Param("newStatus") WishlistStatus newStatus);
 
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE WishlistEntity w SET w.status = :newStatus, w.lastCompileDispatchedAt = :now WHERE w.id = :id AND w.status = :expectedStatus")
+    int compareAndSetStatusWithTimestamp(@Param("id") UUID id, @Param("expectedStatus") WishlistStatus expectedStatus,
+            @Param("newStatus") WishlistStatus newStatus, @Param("now") Instant now);
+
     List<WishlistEntity> findByProjectId(UUID projectId);
     List<WishlistEntity> findByProjectIdAndStatus(UUID projectId, WishlistStatus status);
     long countByProjectIdAndStatus(UUID projectId, WishlistStatus status);

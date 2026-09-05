@@ -2774,9 +2774,10 @@ class JulesDispatchServiceTest {
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(compilerTask));
         when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
         when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
-        when(wishlistRepository.compareAndSetStatus(wishlistId,
-                com.eneik.production.models.persistence.WishlistStatus.compiling,
-                com.eneik.production.models.persistence.WishlistStatus.finalizing)).thenReturn(1);
+        when(wishlistRepository.compareAndSetStatusWithTimestamp(eq(wishlistId),
+                eq(com.eneik.production.models.persistence.WishlistStatus.compiling),
+                eq(com.eneik.production.models.persistence.WishlistStatus.finalizing),
+                any())).thenReturn(1);
         when(gitHubPullRequestService.findOpenPullRequestBySession(eq(project), eq("sessions/first-completion")))
                 .thenReturn(Optional.empty());
 
@@ -2819,9 +2820,10 @@ class JulesDispatchServiceTest {
         when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
         // First call wins the compare-and-swap (1 row affected); a second, concurrent call for the exact
         // same wishlist loses it (0 rows affected, since the real row is no longer `compiling`).
-        when(wishlistRepository.compareAndSetStatus(wishlistId,
-                com.eneik.production.models.persistence.WishlistStatus.compiling,
-                com.eneik.production.models.persistence.WishlistStatus.finalizing))
+        when(wishlistRepository.compareAndSetStatusWithTimestamp(eq(wishlistId),
+                eq(com.eneik.production.models.persistence.WishlistStatus.compiling),
+                eq(com.eneik.production.models.persistence.WishlistStatus.finalizing),
+                any()))
                 .thenReturn(1, 0);
 
         JulesDispatchService.CompilerCompletionAdmission firstAdmission =
@@ -2854,14 +2856,16 @@ class JulesDispatchServiceTest {
 
         when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
         // CAS from compiling fails (returns 0) because earlier recovery or sweep reset it to pending.
-        when(wishlistRepository.compareAndSetStatus(wishlistId,
-                com.eneik.production.models.persistence.WishlistStatus.compiling,
-                com.eneik.production.models.persistence.WishlistStatus.finalizing))
+        when(wishlistRepository.compareAndSetStatusWithTimestamp(eq(wishlistId),
+                eq(com.eneik.production.models.persistence.WishlistStatus.compiling),
+                eq(com.eneik.production.models.persistence.WishlistStatus.finalizing),
+                any()))
                 .thenReturn(0);
         // CAS from pending succeeds (returns 1), allowing this valid completion to claim it.
-        when(wishlistRepository.compareAndSetStatus(wishlistId,
-                com.eneik.production.models.persistence.WishlistStatus.pending,
-                com.eneik.production.models.persistence.WishlistStatus.finalizing))
+        when(wishlistRepository.compareAndSetStatusWithTimestamp(eq(wishlistId),
+                eq(com.eneik.production.models.persistence.WishlistStatus.pending),
+                eq(com.eneik.production.models.persistence.WishlistStatus.finalizing),
+                any()))
                 .thenReturn(1);
 
         JulesDispatchService.CompilerCompletionAdmission admission =
@@ -2903,7 +2907,7 @@ class JulesDispatchServiceTest {
         when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
         when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
         // CAS from compiling and pending both return 0 (another worker holds finalizing)
-        when(wishlistRepository.compareAndSetStatus(eq(wishlistId), any(), eq(com.eneik.production.models.persistence.WishlistStatus.finalizing)))
+        when(wishlistRepository.compareAndSetStatusWithTimestamp(eq(wishlistId), any(), eq(com.eneik.production.models.persistence.WishlistStatus.finalizing), any()))
                 .thenReturn(0);
 
         julesDispatchService.handlePrOpenedWorkflow(session);
