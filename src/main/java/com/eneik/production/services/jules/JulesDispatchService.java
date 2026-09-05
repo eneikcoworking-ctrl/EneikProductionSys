@@ -2553,6 +2553,8 @@ public class JulesDispatchService {
         // own check is evidence about the check, not about the brief (action plan 8.3).
         if (!EMPTY_COMPILER_ANSWER.equals(rejection)) {
             projectFlowService.returnCompileAttempt(admission.claimedIds());
+        } else {
+            projectFlowService.clampCompileCeilingOnEmptyCompilerAnswer(admission.claimedIds());
         }
 
         int attempts = compilerTask.getRetryCount();
@@ -2885,6 +2887,9 @@ public class JulesDispatchService {
         // spend the brief's budget, because it establishes nothing about the brief.
         if (!EMPTY_COMPILER_ANSWER.equals(cycleRejection)) {
             projectFlowService.returnCompileAttempt(wishlists.stream()
+                    .map(com.eneik.production.models.persistence.WishlistEntity::getId).toList());
+        } else {
+            projectFlowService.clampCompileCeilingOnEmptyCompilerAnswer(wishlists.stream()
                     .map(com.eneik.production.models.persistence.WishlistEntity::getId).toList());
         }
         String correction = "Your latest `" + planPath + "` was rejected for THIS cycle: " + cycleRejection
@@ -5129,20 +5134,25 @@ public class JulesDispatchService {
             // it's stale (same effective trust-window gate detectStuckSessions uses) closes that
             // gap - confirmed live as a real bottleneck on real product-code tasks in test-twenty-seventh.
             boolean revisingOrStuck = "revising".equals(session.getStatus()) || "stuck".equals(session.getStatus());
-            if (session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold && !revisingOrStuck) {
+            boolean isBlind = session.getBlindCycleCount() >= forcedUnblockBlindCycleThreshold;
+            if (!isBlind && !revisingOrStuck) {
                 continue;
             }
             Instant lastProgress = session.getLastProgressAt() != null ? session.getLastProgressAt() : session.getCreatedAt();
             // Davidson trust invariant: absence of an observable status transition is not evidence that
             // Jules stopped working. A session may legitimately stay silent for the full 60-minute
             // window. Configuration may extend this window, but can never shorten it.
-            if (!lastProgress.isBefore(staleSince)) {
+            // Law 8 (Single Well-Founded Limit): when a session is truly blind (activity log overflow or
+            // unreadable classifier for >= forcedUnblockBlindCycleThreshold cycles), the blind threshold IS
+            // the operational variant function. The 60-minute trust window applies ONLY to quiet legible sessions
+            // (revising/stuck), never holding a blind session in an undeclared second limit.
+            if (!isBlind && !lastProgress.isBefore(staleSince)) {
                 continue;
             }
             Instant nextActionAt = lastProgress
                     .plus(Duration.ofMinutes(trustWindowMinutes))
                     .plus(STUCK_RECOVERY_MESSAGE_INTERVAL.multipliedBy(session.getForcedUnblockAttempts()));
-            if (!now.isAfter(nextActionAt)) {
+            if (!isBlind && !now.isAfter(nextActionAt)) {
                 continue;
             }
 
@@ -5189,9 +5199,9 @@ public class JulesDispatchService {
                 continue;
             }
 
-            // Two unanswered nudges are still not proof of failure. Preserve the charitable interpretation
-            // until the independent long close window has elapsed.
-            if (!lastProgress.isBefore(closeSince)) {
+            // Two unanswered nudges are still not proof of failure for quiet sessions. Preserve the charitable interpretation
+            // until the independent long close window has elapsed; for blind sessions, unblock attempts exhaustion already terminates.
+            if (!isBlind && !lastProgress.isBefore(closeSince)) {
                 continue;
             }
 

@@ -50,10 +50,19 @@ public class BottleneckDetectionService {
                     row.tag(),
                     maxConcurrentJulesSessionsPerAccount
             );
-            if (!hasCapacity && row.oldestWaitingMinutes() > WAITING_THRESHOLD_MINUTES) {
-                var accounts = accountRepository.findAll();
-                long dailyLimited = accounts.stream().filter(account -> account.getStatus() == AccountStatus.daily_limited).count();
-                long apiBlocked = accounts.stream().filter(account -> account.getStatus() == AccountStatus.api_blocked).count();
+            var accounts = accountRepository.findAll();
+            long dailyLimited = accounts.stream().filter(account -> account.getStatus() == AccountStatus.daily_limited).count();
+            long apiBlocked = accounts.stream().filter(account -> account.getStatus() == AccountStatus.api_blocked).count();
+            long workingAccounts = accounts.stream()
+                    .filter(account -> account.getStatus() == AccountStatus.idle || account.getStatus() == AccountStatus.busy)
+                    .count();
+            boolean poolStructurallyDepleted = !accounts.isEmpty() && workingAccounts == 0;
+            // Law 8 (Fact vs Arbitrary Window):
+            // If the account pool is structurally depleted (no active accounts remain, all are daily_limited or api_blocked),
+            // capacity is zero as an established fact - report bottleneck immediately.
+            // When active accounts exist and are merely temporarily busy running sessions, the dwell window applies.
+            boolean bottleneckEstablished = !hasCapacity && (poolStructurallyDepleted || row.oldestWaitingMinutes() > WAITING_THRESHOLD_MINUTES);
+            if (bottleneckEstablished) {
                 String reason = "All Jules accounts are universal role-capable; the shared account pool has no free session slot for queued " + row.tag() + " work";
                 if (dailyLimited > 0 || apiBlocked > 0) {
                     reason += ". Capacity reduction: daily_limited=" + dailyLimited

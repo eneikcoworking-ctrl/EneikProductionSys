@@ -945,6 +945,15 @@ public class ClientDeliverableReadinessService {
             if (diagnostic.codeProducingItemCount() > 0) {
                 continue; // has real value - never touch
             }
+            // Law 8 (Fact vs Arbitrary Window):
+            // Withhold judgment if compilation is actively in flight for this project (a wishlist is compiling
+            // or pending movable) - never race an active compile session regardless of age.
+            boolean compilationInFlight = allWishlist.stream()
+                    .anyMatch(w -> w.getStatus() == WishlistStatus.compiling
+                            || (w.getStatus() == WishlistStatus.pending && w.movable()));
+            if (compilationInFlight) {
+                continue;
+            }
             if (diagnostic.createdAt() != null
                     && java.time.Duration.between(diagnostic.createdAt(), now).toMinutes() < EPIC_CLEANUP_MIN_AGE_MINUTES) {
                 continue; // too new to judge - give the compiler a chance to still link real work to it

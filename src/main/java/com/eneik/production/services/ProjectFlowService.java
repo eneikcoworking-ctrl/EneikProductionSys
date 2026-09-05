@@ -1805,7 +1805,16 @@ public class ProjectFlowService {
         Instant last = state.getLastOrchestratedAt();
         if (last != null) {
             long elapsedSeconds = Duration.between(last, now).getSeconds();
-            if (elapsedSeconds < ORCHESTRATION_COOLDOWN_SECONDS) {
+            // Law 8 (Fact vs Arbitrary Window):
+            // Cooldown applies when compilation work is already actively in flight for this project
+            // (a compiler task queued/claimed or wishlists currently in compiling state),
+            // preventing duplicative compiler dispatch races.
+            // When no compilation is in flight, new pending briefs do not wait for an artificial timer.
+            boolean hasActiveCompilerWork = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                    .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed)
+                    .anyMatch(this::isWishlistCompilerTask)
+                    || wishlistRepository.countByProjectIdAndStatus(projectId, WishlistStatus.compiling) > 0;
+            if (hasActiveCompilerWork && elapsedSeconds < ORCHESTRATION_COOLDOWN_SECONDS) {
                 throw new OrchestrationCooldownException(ORCHESTRATION_COOLDOWN_SECONDS - elapsedSeconds);
             }
         }
@@ -2407,9 +2416,14 @@ public class ProjectFlowService {
         java.util.List<UUID> admittedIds = admitted.stream().map(WishlistEntity::getId).collect(java.util.stream.Collectors.toList());
         java.util.Set<UUID> wonIds = new java.util.HashSet<>(self.claimWishlistsForCompilation(admittedIds));
         java.util.List<WishlistEntity> won = new java.util.ArrayList<>();
+        int initialCeiling = deriveInitialCompileCeiling(project.getId());
         for (WishlistEntity w : admitted) {
             if (wonIds.contains(w.getId())) {
                 w.setStatus(WishlistStatus.compiling);
+                if (w.getCompileAttemptCeiling() == null) {
+                    w.setCompileAttemptCeiling(initialCeiling);
+                    wishlistRepository.save(w);
+                }
                 won.add(w);
             }
         }
@@ -2668,6 +2682,60 @@ public class ProjectFlowService {
                     + "by this factory's own check, which establishes nothing about the brief", touched.size());
         }
     }
+
+    /**
+     * Law 8 (Down on empty compiler answer):
+     * When the compiler explicitly examines a brief and returns empty content (evidence about the brief),
+     * the attempt is not returned (Law 9) AND the ceiling is clamped down to current attempts,
+     * immediately establishing decompositionRefused without spinning further empty loops.
+     */
+    @Transactional
+    public void clampCompileCeilingOnEmptyCompilerAnswer(java.util.Collection<UUID> wishlistIds) {
+        if (wishlistIds == null || wishlistIds.isEmpty()) {
+            return;
+        }
+        java.util.List<WishlistEntity> touched = new java.util.ArrayList<>();
+        for (WishlistEntity w : wishlistRepository.findAllById(wishlistIds)) {
+            w.setCompileAttemptCeiling(Math.max(1, w.getCompileAttempts()));
+            touched.add(w);
+        }
+        if (!touched.isEmpty()) {
+            wishlistRepository.saveAll(touched);
+            log.info("ProjectFlowService: clamped compile ceiling down for {} brief(s) on empty compiler response (Law 8)",
+                    touched.size());
+        }
+    }
+
+    /**
+     * Law 8 (Derived Initial Compile Budget):
+     * The initial attempt budget A(w) for a new or uninitialized brief is derived from empirical project
+     * observations rather than assigned as a blind constant:
+     *   A(w) = f(наблюдения о том, на каком заходе компиляции этого проекта удавались)
+     *   - upward: if prior briefs required higher ceilings or succeeded at boundary k, ceiling is max(k+1, established)
+     *   - baseline: WishlistEntity.COMPILE_ATTEMPT_BUDGET
+     */
+    public int deriveInitialCompileCeiling(UUID projectId) {
+        if (projectId == null) {
+            return WishlistEntity.COMPILE_ATTEMPT_BUDGET;
+        }
+        java.util.List<WishlistEntity> projectWishlists = wishlistRepository.findByProjectId(projectId);
+        if (projectWishlists.isEmpty()) {
+            return WishlistEntity.COMPILE_ATTEMPT_BUDGET;
+        }
+        int maxConvertedAttempt = projectWishlists.stream()
+                .filter(w -> w.getStatus() == WishlistStatus.converted_to_task)
+                .mapToInt(WishlistEntity::getCompileAttempts)
+                .max()
+                .orElse(0);
+        int maxEstablishedCeiling = projectWishlists.stream()
+                .map(WishlistEntity::getCompileAttemptCeiling)
+                .filter(java.util.Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .max()
+                .orElse(WishlistEntity.COMPILE_ATTEMPT_BUDGET);
+        return Math.max(Math.max(maxConvertedAttempt + 1, maxEstablishedCeiling), WishlistEntity.COMPILE_ATTEMPT_BUDGET);
+    }
+
 
     private void revertWishlistsToPending(java.util.List<WishlistEntity> wishlists) {
         for (WishlistEntity w : wishlists) {
@@ -6167,12 +6235,22 @@ public class ProjectFlowService {
                 }
                 reason = "done_not_reached_main";
             } else {
-                boolean stale = task.getUpdatedAt() != null
-                        && java.time.Duration.between(task.getUpdatedAt(), now).toMinutes() / 60.0 >= BLOCKED_ITEM_STALE_THRESHOLD_HOURS;
-                if (!stale || claimService.hasActiveClaim(task.getId())) {
+                // Law 8 (Fact vs Arbitrary Window):
+                // If a task is claimed or in_progress, but has NO active claim in ClaimService,
+                // it is an orphaned in-progress task as an observable fact, not waiting 2 hours.
+                // If it is actively held by an agent/claim, it is not blocked.
+                // If it is planned or unassigned, it is flagged if it has not moved for BLOCKED_ITEM_STALE_THRESHOLD_HOURS.
+                if (claimService.hasActiveClaim(task.getId())) {
                     continue;
                 }
-                reason = "stale_in_progress";
+                boolean orphanedInProgress = task.getStatus() == TaskStatus.claimed
+                        || task.getStatus() == TaskStatus.in_progress;
+                boolean stale = task.getUpdatedAt() != null
+                        && java.time.Duration.between(task.getUpdatedAt(), now).toMinutes() / 60.0 >= BLOCKED_ITEM_STALE_THRESHOLD_HOURS;
+                if (!orphanedInProgress && !stale) {
+                    continue;
+                }
+                reason = orphanedInProgress ? "unclaimed_in_progress" : "stale_in_progress";
             }
             double hours = task.getUpdatedAt() == null ? 0.0
                     : java.time.Duration.between(task.getUpdatedAt(), now).toMinutes() / 60.0;

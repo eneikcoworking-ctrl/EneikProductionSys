@@ -37,11 +37,11 @@
 | 2, 7 | изоляция носителя, принадлежность ремонта, канал носителя | `5802de2`, `4ed78a8` | `DeliveryRealityLaw2CarrierChannelTest` |
 | 3 | замкнутость контура: дизайн идёт через компилятор | `d5e158d` | `DesignImplementationLoopClosureLaw3Test` |
 | 4 | предмет слияния: три читателя на одном предикате | `c344c23`, `ac076d2` | `JulesDispatchServiceLaw4MergeEvidenceTest`, `ProjectFlowServiceTest` |
-| 5 | независимый свидетель: done не влечёт landed, проверка веток и diff, структурный запрет status=done в предикатах ценности | `HEAD` | `IndependentWitnessLaw5Test` |
+| 5 | независимый свидетель: done не влечёт landed, проверка веток и diff, структурный запрет status=done в предикатах ценности | `35c22aa` | `IndependentWitnessLaw5Test` |
 | 6, 11 | погашение требования и множество решения: возврат заслонов | `8f5fcd8` | `ClientDeliverableReadinessServiceTest` |
-| 8 | оборот ремонта второго порядка; оборот вывода из работы | `5802de2`, `36edbe1` | `DeliveryRealityLaw8SecondOrderRepairTest`, `ProjectRetirementLaw8Test` |
+| 8 | вариантная функция: убывание повторов, единый предел слепого цикла, вывод начального бюджета компиляции и факты вместо окон | `5802de2`, `36edbe1`, `HEAD` | `DeliveryRealityLaw8SecondOrderRepairTest`, `ProjectRetirementLaw8Test`, `VariantFunctionLaw8Test` |
 | 9 | возврат бюджета брифа при внутреннем отказе | `e625c14`, `4ed78a8` | `WishlistCompileBudgetLaw9Test` |
-| 10 | монотонность меток (5 каналов) и структурный фильтр только успехов в выборках меток | `HEAD` | `WatermarkMonotonicityLaw10Test` |
+| 10 | монотонность меток (5 каналов) и структурный фильтр только успехов в выборках меток | `35c22aa` | `WatermarkMonotonicityLaw10Test` |
 | 11 | незнание не подчиняет работу: три состояния здоровья | `afe9552` | `TocSubordinationLeverTest` |
 | 12 | основание отказа; сообщение называет невыполнившийся конъюнкт | `098d639`, `ba86b10` | `OperationalPolicyServiceTest`, `OperationalPolicyReasonTest` |
 | 13 | ёмкость: бюджет GitHub шардирован по отпечатку токена | `20830c9` | `GitHubApiBudgetLaw13Test` |
@@ -720,18 +720,40 @@
       - Широкий регрессионный прогон 12 законов (`PrReviewApprovalLaw1Test`, `TaskEntityLaw1CarrierTest`, `TaskEntityLaw20Test`, `AutoMergeLaw20InvariantS4Test`, `DeliveryRealityLaw2CarrierChannelTest`, `DeliveryRealityLaw8SecondOrderRepairTest`, `DesignImplementationLoopClosureLaw3Test`, `ProjectAdmissionLaw25aTest`, `ProjectRetirementLaw8Test`, `ReviewAdmissionLaw16Test`, `IndependentWitnessLaw5Test`, `WatermarkMonotonicityLaw10Test`): **62 из 62 тестов зелёные**.
       - В `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`: Законы 5 и 10 переведены в статус «Держится» и исключены из списка дефектов Ядра.
 
+
+20. **Такт Antigravity (Инженер L2) 00:15 UTC. Закрыт Закон 8 (вариантная функция, слепой цикл, вывод $A(w)$, 4 окна заземлены на факты). ЯДРО ПОЛНОСТЬЮ ЗАКРЫТО. 104 из 104 тестов зелёные.**
+
+    * **Закон 8 (Вариантная функция, единый предел и заземление временных окон на факты):**
+      - **1. Единый предел слепого цикла (`forceUnblockOverflowedSessions`):**
+        Устранено противоречие двух пределов: при $v = \text{forcedUnblockBlindCycleThreshold} - \text{blindCycleCount} \le 0$ (`isBlind == true`) сессия больше не удерживается 60-минутным (`staleSince`) или 120-минутным (`closeSince`) окном доверия Дэвидсона. Окно доверия действует строго для тихих сессий с читаемым логом; нечитаемые сессии разблокируются/закрываются строго по объявленному порогу.
+      - **2. Вывод начального значения $A(w)$ из эмпирической истории проекта:**
+        * Реализован метод `ProjectFlowService.deriveInitialCompileCeiling(projectId)`: $A(w) = \max(\max(k+1), \text{maxEstablishedCeiling}, \text{COMPILE\_ATTEMPT\_BUDGET})$.
+        * Прием вишлиста на компиляцию штампует эмпирический потолок.
+        * **Вверх:** успех на границе поднимает потолок ещё нескомпилированных вишлистов проекта (`raiseCompileCeilingIfTheProbeSurvivedAtTheBoundary`).
+        * **Вниз:** пустой ответ компилятора (`EMPTY_COMPILER_ANSWER`) зажимает потолок вниз (`clampCompileCeilingOnEmptyCompilerAnswer`), переводя вишлист в `decompositionRefused` без холостых повторов на неразложимом брифе.
+      - **3. Замена/дополнение 4 временных окон наблюдаемыми фактами (Витгенштейн / Бергсон):**
+        * `EPIC_CLEANUP_MIN_AGE_MINUTES` (10 мин) в `ClientDeliverableReadinessService`: дополнен проверкой факта `compilationInFlight`. Если компиляция активна (`compiling` или `pending movable`), решение удерживается независимо от возраста эпика (защита от гонки с долгими сессиями Jules ~39 мин).
+        * `BLOCKED_ITEM_STALE_THRESHOLD_HOURS` (2 ч) в `ProjectFlowService.computeBlockedItems`: задачи со статусом `claimed` или `in_progress` без активного клейма (`!claimService.hasActiveClaim`) распознаются немедленно как `"unclaimed_in_progress"` без ожидания 2 часов.
+        * `WAITING_THRESHOLD_MINUTES` (10 мин) в `BottleneckDetectionService`: при структурном истощении пула аккаунтов (`poolStructurallyDepleted == true`, все аккаунты `daily_limited` или `api_blocked`) узкое место фиксируется мгновенно как установленный факт.
+        * `ORCHESTRATION_COOLDOWN_SECONDS` (300 с) в `ProjectFlowService`: кулдаун удерживает вызов только при наличии активной компиляции (`hasActiveCompilerWork`); при свободном компиляторе и наличии новых вишлистов искусственный сон не блокирует запуск.
+      - **4. Модульный заслон `VariantFunctionLaw8Test` (7/7 зелёные):**
+        Проверены строгое убывание, вывод потолка из истории, граничные подъёмы/зажимы, разблокировка слепого цикла, фактологическое обнаружение блокеров, структурное истощение пула и защита эпиков.
+      - **5. Широкий регрессионный срез 12 законов ядра:**
+        `VariantFunctionLaw8Test`, `BottleneckDetectionServiceTest`, `ClientDeliverableReadinessServiceTest`, `ProjectRetirementLaw8Test`, `DeliveryRealityLaw8SecondOrderRepairTest`, `WishlistCompileBudgetLaw9Test`, `IndependentWitnessLaw5Test`, `WatermarkMonotonicityLaw10Test`, `PrReviewApprovalLaw1Test`, `TaskEntityLaw1CarrierTest`, `TaskEntityLaw20Test`, `AutoMergeLaw20InvariantS4Test`: **104 из 104 тестов зелёные**.
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
 
 * **Регламент взаимодействия:** Руководствоваться правилами из `docs/architecture/AUTONOMOUS_OPERATING_REGULATION.md`.
-* **Текущий приоритетный фокус фабрики:**
-  - **Закон 8 (Вариантная функция декомпозиции и временные окна):**
-    * Единственный оставшийся дефект в списке ЯДРА (`ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`).
-    * Устранение магических констант времени (`ORCHESTRATION_COOLDOWN_SECONDS 300`, `BLOCKED_ITEM_STALE_THRESHOLD_HOURS 2`, `WAITING_THRESHOLD_MINUTES 10`, `EPIC_CLEANUP_MIN_AGE_MINUTES 10`).
-    * Вопрос: замещает ли окно длительность или наблюдаемый факт? Если факт — окно заменяется фактом (событие канала, переход состояния), а не числовой подгонкой.
-* **Философский паттерн:**
-  - Для Закона 8 и окон: Людвиг Витгенштейн (`LUDVIG_VITGENSHTEIN_01_FACT_STATE_REGISTER`, мир как совокупность фактов, а не вещей/интервалов) и Анри Бергсон (длительность как непрерывное становление vs пространственные фикции дискретных секунд).
+* **Статус ЯДРА:**
+  - Все законы Ядра закрыты кодом и заслонены падающими тестами (104/104 green).
+  - Ядро стабилизировано: $|{k \in K : \text{изменён при работе над } \Pi}| = 0$.
+* **Текущий приоритетный фокус аудита:**
+  - Верификация коммита по Закону 8 и прогон `VariantFunctionLaw8Test` на стороне Claude.
+  - Аудит телеметрии живой фабрики на Hetzner (проект `test-fiftieth`, прогресс сдачи клиентских пунктов 13/22).
+  - Переход к инспекции ПЕРИФЕРИИ $\Pi$ (Закон 17 — свидетельство diff, Закон 21 — непараллельность, Закон 24 — демаркация сбоев $\mathcal{L}_1 \not\to \mathcal{L}_2$).
 * **Режим ответа:** Минималистичный результат в плане и записке без лишнего шума.
+
 
 
