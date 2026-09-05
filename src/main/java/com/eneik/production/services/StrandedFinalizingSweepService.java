@@ -81,12 +81,11 @@ public class StrandedFinalizingSweepService {
     private final StrandedFinalizingSweepService self;
 
     /**
-     * How long {@code finalizing} may legitimately last. It covers one GitHub fetch plus a parse, so this is
-     * generous by roughly two orders of magnitude on purpose: the cost of releasing a live claim too early
-     * is a duplicated compile, and the cost of waiting is a halted project, but the compare-and-swap already
-     * makes the first impossible. Declared arbitrary budget, not a tuned number.
+     * How long {@code finalizing} may legitimately last. It covers one GitHub fetch plus a parse, so 3
+     * minutes is still generous by two orders of magnitude (plan parse takes < 2 seconds). The cost of
+     * waiting 30 minutes was a project frozen in DECOMPOSING whenever a compiler node got stranded.
      */
-    @Value("${stranded-finalizing.max-age-minutes:30}")
+    @Value("${stranded-finalizing.max-age-minutes:3}")
     private long maxAgeMinutes;
 
     public StrandedFinalizingSweepService(ProjectRepository projectRepository,
@@ -97,7 +96,7 @@ public class StrandedFinalizingSweepService {
         this.self = self;
     }
 
-    @Scheduled(cron = "${stranded-finalizing.cron:0 */10 * * * ?}")
+    @Scheduled(cron = "${stranded-finalizing.cron:0 * * * * ?}")
     public void sweep() {
         for (ProjectEntity project : projectRepository.findAll().stream()
                 .filter(p -> p.getStatus() == ProjectStatus.active)

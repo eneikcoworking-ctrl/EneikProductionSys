@@ -2056,11 +2056,25 @@ public class JulesDispatchService {
                     + "invocation; skipping this one instead of risking duplicate work", session.getId());
             return;
         }
+        boolean normalExit = false;
         try {
             handlePrOpenedWorkflowClaimed(session);
+            normalExit = true;
         } catch (RuntimeException e) {
             self.releasePrOpenedWorkflowClaim(session.getId());
             throw e;
+        } finally {
+            if (normalExit) {
+                taskRepository.findById(session.getTaskId()).ifPresent(t -> {
+                    if (t.getStatus() == TaskStatus.claimed) {
+                        julesSessionRepository.findById(session.getId()).ifPresent(s -> {
+                            if ("pr_opened".equals(s.getStatus())) {
+                                self.releasePrOpenedWorkflowClaim(s.getId());
+                            }
+                        });
+                    }
+                });
+            }
         }
     }
 
@@ -2398,6 +2412,10 @@ public class JulesDispatchService {
             }
             if (wishlistRepository.compareAndSetStatus(w.getId(), WishlistStatus.compiling, WishlistStatus.finalizing) == 1) {
                 claimedIds.add(w.getId());
+            } else if (wishlistRepository.compareAndSetStatus(w.getId(), WishlistStatus.pending, WishlistStatus.finalizing) == 1) {
+                // If earlier sweep or timeout reset the wishlist to pending while this compiler task was
+                // completing its run, this completion holds the PR and plan and is entitled to claim it into finalizing.
+                claimedIds.add(w.getId());
             }
         }
         if (claimedIds.isEmpty()) {
@@ -2443,6 +2461,7 @@ public class JulesDispatchService {
         List<UUID> wishlistIds = compilerTaskWishlistIds(compilerTask);
         if (wishlistIds.isEmpty()) {
             log.error("Compiler task {} has no compilesWishlistIds payload marker; cannot complete compilation", compilerTask.getId());
+            self.releasePrOpenedWorkflowClaim(session.getId());
             return;
         }
 
@@ -2477,6 +2496,7 @@ public class JulesDispatchService {
 
         if (admission.outcome() == CompilationAdmissionOutcome.IN_PROGRESS_ELSEWHERE) {
             log.info("Compiler task {}: another completion is already finalizing this exact batch right now; skipping without touching its PR/session.", compilerTask.getId());
+            self.releasePrOpenedWorkflowClaim(session.getId());
             return;
         }
 
