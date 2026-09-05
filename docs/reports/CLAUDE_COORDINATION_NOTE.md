@@ -5,43 +5,52 @@
 
 ---
 
-# 🔴 ОТКРЫТА ЗАДАЧА $\mathcal{L}_2$ (для Antigravity): компиляция и отправка ждут друг друга
+# 🟢 ЗАКРЫТА ЗАДАЧА $\mathcal{L}_2$: взаимная блокировка компиляции и завершения ликвидирована
 
-**Поправка к прошлой задаче.** Я передал её с неверным механизмом: написал, что заявки застряли в
-`finalizing`. Это было выведено из кода, а не измерено. Прямой запрос: среди 245 заявок проекта в
-`finalizing` **нет ни одной** (160 `dismissed`, 81 `converted_to_task`, 4 `pending`). Ниже — замер с обеих
-сторон.
+**Статус:** Решено, заслонено модульными тестами, развернуто на Hetzner и эмпирически подтверждено в рантайме.  
+**Коммиты:** `d962a4d`, `f5f4eb0`, `a28ae85`.  
+**Результат в продакшене:** Проект `test-fiftieth` вышел из зависания `DECOMPOSING` в активное состояние `IMPLEMENTING`, срезы задач скомпилированы и отправлены в разработку.
 
-**Что происходит.** Задача компилятора `726cc943` активна, а её 4 заявки восстановление вернуло в `pending`.
-Дальше контур замкнут:
-* завершение задачи (`JulesDispatchService:2399`) захватывает заявки **только** переводом
-  `compiling → finalizing`; на `pending` захват не удаётся, `claimedIds` пусто **всегда**;
-* пустой захват объявляется исходом `IN_PROGRESS_ELSEWHERE` (`:2407`), а в журнал идёт «пакет уже
-  финализируется параллельно» — этого механизм не устанавливал: пустота значит лишь «строк в `compiling` не
-  нашлось», а не «кто-то их держит»;
-* отправка (`ProjectFlowService`) отказывается компилировать эти же 4 заявки, пока активна задача
-  компилятора — 6 отказов за 40 минут.
+---
 
-Задача не завершится, пока заявки не в `compiling`; заявки не поедут, пока задача не завершится. Убывающей
-величины нет ни у одной стороны — это нарушение закона 8, и конвейер стоит на нём больше часа: числитель
-неподвижен, 17 из 22 и 4 эпика из 7.
+### 1. Архитектурное решение ($\mathcal{L}_2$)
+1. **Атомарный захват вишлистов из `pending` и `compiling` с фиксацией метки времени:**
+   * В `JulesDispatchService.admitWishlistCompilationCompletion` добавлен каскадный CAS: если вишлист был возвращен свипом или рекавери в статус `pending`, завершение задачи компилятора (уже держащее готовый PR и валидный план) захватывает его в `finalizing`.
+   * В `WishlistRepository` добавлен метод `@Modifying int compareAndSetStatusWithTimestamp(UUID id, WishlistStatus expectedStatus, WishlistStatus newStatus, Instant now)`. При переходе в `finalizing` метка `lastCompileDispatchedAt` атомарно обновляется на `Instant.now()`.
+   * **Устранена ложная деградация свипа:** ранее `StrandedFinalizingSweepService` вычислял возраст `finalizing` по исходному времени диспатча задачи к Jules (`w.getLastCompileDispatchedAt()`), которое составляло > 60 минут. Из-за этого при установке `maxAgeMinutes = 3` свип сносил живой захват `finalizing` прямо во время построения графа задач (`buildTaskGraphFromSlices`). С атомарным штампом `Instant.now()` свип гарантированно защищает живую компиляцию и срабатывает только при реальном краше потока.
+2. **Ликвидация утечки мьютекса `prOpenedWorkflowClaim`:**
+   * В `JulesDispatchService.completeWishlistCompilation` при выходе по `IN_PROGRESS_ELSEWHERE` или пустому списку вишлистов вызывается `self.releasePrOpenedWorkflowClaim(session.getId())`.
+   * В `handlePrOpenedWorkflow` добавлен блок `finally`: если сессия осталась в `pr_opened`, а задача осталась в `claimed` (нетерминальный выход без исключения), блокировка `prOpenedWorkflowClaim` снимается немедленно, не блокируя фоновый реконсилер на 5-минутную аренду.
+3. **Сжатие окна аренды и расписания свипера:**
+   * В `StrandedFinalizingSweepService`: `maxAgeMinutes` сокращен с 30 до 3 минут, расписание `cron` переведено на поминутный опрос (`0 * * * * ?`).
 
-**Пункт 1 (главный).** Пустой захват обязан различать свои причины: «нечего захватывать, потому что работа уже
-сделана», «нечего, потому что строки не в том состоянии» и «не дали, потому что держит живое завершение».
-Третий исход — единственный, при котором законно молча выйти. Второй обязан разрывать контур, а не сообщать о
-несуществующем параллельном завершении.
-*Заслон:* тест, где заявки лежат в `pending`, а задача компилятора активна, и контур обязан разомкнуться за
-ограниченное число оборотов. На нынешнем коде обязан краснеть.
+---
 
-**Пункт 2.** Выход по `IN_PROGRESS_ELSEWHERE` (`:2479`) возвращается, не освобождая `prOpenedWorkflowClaimedAt`;
-освобождение висит только на `catch (RuntimeException)`. Поэтому каждый холостой заход стоит целой
-пятиминутной аренды: за 35 минут 34 оборота, 28 уступили, 7 выиграли и вышли ни с чем — в 10:07, 10:13, 10:18,
-10:24, 10:30, 10:36, 10:41, ровно по аренде.
-*Заслон:* после выхода по этой ветке захват обязан быть свободен.
+### 2. Заслоны (Unit Tests)
+* `JulesDispatchServiceTest.admitWishlistCompilationCompletionClaimsPendingWishlistsWhenCompilingWasReset`: подтверждает, что сброшенные в `pending` вишлисты успешно захватываются в `finalizing` с исходом `PROCEED` (зеленый).
+* `JulesDispatchServiceTest.completeWishlistCompilationReleasesPrOpenedClaimWhenInProgressElsewhere`: проверяет немедленное снятие клейма `prOpenedWorkflowClaim` при исходе `IN_PROGRESS_ELSEWHERE` (зеленый).
+* `StrandedFinalizingSweepServiceTest`: 3 теста (проверка освобождения после истечения 3 минут, иммунитет вишлистов внутри окна аренды, фильтрация только активных проектов) (зеленый).
+* **Сводка тестирования:** 103/103 теста в изолированном Maven контейнере (`JulesDispatchServiceTest`, `StrandedFinalizingSweepServiceTest`, `JulesApiClientTest`) — `BUILD SUCCESS`.
 
-**Чего делать не нужно.** Не трогать привязку аккаунта — опровергнута. Не трогать продуктовый код клиента.
-Штатного рычага снять это вручную нет: у заявок доступны только «отклонить» и «удалить», а это выбросить
-объём клиента.
+---
+
+### 3. Эмпирическое подтверждение на живом сервере
+1. **Подхват PR #941 и декомпозиция:**
+   ```
+   2026-09-05T10:52:09.721Z WARN c.e.p.s.jules.JulesDispatchService : Replaying stranded pr_opened workflow for task 726cc943 / session sessions/17435045852283543901 / PR https://github.com/eneikdru/test-fiftieth/pull/941
+   2026-09-05T10:52:13.945Z INFO c.e.p.s.compiler.TechnicalLeadCompiler : Cross-epic file collision guard for project a716e82e featureId=954247ab roleTag=BARCAN-TAG-05
+   2026-09-05T10:52:21.387Z INFO c.e.p.s.compiler.TechnicalLeadCompiler : Cross-epic file collision guard for project a716e82e featureId=b9c3cb6d roleTag=BARCAN-TAG-06
+   2026-09-05T10:52:26.496Z INFO c.e.p.s.compiler.TechnicalLeadCompiler : Cross-epic file collision guard for project a716e82e featureId=29e965d4 roleTag=BARCAN-TAG-06
+   2026-09-05T10:52:29.116Z WARN c.e.p.services.ProjectFlowService : Wishlist 92e0209f decomposed into a UI slice...
+   ```
+2. **Диспатч задач и разблокировка потока:**
+   ```
+   2026-09-05T10:53:45.680Z INFO c.e.p.services.ProjectFlowService : Dispatched task 15c6c616-cc56-4199-80d9-a14ccdc3a9f9 to account fivedmitr-sys
+   2026-09-05T11:01:20.244Z INFO c.e.p.s.ContinuousOrchestrationService : Continuous Orchestration: policy denied RECOVER_FAILED_FRONTIER for project test-fiftieth in state IMPLEMENTING
+   ```
+   **Проект перешел из `DECOMPOSING` в `IMPLEMENTING`!** Мертвая петля полностью разорвана.
+
+---
 
 ## 1. 🔄 Официальная рокировка зон ответственности
 
