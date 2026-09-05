@@ -811,3 +811,192 @@ u-карты; на разборе выяснилось, что там подгр
 
 Полное состояние законов и то, какие из них держатся, — в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`.
 Здесь описано **что есть**; там — **каким это обязано быть**.
+
+---
+
+## XII. Сверка механизмов с семействами образцов
+
+Разделы выше судят механизмы по модели. Здесь — по корпусу, с критерием силы из
+`docs/philosopher-patterns/03_PATTERN_STRENGTH.md`. У каждого механизма назван **образец, на котором он
+стоит**, **форма** и **наблюдение, решающее вопрос**.
+
+Форма: **сильная** — исполнение подтверждено падающим заслоном или живым замером; **слабая** — недостаток
+измерен; **не мерено** — судил по чтению кода, замера нет. Последнее не оценка, а честная оговорка, и таких
+здесь большинство: 127 механизмов за один такт измерить нельзя, а делать вид, что измерил, — то самое
+мошенничество.
+
+### Ось потока
+
+| Механизм | Семейство | Форма | Что решит вопрос |
+|---|---|---|---|
+| `ProjectFlowService` | `PART_WHOLE_OWNERSHIP` | **слабая** | Владение не объявлено: приём, компиляция, отправка и подсчёт блокеров в одном классе. Найти поле, которое пишут два пути внутри него. |
+| `ProjectFactoryService` | `BOUNDARY_TOPOLOGY` | **сильная** | Граница приёма и провижининга заслонена структурно: сетевых клиентов нет во всём графе вызовов приёма. |
+| `GitHubProjectFactoryClient` | `WORLD_VERSION_MAP` | не мерено | Назвать клиента на старой схеме репозитория и показать, чем покрыт. |
+| `LinearProjectFactoryClient` | `RIGID_API_REFERENT` | не мерено | Прогнать контракт против текущей версии Linear. |
+| `ProjectWorkspaceFactoryService` | `ACTUAL_OBJECT_REGISTER` | не мерено | Назвать, кто вправе удалить рабочее пространство. |
+| `RequirementGroundingService` | `INTENSION_COMPATIBILITY` | **сильная** | Дописывает, не заменяя: слова клиента остаются. Проверяется тем, что исходный текст присутствует в промпте целиком. |
+| `MarketCorpusService` | `RELIABILITY_CHAIN` | не мерено | Назвать возраст записи корпуса и правило её свежести. |
+| `MarketComplianceGate` | `PROHIBITION_AS_CODE` | **сильная** | Ограничен уставным: «не покрыто» есть факт. Опровержение — найти пункт, где гейт судит о вкусе. |
+| `MarketResearchService` | `RAG_GROUNDING_CAPSULE` | **сильная** | Коммитит найденное файлом с источником, а не пересказывает ответ модели. |
+| `OnboardingAuditService` | `TRUTH_STATUS_TABLE` | не мерено | Найти вызывающего, компилирующегося без обработки «стек не опознан». |
+| `RepositoryStackAnalyzer` | `CATEGORY_ERROR_SCAN` | не мерено | Подсунуть репозиторий смешанного стека и посмотреть, объявит ли он обе категории. |
+| `StackProfile` | `SENSE_REFERENCE_SPLIT` | не мерено | Проверить, что отображаемое имя стека и его идентификатор разведены. |
+| `TechnicalLeadCompiler` | `INSTITUTIONAL_FACT_REGISTER` | **сильная** | Задача создаётся правилом компиляции и наследует эпик; заслон `DesignImplementationLoopClosureLaw3Test`. |
+| `FeatureService` | `ACTUAL_OBJECT_REGISTER` | **сильная** | Эпик чеканится лениво и один раз; заявка без эпика становится эпиком самой себе — падения нет, есть безопасный исход. |
+| `EpistemicMetadataClassifier` | `LEVEL_OF_ABSTRACTION_LOCK` | **сильная** | До него все эпики получали одну константу — различения не было. Опровержение: посчитать дисперсию оценок. |
+| `KanoClass` | `ANCHOR_BOUND_NAME` | **сильная** | Одно правило — один дом. Опровержение: найти второй парсер класса Кано. |
+| `EmsFlowStage` | `ANCHOR_BOUND_NAME` | **сильная** | Тот же критерий: найти второй источник порядка стадий. |
+| `SelfFalsificationEpicMatcher` | `SUBSTITUTION_ORACLE` | **сильная** | Детерминированный, не-ИИ: суждение о тождестве требований воспроизводимо. |
+| `WishlistContentSimilarityMatcher` | `SUBSTITUTION_ORACLE` | **сильная** | Ловит семантический дубликат; случай подтверждён живым происшествием. |
+| `WishlistService` | `ACTUAL_OBJECT_REGISTER` | не мерено | Назвать, кто вправе удалить заявку помимо `hardDelete` и чистки призраков. |
+| `StrandedFinalizingSweepService` | `PART_WHOLE_OWNERSHIP` | **сильная** | Единственный, кто двигает застрявшую строку; заслон `StrandedFinalizingSweepServiceTest`. Остаток: аренда назначена, а не выведена. |
+| `JulesDispatchService` | `PART_WHOLE_OWNERSHIP` | **слабая** | Владение не объявлено; 5752 строки. Тот же критерий, что у `ProjectFlowService`. |
+| `JulesApiClient` | `TRUTH_STATUS_TABLE` | **сильная** | Третий исход проверки источника виден в результате; заслон `JulesApiClientTest` требует ноль POST при неудачном листинге. |
+| `SessionLifecycleService` | `PERFORMATIVE_COMMIT` | **сильная** | Объявление «отменено» прослежено до реального удаления на чужой стороне: последующий GET даёт подлинный 404. |
+| `PersistentWorkerSessionService` | `PART_WHOLE_OWNERSHIP` | **сильная** | Говорит только со своей таблицей, никогда с транспортом Jules напрямую. |
+| `ClaimService` | `INSTITUTIONAL_FACT_REGISTER` | **сильная** | Притязание создаётся правилом и записывается; число попыток названо в журнале («attempt N/14»). |
+| `LeaseWatchdogService` | `DEFEASIBLE_EXCEPTION_LEDGER` | **сильная** | У всякой аренды есть срок, и он жнётся. Опровержение: найти притязание без срока. |
+| `AccountHealthService` | `TRUTH_STATUS_TABLE` | **сильная** | Череда неопознанных отказов больше не растворяется; заслон `AccountHealthServiceLaw14Test`, живой замер — аккаунт отошёл в сторону. |
+| `BottleneckAwarePriorityService` | `DECISION_EXPECTED_LOSS` | **слабая** | Переупорядочивает очередь, но не заставляет неограничения простаивать. Опровержение: показать случай, где неограничение уступило ограничению. |
+| `BottleneckDetectionService` | `CAUSAL_PROCESS_TRACE` | не мерено | Проследить от названного узкого места к наблюдаемому следствию. |
+| `AutoMergeService` | `FALSIFICATION_HARNESS` | **сильная** | Счётный инвариант мест слияния ломается на любом новом; на прежней версии — список имён, то есть слабая форма. |
+| `GitHubPullRequestService` | `PROHIBITION_AS_CODE` | **сильная** | Запрет в точках записи исполним и заслонён; живьём отказал трижды, уборка гейтом упала до нуля. Остаток: внедрение «необязательное». |
+| `GitHubApiBudgetService` | `RELIABILITY_CHAIN` | **сильная** | Цена обхода ограничена остатком работы, а не историей. |
+| `GithubAccessService` | `RIGHTS_DUTIES_MATRIX` | не мерено | Найти отношение доступа без теста запрета. |
+| `CodeChangeClassifier` | `CATEGORY_ERROR_SCAN` | **сильная** | Сторона ошибки выбрана по её цене: запрет, а не разрешение. Опровержение: показать стек, на котором список устареет опасно. |
+| `GateOrchestrator` | `BOUNDARY_TOPOLOGY` | не мерено | Назвать стадию, на которой гейт не достижим ни одним путём к `done`. |
+| `BaseQualityGate` | `LAMBDA_CORE_REDUCTION` | не мерено | Написать тест решения гейта без подстановок. |
+| `BackendContractGate` | `RIGID_API_REFERENT` | не мерено | Прогнать контракт прежнего потребителя. |
+| `DesignExcellenceGate` | `FALSIFICATION_HARNESS` | **слабая** (исправлена) | Читал поле, которого никто в продакшене не писал, — зелен всегда. Опровержение: найти производственного писателя поля. |
+| `VerificationEvidenceGate` | `CONSTRUCTIVE_PROOF_OBJECT` | **сильная** | Слияние с нулём изменений признаётся законным исходом проверки, а не пустотой. |
+| `EpistemicLayerInvariantGate` | `PART_WHOLE_OWNERSHIP` | **сильная** | Единственное место, где куайновская демаркация исполняется машиной: периферии запрещено менять файлы ядра. |
+| `BranchGarbageCollectorService` | `DECISION_EXPECTED_LOSS` | **сильная** | Порог динамический, по трём сигмам, а не назначенный. |
+| `PrReviewPipelineService` | `PLANNING_CONSISTENCY` | не мерено | Спросить у дашборда, GitHub и рантайма следующее действие по одному PR и сравнить. |
+| `ClientDeliverableReadinessService` | `SUBSTITUTION_ORACLE` | **сильная** | Слияние от посторонней задачи пункт не закрывает — отказ от подстановки в строгой форме. |
+| `DeliveryRealityProducerService` | `TELEOSEMANTIC_FEEDBACK` | **сильная** | Дал читателя сигналу, который упирался в поле дашборда. Остаток: перепроизводство заявок одного источника. |
+| `ProductLaunchabilityService` | `KNOWLEDGE_FIRST_GATE` | **сильная** | Запускаемость подтверждается наличием способа запуска, а не убеждением. |
+
+### Суждение
+
+| Механизм | Семейство | Форма | Что решит вопрос |
+|---|---|---|---|
+| `VerdictLayer` | `INFERENTIAL_SCOREBOARD` | **сильная** | Слой объявляет набор утверждений **до** суждения — область не растёт по ходу. |
+| `Verdict` | `TRUTH_STATUS_TABLE` | **сильная** | Три значения в типе; «не установил» невозможно округлить до «в порядке» на стороне вызывающего. |
+| `Judgement` | `CONVERSATION_MAXIM` | **сильная** | Для всего, кроме «разрешаю», причина обязательна: отказ, который нельзя проверить, есть обвинение. |
+| `VerdictReconciliation` | `PARACONSISTENT_QUARANTINE` | **сильная** | Противоречие слоёв сводится, а не гасит систему; читает и не гейтит намеренно. |
+| `VerdictGate` | `PROHIBITION_AS_CODE` | **слабая** | Ограничивает лишь то, что фабрика **сообщает**, приёмку не трогает. Опровержение: назвать действие, которое он запретил. |
+| `AcceptanceVerdictLayer` | `SUBSTITUTION_ORACLE` | **сильная** | Ловит подмену: число слияний не есть показанное покупателю. |
+| `RuntimeVerdictLayer` | `RELIABILITY_CHAIN` | **сильная** (после починки) | Хранимое «упало» больше не выдаётся за текущий факт. Опровержение: назвать возраст вердикта о запуске. |
+| `DoctrineVerdictLayer` | `TELEOSEMANTIC_FEEDBACK` | **слабая** | Судит, и никто не слышит: писал «отказано», пока конвейер рапортовал 82%. Опровержение: назвать действие, изменённое его вердиктом. |
+| `InfrastructureVerdictLayer` | `SELF_MODEL_SANITY` | **сильная** | Проверяет исправность инструмента до суждения о предмете. |
+| `SixSigmaVerdictLayer` | `TRUTH_STATUS_TABLE` | **сильная** | Воздерживается вместо числа — третий исход исполнен буквально. |
+| `JudgmentAgentClient` | `DECISION_EXPECTED_LOSS` | **сильная** | Цена вызова названа и проверена настоящим вызовом, а не обещанием плана. |
+| `FactoryJudgmentService` | `FALSIFICATION_HARNESS` | **сильная** | Расписание движимо опровержением: подтверждения бесплатны и не сообщают ничего. |
+| `DeliveredWorkJudgmentService` | `CONSTRUCTIVE_PROOF_OBJECT` | **сильная** | Спрашивает у слитого diff то, на чём задача обещала проверяться. |
+| `CriteriaEvidenceSelector` | `CONVERSATION_MAXIM` | **сильная** | Обрезание по длине заменено выбором по отношению к делу; пропущенное названо. |
+| `LeverPromotionService` | `BELIEF_UPDATE_LEDGER` | **сильная** | Полномочие даётся накопленным свидетельством, не деплоем и не таймером. |
+| `LeverStage` | `ANCHOR_BOUND_NAME` | **сильная** | Значения совпадают со словарём `OperationalTruthService` — один канонический словарь. |
+| `LeverAgreement` | `TRUTH_STATUS_TABLE` | **сильная** | Четыре значения по Белнапу: «нет свидетельства» не есть «ложь». |
+
+### Измерение
+
+| Механизм | Семейство | Форма | Что решит вопрос |
+|---|---|---|---|
+| `ProcessControlService` | `LEVEL_OF_ABSTRACTION_LOCK` | **сильная** | Подгруппа названа, смешение проектов и календаря запрещено; пределы держатся неизменными. |
+| `ConstraintIdentificationService` | `CAUSAL_PROCESS_TRACE` | **сильная** | Барабан определяется, а не назначается. |
+| `LaunchabilityConstraintService` | `BOUNDARY_TOPOLOGY` | **сильная** (после выноса) | Определение ограничения вынесено из чужого цикла. Опровержение: найти второе место, где оно определяется. |
+| `TocSubordinationLever` | `PRINCIPLED_INTEGRITY` | **слабая** | Знает, что положить ограничение в очередь неверно, и всё ещё в тени. Опровержение: назвать случай, где неограничение уступило. |
+| `FlowMetricsService` | `SUPERVENIENCE_WATCH` | **сильная** | Закон Литтла как живая сверка: расхождение означает, что врёт один из трёх замеров. |
+| `TaskWaitTimeService` | `CATEGORY_ERROR_SCAN` | **сильная** | Время в сессии и время в очереди разведены как разные роды. |
+| `SixSigmaAuditService` | `CATEGORY_ERROR_SCAN` | **слабая** (исправлялась) | Классификация дефекта шла подстрочным совпадением свободного текста. Опровержение: подсунуть текст со словом-омонимом. |
+| `EmsMetricsService` | `LEVEL_OF_ABSTRACTION_LOCK` | не мерено | Найти на одном экране величины разных уровней без преобразования. |
+| `SystemStatusService` | `ANTI_MIRROR_TELEMETRY` | **слабая** | Показывал `systemStatus: ok`, пока контур стоял. Опровержение: сверить свод с живым журналом. |
+| `CommandDashboardService` | `EXTENDED_COGNITION_TOOL` | не мерено | Спросить у экрана, чего он не знает. |
+| `ProjectOperationalContextService` | `INDEXICAL_CONTEXT_LOCK` | не мерено | Проверить, что «текущий проект» всегда получает явный контекст. |
+| `ClientDeliveryService` | `CONVERSATION_MAXIM` | не мерено | Дать сводку следующему работнику и спросить, что делать. |
+| `SystemProgressTracker` | `TELEOSEMANTIC_FEEDBACK` | **сильная** | Пишется только там, где есть выход: «занята» и «движется» разведены. |
+| `AiHealthTracker` | `SUPERVENIENCE_WATCH` | **сильная** | Ловит случай, когда активность процесса есть, а содержания нет. |
+| `RiskLevelCalculator` | `BELIEF_UPDATE_LEDGER` | не мерено | Назвать свидетельство, изменившее оценку риска. |
+| `MLPredictionServiceClient` | `KNOWLEDGE_FIRST_GATE` | **сильная** | Предсказание не действует само — идёт через лестницу продвижения. |
+
+### Самопроверка
+
+| Механизм | Семейство | Форма | Что решит вопрос |
+|---|---|---|---|
+| `FalsificationCycleService` | `FALSIFICATION_HARNESS` | **сильная** | Единственный, кому позволено порождать замену мёртвой задаче. |
+| `EvidenceCoherenceService` | `INUS_FACTOR_CHECK` | **сильная** по устройству, **не мерено** по читателю | Сводит три независимых источника. Опровержение: назвать решение, изменённое его выводом. |
+| `OpsAuditorService` | `KNOWLEDGE_FIRST_GATE` | не мерено | Проверить, воздерживается ли он при неустановленном или чинит по догадке. |
+| `PlatformSelfReferenceDetector` | `CATEGORY_ERROR_SCAN` | **сильная** | Заводская находка не есть требование клиента; случай измерен — 14 «эпиков» из 18 были шумом. |
+| `FactorySelfHealthService` | `SELF_MODEL_SANITY` | **сильная** | Фабрика знает своё состояние до необратимых решений. |
+| `KaizenService` | `BELIEF_UPDATE_LEDGER` | **сильная** | Исчерпание записывается, а не наступает молча. |
+| `PlannedWorkRecoveryService` | `PERFORMATIVE_COMMIT` | **сильная** (после починки) | Объявление «продукт готов» теперь прослежено до свидетельства доставки; заслон доказан в обе стороны. |
+| `ContinuousOrchestrationService` | `PLANNING_CONSISTENCY` | **сильная** | Один распорядитель очерёдности вместо десятка кронов. |
+| `OperationalPolicyService` | `PROHIBITION_AS_CODE` | **сильная** | Отказ исполним и объясним: политика называет причину. |
+| `OperationalFlowCoreService` | `TRUTH_STATUS_TABLE` | не мерено | Найти состояние, не покрытое ни одним переходом матрицы. |
+| `OperationalTruthService` | `INSTITUTIONAL_FACT_REGISTER` | **сильная** | Лестница продвижения — словарь, создающий статус правилом. |
+| `OperationalAction` | `ANCHOR_BOUND_NAME` | **сильная** | Одно перечисление действий, один референт. |
+| `FlowSpineService` | `ANTI_MIRROR_TELEMETRY` | **сильная** | Публикует свидетельство против собственного благополучия: помечает `done_is_not_delivery` предупреждением. |
+| `TrustSnapshotService` | `PERSISTENCE_SNAPSHOT` | **сильная** | Снимок дозаполняется настоящим исходом, личность сохраняется во времени. |
+
+### Внешние системы, дизайн, рантайм, журнал
+
+| Механизм | Семейство | Форма | Что решит вопрос |
+|---|---|---|---|
+| `GoogleAiResourceService` | `WORLD_VERSION_MAP` | не мерено | Назвать модель, снятую с поддержки, и путь перехода. |
+| `GeminiContextService` | `RAG_GROUNDING_CAPSULE` | **сильная** | Знание индексируется куском с источником, а не пересылается сырым текстом. |
+| `GeminiContextCacheManager` | `DECISION_EXPECTED_LOSS` | **сильная** | Выигрыш измерен до и после: время до первого токена и входная цена. |
+| `EmbeddingSimilarityUtil` | `ANCHOR_BOUND_NAME` | **сильная** | Один дом для вычисления. Опровержение: найти вторую копию косинуса. |
+| `StitchClient` | `BOUNDARY_TOPOLOGY` | **сильная** | Единственная дверь к чужому сервису; знает, из какого кармана платится вызов. |
+| `DesignAssetService` | `ACTUAL_OBJECT_REGISTER` | не мерено | Назвать, кто вправе удалить черновик. |
+| `VideoAssetService` | `ACTUAL_OBJECT_REGISTER` | не мерено | То же для видео. |
+| `RuntimeLauncherClient` | `BOUNDARY_TOPOLOGY` | **сильная** | Единственное, что знает о сайдкаре; бэкенд не трогает Docker сам. |
+| `GeminiObserverActionService` | `RIGHTS_DUTIES_MATRIX` | **сильная** | Полномочие открывает дверь к существующей операции, а не добавляет способность. |
+| `GeminiProjectObserverService` | `DEFEASIBLE_EXCEPTION_LEDGER` | **сильная** | Выведен навсегда, заперт миграцией, след оставлен — вечное исключение объявлено правилом. |
+| `DesignShopOrchestrationService` | `ESSENCE_BEFORE_OPTION` | **сильная** | Инвариант назван: полная готовность недостижима по устройству, значит «100%» означает «готово собрать круг». |
+| `DesignConsistencyAuditService` | `CROSS_SCREEN_JACCARD_GATE` | **сильная** | Экраны сверяются между собой, а не только с системой — ровно сильная форма семейства. |
+| `DesignSystemFalsificationService` | `FALSIFICATION_HARNESS` | **сильная** | Фальсифицирует уже слитый UI, а не догадку до сборки. |
+| `DesignDriftMonitorService` | `PLANNING_CONSISTENCY` | **сильная** | Встраивается в чужое окно наблюдения, не открывая второго. |
+| `ClientRuntimeObservabilityService` | `SELF_MODEL_SANITY` | **сильная** | Не притворяется сравнением там, где сравнивать не с чем: прямо объяснено, почему это не решатель. |
+| `BetaPosterior` | `BELIEF_UPDATE_LEDGER` | **сильная** | Предел выводится из накопленного свидетельства, а не назначается. Образец правильной формы для всей фабрики. |
+| `RuntimeHealthShiftDetector` | `CATEGORY_ERROR_SCAN` | **сильная** | Отказ вести разные роды единиц одной машинерией: подгруппа-эпик и временной ряд разведены. |
+| `ProductCapabilityService` | `SUBSTITUTION_ORACLE` | **сильная** | Знаменатель берётся из утверждений продукта, а не из нашей декомпозиции — защита от самоаттестации. |
+| `LogScope` | `INDEXICAL_CONTEXT_LOCK` | **сильная** | Область не плавает: всякая строка получает явный контекст. |
+| `ScopedBufferAppender` | `PROHIBITION_AS_CODE` | **сильная** | Точка исполнения запрета: заводское в проектный буфер не попадает. |
+| `LogScopeBuffer` | `PART_WHOLE_OWNERSHIP` | **сильная** | Хранит только проектное; владение объявлено. |
+| `DurableProjectLogAppender` | `PERSISTENCE_SNAPSHOT` | **сильная** | Журнал переживает пересоздание контейнера. |
+| `ProjectLogFlushQueue` | `DECISION_EXPECTED_LOSS` | **сильная** | Ограничена, чтобы отказ базы вырождался в потерю истории, а не в падение. |
+| `ProjectEventLogService` | `PERSISTENCE_SNAPSHOT` | **сильная** | Журнал не зависит от деплоев. |
+| `ProjectEventLogRetentionService` | `LEVEL_OF_ABSTRACTION_LOCK` | **сильная** | Ограничение по смыслу, а не по возрасту: время не принимается за незначимость. |
+| `SystemSettingsService` | `ESSENCE_BEFORE_OPTION` | **сильная** | Умеет докладывать о флагах без значения — ищет собственную муду. |
+| `ProjectTreeService` | `SUPERVENIENCE_WATCH` | **сильная** | Только проекция уже вычисленного; второго источника истины не создаёт. |
+| `IdleProjectAdviceService` | `TELEOSEMANTIC_FEEDBACK` | не мерено | Назвать действие, изменённое советом. |
+| `RoleAdviceLoopService` | `TELEOSEMANTIC_FEEDBACK` | не мерено | То же. |
+| `RoleCapabilityLoader` | `RELIABILITY_CHAIN` | не мерено | Назвать источник и свежесть устава роли. |
+| `RoleRulesParser` | `CATEGORY_ERROR_SCAN` | не мерено | Подсунуть правило неизвестного рода и посмотреть, объявит ли он это. |
+| `JulesRoleCapabilities` | `ANCHOR_BOUND_NAME` | **сильная** | Канонические возможности ролей в одном месте. |
+| `TaskTitleBuilder` | `RIGID_API_REFERENT` | **сильная** | Ограничение чужой системы вынесено в одну точку, а не размазано по вызовам. |
+| `ProjectAuditPipelineService` | `TELEOSEMANTIC_FEEDBACK` | **сильная** | Две стадии сняты именно потому, что ничего не проверяли: сигнал без читателя удалён. |
+
+### Итог сверки
+
+127 механизмов, посчитано по таблицам: **90 в сильной форме**, **9 в слабой**, **28 не мерено** — судил по
+чтению кода, замера нет. (Первую редакцию этого абзаца я написал по памяти — 79/9/39 — и цифры не сошлись со
+счётом. Оставляю признание здесь: файл, написанный против подделки формы, не имеет права начинаться с
+непосчитанного числа.)
+
+Один случай смешанный и засчитан в сильные: `EvidenceCoherenceService` силён по устройству и не мерен по
+читателю — назвать решение, которое изменил его вывод, я не могу.
+
+Девять слабых механизмов, семью пунктами по убыванию цены:
+
+1. `ProjectFlowService` и `JulesDispatchService` — владение не объявлено (`PART_WHOLE_OWNERSHIP`, D004).
+   Крупнейший долг: пока приём, компиляция и отправка в одном классе, критерий Куайна недостижим.
+2. `DoctrineVerdictLayer` и `VerdictGate` — судят, и никто не слышит (`TELEOSEMANTIC_FEEDBACK`).
+3. `TocSubordinationLever` — знает верное и остаётся в тени (`PRINCIPLED_INTEGRITY`).
+4. `SystemStatusService` — свод расходился с живым состоянием (`ANTI_MIRROR_TELEMETRY`).
+5. `BottleneckAwarePriorityService` — переупорядочивает, но не подчиняет (`DECISION_EXPECTED_LOSS`).
+6. `SixSigmaAuditService` — классификация подстрокой (`CATEGORY_ERROR_SCAN`).
+7. `DesignExcellenceGate` — читал поле без производственного писателя (`FALSIFICATION_HARNESS`); исправлен.
+
+Тридцать девять «не мерено» — не упрёк механизмам, а мера моего знания. Каждому назван замер, который снимет
+вопрос; это список работы, а не список подозрений.
