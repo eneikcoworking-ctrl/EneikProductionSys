@@ -388,7 +388,7 @@ class GitHubSweepBudgetEfficiencyTest {
         );
 
         GitHubPullRequestService.PullRequestSnapshot snapshot = new GitHubPullRequestService.PullRequestSnapshot(
-                true, "test-fiftieth", List.of(), List.of(mergedPr, closedPr), Instant.now()
+                true, "eneikdru", "test-fiftieth", List.of(), List.of(mergedPr, closedPr), null
         );
         when(gitHubPullRequestService.pullRequestSnapshot(activeProject)).thenReturn(snapshot);
         when(julesSessionRepository.findByPrUrlIn(any())).thenReturn(List.of(winningSession));
