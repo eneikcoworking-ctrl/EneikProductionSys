@@ -65,6 +65,8 @@ services:
     # beside every other limit in this factory, rather than chosen inside the launcher.
     environment:
       CLIENT_STACK_MEM_LIMIT: ${CLIENT_STACK_MEM_LIMIT:-384m}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   # 2026-08-28: Primary Autonomous Judgment Service (Gemini REST API + Shadow Arbiter Fallback).

@@ -3701,9 +3701,19 @@ public class ProjectFlowService {
         }
         StringBuilder sb = new StringBuilder();
         for (var epic : epics) {
+            String title = epic.getTitle();
+            String jtbd = epic.getJtbd();
+            boolean hasRealTitle = title != null && !title.isBlank() && !"(untitled)".equalsIgnoreCase(title.trim());
+            boolean hasRealJtbd = jtbd != null && !jtbd.isBlank() && !"(no jtbd recorded)".equalsIgnoreCase(jtbd.trim());
+            if (!hasRealTitle && !hasRealJtbd) {
+                continue;
+            }
             sb.append("- existingEpicId=\"").append(epic.getId()).append("\": ")
-                    .append(defaultText(epic.getTitle(), "(untitled)")).append(" - ")
-                    .append(defaultText(epic.getJtbd(), "(no jtbd recorded)")).append("\n");
+                    .append(defaultText(title, "(untitled)")).append(" - ")
+                    .append(defaultText(jtbd, "(no jtbd recorded)")).append("\n");
+        }
+        if (sb.isEmpty()) {
+            return "(none yet - this project has no epics/epics so far; every epic you produce is new)";
         }
         return sb.toString();
     }
@@ -4142,6 +4152,19 @@ public class ProjectFlowService {
         ProjectEntity promptProject = projectId == null
                 ? null
                 : projectRepository.findById(projectId).orElse(null);
+        boolean allFollowUps = wishlists.stream().allMatch(w ->
+                w.getSource() != null
+                        && w.getSource() != WishlistSource.client
+                        && w.getSource() != WishlistSource.philosophical_falsification);
+        String valueChainsPrompt = allFollowUps
+                ? "(Follow-up/defect batch: value chains omitted; patch existing flow directly.)"
+                : valueChainsFromCorpus();
+        String regulatoryFloorPrompt = allFollowUps
+                ? "(Follow-up/defect batch: statutory floor omitted; maintain existing compliance boundaries.)"
+                : regulatoryFloorFromCorpus(promptProject);
+        String acceptanceFloorPrompt = allFollowUps
+                ? "(Follow-up/defect batch: acceptance floor omitted; verify the targeted defect directly.)"
+                : acceptanceFloorFromCorpus();
         return """
                 You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose EACH client
                 brief below independently. Do NOT implement any product code, do not run builds or tests -
@@ -4360,8 +4383,8 @@ public class ProjectFlowService {
                 understand each yourself, do not rely on it already being in English). Decompose each one
                 separately into its own epic(s); tag every resulting epic with the matching "sourceIndex":
                 %s
-                """.formatted(existingEpicsPromptContext(projectId), valueChainsFromCorpus(),
-                        regulatoryFloorFromCorpus(promptProject), acceptanceFloorFromCorpus(), planPath,
+                """.formatted(existingEpicsPromptContext(projectId), valueChainsPrompt,
+                        regulatoryFloorPrompt, acceptanceFloorPrompt, planPath,
                         wishlists.size(), briefsSection.toString());
     }
 

@@ -632,6 +632,7 @@ public class JulesDispatchService {
         roleContextBuilder.append("\n## Jules Execution Contract\n");
         roleContextBuilder.append("- Proceed autonomously from the task description, JTBD, Acceptance Criteria, DoD, and file scope.\n");
         roleContextBuilder.append("- THREE-LAYER ONTO-SEPARATION (TARSKI DEMARCATION): You are writing code for the CLIENT'S domain product ONLY. NEVER use or mention factory orchestrator names ('AutoMergeService', 'SixSigmaAudit', 'Jules', 'TaskPlan', 'PlannedWorkRecovery', 'EneikSys') in commit messages, PR titles, class names, database tables, or documentation. Formulate all changes strictly in the client's domain vocabulary.\n");
+        roleContextBuilder.append("- FILE CHANNEL INVARIANT (Law 2): NEVER create, write, or commit factory record files or directories (such as '.eneik/', 'task-plan-*', 'qa-verification-*') in product PRs. All files in this PR must belong strictly to the client product application domain.\n");
         roleContextBuilder.append("- Do not pause for broad optional confirmation when the Acceptance Criteria already imply a safe next step.\n");
         roleContextBuilder.append("- If a detail is ambiguous, use the smallest reversible implementation assumption, document it in the PR summary, and keep working.\n");
         roleContextBuilder.append("- Ask at most one concise blocker question only when continuing would create a concrete contradiction or security/data-loss risk.\n");
@@ -681,23 +682,18 @@ public class JulesDispatchService {
             // parsed into any field at all. Sending the raw charter verbatim sidesteps all of that -
             // Jules reads the exact same document a human reviewer would, including the philosophical
             // foundation that makes this role's judgment different from every other role's.
-            String rawCharter = roleCapabilityLoader.loadRawCharter(task.getRole().getTag());
-            if (rawCharter != null && !rawCharter.isBlank()) {
-                roleContextBuilder.append("\n## Role Charter (this is who you are for this session)\n")
-                        .append(rawCharter).append("\n");
-            }
+            if (!task.isCarrier()) {
+                String rawCharter = roleCapabilityLoader.loadRawCharter(task.getRole().getTag());
+                if (rawCharter != null && !rawCharter.isBlank()) {
+                    roleContextBuilder.append("\n## Role Charter (this is who you are for this session)\n")
+                            .append(rawCharter).append("\n");
+                }
 
-            // 2026-08-07 fix (RAG role-context unification): was a raw, unbounded read of the whole common-
-            // patterns file plus every one of this role's philosopher-pattern files on EVERY task dispatch,
-            // independently reimplemented from the same-shaped logic in FalsificationCycleService (which hit
-            // its own oversized-prompt HTTP 400 doing this at 13x scale). Charter itself stays raw/verbatim
-            // above (loadRawCharter) - only the pattern corpus (already indexed for exactly this) moves to
-            // scoped retrieval, keyed by this task's own brief so the surfaced patterns are the ones actually
-            // relevant to what Jules is about to do.
-            roleContextBuilder.append(geminiContextService.buildPhilosopherPatternContext(
-                    task.getRole(), task.getDescription(), JULES_TASK_PATTERN_CONTEXT_TOP_K));
-            roleContextBuilder.append(geminiContextService.buildCommonPatternContext(
-                    task.getDescription(), JULES_TASK_PATTERN_CONTEXT_TOP_K));
+                roleContextBuilder.append(geminiContextService.buildPhilosopherPatternContext(
+                        task.getRole(), task.getDescription(), JULES_TASK_PATTERN_CONTEXT_TOP_K));
+                roleContextBuilder.append(geminiContextService.buildCommonPatternContext(
+                        task.getDescription(), JULES_TASK_PATTERN_CONTEXT_TOP_K));
+            }
 
             RoleRules rules = roleCapabilityLoader.loadRules(task.getRole().getTag());
             if (rules != null && rules.reviewRequiredBy() != null && !rules.reviewRequiredBy().isBlank()) {

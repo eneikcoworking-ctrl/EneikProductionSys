@@ -307,6 +307,34 @@ class ProjectAdmissionLaw25aTest {
         }
     }
 
+    @Test
+    @DisplayName("Law 25a generalized admission guard: admitReviewFallbackBatch isolates admission transaction from Jules network dispatch")
+    void structuralDemarcationInvariantForReviewFallbackAdmission() throws IOException {
+        Path sourcePath = Path.of("src/main/java/com/eneik/production/services/jules/JulesDispatchService.java");
+        assertTrue(Files.exists(sourcePath), "JulesDispatchService.java must exist");
+        String src = Files.readString(sourcePath);
+
+        // 1. Transactional annotation must be on admitReviewFallbackBatch
+        int admitIdx = src.indexOf("public ReviewFallbackAdmission admitReviewFallbackBatch(");
+        assertTrue(admitIdx > 0, "admitReviewFallbackBatch method must exist");
+        String precedingAdmit = src.substring(Math.max(0, admitIdx - 150), admitIdx);
+        assertTrue(precedingAdmit.contains("@Transactional"),
+                "admitReviewFallbackBatch must be @Transactional so lock and task creation are atomic");
+
+        // 2. Transactional annotation must NOT be on admitAndDispatchReviewFallbackBatch
+        int dispatchIdx = src.indexOf("public void admitAndDispatchReviewFallbackBatch(");
+        assertTrue(dispatchIdx > 0, "admitAndDispatchReviewFallbackBatch method must exist");
+        String precedingDispatch = src.substring(Math.max(0, dispatchIdx - 150), dispatchIdx);
+        assertFalse(precedingDispatch.contains("@Transactional"),
+                "admitAndDispatchReviewFallbackBatch must NOT be @Transactional - network dispatch to Jules must be outside the admission transaction");
+
+        // 3. Extract method body of admitReviewFallbackBatch and verify no julesApiClient / httpClient references
+        String admitBody = extractMethodBody(src, "public ReviewFallbackAdmission admitReviewFallbackBatch(");
+        assertFalse(admitBody.contains("julesApiClient"), "admitReviewFallbackBatch must not invoke julesApiClient");
+        assertFalse(admitBody.contains("httpClient"), "admitReviewFallbackBatch must not invoke httpClient");
+        assertFalse(admitBody.contains("sendGitHub"), "admitReviewFallbackBatch must not invoke sendGitHub");
+    }
+
     private static String extractMethodBody(String src, String methodSignature) {
         int sigIdx = src.indexOf(methodSignature);
         assertTrue(sigIdx >= 0, "Method signature not found: " + methodSignature);

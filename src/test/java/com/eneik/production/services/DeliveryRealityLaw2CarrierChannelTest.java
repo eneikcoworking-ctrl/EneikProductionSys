@@ -207,4 +207,25 @@ class DeliveryRealityLaw2CarrierChannelTest {
         assertEquals(productEpicId, captor.getValue().getFeatureId());
         verify(defectJournalRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("Law 2 File Channel Corollary: commitFile, upsertFile, and copyFile refuse to write factory records into client product tree")
+    void writingSitesRefuseFactoryRecords() {
+        com.eneik.production.services.github.GitHubPullRequestService ghService =
+                new com.eneik.production.services.github.GitHubPullRequestService(
+                        new com.eneik.production.config.GithubConfig(),
+                        systemSettingsService,
+                        new ObjectMapper(),
+                        mock(com.eneik.production.services.github.GitHubApiBudgetService.class)
+                );
+        ghService.setCodeChangeClassifier(new com.eneik.production.services.CodeChangeClassifier());
+
+        byte[] content = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        // Attempts to write factory records at writing sites must be rejected immediately at the site
+        assertFalse(ghService.commitFile(project, ".eneik/records/task-plan-test.json", content, "plan"));
+        assertFalse(ghService.commitFile(project, ".eneik/records/qa-verification-test.json", content, "qa"));
+        assertFalse(ghService.upsertFile(project, ".eneik/records/review-verdict-test.json", content, "verdict"));
+        assertFalse(ghService.copyFile(project, "some/path.json", ".eneik/records/archived-plan.json", "archive"));
+    }
 }

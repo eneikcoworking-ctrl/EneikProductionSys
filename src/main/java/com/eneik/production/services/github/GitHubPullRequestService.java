@@ -671,6 +671,10 @@ public class GitHubPullRequestService {
      * caller here uses a fresh timestamped path, so collisions are not expected.
      */
     public boolean commitFile(ProjectEntity project, String path, byte[] content, String commitMessage) {
+        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+            log.warn("GitHub commit-file refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
+            return false;
+        }
         if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
             return false;
         }
@@ -719,6 +723,10 @@ public class GitHubPullRequestService {
      * consequently accumulated build artifacts that made every pair of compiling tasks conflict.
      */
     public boolean upsertFile(ProjectEntity project, String path, byte[] content, String commitMessage) {
+        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+            log.warn("GitHub upsert-file refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
+            return false;
+        }
         if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
             return false;
         }
@@ -1907,6 +1915,10 @@ public class GitHubPullRequestService {
     // compiling; a null classifier degrades this guard to "no guard", never to a crash.
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.services.CodeChangeClassifier codeChangeClassifier;
+
+    public void setCodeChangeClassifier(com.eneik.production.services.CodeChangeClassifier codeChangeClassifier) {
+        this.codeChangeClassifier = codeChangeClassifier;
+    }
 
     /**
      * The merge-time poka-yoke, applied where a merge actually happens rather than at one of its callers.
