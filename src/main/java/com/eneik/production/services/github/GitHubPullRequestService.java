@@ -73,6 +73,7 @@ public class GitHubPullRequestService {
         return Duration.ofSeconds(20);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
     public GitHubPullRequestService(GithubConfig githubConfig,
                                     SystemSettingsService settingsService,
                                     ObjectMapper objectMapper,
