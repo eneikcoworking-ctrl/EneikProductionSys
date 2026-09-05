@@ -170,12 +170,29 @@ public class JudgmentAgentClient {
             return prefix + warning + selected.text();
         }
 
-        // Fallback for non-diff prompts: bounded cleanly with explicit notice
-        int cutoff = Math.max(0, PROMPT_CHAR_LIMIT - 300);
-        return prompt.substring(0, cutoff)
-                + "\n\n[THIS INPUT WAS TRUNCATED to fit the judgment channel. You are seeing the first "
-                + cutoff + " characters. Do not rule as though you had seen the whole: if what "
-                + "you need to decide could lie in the part you cannot see, say so instead of deciding.]";
+        // Fallback for non-diff prompts: bounded cleanly at structural boundaries with explicit notice
+        return trimNonDiffPrompt(prompt, PROMPT_CHAR_LIMIT);
+    }
+
+    static String trimNonDiffPrompt(String prompt, int limit) {
+        String warningTemplate = "\n\n[THIS INPUT WAS TRIMMED TO FIT THE JUDGMENT CHANNEL. Evidence was bounded at "
+                + "structural boundaries, not by raw character position. You are seeing %d of %d characters. "
+                + "Do not rule as though you had seen the whole: if what you need to decide could lie in the "
+                + "omitted part, answer UNDECIDABLE instead of deciding.]";
+        int estimatedWarning = String.format(warningTemplate, limit, prompt.length()).length() + 20;
+        int maxContent = Math.max(0, limit - estimatedWarning);
+
+        int cutIdx = prompt.lastIndexOf('\n', maxContent);
+        if (cutIdx == -1 || cutIdx < maxContent / 2) {
+            cutIdx = prompt.lastIndexOf(' ', maxContent);
+        }
+        if (cutIdx <= 0) {
+            cutIdx = maxContent;
+        }
+
+        String prefix = prompt.substring(0, cutIdx).stripTrailing();
+        String warning = String.format(warningTemplate, prefix.length(), prompt.length());
+        return prefix + warning;
     }
 
     private static String extractCriteria(String text) {

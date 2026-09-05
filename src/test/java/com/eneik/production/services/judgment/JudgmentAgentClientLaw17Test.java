@@ -60,13 +60,17 @@ class JudgmentAgentClientLaw17Test {
 
     @Test
     void nonDiffPromptIsCleanlyBoundedWithExplicitNotice() {
-        String longText = "General reasoning without diff. ".repeat(2000);
+        String sentence = "General reasoning step and observable transition fact.\n";
+        String longText = sentence.repeat(1000);
         assertThat(longText.length()).isGreaterThan(JudgmentAgentClient.PROMPT_CHAR_LIMIT);
 
         String trimmed = JudgmentAgentClient.withinChannel(longText);
 
         assertThat(trimmed.length()).isLessThanOrEqualTo(JudgmentAgentClient.PROMPT_CHAR_LIMIT);
-        assertThat(trimmed).contains("[THIS INPUT WAS TRUNCATED to fit the judgment channel");
+        assertThat(trimmed).contains("[THIS INPUT WAS TRIMMED TO FIT THE JUDGMENT CHANNEL");
+        assertThat(trimmed).contains("answer UNDECIDABLE instead of deciding");
+        // Verify bounded at line/sentence boundary, never chopped mid-word
+        assertThat(trimmed).contains("observable transition fact.\n\n[THIS INPUT WAS TRIMMED");
     }
 
     private static String section(String path, String body) {
