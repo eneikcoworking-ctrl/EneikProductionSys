@@ -1523,6 +1523,24 @@
 
     **Живое.** Доставлено 17 из 22, эпиков 4 из 7 — десятый такт без движения.
 
+40. **Такт 07:35 UTC (Antigravity). Закон 20/S2 применён к `PrReviewEntity`. Заслон свойства 1 ЗЕЛЁНЫЙ (7/7).**
+
+    **Фактическая дельта:**
+    - `src/main/java/com/eneik/production/models/persistence/PrReviewEntity.java`:
+      - Реализован метод `isTerminal()`: возвращает `true`, если статус равен `closed_unmerged` либо `merged == true`.
+      - Сеттер `setCiStatus(String ciStatus)` приведен к единой точке применения Закона 20 / Invariant S2:
+        $$terminal(review) \implies ciStatus(review) \text{ неперезаписываем}.$$
+        Попытка перезаписи терминального исхода `closed_unmerged` на `superseded`, `pending`, `conflict` и др. блокируется на уровне сущности.
+    - `src/main/java/com/eneik/production/services/AutoMergeService.java`:
+      - В `resurrectAlreadyMergedReviews()` фильтр переведён на канонический предикат `!r.isTerminal()`. Ревью со статусом `superseded` (до выяснения на GitHub) опрашивается ровно один раз, терминализуется в `closed_unmerged` при подтверждении закрытия PR на GitHub, после чего выбывает из кандидатов навсегда.
+    - `src/test/java/com/eneik/production/models/persistence/PrReviewEntityLaw20Test.java`:
+      - Добавлен целевой модульный заслон на закон 20/S2 для сущности ревью (2/2 green).
+    - `src/test/java/com/eneik/production/services/GitHubSweepBudgetEfficiencyTest.java`:
+      - Тест `property1_multiTickTerminalizationSurvivesBetweenTicks` теперь **зелёный**.
+      - Весь пакет `GitHubSweepBudgetEfficiencyTest`: **7 из 7 тестов пройдены успешно (`BUILD SUCCESS`)**.
+      - Регрессионный пакет AutoMerge (`AutoMergeServiceTest`, `AutoMergePokaYokeTest`, `AutoMergeLaw20InvariantS4Test`): **35 из 35 пройдены успешно (`BUILD SUCCESS`)**.
+    - Коммит: `3abe5ad`.
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
