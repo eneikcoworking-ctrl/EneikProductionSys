@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The factory's judgment layer: one bounded ruling on one refutation.
@@ -175,40 +176,64 @@ public class JudgmentAgentClient {
     }
 
     static String trimNonDiffPrompt(String prompt, int limit) {
-        String warningTemplate = "\n\n[THIS INPUT WAS TRIMMED TO FIT THE JUDGMENT CHANNEL. Evidence was bounded at "
-                + "structural boundaries, not by raw character position. You are seeing %d of %d characters. "
-                + "Do not rule as though you had seen the whole: if what you need to decide could lie in the "
-                + "omitted part, answer UNDECIDABLE instead of deciding.]";
-        int estimatedWarning = String.format(warningTemplate, limit, prompt.length()).length() + 20;
-        int maxContent = Math.max(0, limit - estimatedWarning);
+        String criteria = extractCriteria(prompt);
+        int warningReserve = 800;
+        int budget = Math.max(0, limit - warningReserve);
 
-        int cutIdx = prompt.lastIndexOf('\n', maxContent);
-        if (cutIdx == -1 || cutIdx < maxContent / 2) {
-            cutIdx = prompt.lastIndexOf(' ', maxContent);
-        }
-        if (cutIdx <= 0) {
-            cutIdx = maxContent;
+        CriteriaEvidenceSelector.SelectedEvidence selected =
+                CriteriaEvidenceSelector.selectNonDiff(prompt, criteria, budget);
+
+        if (selected.omitted().isEmpty()) {
+            return selected.text();
         }
 
-        String prefix = prompt.substring(0, cutIdx).stripTrailing();
-        String warning = String.format(warningTemplate, prefix.length(), prompt.length());
-        return prefix + warning;
+        Set<String> vocabulary = CriteriaEvidenceSelector.vocabularyOf(criteria);
+        if (!vocabulary.isEmpty()) {
+            String warning = "\n\n[THIS INPUT WAS TRIMMED TO FIT THE JUDGMENT CHANNEL. Evidence sections were selected "
+                    + "by bearing on criteria, not by position. Sections omitted: "
+                    + String.join(", ", selected.omitted()) + ". Do not rule as though you had seen the whole: "
+                    + "if what you need to decide could lie in an omitted section, answer UNDECIDABLE instead of deciding.]";
+            return selected.text() + warning;
+        } else {
+            String warning = String.format(
+                    "\n\n[THIS INPUT WAS TRIMMED TO FIT THE JUDGMENT CHANNEL. This prompt carries no acceptance criteria "
+                            + "or file structure to rank evidence by relevance; the input was bounded at the latest line break "
+                            + "(showing %d of %d characters). Do not rule as though you had seen the whole: "
+                            + "if what you need to decide could lie in the omitted part, answer UNDECIDABLE instead of deciding.]",
+                    selected.text().length(), prompt.length());
+            return selected.text() + warning;
+        }
     }
 
-    private static String extractCriteria(String text) {
+    static String extractCriteria(String text) {
         int idx = text.indexOf("ACCEPTANCE CRITERIA THIS TASK CARRIED\n");
-        if (idx == -1) {
-            return "";
+        if (idx != -1) {
+            int start = idx + "ACCEPTANCE CRITERIA THIS TASK CARRIED\n".length();
+            int end = text.indexOf("\n\nMERGED PULL REQUEST", start);
+            if (end == -1) {
+                end = text.indexOf("\n\nWHAT THE REPOSITORY", start);
+            }
+            if (end == -1) {
+                end = text.indexOf("\n\nDIFF\n", start);
+            }
+            if (end == -1) {
+                end = text.indexOf("\n\n", start);
+            }
+            return end != -1 ? text.substring(start, end).trim() : text.substring(start).trim();
         }
-        int start = idx + "ACCEPTANCE CRITERIA THIS TASK CARRIED\n".length();
-        int end = text.indexOf("\n\nMERGED PULL REQUEST", start);
-        if (end == -1) {
-            end = text.indexOf("\n\nWHAT THE REPOSITORY", start);
+        int assertIdx = text.indexOf("It asserts: ");
+        if (assertIdx != -1) {
+            int start = assertIdx + "It asserts: ".length();
+            int end = text.indexOf("\n", start);
+            return end != -1 ? text.substring(start, end).trim() : text.substring(start).trim();
         }
-        if (end == -1) {
-            end = text.indexOf("\n\nDIFF\n", start);
+        int criteriaIdx = text.indexOf("Criteria:");
+        if (criteriaIdx != -1) {
+            int start = criteriaIdx + "Criteria:".length();
+            int end = text.indexOf("\n\n", start);
+            return end != -1 ? text.substring(start, end).trim() : text.substring(start).trim();
         }
-        return end != -1 ? text.substring(start, end).trim() : text.substring(start).trim();
+        return "";
     }
 
     private static String compactRepositoryStateInPrefix(String prefix, int maxPaths) {

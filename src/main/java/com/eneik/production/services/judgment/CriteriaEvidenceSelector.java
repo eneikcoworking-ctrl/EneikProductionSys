@@ -107,4 +107,77 @@ public final class CriteriaEvidenceSelector {
         Matcher header = Pattern.compile("(?m)^diff --git a/(\\S+)").matcher(section);
         return header.find() ? header.group(1) : "(unnamed section)";
     }
+
+    /**
+     * Selects sections of non-diff evidence to fit within {@code charLimit}.
+     * When {@code criteria} vocabulary is present, sections (paragraphs) are ranked by their bearing on the criteria.
+     * When {@code criteria} vocabulary is absent, the text is bounded at line boundaries.
+     */
+    public static SelectedEvidence selectNonDiff(String text, String criteria, int charLimit) {
+        if (text == null || text.length() <= charLimit) {
+            return new SelectedEvidence(text == null ? "" : text, List.of());
+        }
+        Set<String> vocabulary = vocabularyOf(criteria);
+        if (vocabulary.isEmpty()) {
+            int cutIdx = text.lastIndexOf('\n', charLimit);
+            if (cutIdx <= 0 || cutIdx < charLimit / 2) {
+                cutIdx = text.lastIndexOf(' ', charLimit);
+            }
+            if (cutIdx <= 0) {
+                cutIdx = charLimit;
+            }
+            return new SelectedEvidence(text.substring(0, cutIdx).stripTrailing(), List.of("(remainder omitted: no criteria to rank by)"));
+        }
+
+        String[] parts = text.split("\n\n");
+        if (parts.length <= 1) {
+            int cutIdx = text.lastIndexOf('\n', charLimit);
+            if (cutIdx <= 0) cutIdx = charLimit;
+            return new SelectedEvidence(text.substring(0, cutIdx).stripTrailing(), List.of("(remainder of single section)"));
+        }
+
+        String first = parts[0];
+        String last = parts.length > 1 ? parts[parts.length - 1] : "";
+        int fixedCost = first.length() + (last.isEmpty() ? 0 : last.length() + 2);
+        int budgetForMiddle = Math.max(0, charLimit - fixedCost);
+
+        List<Integer> middleIndices = new ArrayList<>();
+        for (int i = 1; i < parts.length - 1; i++) {
+            middleIndices.add(i);
+        }
+        middleIndices.sort(Comparator.comparingLong((Integer idx) -> bearingOn(parts[idx], vocabulary)).reversed());
+
+        Set<Integer> kept = new HashSet<>();
+        kept.add(0);
+        if (!last.isEmpty()) {
+            kept.add(parts.length - 1);
+        }
+
+        int middleTaken = 0;
+        for (int idx : middleIndices) {
+            int cost = parts[idx].length() + 2;
+            if (middleTaken + cost <= budgetForMiddle) {
+                middleTaken += cost;
+                kept.add(idx);
+            }
+        }
+
+        List<String> omitted = new ArrayList<>();
+        StringBuilder result = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            if (kept.contains(i)) {
+                if (result.length() > 0) {
+                    result.append("\n\n");
+                }
+                result.append(parts[i]);
+            } else {
+                String firstLine = parts[i].lines().findFirst().orElse("section " + i).trim();
+                if (firstLine.length() > 40) {
+                    firstLine = firstLine.substring(0, 37) + "...";
+                }
+                omitted.add("section " + (i + 1) + " ['" + firstLine + "']");
+            }
+        }
+        return new SelectedEvidence(result.toString(), omitted);
+    }
 }

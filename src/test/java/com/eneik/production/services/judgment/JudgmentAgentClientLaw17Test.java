@@ -59,8 +59,38 @@ class JudgmentAgentClientLaw17Test {
     }
 
     @Test
-    void nonDiffPromptIsCleanlyBoundedWithExplicitNotice() {
-        String sentence = "General reasoning step and observable transition fact.\n";
+    void nonDiffPromptWithCriteriaSelectsSectionsByBearingAndNamesOmittedSections() {
+        String header = "A Charter invariant of this factory changed status.\n"
+                + "Invariant: INV_TOKEN\n"
+                + "It asserts: token expiration must invalidate active sessions\n\n";
+
+        // Irrelevant section that appears earlier
+        String irrelevant = "Bulk cosmetic log line without matching tokens\n".repeat(1000) + "\n";
+
+        // Highly relevant section that appears later
+        String relevant = "Specific transition record: token expiration invalidated active sessions for tenant 42.\n\n";
+
+        String question = "Rule on whether this indicates a defect in the factory construction.";
+
+        String oversized = header + irrelevant + relevant + question;
+        assertThat(oversized.length()).isGreaterThan(JudgmentAgentClient.PROMPT_CHAR_LIMIT);
+
+        String trimmed = JudgmentAgentClient.withinChannel(oversized);
+
+        assertThat(trimmed.length()).isLessThanOrEqualTo(JudgmentAgentClient.PROMPT_CHAR_LIMIT);
+        // Bearing on criteria: relevant section must be kept, not dropped by position!
+        assertThat(trimmed).contains("token expiration invalidated active sessions for tenant 42");
+        assertThat(trimmed).contains("Rule on whether this indicates a defect");
+        // Irrelevant bulky body is omitted, while its preview is named in warning
+        assertThat(trimmed).doesNotContain("without matching tokens\n");
+        assertThat(trimmed).contains("Evidence sections were selected by bearing on criteria, not by position");
+        assertThat(trimmed).contains("section 2 ['Bulk cosmetic log line");
+        assertThat(trimmed).contains("answer UNDECIDABLE instead of deciding");
+    }
+
+    @Test
+    void nonDiffPromptWithoutCriteriaTruthfullyReportsAbsenceOfCriteria() {
+        String sentence = "General reasoning step and observable transition fact without criteria tokens.\n";
         String longText = sentence.repeat(1000);
         assertThat(longText.length()).isGreaterThan(JudgmentAgentClient.PROMPT_CHAR_LIMIT);
 
@@ -68,9 +98,9 @@ class JudgmentAgentClientLaw17Test {
 
         assertThat(trimmed.length()).isLessThanOrEqualTo(JudgmentAgentClient.PROMPT_CHAR_LIMIT);
         assertThat(trimmed).contains("[THIS INPUT WAS TRIMMED TO FIT THE JUDGMENT CHANNEL");
+        assertThat(trimmed).contains("This prompt carries no acceptance criteria or file structure to rank evidence by relevance");
+        assertThat(trimmed).contains("the input was bounded at the latest line break");
         assertThat(trimmed).contains("answer UNDECIDABLE instead of deciding");
-        // Verify bounded at line/sentence boundary, never chopped mid-word
-        assertThat(trimmed).contains("observable transition fact.\n\n[THIS INPUT WAS TRIMMED");
     }
 
     private static String section(String path, String body) {
