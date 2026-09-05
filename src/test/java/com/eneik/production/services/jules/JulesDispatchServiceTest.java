@@ -2835,6 +2835,85 @@ class JulesDispatchServiceTest {
     }
 
     @Test
+    void admitWishlistCompilationCompletionClaimsPendingWishlistsWhenCompilingWasReset() {
+        UUID projectId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setId(taskId);
+        compilerTask.setProject(project);
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(wishlistId);
+        wishlist.setProjectId(projectId);
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+
+        when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
+        // CAS from compiling fails (returns 0) because earlier recovery or sweep reset it to pending.
+        when(wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.compiling,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing))
+                .thenReturn(0);
+        // CAS from pending succeeds (returns 1), allowing this valid completion to claim it.
+        when(wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.pending,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing))
+                .thenReturn(1);
+
+        JulesDispatchService.CompilerCompletionAdmission admission =
+                julesDispatchService.admitWishlistCompilationCompletion(compilerTask, List.of(wishlistId));
+
+        assertEquals(JulesDispatchService.CompilationAdmissionOutcome.PROCEED, admission.outcome());
+        assertTrue(admission.claimedIds().contains(wishlistId));
+    }
+
+    @Test
+    void completeWishlistCompilationReleasesPrOpenedClaimWhenInProgressElsewhere() {
+        UUID projectId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setId(taskId);
+        compilerTask.setProject(project);
+        var compilerTaskPayload = objectMapper.createObjectNode();
+        compilerTaskPayload.putArray("compilesWishlistIds").add(wishlistId.toString());
+        compilerTask.setPayload(compilerTaskPayload);
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(wishlistId);
+        wishlist.setProjectId(projectId);
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.finalizing);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/in-progress-elsewhere");
+        session.setStatus("pr_opened");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(compilerTask));
+        when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
+        when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
+        // CAS from compiling and pending both return 0 (another worker holds finalizing)
+        when(wishlistRepository.compareAndSetStatus(eq(wishlistId), any(), eq(com.eneik.production.models.persistence.WishlistStatus.finalizing)))
+                .thenReturn(0);
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        // When admitWishlistCompilationCompletion returns IN_PROGRESS_ELSEWHERE, the session claim
+        // must be released immediately so the 5-minute lease does not lock out subsequent reconcile sweeps.
+        verify(julesSessionRepository).releasePrOpenedWorkflowClaim(sessionId);
+    }
+
+    @Test
     void activeReviewFallbackPreventsDuplicateDispatchForSameOriginalTask() {
         UUID projectId = UUID.randomUUID();
         UUID targetTaskId = UUID.randomUUID();
