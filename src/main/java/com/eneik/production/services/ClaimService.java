@@ -509,6 +509,9 @@ public class ClaimService {
             return;
         }
 
+        log.warn("ClaimService.releaseClaimToQueue: task {} dispatch refused (attempt {}/{} against budget {}): {}",
+                taskId, refusals, budget, budget, reason);
+
         int revived = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.queued);
         if (revived == 0) {
             log.info("ClaimService.releaseClaimToQueue: skipped requeue for task {} - it reached a terminal status concurrently", taskId);

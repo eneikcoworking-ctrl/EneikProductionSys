@@ -789,7 +789,7 @@ public class JulesDispatchService {
             String dispatchRoleTag = task.getRole() != null ? task.getRole().getTag() : null;
             com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome outcome = createResult.classifyOutcome();
             if (accountId != null) {
-                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
+                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId, task.getId(),
                         outcome, createResult.compactError(), dispatchRoleTag);
             }
             switch (outcome) {
@@ -819,7 +819,7 @@ public class JulesDispatchService {
             if (accountId != null) {
                 UUID successProjectId = task.getProject() != null ? task.getProject().getId() : null;
                 String successRoleTag = task.getRole() != null ? task.getRole().getTag() : null;
-                accountHealthService.reportDispatchOutcome(accountId, successProjectId,
+                accountHealthService.reportDispatchOutcome(accountId, successProjectId, task.getId(),
                         com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.SUCCESS, null, successRoleTag);
             }
         }

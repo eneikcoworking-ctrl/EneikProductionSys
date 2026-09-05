@@ -147,7 +147,7 @@ public class AccountHealthService {
      */
     @Transactional
     public void reportDispatchOutcome(UUID accountId, UUID projectId, DispatchOutcome outcome, String rawReason) {
-        reportDispatchOutcome(accountId, projectId, outcome, rawReason, null);
+        reportDispatchOutcome(accountId, projectId, null, outcome, rawReason, null);
     }
 
     /**
@@ -161,11 +161,20 @@ public class AccountHealthService {
      */
     @Transactional
     public void reportDispatchOutcome(UUID accountId, UUID projectId, DispatchOutcome outcome, String rawReason, String roleTag) {
+        reportDispatchOutcome(accountId, projectId, null, outcome, rawReason, roleTag);
+    }
+
+    /**
+     * Law 12 (Ground of denial names what it is about) & Law 8 (Variant function progress is observable):
+     * Includes the task ID so journal entries and refusal warnings identify the task being dispatched.
+     */
+    @Transactional
+    public void reportDispatchOutcome(UUID accountId, UUID projectId, UUID taskId, DispatchOutcome outcome, String rawReason, String roleTag) {
         if (accountId == null) return;
         if (roleTag != null && (outcome == DispatchOutcome.SUCCESS || outcome == DispatchOutcome.PRECONDITION_BLOCKED)) {
             updateRoleSuccessStats(accountId, roleTag, outcome);
         }
-        reportDispatchOutcomeCore(accountId, projectId, outcome, rawReason);
+        reportDispatchOutcomeCore(accountId, projectId, taskId, outcome, rawReason);
     }
 
     /**
@@ -205,10 +214,12 @@ public class AccountHealthService {
         accountRoleSuccessStatsRepository.save(stats);
     }
 
-    private void reportDispatchOutcomeCore(UUID accountId, UUID projectId, DispatchOutcome outcome, String rawReason) {
+    private void reportDispatchOutcomeCore(UUID accountId, UUID projectId, UUID taskId, DispatchOutcome outcome, String rawReason) {
         if (accountId == null) return;
         AccountEntity account = accountRepository.findById(accountId).orElse(null);
         if (account == null) return;
+
+        String taskPrefix = taskId != null ? "[task=" + taskId + "] " : "";
 
         switch (outcome) {
             case SUCCESS -> {
@@ -219,7 +230,7 @@ public class AccountHealthService {
                     defectJournalRepository.save(new DefectJournalEntity(
                             projectId, null, null, "LOW", HEALTH_CATEGORY, account.getName(),
                             RECOVERY_DURATION_DEFECT_TYPE,
-                            "Account '" + account.getName() + "' recovered from api_blocked after " + durationMinutes + " minute(s)",
+                            taskPrefix + "Account '" + account.getName() + "' recovered from api_blocked after " + durationMinutes + " minute(s)",
                             (double) durationMinutes));
                 }
                 int newDailyCount = account.getSessionsDispatchedToday() + 1;
@@ -251,7 +262,7 @@ public class AccountHealthService {
                     defectJournalRepository.save(new DefectJournalEntity(
                             projectId, null, null, "INFO", HEALTH_CATEGORY, account.getName(),
                             CONCURRENT_CAPACITY_EXPANDED_TYPE,
-                            "Account '" + account.getName() + "' revised concurrent capacity upward: prior="
+                            taskPrefix + "Account '" + account.getName() + "' revised concurrent capacity upward: prior="
                                     + concurrentCeiling + ", revised=" + revisedConcurrent
                                     + ", observed_open=" + openNow,
                             (double) revisedConcurrent));
@@ -275,7 +286,7 @@ public class AccountHealthService {
                 accountRepository.save(account);
                 defectJournalRepository.save(new DefectJournalEntity(
                         projectId, null, null, "MEDIUM", HEALTH_CATEGORY, account.getName(),
-                        DAILY_LIMIT_DEFECT_TYPE, rawReason == null ? "" : rawReason, (double) revisedCeiling));
+                        DAILY_LIMIT_DEFECT_TYPE, taskPrefix + (rawReason == null ? "" : rawReason), (double) revisedCeiling));
             }
             case CONCURRENT_CAPACITY_EXHAUSTED -> {
                 // Law 14 (Popper/Gerdenfors): external refusal of concurrent capacity
@@ -295,7 +306,7 @@ public class AccountHealthService {
                 defectJournalRepository.save(new DefectJournalEntity(
                         projectId, null, null, "MEDIUM", HEALTH_CATEGORY, account.getName(),
                         CONCURRENT_CAPACITY_DEFECT_TYPE,
-                        "Account '" + account.getName() + "' concurrent capacity refusal: prior=" + priorConcurrent
+                        taskPrefix + "Account '" + account.getName() + "' concurrent capacity refusal: prior=" + priorConcurrent
                                 + ", revised=" + revisedConcurrent + ", observed_open=" + refusedAt
                                 + ", detail=" + (rawReason == null ? "" : rawReason),
                         (double) revisedConcurrent));
@@ -305,18 +316,18 @@ public class AccountHealthService {
                 // Jules said a precondition failed or returned an unclassified refusal without naming whose condition failed.
                 // UNCLASSIFIED does not masquerade as causal knowledge: it charges nobody and does NOT move
                 // estimatedDailyCapacity or estimatedConcurrentCapacity in either direction.
-                log.warn("AccountHealthService: Jules refused a session through account '{}' citing an "
+                log.warn("AccountHealthService: Jules refused a session for task {} through account '{}' citing an "
                                 + "unspecified or unclassified condition. Charged to nobody (§12, §14). Detail: {}",
-                        account.getName(), rawReason);
+                        taskId != null ? taskId : "unspecified", account.getName(), rawReason);
             }
             case REQUEST_REJECTED -> {
                 // Deliberately touches nothing on the account: not its status, not its block counter, not
                 // its cooldown. The account did nothing. Recording it at all is what makes the fault
                 // findable - a defect with no reader is the shape this plan has caught three times.
-                log.warn("AccountHealthService: Jules refused the request itself while dispatching through "
+                log.warn("AccountHealthService: Jules refused the request itself for task {} while dispatching through "
                                 + "account '{}' - this is the factory's own defect and is NOT charged to the "
                                 + "account (\u00a710). Detail: {}",
-                        account.getName(), rawReason);
+                        taskId != null ? taskId : "unspecified", account.getName(), rawReason);
             }
             case PRECONDITION_BLOCKED -> {
                 int newCount = account.getConsecutiveApiBlockCount() + 1;
@@ -328,7 +339,7 @@ public class AccountHealthService {
                 accountRepository.save(account);
                 defectJournalRepository.save(new DefectJournalEntity(
                         projectId, null, null, escalate ? "HIGH" : "MEDIUM", HEALTH_CATEGORY, account.getName(),
-                        PRECONDITION_DEFECT_TYPE, rawReason == null ? "" : rawReason,
+                        PRECONDITION_DEFECT_TYPE, taskPrefix + (rawReason == null ? "" : rawReason),
                         (double) newCount));
             }
         }

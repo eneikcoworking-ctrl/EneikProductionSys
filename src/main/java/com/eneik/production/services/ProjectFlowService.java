@@ -3635,8 +3635,10 @@ public class ProjectFlowService {
                     }
                     claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
                     if (exactAccountName != null) {
-                        log.warn("Failed to dispatch compiler task {} to account {}: {}",
-                                savedTask.getId(), account.getName(), dispatch.reason());
+                        long refusals = claimService.refusedSessionCreations(savedTask.getId());
+                        long budget = claimService.dispatchAttemptBudget();
+                        log.warn("Failed to dispatch compiler task {} to account {} (attempt {}/{} against budget {}): {}",
+                                savedTask.getId(), account.getName(), refusals, budget, budget, dispatch.reason());
                         return false;
                     }
                     TaskStatus statusAfterRelease = taskRepository.findById(savedTask.getId())
