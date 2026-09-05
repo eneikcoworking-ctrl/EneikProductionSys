@@ -88,25 +88,31 @@ public class JulesApiClient {
             return new CreateSessionResult("skipped", 0, "missing_api_key");
         }
 
+        String effectiveBranch = startingBranch == null || startingBranch.isBlank() ? "main" : startingBranch;
+        String prompt = taskDescription + "\n\nContext:\n" + roleContext;
+        int promptLength = prompt.length();
+        String julesSourceName = toJulesSourceName(repoUrl);
+
         try {
-            String julesSourceName = toJulesSourceName(repoUrl);
-            SourceAvailability sourceAvailability = sourceAvailability(julesSourceName, apiKey);
-            if (sourceAvailability == SourceAvailability.MISSING) {
-                return new CreateSessionResult(null, 404,
-                        "jules_source_not_found: " + julesSourceName
-                                + " is not visible in Jules sources. Configure Jules GitHub source access "
-                                + "or create the repository under a Jules-visible owner.");
+            SourceCheckResult checkResult = sourceAvailability(julesSourceName, apiKey);
+            if (checkResult.availability() == SourceAvailability.MISSING) {
+                return CreateSessionResult.failure(checkResult.statusCode(), checkResult.message(),
+                        promptLength, julesSourceName, effectiveBranch);
+            }
+            if (checkResult.availability() == SourceAvailability.UNKNOWN) {
+                return CreateSessionResult.failure(checkResult.statusCode(), checkResult.message(),
+                        promptLength, julesSourceName, effectiveBranch);
             }
 
             ObjectNode githubRepoContext = objectMapper.createObjectNode();
-            githubRepoContext.put("startingBranch", startingBranch == null || startingBranch.isBlank() ? "main" : startingBranch);
+            githubRepoContext.put("startingBranch", effectiveBranch);
 
             ObjectNode sourceContext = objectMapper.createObjectNode();
             sourceContext.put("source", julesSourceName);
             sourceContext.set("githubRepoContext", githubRepoContext);
 
             ObjectNode body = objectMapper.createObjectNode();
-            body.put("prompt", taskDescription + "\n\nContext:\n" + roleContext);
+            body.put("prompt", prompt);
             body.set("sourceContext", sourceContext);
             body.put("automationMode", "AUTO_CREATE_PR");
             body.put("title", TaskTitleBuilder.enforceTwoOrThreeWords(title));
@@ -124,24 +130,28 @@ public class JulesApiClient {
                 return createSessionDetailed(repoUrl, taskDescription, roleContext, apiKey, title, "main");
             }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.warn("Jules session creation failed: status={} body={}", response.statusCode(), response.body());
-                return new CreateSessionResult(null, response.statusCode(), response.body());
+                log.warn("Jules session creation failed: status={} promptLength={} source={} startingBranch={} body={}",
+                        response.statusCode(), promptLength, julesSourceName, effectiveBranch, response.body());
+                return CreateSessionResult.failure(response.statusCode(), response.body(),
+                        promptLength, julesSourceName, effectiveBranch);
             }
 
             JsonNode json = objectMapper.readTree(response.body());
-            return new CreateSessionResult(json.path("name").asText(null), response.statusCode(), "");
+            return new CreateSessionResult(json.path("name").asText(null), response.statusCode(), "",
+                    promptLength, julesSourceName, effectiveBranch);
         } catch (IOException | InterruptedException e) {
-            log.error("Error creating Jules session", e);
+            log.error("Error creating Jules session: promptLength={} source={} startingBranch={}",
+                    promptLength, julesSourceName, effectiveBranch, e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            return new CreateSessionResult(null, 0, e.getMessage());
+            return CreateSessionResult.failure(0, e.getMessage(), promptLength, julesSourceName, effectiveBranch);
         }
     }
 
-    private SourceAvailability sourceAvailability(String sourceName, String apiKey) {
+    private SourceCheckResult sourceAvailability(String sourceName, String apiKey) {
         if (sourceName == null || sourceName.isBlank() || !sourceName.startsWith("sources/github/")) {
-            return SourceAvailability.UNKNOWN;
+            return SourceCheckResult.unverified(400, "sourceName is invalid or not a github source: " + sourceName);
         }
         try {
             String pageToken = "";
@@ -158,31 +168,33 @@ public class JulesApiClient {
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
                 if (response.statusCode() < 200 || response.statusCode() >= 300) {
                     log.warn("Jules source preflight failed: status={} body={}", response.statusCode(), response.body());
-                    return SourceAvailability.UNKNOWN;
+                    return SourceCheckResult.unverified(response.statusCode(),
+                            "preflight listing returned HTTP " + response.statusCode() + ": " + response.body());
                 }
                 JsonNode root = objectMapper.readTree(response.body());
                 JsonNode sources = root.path("sources");
                 if (!sources.isArray()) {
-                    return SourceAvailability.UNKNOWN;
+                    return SourceCheckResult.unverified(502, "preflight response 'sources' is not an array");
                 }
                 for (JsonNode source : sources) {
                     if (sourceName.equals(source.path("name").asText(null))) {
-                        return SourceAvailability.VISIBLE;
+                        return SourceCheckResult.visible();
                     }
                 }
                 pageToken = root.path("nextPageToken").asText("");
                 if (pageToken.isBlank()) {
-                    return SourceAvailability.MISSING;
+                    return SourceCheckResult.missing(sourceName);
                 }
             }
             log.warn("Jules source preflight reached pagination safety limit while looking for {}", sourceName);
-            return SourceAvailability.UNKNOWN;
+            return SourceCheckResult.unverified(504,
+                    "preflight reached pagination safety limit (20 pages) while looking for " + sourceName);
         } catch (IOException | InterruptedException | IllegalArgumentException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
             log.warn("Jules source preflight unavailable for {}: {}", sourceName, e.getMessage());
-            return SourceAvailability.UNKNOWN;
+            return SourceCheckResult.unverified(0, "preflight unavailable: " + e.getMessage());
         }
     }
 
@@ -233,10 +245,51 @@ public class JulesApiClient {
         UNKNOWN
     }
 
-    public record CreateSessionResult(String sessionName, int statusCode, String errorBody) {
+    record SourceCheckResult(SourceAvailability availability, int statusCode, String message) {
+        static SourceCheckResult visible() {
+            return new SourceCheckResult(SourceAvailability.VISIBLE, 200, "visible");
+        }
+
+        static SourceCheckResult missing(String sourceName) {
+            return new SourceCheckResult(SourceAvailability.MISSING, 404,
+                    "jules_source_not_found: " + sourceName
+                            + " is not visible in Jules sources. Configure Jules GitHub source access "
+                            + "or create the repository under a Jules-visible owner.");
+        }
+
+        static SourceCheckResult unverified(int statusCode, String detail) {
+            int code = statusCode > 0 ? statusCode : 502;
+            return new SourceCheckResult(SourceAvailability.UNKNOWN, code,
+                    "jules_source_unverified: " + detail);
+        }
+    }
+
+    public record CreateSessionResult(
+            String sessionName,
+            int statusCode,
+            String errorBody,
+            Integer promptLength,
+            String source,
+            String startingBranch
+    ) {
+        public CreateSessionResult(String sessionName, int statusCode, String errorBody) {
+            this(sessionName, statusCode, errorBody, null, null, null);
+        }
+
+        public static CreateSessionResult failure(int statusCode, String errorBody, int promptLength, String source, String startingBranch) {
+            String prefix = String.format("[promptLength=%d, source=%s, startingBranch=%s]", promptLength, source, startingBranch);
+            String fullError = (errorBody == null || errorBody.isBlank()) ? prefix : prefix + " " + errorBody;
+            return new CreateSessionResult(null, statusCode, fullError, promptLength, source, startingBranch);
+        }
+
         public boolean sourceNotFound() {
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
             return lower.contains("jules_source_not_found");
+        }
+
+        public boolean sourceUnverified() {
+            String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
+            return lower.contains("jules_source_unverified");
         }
 
         /**

@@ -1277,7 +1277,7 @@ class JulesDispatchServiceTest {
         session.setTaskId(UUID.randomUUID());
         session.setExternalSessionId("sessions/charitable-silence");
         session.setStatus("running");
-        session.setBlindCycleCount(6);
+        session.setBlindCycleCount(0);
         session.setLastProgressAt(Instant.now().minus(45, ChronoUnit.MINUTES));
 
         when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
