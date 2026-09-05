@@ -30,6 +30,16 @@ public class TaskEntity {
     @Column(length = 80)
     private String title;
 
+    /**
+     * The identity of the WORK this task performs, not of the task row - see V137.
+     *
+     * <p>Null for every task whose kind does not derive one (and for every row created before V137). A task
+     * that carries a key may be revived rather than duplicated: the same work finds the same row, and its
+     * attempt counter accumulates instead of resetting to one on a fresh identity.
+     */
+    @Column(name = "content_key", length = 255)
+    private String contentKey;
+
     @JdbcTypeCode(SqlTypes.JSON)
     private JsonNode payload;
 
@@ -105,6 +115,14 @@ public class TaskEntity {
     public void setRole(RoleEntity role) { this.role = role; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getContentKey() {
+        return contentKey;
+    }
+
+    public void setContentKey(String contentKey) {
+        this.contentKey = contentKey;
+    }
+
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public JsonNode getPayload() { return payload; }

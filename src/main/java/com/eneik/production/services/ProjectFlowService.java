@@ -2756,6 +2756,11 @@ public class ProjectFlowService {
         TaskEntity carrierTask = new TaskEntity();
         carrierTask.setProject(project);
         carrierTask.setRole(compilerRole);
+        // V137: the second of the two sites that mint a wishlist-compiler task. This one is deliberately
+        // one per (project, purpose) - a long-lived worker, not a one-shot compilation - so its identity is
+        // the project, not the batch. It carries a key for the same reason the other does: so that a third
+        // site added tomorrow breaks the structural screen instead of quietly multiplying rows.
+        carrierTask.setContentKey("compile-worker:" + project.getId());
         carrierTask.setTitle("Persistent wishlist compiler worker (" + shortId(project.getId()) + ")");
         String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
         String carrierPrompt = wishlistCompilerPromptBatch(admitted, planPath);
@@ -3469,9 +3474,30 @@ public class ProjectFlowService {
             return;
         }
 
-        TaskEntity compilerTask = new TaskEntity();
-        compilerTask.setProject(project);
-        compilerTask.setRole(compilerRole);
+        // V137: the identity of this task is a function of the WORK, not minted fresh on every turn.
+        //
+        // Measured 2026-09-05: ninety-two tasks created in one day, sixty-nine of them duplicates of four
+        // subjects - thirty-one rows compiling one wishlist, thirty compiling another, each dispatched row
+        // a Jules session. The guard above (an active compiler task already exists) was never wrong: it
+        // honestly saw no live carrier, because a sweep had marked the previous one done. A fresh identity
+        // per turn is what made the repetition invisible.
+        //
+        // So the same work finds the same row and revives it. Note what this does NOT rely on: it is not a
+        // uniqueness constraint (history legitimately holds many terminal rows for the same work, and rows
+        // predating V137 carry no key), and it is not a stronger guard. It is identity, and the wishlist's
+        // own compileAttempts - incremented below on every attempt - is what bounds the loop once the rows
+        // stop multiplying under it.
+        String contentKey = compilerContentKey(project, wishlists);
+        TaskEntity compilerTask = taskRepository
+                .findByProjectIdAndContentKeyOrderByCreatedAtDesc(project.getId(), contentKey)
+                .stream().findFirst().orElse(null);
+        boolean revived = compilerTask != null;
+        if (!revived) {
+            compilerTask = new TaskEntity();
+            compilerTask.setProject(project);
+            compilerTask.setRole(compilerRole);
+            compilerTask.setContentKey(contentKey);
+        }
         // Suffixed with a short id fragment of the first wishlist in the batch: an identical literal title
         // across multiple compiler dispatches in the same project (a normal, legitimate occurrence) was
         // tripping ContinuousOrchestrationService's duplicate-task-title alarm as a false positive.
@@ -3479,7 +3505,15 @@ public class ProjectFlowService {
         String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
         String compilerPrompt = wishlistCompilerPromptBatch(wishlists, planPath);
         compilerTask.setDescription(compilerPrompt);
-        compilerTask.initializeStatus(TaskStatus.queued);
+        if (revived) {
+            // Same row, same identity, fresh plan path and prompt. initializeStatus is for a new entity;
+            // a revived one is moved back to queued explicitly so the row keeps its history.
+            compilerTask.setStatus(TaskStatus.queued);
+            log.info("Wishlist compiler: reviving existing task {} for the same work ({}) instead of creating a duplicate row",
+                    compilerTask.getId(), contentKey);
+        } else {
+            compilerTask.initializeStatus(TaskStatus.queued);
+        }
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
@@ -3519,6 +3553,19 @@ public class ProjectFlowService {
         if (dispatchCompilerTask(compilerTask)) {
             markCompilerReached(wishlists);
         }
+    }
+
+    /**
+     * The identity of a compilation: which project, which wishlists, which role - and nothing about when it
+     * was asked for. The wishlist ids are sorted so that the same set asked for in a different order is the
+     * same work, not a second one.
+     */
+    static String compilerContentKey(ProjectEntity project, java.util.List<WishlistEntity> wishlists) {
+        String ids = wishlists.stream()
+                .map(w -> w.getId().toString())
+                .sorted()
+                .collect(java.util.stream.Collectors.joining(","));
+        return "compile:" + project.getId() + ":" + ids;
     }
 
     /** Falls back to the old shared constant for tasks dispatched before this fix. */
