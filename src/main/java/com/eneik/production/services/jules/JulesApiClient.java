@@ -77,8 +77,6 @@ public class JulesApiClient {
      * instead of always starting fresh from main - used for role-thread continuation, see
      * JulesDispatchService.dispatchInternal / FeatureThreadRepository.
      */
-    public static final int MAX_PROMPT_LENGTH = 60000;
-
     public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext,
                                                      String apiKey, String title, String startingBranch) {
         if (!settingsService.effectiveBoolean("jules_enabled")) {
@@ -97,15 +95,6 @@ public class JulesApiClient {
 
         String effectiveBranch = startingBranch == null || startingBranch.isBlank() ? "main" : startingBranch;
         String prompt = taskDescription + "\n\nContext:\n" + roleContext;
-        if (prompt.length() > MAX_PROMPT_LENGTH) {
-            log.warn("Jules prompt length {} exceeds MAX_PROMPT_LENGTH ({}). Bounding roleContext...", prompt.length(), MAX_PROMPT_LENGTH);
-            int availableForContext = MAX_PROMPT_LENGTH - taskDescription.length() - 20;
-            if (availableForContext > 1000 && roleContext != null && roleContext.length() > availableForContext) {
-                prompt = taskDescription + "\n\nContext:\n" + roleContext.substring(0, availableForContext - 30) + "\n...[truncated]";
-            } else if (availableForContext <= 1000) {
-                prompt = taskDescription.substring(0, Math.min(taskDescription.length(), MAX_PROMPT_LENGTH - 40)) + "\n...[truncated]";
-            }
-        }
         int promptLength = prompt.length();
         String julesSourceName = toJulesSourceName(repoUrl);
 

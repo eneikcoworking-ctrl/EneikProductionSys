@@ -284,6 +284,11 @@ class ProjectAdmissionLaw25aTest {
         List<String> violations = new ArrayList<>();
         for (Field f : fields) {
             String fieldName = f.getName();
+            // A static field is a constant, not a collaborator: it cannot reach outside the transaction.
+            // The subject of this screen is the set of collaborators the admission is allowed to talk to.
+            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                continue;
+            }
             if (!permittedCollaborators.contains(fieldName)) {
                 Pattern fieldUsage = Pattern.compile("\\b" + Pattern.quote(fieldName) + "\\b");
                 if (fieldUsage.matcher(fullTransitiveCode).find()) {
@@ -328,11 +333,55 @@ class ProjectAdmissionLaw25aTest {
         assertFalse(precedingDispatch.contains("@Transactional"),
                 "admitAndDispatchReviewFallbackBatch must NOT be @Transactional - network dispatch to Jules must be outside the admission transaction");
 
-        // 3. Extract method body of admitReviewFallbackBatch and verify no julesApiClient / httpClient references
+        // 3. Extract all method bodies across the transitive call graph of admitReviewFallbackBatch
         String admitBody = extractMethodBody(src, "public ReviewFallbackAdmission admitReviewFallbackBatch(");
-        assertFalse(admitBody.contains("julesApiClient"), "admitReviewFallbackBatch must not invoke julesApiClient");
-        assertFalse(admitBody.contains("httpClient"), "admitReviewFallbackBatch must not invoke httpClient");
-        assertFalse(admitBody.contains("sendGitHub"), "admitReviewFallbackBatch must not invoke sendGitHub");
+        String targetsBody = extractMethodBody(src, "Set<String> reviewFallbackTargetsEverAttempted(");
+        String promptBody = extractMethodBody(src, "String reviewerFallbackPromptBatch(");
+
+        String fullTransitiveCode = String.join("\n", admitBody, targetsBody, promptBody);
+
+        // 4. Strict Whitelist of permitted instance fields / collaborators for JulesDispatchService
+        Set<String> permittedCollaborators = Set.of(
+                "projectRepository",
+                "taskRepository",
+                "projectFlowService",
+                "persistentWorkerSessionService",
+                "self",
+                "log"
+        );
+
+        // 5. Inspect every declared field of JulesDispatchService.
+        // If any field outside the whitelist appears in the transitive call graph, FAIL.
+        Field[] fields = JulesDispatchService.class.getDeclaredFields();
+        List<String> violations = new ArrayList<>();
+        for (Field f : fields) {
+            String fieldName = f.getName();
+            // A static field is a constant, not a collaborator: it cannot reach outside the transaction.
+            // The subject of this screen is the set of collaborators the admission is allowed to talk to.
+            if (java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                continue;
+            }
+            if (!permittedCollaborators.contains(fieldName)) {
+                Pattern fieldUsage = Pattern.compile("\\b" + Pattern.quote(fieldName) + "\\b");
+                if (fieldUsage.matcher(fullTransitiveCode).find()) {
+                    violations.add(fieldName + " (" + f.getType().getSimpleName() + ")");
+                }
+            }
+        }
+
+        assertEquals(List.of(), violations,
+                "Law 25a Transitive Whitelist Violation: The review fallback admission transaction must strictly touch factory local data. "
+                        + "The following non-whitelisted collaborators are accessed across the admitReviewFallbackBatch transitive call graph: "
+                        + violations);
+
+        // 6. Direct external network/process call ban
+        List<String> rawExternalKeywords = List.of(
+                "HttpClient", "RestTemplate", "WebClient", "ProcessBuilder", "Socket", "HttpURLConnection"
+        );
+        for (String kw : rawExternalKeywords) {
+            assertFalse(fullTransitiveCode.contains(kw),
+                    "Law 25a violation: direct external I/O primitive '" + kw + "' found in review fallback admission call graph");
+        }
     }
 
     private static String extractMethodBody(String src, String methodSignature) {
@@ -348,6 +397,16 @@ class ProjectAdmissionLaw25aTest {
                 depth++;
             } else if (c == '}') {
                 depth--;
+            } else if (c == '"' && i + 2 < src.length() && src.charAt(i + 1) == '"' && src.charAt(i + 2) == '"') {
+                // Java text block. Without this branch the scanner reads the opening \"\"\" as an empty string
+                // followed by a lone quote, loses the brace count inside the block, and runs past the end of
+                // the method - which is how a neighbouring method's collaborators appeared inside this one.
+                i += 3;
+                while (i + 2 < src.length()
+                        && !(src.charAt(i) == '"' && src.charAt(i + 1) == '"' && src.charAt(i + 2) == '"')) {
+                    i++;
+                }
+                i += 2;
             } else if (c == '"' || c == '\'') {
                 char quote = c;
                 i++;

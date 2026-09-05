@@ -795,6 +795,10 @@ public class GitHubPullRequestService {
         if (project == null || branch == null || branch.isBlank() || path == null || path.isBlank()) {
             return false;
         }
+        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+            log.warn("GitHub resolveFileConflictWithMain refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
+            return false;
+        }
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return false;
         }
@@ -855,6 +859,10 @@ public class GitHubPullRequestService {
     }
 
     public boolean resolveProductCodeConflictWithMain(ProjectEntity project, String branch, String path) {
+        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+            log.warn("GitHub resolveProductCodeConflictWithMain refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
+            return false;
+        }
         if (project == null || branch == null || branch.isBlank() || path == null || path.isBlank()) {
             return false;
         }

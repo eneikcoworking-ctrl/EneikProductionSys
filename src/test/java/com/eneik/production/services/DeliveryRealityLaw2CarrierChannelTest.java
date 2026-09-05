@@ -209,7 +209,7 @@ class DeliveryRealityLaw2CarrierChannelTest {
     }
 
     @Test
-    @DisplayName("Law 2 File Channel Corollary: commitFile, upsertFile, and copyFile refuse to write factory records into client product tree")
+    @DisplayName("Law 2 File Channel Corollary: commitFile, upsertFile, copyFile, and resolveProductCodeConflictWithMain refuse factory records")
     void writingSitesRefuseFactoryRecords() {
         com.eneik.production.services.github.GitHubPullRequestService ghService =
                 new com.eneik.production.services.github.GitHubPullRequestService(
@@ -227,5 +227,113 @@ class DeliveryRealityLaw2CarrierChannelTest {
         assertFalse(ghService.commitFile(project, ".eneik/records/qa-verification-test.json", content, "qa"));
         assertFalse(ghService.upsertFile(project, ".eneik/records/review-verdict-test.json", content, "verdict"));
         assertFalse(ghService.copyFile(project, "some/path.json", ".eneik/records/archived-plan.json", "archive"));
+        assertFalse(ghService.resolveProductCodeConflictWithMain(project, "feature-branch", ".eneik/records/conflict-test.json"));
+    }
+
+    /**
+     * Derives the SET of repository-mutating sites in the transport and pins it, in the shape of the
+     * Law 20 / S4 screen: no forbidden name is listed, the set itself is the subject, and any site added
+     * tomorrow breaks the equality whatever it is called.
+     *
+     * <p>Written as a brace scanner rather than a regex, after the two failures this repository has already
+     * recorded once. An unbounded {@code [\s\S]*?} between the URL and the verb crosses method boundaries,
+     * so a GET in one method pairs with a PUT in the next and reads are counted as writes; bounding that gap
+     * to a few hundred characters then loses the real sites whose bodies are longer. Neither count is the
+     * number of sites. Splitting the source into method bodies first has neither failure mode.
+     */
+    private static java.util.Map<String, String> transportMethodBodies() throws java.io.IOException {
+        java.nio.file.Path transportPath = java.nio.file.Path.of(
+                "src/main/java/com/eneik/production/services/github/GitHubPullRequestService.java");
+        assertTrue(java.nio.file.Files.exists(transportPath), "GitHubPullRequestService.java must exist");
+        String src = java.nio.file.Files.readString(transportPath);
+        java.util.Map<String, String> bodies = new java.util.LinkedHashMap<>();
+        java.util.regex.Matcher sig = java.util.regex.Pattern
+                .compile("^ {4}(?:public|private|protected)\\s+[\\w<>\\[\\],.\\s]+\\s+(\\w+)\\s*\\(",
+                        java.util.regex.Pattern.MULTILINE)
+                .matcher(src);
+        while (sig.find()) {
+            int open = src.indexOf('{', sig.end());
+            if (open < 0) {
+                continue;
+            }
+            int depth = 0;
+            int i = open;
+            while (i < src.length()) {
+                char c = src.charAt(i);
+                if (c == '{') {
+                    depth++;
+                } else if (c == '}') {
+                    depth--;
+                    if (depth == 0) {
+                        break;
+                    }
+                }
+                i++;
+            }
+            bodies.put(sig.group(1), src.substring(open, Math.min(i, src.length())));
+        }
+        return bodies;
+    }
+
+    @Test
+    @DisplayName("Law 2 S4-style counting invariant: the set of repository file-writing sites in transport is pinned")
+    void theSetOfRepositoryFileWritingSitesIsPinned() throws java.io.IOException {
+        java.util.Map<String, String> bodies = transportMethodBodies();
+        assertFalse(bodies.isEmpty(), "S4 screen cannot run: no method bodies parsed out of the transport");
+
+        java.util.SortedSet<String> writingSites = new java.util.TreeSet<>();
+        for (java.util.Map.Entry<String, String> e : bodies.entrySet()) {
+            if (e.getValue().contains("/contents/") && e.getValue().contains(".PUT(")) {
+                writingSites.add(e.getKey());
+            }
+        }
+
+        assertEquals(
+                new java.util.TreeSet<>(List.of(
+                        "commitFile",
+                        "resolveFileConflictWithMain",
+                        "resolveProductCodeConflictWithMain",
+                        "upsertFile")),
+                writingSites,
+                "Law 2 File Channel Invariant: these are the sites that write a file into the client repository. "
+                        + "A site added here is a new way for a factory record to enter the product tree: name it "
+                        + "in this set, and guard it, or do not add it.");
+
+        // Every site in the pinned set must refuse a factory record before it writes. copyFile is deliberately
+        // NOT here: it issues no PUT of its own, it delegates to commitFile, and the behavioural test above
+        // proves the refusal reaches it.
+        for (String site : writingSites) {
+            assertTrue(bodies.get(site).contains("isFactoryRecordFile"),
+                    "Law 2 File Channel violation: " + site + " writes into the client repository without "
+                            + "checking isFactoryRecordFile first");
+        }
+    }
+
+    @Test
+    @DisplayName("Law 2 S4-style demarkation invariant: no class outside transport issues a repository content write")
+    void noClassOutsideTransportIssuesRepositoryContentWrite() throws java.io.IOException {
+        java.nio.file.Path mainPath = java.nio.file.Path.of("src/main/java/com/eneik/production");
+        assertTrue(java.nio.file.Files.exists(mainPath), "Source path must exist: " + mainPath);
+
+        java.util.regex.Pattern rawContentsPutPattern = java.util.regex.Pattern.compile("/contents/\"?\\s*\\+[^;]*;[\\s\\S]{1,300}?\\.PUT\\(");
+        List<String> offenders = new java.util.ArrayList<>();
+
+        try (java.util.stream.Stream<java.nio.file.Path> stream = java.nio.file.Files.walk(mainPath)) {
+            List<java.nio.file.Path> javaFiles = stream.filter(p -> p.toString().endsWith(".java")).toList();
+            for (java.nio.file.Path f : javaFiles) {
+                String fileName = f.getFileName().toString();
+                if (fileName.equals("GitHubPullRequestService.java") || fileName.equals("GitHubProjectFactoryClient.java")) {
+                    continue;
+                }
+                String code = java.nio.file.Files.readString(f);
+                if (rawContentsPutPattern.matcher(code).find()) {
+                    offenders.add(fileName);
+                }
+            }
+        }
+
+        assertEquals(List.of(), offenders,
+                "Law 2 File Channel violation: Repository file writing is confined strictly to the transport layer. "
+                        + "The following non-transport classes issue raw PUT to /contents/: " + offenders);
     }
 }

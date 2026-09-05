@@ -67,8 +67,9 @@ public class JulesDispatchService {
     // externally can't churn Jules sessions forever.
     private static final int REASONED_BLOCKER_MAX_RETRIES = 2;
     // 2026-08-07 fix (RAG role-context unification): per-task dispatch only ever needs ONE role's own
-    // pattern content (unlike FalsificationCycleService's 13-role audits), so this budget can be generous.
-    private static final int JULES_TASK_PATTERN_CONTEXT_TOP_K = 8;
+    // pattern content (unlike FalsificationCycleService's 13-role audits). Bounded to 2 top chunks to prevent
+    // prompt bloating beyond Google Jules API's empirical limit (~24,000 characters / 8192 tokens).
+    private static final int JULES_TASK_PATTERN_CONTEXT_TOP_K = 2;
     // A design-review "approved, but here are some concerns" verdict is by definition non-blocking - it
     // must never gate the design-review-loop.dispatch on its own findings, only ever add backlog. But an
     // unconditional "one concern in, one wishlist item out" mapping with no stopping condition means a
@@ -756,7 +757,23 @@ public class JulesDispatchService {
                     .append("Build on the existing code, do not start over. Prior summary: ")
                     .append(featureThread.getSummary() == null ? "(none)" : featureThread.getSummary()).append("\n");
         }
+        // Empirical Grounding (GEMINI.md, Law 8, Law 17): Live telemetry confirms Jules API has an
+        // empirical input constraint of ~24,000 characters (~8,192 tokens). Prompts at 21,148 and 23,894 chars
+        // succeeded (HTTP 200, sessions created and merged), whereas 26,565, 38,307, 47,755, and 99,492 chars
+        // consistently failed with HTTP 400 FAILED_PRECONDITION.
+        // INVARIANT (Law 3, Law 17): The task description MUST NEVER BE TRUNCATED.
+        // If auxiliary roleContext (raw charter + RAG pattern context) threatens the limit,
+        // bound ONLY the auxiliary roleContext, reserving full space for description.
+        final int MAX_SAFE_TOTAL_PROMPT_CHARS = 24000;
+        int descLength = description != null ? description.length() : 0;
+        int maxAllowedRoleContext = Math.max(500, MAX_SAFE_TOTAL_PROMPT_CHARS - descLength - 50);
         String roleContext = roleContextBuilder.toString();
+        if (roleContext.length() > maxAllowedRoleContext) {
+            log.info("Bounding auxiliary roleContext for task {} from {} to {} chars to keep total prompt under {} (taskDescription preserved in full: {} chars)",
+                    task.getId(), roleContext.length(), maxAllowedRoleContext, MAX_SAFE_TOTAL_PROMPT_CHARS, descLength);
+            roleContext = roleContext.substring(0, maxAllowedRoleContext)
+                    + "\n\n[...auxiliary role context bounded to preserve full task description...]";
+        }
 
         String apiKey = null;
         if (accountId != null) {
