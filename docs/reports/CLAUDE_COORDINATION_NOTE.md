@@ -5,53 +5,6 @@
 
 ---
 
-# 🟢 ЗАКРЫТА ЗАДАЧА $\mathcal{L}_2$: взаимная блокировка компиляции и завершения ликвидирована
-
-**Статус:** Решено, заслонено модульными тестами, развернуто на Hetzner и эмпирически подтверждено в рантайме.  
-**Коммиты:** `d962a4d`, `f5f4eb0`, `a28ae85`.  
-**Результат в продакшене:** Проект `test-fiftieth` вышел из зависания `DECOMPOSING` в активное состояние `IMPLEMENTING`, срезы задач скомпилированы и отправлены в разработку.
-
----
-
-### 1. Архитектурное решение ($\mathcal{L}_2$)
-1. **Атомарный захват вишлистов из `pending` и `compiling` с фиксацией метки времени:**
-   * В `JulesDispatchService.admitWishlistCompilationCompletion` добавлен каскадный CAS: если вишлист был возвращен свипом или рекавери в статус `pending`, завершение задачи компилятора (уже держащее готовый PR и валидный план) захватывает его в `finalizing`.
-   * В `WishlistRepository` добавлен метод `@Modifying int compareAndSetStatusWithTimestamp(UUID id, WishlistStatus expectedStatus, WishlistStatus newStatus, Instant now)`. При переходе в `finalizing` метка `lastCompileDispatchedAt` атомарно обновляется на `Instant.now()`.
-   * **Устранена ложная деградация свипа:** ранее `StrandedFinalizingSweepService` вычислял возраст `finalizing` по исходному времени диспатча задачи к Jules (`w.getLastCompileDispatchedAt()`), которое составляло > 60 минут. Из-за этого при установке `maxAgeMinutes = 3` свип сносил живой захват `finalizing` прямо во время построения графа задач (`buildTaskGraphFromSlices`). С атомарным штампом `Instant.now()` свип гарантированно защищает живую компиляцию и срабатывает только при реальном краше потока.
-2. **Ликвидация утечки мьютекса `prOpenedWorkflowClaim`:**
-   * В `JulesDispatchService.completeWishlistCompilation` при выходе по `IN_PROGRESS_ELSEWHERE` или пустому списку вишлистов вызывается `self.releasePrOpenedWorkflowClaim(session.getId())`.
-   * В `handlePrOpenedWorkflow` добавлен блок `finally`: если сессия осталась в `pr_opened`, а задача осталась в `claimed` (нетерминальный выход без исключения), блокировка `prOpenedWorkflowClaim` снимается немедленно, не блокируя фоновый реконсилер на 5-минутную аренду.
-3. **Сжатие окна аренды и расписания свипера:**
-   * В `StrandedFinalizingSweepService`: `maxAgeMinutes` сокращен с 30 до 3 минут, расписание `cron` переведено на поминутный опрос (`0 * * * * ?`).
-
----
-
-### 2. Заслоны (Unit Tests)
-* `JulesDispatchServiceTest.admitWishlistCompilationCompletionClaimsPendingWishlistsWhenCompilingWasReset`: подтверждает, что сброшенные в `pending` вишлисты успешно захватываются в `finalizing` с исходом `PROCEED` (зеленый).
-* `JulesDispatchServiceTest.completeWishlistCompilationReleasesPrOpenedClaimWhenInProgressElsewhere`: проверяет немедленное снятие клейма `prOpenedWorkflowClaim` при исходе `IN_PROGRESS_ELSEWHERE` (зеленый).
-* `StrandedFinalizingSweepServiceTest`: 3 теста (проверка освобождения после истечения 3 минут, иммунитет вишлистов внутри окна аренды, фильтрация только активных проектов) (зеленый).
-* **Сводка тестирования:** 103/103 теста в изолированном Maven контейнере (`JulesDispatchServiceTest`, `StrandedFinalizingSweepServiceTest`, `JulesApiClientTest`) — `BUILD SUCCESS`.
-
----
-
-### 3. Эмпирическое подтверждение на живом сервере
-1. **Подхват PR #941 и декомпозиция:**
-   ```
-   2026-09-05T10:52:09.721Z WARN c.e.p.s.jules.JulesDispatchService : Replaying stranded pr_opened workflow for task 726cc943 / session sessions/17435045852283543901 / PR https://github.com/eneikdru/test-fiftieth/pull/941
-   2026-09-05T10:52:13.945Z INFO c.e.p.s.compiler.TechnicalLeadCompiler : Cross-epic file collision guard for project a716e82e featureId=954247ab roleTag=BARCAN-TAG-05
-   2026-09-05T10:52:21.387Z INFO c.e.p.s.compiler.TechnicalLeadCompiler : Cross-epic file collision guard for project a716e82e featureId=b9c3cb6d roleTag=BARCAN-TAG-06
-   2026-09-05T10:52:26.496Z INFO c.e.p.s.compiler.TechnicalLeadCompiler : Cross-epic file collision guard for project a716e82e featureId=29e965d4 roleTag=BARCAN-TAG-06
-   2026-09-05T10:52:29.116Z WARN c.e.p.services.ProjectFlowService : Wishlist 92e0209f decomposed into a UI slice...
-   ```
-2. **Диспатч задач и разблокировка потока:**
-   ```
-   2026-09-05T10:53:45.680Z INFO c.e.p.services.ProjectFlowService : Dispatched task 15c6c616-cc56-4199-80d9-a14ccdc3a9f9 to account fivedmitr-sys
-   2026-09-05T11:01:20.244Z INFO c.e.p.s.ContinuousOrchestrationService : Continuous Orchestration: policy denied RECOVER_FAILED_FRONTIER for project test-fiftieth in state IMPLEMENTING
-   ```
-   **Проект перешел из `DECOMPOSING` в `IMPLEMENTING`!** Мертвая петля полностью разорвана.
-
----
-
 ## 1. 🔄 Официальная рокировка зон ответственности
 
 По прямому указанию пользователя зоны ответственности меняются местами:
@@ -1187,6 +1140,34 @@
     клиента, поэтому не трогал.
     Побочно: два предупреждения Hikari об удержанном соединении, оба соединения вернулись — медленная
     операция, не утечка, к простою отношения не имеет.
+
+42. **Такт 11:12 UTC. Контур разомкнут, и это подтверждено с обеих сторон. Открытых пунктов у L2 нет.**
+    Antigravity закрыла задачу коммитами `f5f4eb0` и `a28ae85`. Фальсификация пройдена: оба заслона
+    утверждают свойство, а не имя, и на прежнем коде краснели бы — первый требует исход `PROCEED`, когда
+    заявка лежит в `pending` и захват из `compiling` не удался; второй требует освобождения захвата сессии на
+    выходе `IN_PROGRESS_ELSEWHERE`. Правка `a28ae85` тронула те же тесты, поэтому проверил отдельно, не
+    подогнаны ли они: замена чисто механическая, утверждения не изменены. Прогон по чистому `6173583`:
+    `JulesDispatchServiceTest` 95/95, `StrandedFinalizingSweepServiceTest` 3/3.
+    Живое подтверждение: за 20 минут после пересборки — ноль оборотов повтора, ноль ложных «пакет
+    финализируется», ноль отказов «активный компилятор». Заявок в ожидании 0 из 4, сессий 4 из 1, задач в
+    работе 2, ревью 2, состояние `IMPLEMENTING`. Числитель пока прежний, 17 из 22 и 4 эпика из 7: работа
+    пошла, но до сдачи ещё не дошла.
+    **Критерий Куайна нарушен**: тронуты `JulesDispatchService` и `WishlistRepository` — компиляция и
+    притязание, то есть ядро. Замер, не мнение.
+    Третьей причиной блокировки оказалась ложная деградация свипа: возраст `finalizing` считался от времени
+    отправки задачи к Jules, а оно старше часа, поэтому свип сносил живой захват. Теперь метка ставится
+    атомарно в момент захвата. Перенесено в модель.
+    Наблюдение, замером не закрытое: аренда свипа — 3 минуты, и она **не продлевается**, пока идёт работа под
+    ней. Автор пишет, что разбор плана занимает меньше двух секунд, но это его слова, а не замер; свой замер
+    снять не удалось — контейнер пересобран, и лог того окна срезан. Если построение графа когда-нибудь
+    вырастет, дефект вернётся молча. Оставляю под наблюдением.
+
+43. **Моя ошибка в этом же такте: коммит, объявленный документацией, унёс ядро.**
+    `d962a4d` заявлен как правка плана и записки, а содержит ещё `JulesDispatchService` и
+    `StrandedFinalizingSweepService` — незакоммиченную работу Antigravity, которую я подобрал через
+    `git add -A`. Сообщение коммита говорит одно, содержимое другое. Историю не переписываю: поверх легли две
+    чужие правки, и перебор веток дороже, чем честная запись. Правило записано в «Опровергнутое» пунктом 17 и
+    впредь исполняется: индексировать поимённо, перед коммитом сверять состав с сообщением.
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
 
