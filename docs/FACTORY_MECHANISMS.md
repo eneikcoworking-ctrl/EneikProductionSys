@@ -3374,6 +3374,51 @@ kept for older docs/scripts»; вторая несёт `@SpringBootApplication` 
 
 ---
 
+**`KaizenProposal`** (129 строк), **`KaizenProposalEntity`** (146) и **`DefectJournalEntity`** (106) —
+предложение об улучшении в доменном виде, оно же в хранимом, и запись о дефекте.
+*Связи:* `KaizenProposal` читают 5 файлов, `KaizenProposalEntity` — 3, `DefectJournalEntity` — 9 |
+`KaizenProposalEntity.fromDomain(KaizenProposal)` и `toDomain()` — единственные не-аксессоры во всей тройке.
+*Ценность:* без раздельных видов доменное решение и способ его хранения срастаются, и всякая правка схемы
+становится правкой решения.
+
+*Комментарий:* **периферия, и форма правильная.** Два представления одного предмета обычно означают два
+источника истины; здесь — не означают, потому что **переход между ними назван и написан явно**: одна пара
+методов, оба направления, ни одного места, где поля перекладываются вручную. Это ровно то, чего не хватает
+`JulesConfigEntity`, где два мира настроек аккаунта сосуществуют без объявленного перехода.
+
+*Философия:* `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` (D009) — Дэвид Чалмерс, `BARCAN-TAG-02
+RIGID-DESIGNATOR`, принцип двумерной семантики, anchor *Two-Dimensional Semantics — primary and secondary
+intensions*. Сильная форма дословно: «отображаемое имя, сохраняемый идентификатор и сущность в API
+**разведены так, что перепутать их нельзя**». Слабая: «одно поле служит всем трём». Опровержение образца:
+«изменить отображаемое имя и посмотреть, не поехали ли ссылки».
+**Форма: сильная.** У Чалмерса первичная интенсия — то, как предмет дан, вторичная — что он есть; здесь это
+разведено буквально: доменный вид отвечает за смысл, хранимый — за ссылку, и переход между ними
+единственный. Опровержение неисполнимо по построению: поменять хранимое поле, не пройдя через `toDomain`,
+негде.
+
+**Тридцать простых хранилищ** — `AccountRoleSuccessStatsRepository`, `CapabilityObservationRepository`,
+`ClientAcceptanceTraversalRepository`, `ClientRuntimeObservationRepository`, `CodeIntegrityFindingRepository`,
+`CoherenceRunNodeResultRepository`, `CoherenceRunRepository`, `FalsificationRunRepository`,
+`FeatureThreadRepository`, `FlowSpineEventRepository`, `GeminiFindingRepository`,
+`GeminiObserverActionRepository`, `GeminiObserverJournalRepository`, `InvariantStatusChangeRepository`,
+`JulesActivityResponseRepository`, `JulesConfigRepository`, `LeverPromotionStateRepository`,
+`LinearIssueMetadataRepository`, `OnboardingAuditFindingRepository`, `OperationalRealityFindingRepository`,
+`PersistentWorkerSessionRepository`, `PrReviewRepository`, `ProcessControlSnapshotRepository`,
+`ProjectFileClaimRepository`, `ProjectFinalReportRepository`, `ProjectGenerationStateRepository`,
+`ReviewConcernRepository`, `RoleRepository`, `TrustSignalSnapshotRepository`, `WishlistItemRepository`.
+*Связи:* каждое — производные методы Spring Data поверх одной таблицы; **собственных запросов нет ни у
+одного**. Замер: `@Query` не встречается ни в одном из тридцати файлов; контрольная проба — у
+`AccountRepository` тот же греп даёт 15, значит греп находит запросы, когда они есть.
+*Ценность:* доступ к таблице без рукописного SQL, то есть без второго места, где живёт схема.
+*Комментарий:* **не механизмы по демаркации.** На вопрос «может ли механизм удержать поток» каждое отвечает
+«нет»: они не решают, они достают. Решение живёт у вызывающего, и именно там оно и разбирается в этом файле.
+Названы поимённо, чтобы перечень был полон и чтобы появление `@Query` в любом из них было заметно как
+изменение рода.
+*Философия:* не применяется. Образец предполагает решение, а здесь решения нет; приписать образец складу
+значило бы сделать ровно то, за что этот файл ругает механизмы фабрики — назвать больше, чем есть.
+
+---
+
 # XVIII. Чего в этом перечне нет
 
 **Это утверждение было ложным и снято 2026-09-06.** Я писал «описаны все 149 классов-механизмов,
