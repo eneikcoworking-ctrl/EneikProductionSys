@@ -70,18 +70,35 @@ class LeanPullReleaseTest {
                         + "producing on a timer, which is push.");
     }
 
+    /**
+     * The body of the method that records a successful merge.
+     *
+     * <p>The first version of this screen took a 4000-character window after the consumption log line
+     * instead, and went red the moment the comment explaining the release grew past it. A window in
+     * characters measures formatting, not structure: it would equally go GREEN if the release were moved
+     * far away and the comments were merely shortened. The property is "in the same method", so the screen
+     * states that.
+     */
+    private static String consumptionMethodBody() throws IOException {
+        String text = source();
+        int start = text.indexOf("private void recordSuccessfulMerge(");
+        assertTrue(start >= 0, "recordSuccessfulMerge not found - the consumption site was renamed");
+        int end = text.indexOf("\n    }", start);
+        assertTrue(end > start, "could not find the end of recordSuccessfulMerge");
+        return text.substring(start, end);
+    }
+
     @Test
     @DisplayName("the release stands inside the consumption site, not somewhere else in the file")
     void releaseStandsAtTheConsumptionSite() throws IOException {
-        String text = source();
-        Matcher consumption = CONSUMPTION_SITE.matcher(text);
-        assertTrue(consumption.find(), "consumption site not found at all");
-        int from = consumption.start();
-        String tail = text.substring(from, Math.min(text.length(), from + 4000));
+        String body = consumptionMethodBody();
 
-        assertTrue(RELEASE_CALL.matcher(tail).find(),
-                "The release must follow the consumption it answers. A call elsewhere in the class would "
-                        + "not be a returned card - it would be another independent trigger.");
+        assertTrue(CONSUMPTION_SITE.matcher(body).find(),
+                "the consumption log line must be inside recordSuccessfulMerge");
+        assertTrue(RELEASE_CALL.matcher(body).find(),
+                "The release must sit in the method that records the consumption it answers. A call "
+                        + "elsewhere in the class would not be a returned card - it would be another "
+                        + "independent trigger.");
     }
 
     @Test
