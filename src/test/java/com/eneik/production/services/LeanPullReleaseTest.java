@@ -115,6 +115,23 @@ class LeanPullReleaseTest {
     }
 
     @Test
+    @DisplayName("an empty queue is not reported as a failed release")
+    void emptyQueueIsNotAFailure() throws IOException {
+        String body = consumptionMethodBody();
+        int denied = body.indexOf("OperationalPolicyDeniedException");
+        int warn = body.indexOf("pull release after merging");
+
+        assertTrue(denied >= 0,
+                "A returned card meeting an empty queue is the normal outcome and must be caught "
+                        + "separately. Measured on the first real merge after this edge shipped: the policy "
+                        + "refused with \"there is nothing for it to act on\", and a single catch reported a "
+                        + "working release as failed.");
+        assertTrue(denied < warn,
+                "The specific catch must precede the general one, or the normal outcome is swallowed by "
+                        + "the failure branch again.");
+    }
+
+    @Test
     @DisplayName("no new bound is invented: capacity stays the card count")
     void noNewBoundIsInvented() throws IOException {
         List<String> forbidden = List.of("maxCardsInFlight", "pullLimit", "MAX_PULL", "releaseSemaphore");

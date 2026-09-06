@@ -1359,6 +1359,16 @@ public class AutoMergeService {
                                 log.info("AutoMergeService: merge of task {} consumed a unit - released the next dispatch "
                                         + "for project {} without waiting for a tick", taskId, releasedProjectId);
                             }
+                        } catch (com.eneik.production.services.operational.OperationalPolicyDeniedException denied) {
+                            // Measured 2026-09-06 06:11 on the first real merge after this edge was
+                            // deployed: the release ran, and the policy refused it with "there is nothing
+                            // for it to act on right now". That is the CORRECT outcome of a returned card
+                            // meeting an empty queue, not a failure - and reporting it as one is the very
+                            // defect this repository keeps recording, a message asserting more than the
+                            // mechanism does. The first version of this catch logged it at WARN as "failed",
+                            // which made a working release look broken in the log.
+                            log.info("AutoMergeService: card returned after merging task {}, and there was "
+                                    + "nothing queued to release: {}", taskId, denied.getMessage());
                         } catch (Exception ex) {
                             log.warn("AutoMergeService: pull release after merging task {} failed: {}", taskId, ex.getMessage());
                         }
