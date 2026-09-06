@@ -21,6 +21,47 @@ public class TechnicalLeadCompiler {
 
     private static final Logger log = LoggerFactory.getLogger(TechnicalLeadCompiler.class);
 
+    // Law 26 (2026-09-06, product namespace). Measured: this compiler predicted file scopes for a client
+    // product under com/eneik/production - the FACTORY's own package - four times for InternalService.java
+    // alone, plus InternalEntity.java, InternalSecurityService.java and a V_NEXT__internal.sql migration.
+    // The product's real namespace is com.eneik.epidemiology, read out of its running app.jar, and no file
+    // by those names exists in the factory either: the planner took "here" from its own static context and
+    // carried it into someone else's repository (INDEXICAL_CONTEXT_LOCK, D006).
+    //
+    // The cross-epic collision guard below did remove those paths, but for the wrong reason - it strips a
+    // path because ANOTHER EPIC claims it. Two epics predicting the same non-existent factory path were
+    // reconciled with each other instead of rejected, and a single occurrence would have passed untouched.
+    // A coincidence of output is not a prohibition (PROHIBITION_AS_CODE, D006: a prohibition is an
+    // executable refusal path with a stated reason and a test, not a line in a document).
+    //
+    // The root is DERIVED from this class's own package rather than written as a literal, so the
+    // prohibition follows the factory if it is ever renamed and cannot drift away from what it names.
+    static final String FACTORY_PACKAGE_ROOT = factoryPackageRoot();
+
+    private static String factoryPackageRoot() {
+        String[] parts = TechnicalLeadCompiler.class.getPackageName().split("\\.");
+        return parts.length >= 3 ? String.join(".", parts[0], parts[1], parts[2])
+                : TechnicalLeadCompiler.class.getPackageName();
+    }
+
+    /**
+     * Paths that lie inside the factory's own package. Pure: no repository, no project, no I/O, so the
+     * prohibition is testable on its own (LAMBDA_CORE_REDUCTION, D008) instead of only through the guard.
+     */
+    static java.util.List<String> pathsInFactoryNamespace(java.util.List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return java.util.List.of();
+        }
+        String segment = "/" + FACTORY_PACKAGE_ROOT.replace('.', '/') + "/";
+        java.util.List<String> offending = new java.util.ArrayList<>();
+        for (String path : paths) {
+            if (path != null && ("/" + path).contains(segment)) {
+                offending.add(path);
+            }
+        }
+        return offending;
+    }
+
     private final WishlistRepository wishlistRepository;
     private final TaskRepository taskRepository;
     private final ProjectRepository projectRepository;
@@ -885,10 +926,35 @@ public class TechnicalLeadCompiler {
             return new CollisionGuardResult(predictedPaths, null);
         }
 
-        java.util.List<com.eneik.production.models.persistence.ProjectFileClaimEntity> existingClaims =
-                projectFileClaimRepository.findByProjectIdAndFilePathIn(project.getId(), predictedPaths);
+        // Law 26 runs BEFORE the ledger is consulted: a path in the factory's own namespace must never be
+        // able to reach the collision guard, where it would be reconciled as a contested resource rather
+        // than refused as an invalid one. Unlike a collision - where the file exists and someone else owns
+        // it, so shipping a narrowed scope is better than shipping none - a factory-namespace path names
+        // nothing in the client repository at all. An empty scope is therefore the correct outcome here,
+        // and the deliberate exception to "never narrow a fileScope to nothing" stated further down.
+        java.util.List<String> factoryOwned = pathsInFactoryNamespace(predictedPaths);
+        java.util.List<String> admissiblePaths = predictedPaths;
+        String namespaceNote = null;
+        if (!factoryOwned.isEmpty()) {
+            admissiblePaths = new java.util.ArrayList<>(predictedPaths);
+            admissiblePaths.removeAll(factoryOwned);
+            log.warn("Law 26 (product namespace) for project {}: featureId={} roleTag={} predicted {} inside "
+                            + "the factory's own package {} - refused before the collision ledger. A path the "
+                            + "factory owns can never be a path of the client product.",
+                    project.getId(), featureId, roleTag, factoryOwned, FACTORY_PACKAGE_ROOT);
+            namespaceNote = "PRODUCT NAMESPACE GUARD: " + String.join(", ", factoryOwned)
+                    + " belong to the factory's own package (" + FACTORY_PACKAGE_ROOT + "), not to this "
+                    + "product. They do not exist in this repository. Do not create them; work only inside "
+                    + "this product's own package.";
+            if (admissiblePaths.isEmpty()) {
+                return new CollisionGuardResult(admissiblePaths, namespaceNote);
+            }
+        }
 
-        java.util.List<String> narrowed = new java.util.ArrayList<>(predictedPaths);
+        java.util.List<com.eneik.production.models.persistence.ProjectFileClaimEntity> existingClaims =
+                projectFileClaimRepository.findByProjectIdAndFilePathIn(project.getId(), admissiblePaths);
+
+        java.util.List<String> narrowed = new java.util.ArrayList<>(admissiblePaths);
         java.util.List<String> collidingPaths = new java.util.ArrayList<>();
         for (com.eneik.production.models.persistence.ProjectFileClaimEntity claim : existingClaims) {
             boolean sameEpic = featureId != null && featureId.equals(claim.getFeatureId());
@@ -915,7 +981,7 @@ public class TechnicalLeadCompiler {
         }
 
         if (collidingPaths.isEmpty()) {
-            return new CollisionGuardResult(narrowed, null);
+            return new CollisionGuardResult(narrowed, namespaceNote);
         }
 
         log.info("Cross-epic file collision guard for project {}: featureId={} roleTag={} stripped {} from predicted fileScope",
@@ -923,7 +989,7 @@ public class TechnicalLeadCompiler {
         String note = "CROSS-EPIC RESOURCE GUARD: " + String.join(", ", collidingPaths)
                 + " already exist and are owned by other work in this project - do not recreate or rewrite "
                 + "them. Add your own new file(s) for this slice's functionality instead.";
-        return new CollisionGuardResult(narrowed, note);
+        return new CollisionGuardResult(narrowed, namespaceNote == null ? note : namespaceNote + "\n\n" + note);
     }
 
     private void recordFileClaims(ProjectEntity project, TaskEntity savedTask, java.util.List<String> fileScopePaths) {
