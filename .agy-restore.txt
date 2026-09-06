@@ -1,0 +1,23 @@
+# Antigravity: как остановлено и как вернуть (2026-09-06 ~01:25 UTC, по указанию оператора)
+
+## Что это было
+Процесс `agy --dangerously-skip-permissions -c`, запущен Fri Sep  4 16:33:15 2026 (33 часа),
+пользователь remotecli, рабочий каталог /opt/EneikProductionSys, исполняемый /home/remotecli/.local/bin/agy.
+Держал ~1140 МБ собственной кучи и 1-2 ядра ЦП непрерывно (98,6% пользовательского времени).
+
+## Почему одного kill не хватило
+Надзиратель: /opt/launch-agy.sh — вечный цикл `while true; do agy ...; sleep 2; done`.
+Живёт в tmux-сессии `agy`, которую создаёт веб-терминал `ttyd -p 8766 -W tmux new-session -A -s agy /opt/launch-agy.sh`.
+Первый SIGTERM убил процесс, цикл поднял новый через 2 секунды. Останавливать надо СЕССИЮ.
+
+## Как остановлено
+    tmux kill-session -t agy
+
+## КАК ВЕРНУТЬ (любой из двух способов)
+    tmux new-session -d -s agy /opt/launch-agy.sh      # прямо, без браузера
+или открыть веб-терминал на порту 8766 — ttyd сам создаст сессию (`new-session -A`).
+
+## Состояние сессии не тронуто
+/home/remotecli/.gemini/antigravity-cli/  — флаг `-c` продолжит последнюю сессию оттуда.
+Лог: /home/remotecli/.gemini/antigravity-cli/log/cli-20260904_163316.log
+Крэш-лог crash_69167_*.log — пустой, 0 байт: падения не было.
