@@ -1330,6 +1330,39 @@ public class AutoMergeService {
                                     + "created. Falsification owns next-iteration generation.", task.getId());
                         }
 
+                        // LEAN PULL, the returned kanban card (2026-09-06, prescription 41 in
+                        // docs/FACTORY_MECHANISMS.md). Measured before this line existed: src/main carried
+                        // forty @Scheduled triggers against one event entry, and that one - the GitHub
+                        // webhook - had never fired in the container's life and is written as scaffolding
+                        // ("Simulate PR Data extraction"). So every stage woke on a clock and asked whether
+                        // there was anything to do. Polling with preconditions looks like pull and is not:
+                        // the clock asks the question, not consumption.
+                        //
+                        // This is the one place in the factory where the client actually CONSUMES: a pull
+                        // request of product code has landed in main. In Lean terms the card comes back
+                        // here and nowhere else - not when a task fails, not when a carrier closes, both of
+                        // which are the factory talking to itself. Returning it means releasing permission
+                        // to produce the next unit, which is exactly dispatchQueuedTasks for this project.
+                        //
+                        // No new bound is introduced, deliberately. The card COUNT already exists and is
+                        // enforced by lockNextJulesAccountWithCapacity: no free session slot, no dispatch.
+                        // What was missing was never the limit - it was the return of the card. The 60s
+                        // orchestration tick stays as a safety net, not as the source of release.
+                        //
+                        // Failure here must never damage the merge that already happened: the merge is the
+                        // real work, this is its consequence. Same guard shape as the advice loop below,
+                        // and for the same reason.
+                        try {
+                            UUID releasedProjectId = task.getProject() != null ? task.getProject().getId() : null;
+                            if (releasedProjectId != null) {
+                                projectFlowService.dispatchQueuedTasks(releasedProjectId);
+                                log.info("AutoMergeService: merge of task {} consumed a unit - released the next dispatch "
+                                        + "for project {} without waiting for a tick", taskId, releasedProjectId);
+                            }
+                        } catch (Exception ex) {
+                            log.warn("AutoMergeService: pull release after merging task {} failed: {}", taskId, ex.getMessage());
+                        }
+
                         // Call advice loop here upon successful merge
                         try {
                             roleAdviceLoopService.afterTaskComplete(taskId);
