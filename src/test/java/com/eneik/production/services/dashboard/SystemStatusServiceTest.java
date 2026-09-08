@@ -1,5 +1,7 @@
 package com.eneik.production.services.dashboard;
 
+import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
@@ -19,10 +21,12 @@ import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -62,11 +66,60 @@ class SystemStatusServiceTest {
         verify(sessions).countByStatus("stuck");
     }
 
+
+    @Test
+    void projectJulesSessionSummaryFetchesOnlySessionsForProjectTasks() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID firstTaskId = UUID.randomUUID();
+        UUID secondTaskId = UUID.randomUUID();
+        TaskEntity firstTask = new TaskEntity();
+        firstTask.setId(firstTaskId);
+        TaskEntity secondTask = new TaskEntity();
+        secondTask.setId(secondTaskId);
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        JulesSessionRepository sessions = mock(JulesSessionRepository.class);
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(firstTask, secondTask));
+
+        JulesSessionEntity queued = new JulesSessionEntity();
+        queued.setTaskId(firstTaskId);
+        queued.setStatus("queued");
+        JulesSessionEntity running = new JulesSessionEntity();
+        running.setTaskId(secondTaskId);
+        running.setStatus("running");
+        when(sessions.findByTaskIdIn(argThat(ids -> ids.size() == 2
+                && ids.contains(firstTaskId)
+                && ids.contains(secondTaskId))))
+                .thenReturn(List.of(queued, running));
+
+        SystemStatusService service = newService(tasks, sessions);
+        Method method = SystemStatusService.class.getDeclaredMethod("julesSessions", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, projectId);
+
+        assertThat(section).containsEntry("total", 2L)
+                .containsEntry("queued", 1L)
+                .containsEntry("running", 1L)
+                .containsEntry("pr_opened", 0L)
+                .containsEntry("failed", 0L)
+                .containsEntry("stuck", 0L);
+        verify(sessions, never()).findAll();
+        verify(sessions).findByTaskIdIn(argThat(ids -> ids.size() == 2
+                && ids.contains(firstTaskId)
+                && ids.contains(secondTaskId)));
+    }
+
     private SystemStatusService newService(JulesSessionRepository sessions) {
+        return newService(mock(TaskRepository.class), sessions);
+    }
+
+    private SystemStatusService newService(TaskRepository tasks, JulesSessionRepository sessions) {
         return new SystemStatusService(
                 mock(SystemSettingsService.class),
                 mock(AccountRepository.class),
-                mock(TaskRepository.class),
+                tasks,
                 sessions,
                 mock(LinearIssueMetadataRepository.class),
                 mock(JdbcTemplate.class),

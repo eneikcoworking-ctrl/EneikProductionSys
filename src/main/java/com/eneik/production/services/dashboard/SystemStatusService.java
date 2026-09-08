@@ -243,9 +243,9 @@ public class SystemStatusService {
 
         List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
-        List<JulesSessionEntity> sessions = julesSessionRepository.findAll().stream()
-                .filter(s -> projectTaskIds.contains(s.getTaskId()))
-                .collect(Collectors.toList());
+        List<JulesSessionEntity> sessions = projectTaskIds.isEmpty()
+                ? List.of()
+                : julesSessionRepository.findByTaskIdIn(new ArrayList<>(projectTaskIds));
         Map<String, Long> counts = sessions.stream()
                 .collect(Collectors.groupingBy(JulesSessionEntity::getStatus, Collectors.counting()));
 
