@@ -558,14 +558,22 @@ public class SystemStatusService {
     private Map<String, Object> conflictDpmo(UUID projectId) {
         List<PrReviewEntity> allReviews;
         List<TaskConflictEntity> allConflicts;
+        List<TaskConflictEntity> activeConflicts;
+        List<Map<String, Object>> conflictTypePareto;
+        List<Map<String, Object>> resolutionStatusPareto;
         java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS);
         long mergedAllTime;
         long mergedLast7Days;
+        long conflictsAllTime;
+        long conflictsLast7Days;
 
         if (projectId == null) {
             mergedAllTime = prReviewRepository.countByMergedTrue();
             mergedLast7Days = prReviewRepository.countByMergedTrueAndCreatedAtAfter(sevenDaysAgo);
-            allConflicts = taskConflictRepository.findAll();
+            conflictsAllTime = taskConflictRepository.count();
+            conflictsLast7Days = taskConflictRepository.countByDetectedAtAfter(sevenDaysAgo);
+            activeConflicts = taskConflictRepository.findActiveByResolutionStatusNot("auto_resolved");
+            allConflicts = List.of();
         } else {
             List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
             Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
@@ -589,23 +597,22 @@ public class SystemStatusService {
             allConflicts = projectTaskIds.isEmpty()
                     ? List.of()
                     : taskConflictRepository.findByTaskIdIn(new ArrayList<>(projectTaskIds));
+            conflictsAllTime = allConflicts.size();
+            conflictsLast7Days = allConflicts.stream()
+                    .filter(c -> c.getDetectedAt() != null && c.getDetectedAt().isAfter(sevenDaysAgo))
+                    .count();
+            activeConflicts = allConflicts.stream()
+                    .filter(c -> !"auto_resolved".equals(c.getResolutionStatus()))
+                    .collect(Collectors.toList());
         }
 
-        long conflictsAllTime = allConflicts.size();
         long totalAttemptsAllTime = mergedAllTime + conflictsAllTime;
         double dpmoAllTime = totalAttemptsAllTime > 0 ? (double) conflictsAllTime / totalAttemptsAllTime * 1_000_000 : 0;
         Double yieldAllTime = yieldRate(conflictsAllTime, totalAttemptsAllTime);
 
-        long conflictsLast7Days = allConflicts.stream()
-                .filter(c -> c.getDetectedAt() != null && c.getDetectedAt().isAfter(sevenDaysAgo))
-                .count();
         long totalAttemptsLast7Days = mergedLast7Days + conflictsLast7Days;
         double dpmoLast7Days = totalAttemptsLast7Days > 0 ? (double) conflictsLast7Days / totalAttemptsLast7Days * 1_000_000 : 0;
         Double yieldLast7Days = yieldRate(conflictsLast7Days, totalAttemptsLast7Days);
-
-        List<TaskConflictEntity> activeConflicts = allConflicts.stream()
-                .filter(c -> !"auto_resolved".equals(c.getResolutionStatus()))
-                .collect(Collectors.toList());
 
         List<Map<String, Object>> activeList = new java.util.ArrayList<>();
         for (TaskConflictEntity conflict : activeConflicts) {
@@ -622,12 +629,17 @@ public class SystemStatusService {
             activeList.add(cMap);
         }
 
-        List<Map<String, Object>> conflictTypePareto = pareto(allConflicts.stream()
-                .map(conflict -> blankToUnknown(conflict.getConflictType()))
-                .toList(), totalAttemptsAllTime);
-        List<Map<String, Object>> resolutionStatusPareto = pareto(allConflicts.stream()
-                .map(conflict -> blankToUnknown(conflict.getResolutionStatus()))
-                .toList(), totalAttemptsAllTime);
+        if (projectId == null) {
+            conflictTypePareto = paretoRows(taskConflictRepository.countByConflictType(), totalAttemptsAllTime);
+            resolutionStatusPareto = paretoRows(taskConflictRepository.countByResolutionStatus(), totalAttemptsAllTime);
+        } else {
+            conflictTypePareto = pareto(allConflicts.stream()
+                    .map(conflict -> blankToUnknown(conflict.getConflictType()))
+                    .toList(), totalAttemptsAllTime);
+            resolutionStatusPareto = pareto(allConflicts.stream()
+                    .map(conflict -> blankToUnknown(conflict.getResolutionStatus()))
+                    .toList(), totalAttemptsAllTime);
+        }
 
         Map<String, Object> data = new java.util.LinkedHashMap<>();
         data.put("dpmo", round(dpmoAllTime));
@@ -686,6 +698,20 @@ public class SystemStatusService {
                     row.put("defects", entry.getValue());
                     row.put("opportunities", opportunities);
                     row.put("dpmo", opportunities == 0 ? 0.0 : round((entry.getValue() / (double) opportunities) * 1_000_000.0));
+                    return row;
+                })
+                .toList();
+    }
+
+    private List<Map<String, Object>> paretoRows(List<TaskConflictRepository.ParetoRow> counts, long opportunities) {
+        return counts.stream()
+                .sorted((a, b) -> Long.compare(b.getDefects(), a.getDefects()))
+                .map(entry -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("name", blankToUnknown(entry.getName()));
+                    row.put("defects", entry.getDefects());
+                    row.put("opportunities", opportunities);
+                    row.put("dpmo", opportunities == 0 ? 0.0 : round((entry.getDefects() / (double) opportunities) * 1_000_000.0));
                     return row;
                 })
                 .toList();

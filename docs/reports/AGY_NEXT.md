@@ -51,3 +51,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только глобальный срез merged-review внутри `conflictDpmo(null)`.
 замечание: all-time и last-7-days merged PR review теперь считаются через `countByMergedTrue()` и `countByMergedTrueAndCreatedAtAfter(...)`; `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: `conflictDpmo(null)` всё ещё поднимает все `TaskConflict`, потому что строит Pareto и active list. Следующий безопасный ход — отделить агрегаты конфликтов от списка активных конфликтов, добавив репозиторные count/group queries и оставив список только там, где UI действительно показывает записи. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: SystemStatusService global conflict aggregate slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл глобальный срез `TaskConflict` внутри `conflictDpmo(null)`.
+замечание: global conflict DPMO больше не вызывает `taskConflictRepository.findAll()`: total/last-7-days идут через count, Pareto — через grouped queries, active list — через active-only finder; `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: в `SystemStatusService` остаются другие `findAll()`-пути вне `conflictDpmo`. Следующий безопасный ход — взять один оставшийся путь, где UI возвращает summary, и перенести ровно его вопрос в repository count/finder с Mockito-заслоном `never().findAll()`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

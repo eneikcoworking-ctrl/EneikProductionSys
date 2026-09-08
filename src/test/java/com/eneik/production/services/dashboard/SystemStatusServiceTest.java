@@ -174,17 +174,19 @@ class SystemStatusServiceTest {
 
 
     @Test
-    void globalConflictDpmoCountsMergedReviewsWithoutLoadingAllReviews() throws Exception {
+    void globalConflictDpmoCountsMergedReviewsAndConflictsWithoutLoadingAllRows() throws Exception {
         PrReviewRepository reviews = mock(PrReviewRepository.class);
         when(reviews.countByMergedTrue()).thenReturn(3L);
         when(reviews.countByMergedTrueAndCreatedAtAfter(any(Instant.class))).thenReturn(1L);
 
-        TaskConflictEntity conflict = new TaskConflictEntity();
-        conflict.setId(UUID.randomUUID());
-        conflict.setDetectedAt(Instant.now());
-        conflict.setResolutionStatus("auto_resolved");
+        TaskConflictRepository.ParetoRow conflictType = paretoRow("merge", 1L);
+        TaskConflictRepository.ParetoRow resolutionStatus = paretoRow("auto_resolved", 1L);
         TaskConflictRepository conflicts = mock(TaskConflictRepository.class);
-        when(conflicts.findAll()).thenReturn(List.of(conflict));
+        when(conflicts.count()).thenReturn(1L);
+        when(conflicts.countByDetectedAtAfter(any(Instant.class))).thenReturn(1L);
+        when(conflicts.findActiveByResolutionStatusNot("auto_resolved")).thenReturn(List.of());
+        when(conflicts.countByConflictType()).thenReturn(List.of(conflictType));
+        when(conflicts.countByResolutionStatus()).thenReturn(List.of(resolutionStatus));
 
         SystemStatusService service = newService(mock(TaskRepository.class), mock(JulesSessionRepository.class), reviews, conflicts);
         Method method = SystemStatusService.class.getDeclaredMethod("conflictDpmo", UUID.class);
@@ -197,10 +199,16 @@ class SystemStatusServiceTest {
                 .containsEntry("conflicts", 1L);
         assertThat((Map<String, Object>) section.get("last7Days")).containsEntry("totalMergeAttempts", 2L)
                 .containsEntry("conflicts", 1L);
+        assertThat((List<Map<String, Object>>) section.get("activeConflicts")).isEmpty();
         verify(reviews, never()).findAll();
+        verify(conflicts, never()).findAll();
         verify(reviews).countByMergedTrue();
         verify(reviews).countByMergedTrueAndCreatedAtAfter(any(Instant.class));
-        verify(conflicts).findAll();
+        verify(conflicts).count();
+        verify(conflicts).countByDetectedAtAfter(any(Instant.class));
+        verify(conflicts).findActiveByResolutionStatusNot("auto_resolved");
+        verify(conflicts).countByConflictType();
+        verify(conflicts).countByResolutionStatus();
     }
 
 
@@ -291,6 +299,13 @@ class SystemStatusServiceTest {
                 .containsEntry("count", 1);
         verify(sessions, never()).findAll();
         verify(sessions).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
+    }
+
+    private TaskConflictRepository.ParetoRow paretoRow(String name, long defects) {
+        TaskConflictRepository.ParetoRow row = mock(TaskConflictRepository.ParetoRow.class);
+        when(row.getName()).thenReturn(name);
+        when(row.getDefects()).thenReturn(defects);
+        return row;
     }
 
     private SystemStatusService newService(JulesSessionRepository sessions) {
