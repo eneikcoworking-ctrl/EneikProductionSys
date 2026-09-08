@@ -73,6 +73,38 @@ class SystemStatusServiceTest {
 
 
     @Test
+    void projectQualityGateFetchesOnlyProjectTasks() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setDescription("project task");
+        task.setQualityGatePassed(true);
+        task.setQualityGateReport(readJson("{\"checks\":[{\"name\":\"unit\",\"passed\":true}]}"));
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(task));
+        SixSigmaAuditService audit = mock(SixSigmaAuditService.class);
+        when(audit.computeCtqBreakdown(projectId)).thenReturn(List.of());
+
+        SystemStatusService service = newService(tasks, audit);
+        Method method = SystemStatusService.class.getDeclaredMethod("qualityGate", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, projectId);
+
+        assertThat(section).containsEntry("totalAttempts", 1L)
+                .containsEntry("totalOpportunities", 1L)
+                .containsEntry("defects", 0L)
+                .containsEntry("passedChecks", 1L)
+                .containsEntry("failedChecks", 0L);
+        verify(tasks, never()).findAll();
+        verify(tasks).findByProjectIdOrderByCreatedAtDesc(projectId);
+        verify(audit).computeCtqBreakdown(projectId);
+    }
+
+
+    @Test
     void globalJulesSessionSummaryUsesRepositoryCountsInsteadOfLoadingAllRows() throws Exception {
         JulesSessionRepository sessions = mock(JulesSessionRepository.class);
         when(sessions.count()).thenReturn(7L);
@@ -329,6 +361,31 @@ class SystemStatusServiceTest {
                 .containsEntry("count", 1);
         verify(sessions, never()).findAll();
         verify(sessions).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
+    }
+
+    private com.fasterxml.jackson.databind.JsonNode readJson(String json) throws Exception {
+        return new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+    }
+
+    private SystemStatusService newService(TaskRepository tasks, SixSigmaAuditService audit) {
+        return new SystemStatusService(
+                mock(SystemSettingsService.class),
+                mock(AccountRepository.class),
+                tasks,
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                mock(ProjectRepository.class),
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                mock(GitHubApiBudgetService.class),
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                audit);
     }
 
     private AccountEntity account(AccountStatus status, UUID currentProjectId, String apiKey) {

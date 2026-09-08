@@ -63,3 +63,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только проектный срез `accounts(projectId)` внутри `SystemStatusService`.
 замечание: проектный путь больше не вызывает `accountRepository.findAll()` и не фильтрует все аккаунты в памяти; он использует существующий `findAvailableForProjectOrderByNameAsc(projectId)`, который несёт тот же predicate. `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: глобальный `accounts(null)` всё ещё отдаёт список `items`, поэтому его нельзя механически заменить счётчиками без решения по UI. Следующий безопасный ход — брать summary-only путь, а если путь отдаёт список, сначала доказать, что список действительно нужен. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: SystemStatusService project quality-gate slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только проектный срез `qualityGate(projectId)` внутри `SystemStatusService`.
+замечание: проектный путь больше не вызывает `taskRepository.findAll()` и не фильтрует все задачи в памяти; он использует `findByProjectIdOrderByCreatedAtDesc(projectId)`. `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: глобальный `qualityGate(null)` всё ещё читает все задачи, потому что разбирает `qualityGateReport` и строит defect items. Следующий безопасный ход — проверить, можно ли читать только задачи с непустым `qualityGateReport`; если да, добавить finder и Mockito-заслон `never().findAll()`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

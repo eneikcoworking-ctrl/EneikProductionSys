@@ -275,12 +275,9 @@ public class SystemStatusService {
         long failedChecks = 0;
         List<Map<String, Object>> defectItems = new ArrayList<>();
 
-        List<TaskEntity> tasks = taskRepository.findAll();
-        if (projectId != null) {
-            tasks = tasks.stream()
-                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
-                    .collect(Collectors.toList());
-        }
+        List<TaskEntity> tasks = projectId == null
+                ? taskRepository.findAll()
+                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
 
         for (TaskEntity task : tasks) {
             JsonNode report = task.getQualityGateReport();
