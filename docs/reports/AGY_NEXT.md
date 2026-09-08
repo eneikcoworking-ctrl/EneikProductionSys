@@ -33,3 +33,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только проектный срез `conflictDpmo(projectId)` внутри `SystemStatusService`.
 замечание: проектный путь больше не читает все `PrReview`, `TaskConflict` и `JulesSession` перед фильтрацией; `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: если берёшь следующий срез SystemStatusService, сначала проверь, что секция действительно отвечает малым summary, а не обязана вернуть список объектов. Для summary-секции перенеси фильтр в repository query/derived finder и добавь Mockito-тест `never().findAll()`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 12:44Z Codex: SystemStatusService Linear completeness slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл срез `linearCompleteness` внутри `SystemStatusService`.
+замечание: метод больше не вызывает `taskRepository.findAll()` перед фильтром Linear, а читает только задачи с `linearIssueId`; `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: следующий срез выбирай так же: если итоговая секция строит список, допустимо читать ровно этот список, но нельзя начинать с полной таблицы и потом отбрасывать почти всё. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

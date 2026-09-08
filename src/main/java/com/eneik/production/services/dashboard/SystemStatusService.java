@@ -183,9 +183,10 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> linearCompleteness(UUID projectId) {
-        List<TaskEntity> tasksWithLinear = taskRepository.findAll().stream()
+        List<TaskEntity> tasksWithLinear = (projectId == null
+                ? taskRepository.findByLinearIssueIdIsNotNull()
+                : taskRepository.findByProjectIdAndLinearIssueIdIsNotNull(projectId)).stream()
                 .filter(task -> task.getLinearIssueId() != null && !task.getLinearIssueId().isBlank())
-                .filter(task -> projectId == null || (task.getProject() != null && projectId.equals(task.getProject().getId())))
                 .toList();
 
         List<Map<String, Object>> reports = new ArrayList<>();

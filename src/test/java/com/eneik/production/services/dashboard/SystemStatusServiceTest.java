@@ -26,6 +26,7 @@ import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -167,22 +168,62 @@ class SystemStatusServiceTest {
         verify(conflicts).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
     }
 
+
+    @Test
+    void globalLinearCompletenessFetchesOnlyTasksWithLinearIssueIds() throws Exception {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setLinearIssueId("LIN-42");
+        TaskEntity blank = new TaskEntity();
+        blank.setId(UUID.randomUUID());
+        blank.setLinearIssueId(" ");
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        LinearIssueMetadataRepository linear = mock(LinearIssueMetadataRepository.class);
+        when(tasks.findByLinearIssueIdIsNotNull()).thenReturn(List.of(task, blank));
+        when(linear.findById(taskId)).thenReturn(Optional.empty());
+
+        SystemStatusService service = newService(tasks, mock(JulesSessionRepository.class), linear);
+        Method method = SystemStatusService.class.getDeclaredMethod("linearCompleteness", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, (UUID) null);
+
+        assertThat(section).containsEntry("totalIssues", 1);
+        verify(tasks, never()).findAll();
+        verify(tasks).findByLinearIssueIdIsNotNull();
+        verify(linear).findById(taskId);
+    }
+
     private SystemStatusService newService(JulesSessionRepository sessions) {
         return newService(mock(TaskRepository.class), sessions);
     }
 
     private SystemStatusService newService(TaskRepository tasks, JulesSessionRepository sessions) {
-        return newService(tasks, sessions, mock(PrReviewRepository.class), mock(TaskConflictRepository.class));
+        return newService(tasks, sessions, mock(LinearIssueMetadataRepository.class));
     }
 
     private SystemStatusService newService(TaskRepository tasks, JulesSessionRepository sessions,
+                                           LinearIssueMetadataRepository linear) {
+        return newService(tasks, sessions, linear, mock(PrReviewRepository.class), mock(TaskConflictRepository.class));
+    }
+
+    private SystemStatusService newService(TaskRepository tasks, JulesSessionRepository sessions,
+                                           PrReviewRepository reviews, TaskConflictRepository conflicts) {
+        return newService(tasks, sessions, mock(LinearIssueMetadataRepository.class), reviews, conflicts);
+    }
+
+    private SystemStatusService newService(TaskRepository tasks, JulesSessionRepository sessions,
+                                           LinearIssueMetadataRepository linear,
                                            PrReviewRepository reviews, TaskConflictRepository conflicts) {
         return new SystemStatusService(
                 mock(SystemSettingsService.class),
                 mock(AccountRepository.class),
                 tasks,
                 sessions,
-                mock(LinearIssueMetadataRepository.class),
+                linear,
                 mock(JdbcTemplate.class),
                 reviews,
                 conflicts,

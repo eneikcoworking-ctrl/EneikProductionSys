@@ -16,6 +16,8 @@ import java.util.UUID;
 public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<TaskEntity> findByStatus(TaskStatus status);
     List<TaskEntity> findByStatusAndRoleTag(TaskStatus status, String tag);
+    List<TaskEntity> findByLinearIssueIdIsNotNull();
+    List<TaskEntity> findByProjectIdAndLinearIssueIdIsNotNull(UUID projectId);
     // Testimony-vs-evidence Phase 2 (2026-07-25): periodic GitHub-truth reconciliation sweep scope.
     List<TaskEntity> findByStatusIn(List<TaskStatus> statuses);
 
