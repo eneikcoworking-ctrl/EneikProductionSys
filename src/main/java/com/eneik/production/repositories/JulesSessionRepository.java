@@ -16,6 +16,7 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     List<JulesSessionEntity> findByTaskId(UUID taskId);
     List<JulesSessionEntity> findByTaskIdIn(List<UUID> taskIds);
     List<JulesSessionEntity> findByStatus(String status);
+    long countByStatus(String status);
     List<JulesSessionEntity> findByStatusIn(List<String> statuses);
 
     /** Pushed down from AutoMergeService, which loaded every session four times per 60s tick. */

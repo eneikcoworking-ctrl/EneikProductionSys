@@ -231,24 +231,42 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> julesSessions(UUID projectId) {
-        List<JulesSessionEntity> sessions = julesSessionRepository.findAll();
-        if (projectId != null) {
-            List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
-            Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
-            sessions = sessions.stream()
-                    .filter(s -> projectTaskIds.contains(s.getTaskId()))
-                    .collect(Collectors.toList());
+        if (projectId == null) {
+            return julesSessionCounts(
+                    julesSessionRepository.count(),
+                    julesSessionRepository.countByStatus("queued"),
+                    julesSessionRepository.countByStatus("running"),
+                    julesSessionRepository.countByStatus("pr_opened"),
+                    julesSessionRepository.countByStatus("failed"),
+                    julesSessionRepository.countByStatus("stuck"));
         }
+
+        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
+        List<JulesSessionEntity> sessions = julesSessionRepository.findAll().stream()
+                .filter(s -> projectTaskIds.contains(s.getTaskId()))
+                .collect(Collectors.toList());
         Map<String, Long> counts = sessions.stream()
                 .collect(Collectors.groupingBy(JulesSessionEntity::getStatus, Collectors.counting()));
 
+        return julesSessionCounts(
+                sessions.size(),
+                counts.getOrDefault("queued", 0L),
+                counts.getOrDefault("running", 0L),
+                counts.getOrDefault("pr_opened", 0L),
+                counts.getOrDefault("failed", 0L),
+                counts.getOrDefault("stuck", 0L));
+    }
+
+    private Map<String, Object> julesSessionCounts(long total, long queued, long running, long prOpened,
+                                                   long failed, long stuck) {
         Map<String, Object> section = new LinkedHashMap<>();
-        section.put("total", sessions.size());
-        section.put("queued", counts.getOrDefault("queued", 0L));
-        section.put("running", counts.getOrDefault("running", 0L));
-        section.put("pr_opened", counts.getOrDefault("pr_opened", 0L));
-        section.put("failed", counts.getOrDefault("failed", 0L));
-        section.put("stuck", counts.getOrDefault("stuck", 0L));
+        section.put("total", total);
+        section.put("queued", queued);
+        section.put("running", running);
+        section.put("pr_opened", prOpened);
+        section.put("failed", failed);
+        section.put("stuck", stuck);
         return section;
     }
 
