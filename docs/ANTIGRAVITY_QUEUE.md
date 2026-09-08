@@ -124,3 +124,257 @@
 
 Пункты 21 и далее — пятьдесят девять пронумерованных предписаний в разделе XVI того же файла. Они старше и
 подробнее; браться за них после того, как закрыты первые двадцать.
+
+---
+
+# Полный проход по всем механизмам
+
+Указание оператора 8 сентября: пройти **каждый** механизм, от самых срочных к тем, что уже хороши.
+Ниже — все **205** записей файла `FACTORY_MECHANISMS.md`, разложенные по **действию**, а не по важности.
+Действие разное, и в этом весь смысл порядка: сильный механизм не чинят, его проверяют и с него берут пример.
+
+Пометка «ядро» значит, что механизм способен удержать или уронить поток. С них начинать внутри каждой ступени.
+
+## Ступень 1 — чинить (16)
+
+У этих в записи есть строка «Задача для кодинга»: сказано, что не так, где именно, чем проверяется и что
+починку опровергнет. Порядок внутри ступени — по очереди в начале этого файла, она упорядочена по весу и вреду.
+
+- `V100__client_acceptance_traversals.sql`  ← ядро
+- `generate_philosopher_patterns.py`  ← ядро
+- `SystemStatusService`  ← ядро
+- `OperationalTruthService`  ← ядро
+- `DesignAssetService`  ← ядро
+- `MLPredictionServiceClient`  ← ядро
+- `RepositoryStackAnalyzer`  ← ядро
+- `GitHubProjectFactoryClient`  ← ядро
+- `CommandDashboardService`  ← ядро
+- `InternalGeminiObserverController`
+- `TocSentinelService`  ← ядро
+- `GoogleAiResourceController`
+- `QualityMetricsController`
+- `GeminiContextCacheManager`
+- `TocOptimizer`  ← ядро
+- `ProjectEventLogRetentionService`  ← ядро
+
+## Ступень 2 — сперва измерить, потом решать (23)
+
+Форма образца слабая, но задачи нет: значит я нашёл несоответствие и **не проверял, вредит ли оно**.
+Действие здесь — воспроизвести опровержение, названное в записи. Если воспроизводится — завести задачу и
+чинить. Если нет — записать, что не воспроизводится, и **не трогать код**.
+
+- `DesignShopCycleRepository`  ← ядро
+- `TargetContext`  ← ядро
+- `AccountStatus`  ← ядро
+- `LeanValue`  ← ядро
+- `ProjectStatus`  ← ядро
+- `Judgement`  ← ядро
+- `TocNode`  ← ядро
+- `TocEdge`
+- `LogScopeBuffer`
+- `DefectJournalEntity`  ← ядро
+- `TaskStatus`  ← ядро
+- `EneikProductionApplication`  ← ядро
+- `V137__compiler_task_identity_from_work.sql`  ← ядро
+- `V132__return_the_two_requirements_the_grouper_took_from_V129.sql`  ← ядро
+- `V19__restructure_accounts_and_projects.sql`  ← ядро
+- `V58__drop_project_event_log_and_watermark.sql`
+- `V111__permanently_disable_gemini_project_observer.sql`  ← ядро
+- `V80__coherence_runs.sql`  ← ядро
+- `V21__add_file_scope_and_conflicts.sql`  ← ядро
+- `V62__add_context_chunk_content_hash.sql`
+- `V15__create_project_final_reports.sql`
+- `append_role_logic.py`
+- `StrandedFinalizingSweepService`  ← ядро
+
+## Ступень 3 — провести пробу, кода не менять (8)
+
+«Форма: не мерено» — это про меня, а не про механизм: я не проводил пробу. Здесь чинить нечего.
+Действие: провести названную пробу и записать её исход в `*Живое:*`. Правка кода на этой ступени — ошибка.
+
+- `ClaimResultStatus`
+- `OperationalPolicyDeniedException`  ← ядро
+- `AnomalyReport`
+- `JulesRoleCapabilities`
+- `ScopedBufferAppender`  ← ядро
+- `V25__add_depends_on_and_hotspots.sql`
+- `OperationalFlowCoreService`  ← ядро
+- `AccountRepository`  ← ядро
+
+## Ступень 4 — дописать запись (118)
+
+У этих нет строки о форме образца: они описаны раньше, чем эта строка стала обязательной. Действие —
+дочитать механизм, назвать образец и форму, добавить `*Живое:*`. Это работа замером, не правкой.
+Дефекты, если найдутся, заводить задачей и переносить на первую ступень.
+
+- `ProjectFlowService`  ← ядро
+- `ProjectFactoryService`
+- `ProjectWorkspaceFactoryService`  ← ядро
+- `RequirementGroundingService`
+- `MarketCorpusService`
+- `MarketComplianceGate`
+- `MarketResearchService`
+- `OnboardingAuditService`  ← ядро
+- `TechnicalLeadCompiler`  ← ядро
+- `FeatureService`  ← ядро
+- `EpistemicMetadataClassifier`
+- `KanoClass`  ← ядро
+- `EmsFlowStage`  ← ядро
+- `SelfFalsificationEpicMatcher`
+- `WishlistContentSimilarityMatcher`
+- `WishlistService`  ← ядро
+- `JulesDispatchService`  ← ядро
+- `JulesApiClient`  ← ядро
+- `SessionLifecycleService`  ← ядро
+- `PersistentWorkerSessionService`  ← ядро
+- `ClaimService`  ← ядро
+- `LeaseWatchdogService`  ← ядро
+- `AccountHealthService`  ← ядро
+- `BottleneckAwarePriorityService`
+- `AutoMergeService`  ← ядро
+- `GitHubPullRequestService`  ← ядро
+- `GitHubApiBudgetService`  ← ядро
+- `GithubAccessService`  ← ядро
+- `CodeChangeClassifier`  ← ядро
+- `GateOrchestrator`
+- `VerificationEvidenceGate`  ← ядро
+- `BranchGarbageCollectorService`
+- `PrReviewPipelineService`  ← ядро
+- `ClientDeliverableReadinessService`  ← ядро
+- `DeliveryRealityProducerService`  ← ядро
+- `ProductLaunchabilityService`  ← ядро
+- `VerdictLayer`  ← ядро
+- `AcceptanceVerdictLayer`  ← ядро
+- `RuntimeVerdictLayer`  ← ядро
+- `DoctrineVerdictLayer`  ← ядро
+- `InfrastructureVerdictLayer`  ← ядро
+- `SixSigmaVerdictLayer`
+- `JudgmentAgentClient`
+- `FactoryJudgmentService`
+- `DeliveredWorkJudgmentService`  ← ядро
+- `CriteriaEvidenceSelector`  ← ядро
+- `LeverPromotionService`
+- `ProcessControlService`
+- `ConstraintIdentificationService`
+- `LaunchabilityConstraintService`  ← ядро
+- `TocSubordinationLever`  ← ядро
+- `FlowMetricsService`
+- `TaskWaitTimeService`
+- `SixSigmaAuditService`
+- `EmsMetricsService`
+- `ProjectOperationalContextService`
+- `SystemProgressTracker`  ← ядро
+- `AiHealthTracker`
+- `RiskLevelCalculator`
+- `FalsificationCycleService`  ← ядро
+- `EvidenceCoherenceService`
+- `OpsAuditorService`  ← ядро
+- `PlatformSelfReferenceDetector`  ← ядро
+- `FactorySelfHealthService`  ← ядро
+- `KaizenService`
+- `PlannedWorkRecoveryService`  ← ядро
+- `ContinuousOrchestrationService`  ← ядро
+- `OperationalPolicyService`
+- `OperationalAction`  ← ядро
+- `TrustSnapshotService`
+- `GoogleAiResourceService`
+- `EmbeddingSimilarityUtil`
+- `StitchClient`
+- `RuntimeLauncherClient`
+- `GeminiObserverActionService`
+- `DesignShopOrchestrationService`
+- `DesignConsistencyAuditService`
+- `DesignSystemFalsificationService`
+- `DesignDriftMonitorService`
+- `ClientRuntimeObservabilityService`
+- `BetaPosterior`
+- `RuntimeHealthShiftDetector`
+- `ProductCapabilityService`
+- `LogScope`
+- `ProjectLogFlushQueue`
+- `SystemSettingsService`  ← ядро
+- `ProjectTreeService`
+- `IdleProjectAdviceService`
+- `RoleCapabilityLoader`  ← ядро
+- `ProjectAuditPipelineService`
+- `AccountController`  ← ядро
+- `ProjectController`  ← ядро
+- `ClaimController`  ← ядро
+- `WishlistController`  ← ядро
+- `InternalTaskController`  ← ядро
+- `JulesSessionController`  ← ядро
+- `GithubWebhookController`
+- `SchedulingConfig`  ← ядро
+- `TocAnomalyDetector`
+- `DefectJournalService`  ← ядро
+- `GithubConfig`
+- `GlobalExceptionHandler`
+- `WebConfig`
+- `launcher.py`  ← ядро
+- `server.js`  ← ядро
+- `PredictionService.py`
+- `ContextChunkRepository`
+- `TaskEntity`
+- `JulesSessionEntity`
+- `EvidenceNodeEntity`  ← ядро
+- `JulesConfigEntity`
+- `PrivacyFilter`  ← ядро
+- `AgencyApplication`
+- `TocToken`
+- `WishlistItemStatus`
+- `V99__task_conflict_preserved_branch.sql`  ← ядро
+- `audit_pr.py`
+- `VideoAssetService`
+
+## Ступень 5 — проверить и не трогать (40)
+
+Форма сильная: механизм отвечает образцу. Действие — **убедиться, что отвечает по-прежнему**, прогнав
+названное в записи опровержение, и записать исход. Менять здесь нечего, а приём стоит перенять для других
+мест. Часть этих механизмов перечислена в `HOW_TO_READ_BEFORE_FIXING.md` как защищённые.
+
+- `ClaimRepository`  ← ядро
+- `ProjectEventLogRepository`
+- `WishlistEntity`  ← ядро
+- `WishlistSource`  ← ядро
+- `KaizenProposal`
+- `WishlistStatus`  ← ядро
+- `PersistentWorkerPurpose`  ← ядро
+- `Verdict`  ← ядро
+- `DbrStatus`  ← ядро
+- `LeverAgreement`  ← ядро
+- `LeverStage`  ← ядро
+- `TaskTitleBuilder`
+- `DurableProjectLogAppender`  ← ядро
+- `KaizenProposalEntity`  ← ядро
+- `DesignShopCycleEntity`  ← ядро
+- `V82__operational_reality_findings.sql`  ← ядро
+- `V97__jules_session_pr_opened_workflow_claim.sql`  ← ядро
+- `V42__add_pr_review_has_code_and_role_threads.sql`  ← ядро
+- `V44__add_features.sql`  ← ядро
+- `V45__rename_role_threads_to_feature_threads.sql`  ← ядро
+- `V30__create_jules_activity_responses.sql`
+- `V126__return_the_budget_of_a_brief_refused_without_a_readable_reason.sql`  ← ядро
+- `V104__observation_instrument_failure.sql`  ← ядро
+- `V61__create_project_event_log.sql`  ← ядро
+- `V121__drop_needs_human_review.sql`  ← ядро
+- `V59__create_gemini_observer_journal.sql`  ← ядро
+- `V68__gemini_observer_journal_continuity_and_action_verification.sql`  ← ядро
+- `V79__kaizen_proposals_and_evidence_nodes.sql`  ← ядро
+- `V81__coherence_confidence.sql`  ← ядро
+- `V72__create_process_control_snapshots.sql`  ← ядро
+- `V85__process_control_snapshot_metric_label.sql`
+- `V90__trust_signal_snapshots.sql`  ← ядро
+- `V69__create_project_file_claims.sql`  ← ядро
+- `V123__drop_task_conflicts_without_a_task.sql`  ← ядро
+- `V55__create_context_chunks.sql`  ← ядро
+- `V92__client_runtime_observations.sql`  ← ядро
+- `FlowSpineService`  ← ядро
+- `GeminiContextService`  ← ядро
+- `TaskRepository`  ← ядро
+- `DesignExcellenceGate`  ← ядро
+
+---
+
+**Итог прохода.** Ступени 1 и 2 — это починка, 39 механизмов. Ступени 3 и 4 — это замер,
+126. Ступень 5 — подтверждение, 40. Больше половины прохода не требует ни строки нового
+кода, и это не недостаток очереди, а свойство фабрики: описанное в ней устройство чаще верно, чем нет.
