@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.ContextChunkEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +22,11 @@ public interface ContextChunkRepository extends JpaRepository<ContextChunkEntity
     @Query("select c.id as id, c.sourceType as sourceType, c.sourceRef as sourceRef, "
             + "c.embedding as embedding, c.embeddingDims as embeddingDims from ContextChunkEntity c")
     List<VectorRow> findAllVectorRows();
+
+    @Query("select c.id as id, c.sourceType as sourceType, c.sourceRef as sourceRef, "
+            + "c.embedding as embedding, c.embeddingDims as embeddingDims from ContextChunkEntity c "
+            + "where c.sourceType in :sourceTypes")
+    List<VectorRow> findVectorRowsBySourceTypeIn(@Param("sourceTypes") List<String> sourceTypes);
 
     interface VectorRow {
         UUID getId();

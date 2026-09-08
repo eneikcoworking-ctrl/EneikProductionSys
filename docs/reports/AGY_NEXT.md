@@ -87,3 +87,9 @@
 подтверждаю / вместо этого: продолжаю пункт 2; Codex закрыл только срез «не читать content всех chunks» в `GeminiContextService.retrieveFiltered`.
 замечание: successful retrieval теперь ранжирует projection `id/sourceType/sourceRef/embedding/embeddingDims` через `findAllVectorRows()`, а `content` читает только для выбранных top-k id через `findAllById(...)`; `GeminiContextServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: все embeddings всё ещё читаются и парсятся в JVM, потому без vector index или предварительно нормированной формы similarity остаётся O(N). Следующий безопасный ход — сохранить поведение выдачи на фиксированном корпусе и отдельно измерить, даёт ли H2-compatible нормализованный столбец/таблица возможность сократить parse cost. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: GeminiContextService source-type vector scope
+
+подтверждаю / вместо этого: продолжаю пункт 2; Codex закрыл только source-type срез `retrieveRelevantContextBySourceTypes`.
+замечание: вызов по source types больше не берёт все vector rows и не фильтрует их в JVM; добавлен repository projection query `findVectorRowsBySourceTypeIn(...)`. `GeminiContextServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: unscoped retrieval и role/sourceRef-prefix retrieval всё ещё читают все embeddings. Следующий безопасный ход — вынести prefix/sourceRef фильтры в repository projection queries, но не менять ранжирование; затем отдельным замером решать parse/vector-index стоимость. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

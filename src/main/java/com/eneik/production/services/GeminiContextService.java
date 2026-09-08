@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 import java.util.stream.StreamSupport;
 import java.util.stream.Collectors;
 
@@ -347,10 +348,19 @@ public class GeminiContextService {
 
     /** Scoped to chunks whose sourceType is one of the given values (role-independent standing knowledge). */
     public List<RetrievedChunk> retrieveRelevantContextBySourceTypes(String query, int topK, List<String> sourceTypes) {
-        return retrieveFiltered(query, topK, c -> sourceTypes.contains(c.getSourceType()));
+        if (sourceTypes == null || sourceTypes.isEmpty()) {
+            return List.of();
+        }
+        return retrieveFiltered(query, topK, () -> repository.findVectorRowsBySourceTypeIn(sourceTypes), null);
     }
 
     private List<RetrievedChunk> retrieveFiltered(String query, int topK, Predicate<ContextChunkRepository.VectorRow> filter) {
+        return retrieveFiltered(query, topK, repository::findAllVectorRows, filter);
+    }
+
+    private List<RetrievedChunk> retrieveFiltered(String query, int topK,
+                                                 Supplier<List<ContextChunkRepository.VectorRow>> corpusSupplier,
+                                                 Predicate<ContextChunkRepository.VectorRow> filter) {
         if (!settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
             return List.of();
         }
@@ -361,7 +371,7 @@ public class GeminiContextService {
         if (queryVector == null) {
             return List.of();
         }
-        List<ContextChunkRepository.VectorRow> corpus = repository.findAllVectorRows();
+        List<ContextChunkRepository.VectorRow> corpus = corpusSupplier.get();
         if (filter != null) {
             corpus = corpus.stream().filter(filter).toList();
         }

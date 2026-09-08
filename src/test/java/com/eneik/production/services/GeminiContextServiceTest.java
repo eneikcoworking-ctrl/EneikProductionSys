@@ -143,8 +143,7 @@ class GeminiContextServiceTest {
         ContextChunkRepository.VectorRow irrelevantRow = vectorRow(irrelevant);
         when(repository.count()).thenReturn(2L);
         when(repository.findAllVectorRows()).thenReturn(List.of(matchRow, irrelevantRow));
-        when(repository.findAllById(argThat(ids -> containsId(ids, match.getId())
-                && !containsId(ids, irrelevant.getId())))).thenReturn(List.of(match));
+        when(repository.findAllById(List.of(match.getId()))).thenReturn(List.of(match));
         when(mlPredictionServiceClient.embed("query")).thenReturn(new float[]{1f, 0f});
 
         List<GeminiContextService.RetrievedChunk> result = service.retrieveRelevantContext("query", 5);
@@ -152,6 +151,26 @@ class GeminiContextServiceTest {
         assertEquals(1, result.size(), "the orthogonal (similarity 0) chunk must be filtered by the dynamic floor");
         assertEquals("ref-match", result.get(0).sourceRef());
         assertEquals(1.0, result.get(0).similarity(), 1e-6);
+    }
+
+    @Test
+    void retrieveRelevantContextBySourceTypesUsesSourceTypeVectorQuery() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        ContextChunkEntity chunk = chunk("typed fact", "OBSERVER_LOG.md", new float[]{1f, 0f});
+        ContextChunkRepository.VectorRow row = vectorRow(chunk);
+        when(repository.count()).thenReturn(1L);
+        when(repository.findVectorRowsBySourceTypeIn(List.of("observer_log"))).thenReturn(List.of(row));
+        when(repository.findAllById(List.of(chunk.getId()))).thenReturn(List.of(chunk));
+        when(mlPredictionServiceClient.embed("query")).thenReturn(new float[]{1f, 0f});
+
+        List<GeminiContextService.RetrievedChunk> result = service.retrieveRelevantContextBySourceTypes(
+                "query", 5, List.of("observer_log"));
+
+        assertEquals(1, result.size());
+        assertEquals("typed fact", result.get(0).content());
+        verify(repository, never()).findAllVectorRows();
+        verify(repository).findVectorRowsBySourceTypeIn(List.of("observer_log"));
     }
 
     @Test
@@ -170,8 +189,8 @@ class GeminiContextServiceTest {
         ContextChunkEntity chunk = chunk("relevant fact", "OBSERVER_LOG.md", new float[]{1f, 0f});
         ContextChunkRepository.VectorRow row = vectorRow(chunk);
         when(repository.count()).thenReturn(1L);
-        when(repository.findAllVectorRows()).thenReturn(List.of(row));
-        when(repository.findAllById(argThat(ids -> containsId(ids, chunk.getId())))).thenReturn(List.of(chunk));
+        when(repository.findVectorRowsBySourceTypeIn(anyList())).thenReturn(List.of(row));
+        when(repository.findAllById(List.of(chunk.getId()))).thenReturn(List.of(chunk));
         when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{1f, 0f});
 
         String block = service.buildContextBlock("query about relevant fact");
@@ -277,15 +296,6 @@ class GeminiContextServiceTest {
         when(row.getEmbedding()).thenReturn(chunk.getEmbedding());
         when(row.getEmbeddingDims()).thenReturn(chunk.getEmbeddingDims());
         return row;
-    }
-
-    private static boolean containsId(Iterable<java.util.UUID> ids, java.util.UUID expected) {
-        for (java.util.UUID id : ids) {
-            if (expected.equals(id)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static ContextChunkEntity chunk(String content, String sourceRef, float[] embedding) {
