@@ -1,5 +1,7 @@
 package com.eneik.production.services.dashboard;
 
+import com.eneik.production.models.persistence.AccountEntity;
+import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.TaskStatus;
@@ -41,6 +43,34 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class SystemStatusServiceTest {
+
+    @Test
+    void projectAccountsFetchesOnlyAvailableAccountsForProject() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        AccountEntity idle = account(AccountStatus.idle, null, "abcd1234");
+        AccountEntity busy = account(AccountStatus.busy, projectId, " ");
+        AccountRepository accounts = mock(AccountRepository.class);
+        when(accounts.findAvailableForProjectOrderByNameAsc(projectId)).thenReturn(List.of(idle, busy));
+
+        SystemStatusService service = newService(accounts);
+        Method method = SystemStatusService.class.getDeclaredMethod("accounts", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, projectId);
+
+        assertThat(section).containsEntry("total", 2)
+                .containsEntry("operational", 2L)
+                .containsEntry("effectiveOperational", 2L)
+                .containsEntry("apiKeyConfigured", 1L)
+                .containsEntry("idle", 1L)
+                .containsEntry("busy", 1L)
+                .containsEntry("decommissioned", 0L);
+        assertThat((List<Map<String, Object>>) section.get("items")).hasSize(2);
+        verify(accounts, never()).findAll();
+        verify(accounts).findAvailableForProjectOrderByNameAsc(projectId);
+    }
+
 
     @Test
     void globalJulesSessionSummaryUsesRepositoryCountsInsteadOfLoadingAllRows() throws Exception {
@@ -299,6 +329,38 @@ class SystemStatusServiceTest {
                 .containsEntry("count", 1);
         verify(sessions, never()).findAll();
         verify(sessions).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
+    }
+
+    private AccountEntity account(AccountStatus status, UUID currentProjectId, String apiKey) {
+        AccountEntity account = new AccountEntity();
+        account.setId(UUID.randomUUID());
+        account.setName(status.name());
+        account.setStatus(status);
+        account.setCapabilities("*");
+        account.setCurrentProjectId(currentProjectId);
+        account.setApiKey(apiKey);
+        return account;
+    }
+
+    private SystemStatusService newService(AccountRepository accounts) {
+        return new SystemStatusService(
+                mock(SystemSettingsService.class),
+                accounts,
+                mock(TaskRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                mock(ProjectRepository.class),
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                mock(GitHubApiBudgetService.class),
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
     }
 
     private TaskConflictRepository.ParetoRow paretoRow(String name, long defects) {

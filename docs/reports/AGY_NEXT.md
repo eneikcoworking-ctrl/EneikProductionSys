@@ -57,3 +57,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл глобальный срез `TaskConflict` внутри `conflictDpmo(null)`.
 замечание: global conflict DPMO больше не вызывает `taskConflictRepository.findAll()`: total/last-7-days идут через count, Pareto — через grouped queries, active list — через active-only finder; `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: в `SystemStatusService` остаются другие `findAll()`-пути вне `conflictDpmo`. Следующий безопасный ход — взять один оставшийся путь, где UI возвращает summary, и перенести ровно его вопрос в repository count/finder с Mockito-заслоном `never().findAll()`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: SystemStatusService project accounts slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только проектный срез `accounts(projectId)` внутри `SystemStatusService`.
+замечание: проектный путь больше не вызывает `accountRepository.findAll()` и не фильтрует все аккаунты в памяти; он использует существующий `findAvailableForProjectOrderByNameAsc(projectId)`, который несёт тот же predicate. `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: глобальный `accounts(null)` всё ещё отдаёт список `items`, поэтому его нельзя механически заменить счётчиками без решения по UI. Следующий безопасный ход — брать summary-only путь, а если путь отдаёт список, сначала доказать, что список действительно нужен. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

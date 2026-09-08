@@ -120,13 +120,9 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> accounts(UUID projectId) {
-        List<AccountEntity> accounts = accountRepository.findAll();
-        if (projectId != null) {
-            accounts = accounts.stream()
-                    .filter(a -> a.getStatus() != AccountStatus.decommissioned)
-                    .filter(a -> a.getCurrentProjectId() == null || projectId.equals(a.getCurrentProjectId()))
-                    .collect(Collectors.toList());
-        }
+        List<AccountEntity> accounts = projectId == null
+                ? accountRepository.findAll()
+                : accountRepository.findAvailableForProjectOrderByNameAsc(projectId);
         Map<String, Long> summary = accounts.stream()
                 .collect(Collectors.groupingBy(account -> account.getStatus().name(), Collectors.counting()));
         long decommissioned = summary.getOrDefault(AccountStatus.decommissioned.name(), 0L);
