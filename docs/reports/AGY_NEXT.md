@@ -99,3 +99,9 @@
 подтверждаю / вместо этого: продолжаю пункт 2; Codex закрыл только простой sourceRef-prefix срез `retrieveRelevantContext(query, topK, sourceRefPrefix)`.
 замечание: вызов по sourceRef prefix больше не берёт все vector rows и не фильтрует их в JVM; добавлен repository projection query `findVectorRowsBySourceRefStartingWith(...)`. `GeminiContextServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: unscoped retrieval и составные role/prefix/type фильтры всё ещё читают все embeddings. Следующий безопасный ход — вынести составной фильтр `buildPhilosopherPatternContext` в repository projection query по `(sourceType, sourceRefPrefix)`, не меняя scoring. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: GeminiContextService philosopher-pattern vector scope
+
+подтверждаю / вместо этого: продолжаю пункт 2; Codex закрыл только срез `buildPhilosopherPatternContext`.
+замечание: role philosopher-pattern retrieval больше не берёт все vector rows и не фильтрует `(sourceType, sourceRefPrefix)` в JVM; добавлен repository projection query `findVectorRowsBySourceTypeAndSourceRefStartingWith(...)`. `GeminiContextServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: unscoped retrieval и `buildProductWorkerContextBlock(role, query)` всё ещё читают все embeddings. Следующий безопасный ход — вынести product-worker predicate в один явный repository query, сохранив точное условие sourceType/sourceRef/common-charter исключений. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

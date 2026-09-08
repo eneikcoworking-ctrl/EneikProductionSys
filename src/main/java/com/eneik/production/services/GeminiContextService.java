@@ -503,8 +503,8 @@ public class GeminiContextService {
             return "";
         }
         List<RetrievedChunk> chunks = retrieveFiltered(query, topK,
-                c -> "philosopher_pattern".equals(c.getSourceType())
-                        && c.getSourceRef() != null && c.getSourceRef().startsWith(role.getTag()));
+                () -> repository.findVectorRowsBySourceTypeAndSourceRefStartingWith("philosopher_pattern", role.getTag()),
+                null);
         if (chunks.isEmpty()) {
             return rawPhilosopherPatternFallback(role);
         }

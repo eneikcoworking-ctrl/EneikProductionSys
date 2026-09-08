@@ -1,6 +1,7 @@
 package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.ContextChunkEntity;
+import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.repositories.ContextChunkRepository;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.junit.jupiter.api.Test;
@@ -151,6 +152,27 @@ class GeminiContextServiceTest {
         assertEquals(1, result.size(), "the orthogonal (similarity 0) chunk must be filtered by the dynamic floor");
         assertEquals("ref-match", result.get(0).sourceRef());
         assertEquals(1.0, result.get(0).similarity(), 1e-6);
+    }
+
+    @Test
+    void buildPhilosopherPatternContextUsesSourceTypeAndPrefixVectorQuery() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-07");
+        ContextChunkEntity chunk = chunk("role pattern", "BARCAN-TAG-07_patterns.md", new float[]{1f, 0f});
+        ContextChunkRepository.VectorRow row = vectorRow(chunk);
+        when(repository.count()).thenReturn(1L);
+        when(repository.findVectorRowsBySourceTypeAndSourceRefStartingWith("philosopher_pattern", "BARCAN-TAG-07"))
+                .thenReturn(List.of(row));
+        when(repository.findAllById(List.of(chunk.getId()))).thenReturn(List.of(chunk));
+        when(mlPredictionServiceClient.embed("query")).thenReturn(new float[]{1f, 0f});
+
+        String block = service.buildPhilosopherPatternContext(role, "query", 5);
+
+        assertTrue(block.contains("role pattern"));
+        verify(repository, never()).findAllVectorRows();
+        verify(repository).findVectorRowsBySourceTypeAndSourceRefStartingWith("philosopher_pattern", "BARCAN-TAG-07");
     }
 
     @Test
