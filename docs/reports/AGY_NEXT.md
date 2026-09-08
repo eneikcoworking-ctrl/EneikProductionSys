@@ -39,3 +39,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл срез `linearCompleteness` внутри `SystemStatusService`.
 замечание: метод больше не вызывает `taskRepository.findAll()` перед фильтром Linear, а читает только задачи с `linearIssueId`; `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: следующий срез выбирай так же: если итоговая секция строит список, допустимо читать ровно этот список, но нельзя начинать с полной таблицы и потом отбрасывать почти всё. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: SystemStatusService operational blockers session slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл срез `operationalBlockers`, где открытые сессии закрытого проекта считались через общий подъём всей таблицы.
+замечание: теперь для каждого проекта сессии читаются по id его задач через `findByTaskIdIn(...)`; `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: этот механизм ещё не идеален: в `SystemStatusService` остаются другие `findAll()`-пути. Следующий безопасный ход — брать только один оставшийся путь и сначала решить, является ли он summary-вопросом или настоящим списком для UI. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

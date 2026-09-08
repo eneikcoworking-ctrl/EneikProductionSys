@@ -373,7 +373,6 @@ public class SystemStatusService {
         List<ProjectEntity> projects = projectId == null
                 ? projectRepository.findAll()
                 : projectRepository.findById(projectId).map(List::of).orElse(List.of());
-        List<JulesSessionEntity> allSessions = julesSessionRepository.findAll();
         for (ProjectEntity project : projects) {
             List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
             if (project.getStatus() == ProjectStatus.active && duplicateContent(projectTasks)) {
@@ -386,8 +385,10 @@ public class SystemStatusService {
                         .filter(com.eneik.production.models.persistence.WishlistEntity::movable)
                         .count();
                 Set<UUID> taskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
-                long staleSessions = allSessions.stream()
-                        .filter(session -> taskIds.contains(session.getTaskId()))
+                List<JulesSessionEntity> projectSessions = taskIds.isEmpty()
+                        ? List.of()
+                        : julesSessionRepository.findByTaskIdIn(new ArrayList<>(taskIds));
+                long staleSessions = projectSessions.stream()
                         .filter(session -> Set.of("queued", "running", "pr_opened", "revising", "stuck")
                                 .contains(session.getStatus()))
                         .count();

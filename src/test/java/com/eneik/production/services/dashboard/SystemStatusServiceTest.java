@@ -2,6 +2,9 @@ package com.eneik.production.services.dashboard;
 
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.PrReviewEntity;
+import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskConflictEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.AccountRepository;
@@ -195,6 +198,67 @@ class SystemStatusServiceTest {
         verify(tasks, never()).findAll();
         verify(tasks).findByLinearIssueIdIsNotNull();
         verify(linear).findById(taskId);
+    }
+
+
+    @Test
+    void operationalBlockersFetchesOnlySessionsForEachTerminalProject() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setName("finished-project");
+        project.setStatus(ProjectStatus.accepted);
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.done);
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(taskId);
+        session.setStatus("running");
+
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveValue("system_stall_status")).thenReturn("ok");
+        GitHubApiBudgetService github = mock(GitHubApiBudgetService.class);
+        when(github.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
+                "ok", true, null, null, null, null, null, null, "", "", Instant.now(), Map.of()));
+        ProjectRepository projects = mock(ProjectRepository.class);
+        when(projects.findAll()).thenReturn(List.of(project));
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(task));
+        WishlistRepository wishlists = mock(WishlistRepository.class);
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        JulesSessionRepository sessions = mock(JulesSessionRepository.class);
+        when(sessions.findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId))))
+                .thenReturn(List.of(session));
+
+        SystemStatusService service = new SystemStatusService(
+                settings,
+                mock(AccountRepository.class),
+                tasks,
+                sessions,
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                wishlists,
+                projects,
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                github,
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
+        Method method = SystemStatusService.class.getDeclaredMethod("operationalBlockers", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, (UUID) null);
+
+        assertThat(section).containsEntry("status", "blocked")
+                .containsEntry("count", 1);
+        verify(sessions, never()).findAll();
+        verify(sessions).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
     }
 
     private SystemStatusService newService(JulesSessionRepository sessions) {
