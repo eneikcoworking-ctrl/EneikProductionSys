@@ -33,6 +33,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -169,6 +170,37 @@ class SystemStatusServiceTest {
         verify(sessions, never()).findAll();
         verify(reviews).findByJulesSessionIdIn(argThat(ids -> ids.size() == 1 && ids.contains(sessionId)));
         verify(conflicts).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
+    }
+
+
+    @Test
+    void globalConflictDpmoCountsMergedReviewsWithoutLoadingAllReviews() throws Exception {
+        PrReviewRepository reviews = mock(PrReviewRepository.class);
+        when(reviews.countByMergedTrue()).thenReturn(3L);
+        when(reviews.countByMergedTrueAndCreatedAtAfter(any(Instant.class))).thenReturn(1L);
+
+        TaskConflictEntity conflict = new TaskConflictEntity();
+        conflict.setId(UUID.randomUUID());
+        conflict.setDetectedAt(Instant.now());
+        conflict.setResolutionStatus("auto_resolved");
+        TaskConflictRepository conflicts = mock(TaskConflictRepository.class);
+        when(conflicts.findAll()).thenReturn(List.of(conflict));
+
+        SystemStatusService service = newService(mock(TaskRepository.class), mock(JulesSessionRepository.class), reviews, conflicts);
+        Method method = SystemStatusService.class.getDeclaredMethod("conflictDpmo", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, (UUID) null);
+
+        assertThat(section).containsEntry("totalMergeAttempts", 4L)
+                .containsEntry("conflicts", 1L);
+        assertThat((Map<String, Object>) section.get("last7Days")).containsEntry("totalMergeAttempts", 2L)
+                .containsEntry("conflicts", 1L);
+        verify(reviews, never()).findAll();
+        verify(reviews).countByMergedTrue();
+        verify(reviews).countByMergedTrueAndCreatedAtAfter(any(Instant.class));
+        verify(conflicts).findAll();
     }
 
 

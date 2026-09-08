@@ -558,9 +558,13 @@ public class SystemStatusService {
     private Map<String, Object> conflictDpmo(UUID projectId) {
         List<PrReviewEntity> allReviews;
         List<TaskConflictEntity> allConflicts;
+        java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS);
+        long mergedAllTime;
+        long mergedLast7Days;
 
         if (projectId == null) {
-            allReviews = prReviewRepository.findAll();
+            mergedAllTime = prReviewRepository.countByMergedTrue();
+            mergedLast7Days = prReviewRepository.countByMergedTrueAndCreatedAtAfter(sevenDaysAgo);
             allConflicts = taskConflictRepository.findAll();
         } else {
             List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
@@ -573,6 +577,11 @@ public class SystemStatusService {
             allReviews = projectSessionIds.isEmpty()
                     ? List.of()
                     : prReviewRepository.findByJulesSessionIdIn(new ArrayList<>(projectSessionIds));
+            mergedAllTime = allReviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
+            mergedLast7Days = allReviews.stream()
+                    .filter(r -> Boolean.TRUE.equals(r.getMerged()))
+                    .filter(r -> r.getCreatedAt() != null && r.getCreatedAt().isAfter(sevenDaysAgo))
+                    .count();
 
             // By identity, not by dereference (2026-08-29, plan §4.26). The id set comes from project tasks;
             // the repository returns only conflicts whose task id is in that set, so the status page no longer
@@ -582,18 +591,11 @@ public class SystemStatusService {
                     : taskConflictRepository.findByTaskIdIn(new ArrayList<>(projectTaskIds));
         }
 
-        java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS);
-
-        long mergedAllTime = allReviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
         long conflictsAllTime = allConflicts.size();
         long totalAttemptsAllTime = mergedAllTime + conflictsAllTime;
         double dpmoAllTime = totalAttemptsAllTime > 0 ? (double) conflictsAllTime / totalAttemptsAllTime * 1_000_000 : 0;
         Double yieldAllTime = yieldRate(conflictsAllTime, totalAttemptsAllTime);
 
-        long mergedLast7Days = allReviews.stream()
-                .filter(r -> Boolean.TRUE.equals(r.getMerged()))
-                .filter(r -> r.getCreatedAt() != null && r.getCreatedAt().isAfter(sevenDaysAgo))
-                .count();
         long conflictsLast7Days = allConflicts.stream()
                 .filter(c -> c.getDetectedAt() != null && c.getDetectedAt().isAfter(sevenDaysAgo))
                 .count();

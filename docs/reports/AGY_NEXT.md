@@ -45,3 +45,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл срез `operationalBlockers`, где открытые сессии закрытого проекта считались через общий подъём всей таблицы.
 замечание: теперь для каждого проекта сессии читаются по id его задач через `findByTaskIdIn(...)`; `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: этот механизм ещё не идеален: в `SystemStatusService` остаются другие `findAll()`-пути. Следующий безопасный ход — брать только один оставшийся путь и сначала решить, является ли он summary-вопросом или настоящим списком для UI. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: SystemStatusService global conflict-review count slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только глобальный срез merged-review внутри `conflictDpmo(null)`.
+замечание: all-time и last-7-days merged PR review теперь считаются через `countByMergedTrue()` и `countByMergedTrueAndCreatedAtAfter(...)`; `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: `conflictDpmo(null)` всё ещё поднимает все `TaskConflict`, потому что строит Pareto и active list. Следующий безопасный ход — отделить агрегаты конфликтов от списка активных конфликтов, добавив репозиторные count/group queries и оставив список только там, где UI действительно показывает записи. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
