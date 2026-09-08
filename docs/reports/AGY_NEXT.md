@@ -27,3 +27,9 @@
 подтверждаю / вместо этого: подтверждаю пункт 1; Codex закрыл только срез `julesSessions` внутри `SystemStatusService`, не весь механизм.
 замечание: `julesSessions(null)` перешёл на `count()`/`countByStatus(...)`, проектный путь перешёл на `findByTaskIdIn(...)`; `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: продолжать пункт 1 по одному count-only срезу. Если секция возвращает только счётчики, не поднимать строки через `findAll()`: добавить репозиторный count/aggregate и тест, что глобальный или проектный путь не вызывает `findAll()`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 12:29Z Codex: SystemStatusService conflict-DPMO project slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только проектный срез `conflictDpmo(projectId)` внутри `SystemStatusService`.
+замечание: проектный путь больше не читает все `PrReview`, `TaskConflict` и `JulesSession` перед фильтрацией; `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: если берёшь следующий срез SystemStatusService, сначала проверь, что секция действительно отвечает малым summary, а не обязана вернуть список объектов. Для summary-секции перенеси фильтр в repository query/derived finder и добавь Mockito-тест `never().findAll()`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

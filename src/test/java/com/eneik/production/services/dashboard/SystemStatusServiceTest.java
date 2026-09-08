@@ -1,6 +1,8 @@
 package com.eneik.production.services.dashboard;
 
 import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.PrReviewEntity;
+import com.eneik.production.models.persistence.TaskConflictEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
@@ -21,6 +23,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.lang.reflect.Method;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -111,11 +114,69 @@ class SystemStatusServiceTest {
                 && ids.contains(secondTaskId)));
     }
 
+
+    @Test
+    void projectConflictDpmoFetchesOnlyProjectReviewsAndConflicts() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setDescription("project task");
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        JulesSessionRepository sessions = mock(JulesSessionRepository.class);
+        PrReviewRepository reviews = mock(PrReviewRepository.class);
+        TaskConflictRepository conflicts = mock(TaskConflictRepository.class);
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(task));
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        when(sessions.findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId))))
+                .thenReturn(List.of(session));
+
+        PrReviewEntity review = new PrReviewEntity();
+        review.setJulesSessionId(sessionId);
+        review.setMerged(true);
+        review.setCreatedAt(Instant.now());
+        when(reviews.findByJulesSessionIdIn(argThat(ids -> ids.size() == 1 && ids.contains(sessionId))))
+                .thenReturn(List.of(review));
+
+        TaskConflictEntity conflict = new TaskConflictEntity();
+        conflict.setId(UUID.randomUUID());
+        conflict.setTask(task);
+        conflict.setDetectedAt(Instant.now());
+        conflict.setResolutionStatus("open");
+        when(conflicts.findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId))))
+                .thenReturn(List.of(conflict));
+
+        SystemStatusService service = newService(tasks, sessions, reviews, conflicts);
+        Method method = SystemStatusService.class.getDeclaredMethod("conflictDpmo", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, projectId);
+
+        assertThat(section).containsEntry("totalMergeAttempts", 2L)
+                .containsEntry("conflicts", 1L);
+        verify(reviews, never()).findAll();
+        verify(conflicts, never()).findAll();
+        verify(sessions, never()).findAll();
+        verify(reviews).findByJulesSessionIdIn(argThat(ids -> ids.size() == 1 && ids.contains(sessionId)));
+        verify(conflicts).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
+    }
+
     private SystemStatusService newService(JulesSessionRepository sessions) {
         return newService(mock(TaskRepository.class), sessions);
     }
 
     private SystemStatusService newService(TaskRepository tasks, JulesSessionRepository sessions) {
+        return newService(tasks, sessions, mock(PrReviewRepository.class), mock(TaskConflictRepository.class));
+    }
+
+    private SystemStatusService newService(TaskRepository tasks, JulesSessionRepository sessions,
+                                           PrReviewRepository reviews, TaskConflictRepository conflicts) {
         return new SystemStatusService(
                 mock(SystemSettingsService.class),
                 mock(AccountRepository.class),
@@ -123,8 +184,8 @@ class SystemStatusServiceTest {
                 sessions,
                 mock(LinearIssueMetadataRepository.class),
                 mock(JdbcTemplate.class),
-                mock(PrReviewRepository.class),
-                mock(TaskConflictRepository.class),
+                reviews,
+                conflicts,
                 mock(WishlistRepository.class),
                 mock(ProjectRepository.class),
                 mock(EmsMetricsService.class),

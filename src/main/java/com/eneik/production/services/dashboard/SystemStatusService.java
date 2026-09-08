@@ -554,30 +554,30 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> conflictDpmo(UUID projectId) {
-        List<PrReviewEntity> allReviews = prReviewRepository.findAll();
-        List<TaskConflictEntity> allConflicts = taskConflictRepository.findAll();
+        List<PrReviewEntity> allReviews;
+        List<TaskConflictEntity> allConflicts;
 
-        if (projectId != null) {
+        if (projectId == null) {
+            allReviews = prReviewRepository.findAll();
+            allConflicts = taskConflictRepository.findAll();
+        } else {
             List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
             Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
-
-            List<JulesSessionEntity> projectSessions = julesSessionRepository.findAll().stream()
-                    .filter(s -> projectTaskIds.contains(s.getTaskId()))
-                    .collect(Collectors.toList());
+            List<JulesSessionEntity> projectSessions = projectTaskIds.isEmpty()
+                    ? List.of()
+                    : julesSessionRepository.findByTaskIdIn(new ArrayList<>(projectTaskIds));
             Set<UUID> projectSessionIds = projectSessions.stream().map(JulesSessionEntity::getId).collect(Collectors.toSet());
 
-            allReviews = allReviews.stream()
-                    .filter(r -> projectSessionIds.contains(r.getJulesSessionId()))
-                    .collect(Collectors.toList());
+            allReviews = projectSessionIds.isEmpty()
+                    ? List.of()
+                    : prReviewRepository.findByJulesSessionIdIn(new ArrayList<>(projectSessionIds));
 
-            // By identity, not by dereference (2026-08-29, plan §4.26). The id set was already built two
-            // statements above for sessions; the conflict filter walked the lazy task proxy instead and so
-            // asked whether a REFERENCE was present rather than whether its REFERENT exists - the same
-            // reading that killed the Kaizen cycle in SixSigmaAuditService against 92 conflict rows whose
-            // tasks are gone.
-            allConflicts = allConflicts.stream()
-                    .filter(c -> projectTaskIds.contains(c.getTask().getId()))
-                    .collect(Collectors.toList());
+            // By identity, not by dereference (2026-08-29, plan §4.26). The id set comes from project tasks;
+            // the repository returns only conflicts whose task id is in that set, so the status page no longer
+            // lifts unrelated conflict rows before asking about one project.
+            allConflicts = projectTaskIds.isEmpty()
+                    ? List.of()
+                    : taskConflictRepository.findByTaskIdIn(new ArrayList<>(projectTaskIds));
         }
 
         java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS);
