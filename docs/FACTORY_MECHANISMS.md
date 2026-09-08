@@ -894,7 +894,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 *Философия:* `RAG_GROUNDING_CAPSULE` (D014) — **сильная**. Опровержение: найти вызов, пересылающий корпус
 сырым текстом.
 
-*Живое, 8 сентября 2026, Codex:* начат срез очереди по `GeminiContextService.retrieveFiltered`: если query embedding не построился, retrieval теперь возвращает пустой результат до подъёма корпуса через `repository.findAll()`. Это не закрывает главный дефект успешного пути: при рабочем embedding метод всё ещё читает весь индекс и парсит векторы в приложении. Проверка: `docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 maven:3.9-eclipse-temurin-17 mvn -q -Dtest=GeminiContextServiceTest test` — пройдена.
+*Живое, 8 сентября 2026, Codex:* начат срез очереди по `GeminiContextService.retrieveFiltered`: если query embedding не построился, retrieval теперь возвращает пустой результат до подъёма корпуса через `repository.findAll()`. Следующим тактом успешный путь перестал поднимать `content` всех chunks: similarity считается по projection `findAllVectorRows()` (`id/sourceType/sourceRef/embedding/embeddingDims`), а полный `content` читается только через `findAllById(...)` для выбранных top-k. Это не закрывает весь дефект: embeddings всё ещё читаются и парсятся все, потому H2 не даёт vector index. Проверка: `docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 maven:3.9-eclipse-temurin-17 mvn -q -Dtest=GeminiContextServiceTest test` — пройдена.
 
 **`EmbeddingSimilarityUtil`** (31 строка) — общий дом для векторной арифметики.
 *Связи:* вызывают ровно двое — и это весь смысл.

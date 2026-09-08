@@ -103,6 +103,7 @@ class GeminiContextServiceTest {
 
         assertTrue(result.isEmpty());
         verify(repository, never()).findAll();
+        verify(repository, never()).findAllVectorRows();
         verify(mlPredictionServiceClient, never()).embed(anyString());
     }
 
@@ -129,17 +130,21 @@ class GeminiContextServiceTest {
 
         assertTrue(result.isEmpty());
         verify(repository, never()).findAll();
+        verify(repository, never()).findAllVectorRows();
     }
 
     @Test
     void retrieveRelevantContextRanksByCosineSimilarityAndAppliesTopK() {
         setUp("");
         when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        ContextChunkEntity match = chunk("exact match", "ref-match", new float[]{1f, 0f});
+        ContextChunkEntity irrelevant = chunk("orthogonal, irrelevant", "ref-irrelevant", new float[]{0f, 1f});
+        ContextChunkRepository.VectorRow matchRow = vectorRow(match);
+        ContextChunkRepository.VectorRow irrelevantRow = vectorRow(irrelevant);
         when(repository.count()).thenReturn(2L);
-        when(repository.findAll()).thenReturn(List.of(
-                chunk("exact match", "ref-match", new float[]{1f, 0f}),
-                chunk("orthogonal, irrelevant", "ref-irrelevant", new float[]{0f, 1f})
-        ));
+        when(repository.findAllVectorRows()).thenReturn(List.of(matchRow, irrelevantRow));
+        when(repository.findAllById(argThat(ids -> containsId(ids, match.getId())
+                && !containsId(ids, irrelevant.getId())))).thenReturn(List.of(match));
         when(mlPredictionServiceClient.embed("query")).thenReturn(new float[]{1f, 0f});
 
         List<GeminiContextService.RetrievedChunk> result = service.retrieveRelevantContext("query", 5);
@@ -162,8 +167,11 @@ class GeminiContextServiceTest {
     void buildContextBlockFormatsRetrievedChunksWithSourceAttribution() {
         setUp("");
         when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        ContextChunkEntity chunk = chunk("relevant fact", "OBSERVER_LOG.md", new float[]{1f, 0f});
+        ContextChunkRepository.VectorRow row = vectorRow(chunk);
         when(repository.count()).thenReturn(1L);
-        when(repository.findAll()).thenReturn(List.of(chunk("relevant fact", "OBSERVER_LOG.md", new float[]{1f, 0f})));
+        when(repository.findAllVectorRows()).thenReturn(List.of(row));
+        when(repository.findAllById(argThat(ids -> containsId(ids, chunk.getId())))).thenReturn(List.of(chunk));
         when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{1f, 0f});
 
         String block = service.buildContextBlock("query about relevant fact");
@@ -261,8 +269,28 @@ class GeminiContextServiceTest {
         }));
     }
 
+    private static ContextChunkRepository.VectorRow vectorRow(ContextChunkEntity chunk) {
+        ContextChunkRepository.VectorRow row = mock(ContextChunkRepository.VectorRow.class);
+        when(row.getId()).thenReturn(chunk.getId());
+        when(row.getSourceType()).thenReturn(chunk.getSourceType());
+        when(row.getSourceRef()).thenReturn(chunk.getSourceRef());
+        when(row.getEmbedding()).thenReturn(chunk.getEmbedding());
+        when(row.getEmbeddingDims()).thenReturn(chunk.getEmbeddingDims());
+        return row;
+    }
+
+    private static boolean containsId(Iterable<java.util.UUID> ids, java.util.UUID expected) {
+        for (java.util.UUID id : ids) {
+            if (expected.equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static ContextChunkEntity chunk(String content, String sourceRef, float[] embedding) {
         ContextChunkEntity entity = new ContextChunkEntity();
+        entity.setId(java.util.UUID.randomUUID());
         // 2026-08-23: was "test", which buildContextBlock now filters out - it draws only from the METHOD
         // corpus so client briefs cannot outrank a charter in the same ranking. The fixture stands for the
         // observer log it names, so it carries that type.

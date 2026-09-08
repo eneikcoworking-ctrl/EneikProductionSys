@@ -18,7 +18,10 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.function.Predicate;
+import java.util.stream.StreamSupport;
 import java.util.stream.Collectors;
 
 /**
@@ -321,6 +324,9 @@ public class GeminiContextService {
     public record RetrievedChunk(String sourceRef, String content, double similarity) {
     }
 
+    private record ScoredChunk(UUID id, String sourceRef, double similarity) {
+    }
+
     /**
      * Ranks the indexed corpus by exact cosine similarity to the query, applies a dynamic (Otsu-style,
      * data-driven) similarity floor so a weakly-related corpus doesn't get force-included, and returns at
@@ -344,7 +350,7 @@ public class GeminiContextService {
         return retrieveFiltered(query, topK, c -> sourceTypes.contains(c.getSourceType()));
     }
 
-    private List<RetrievedChunk> retrieveFiltered(String query, int topK, Predicate<ContextChunkEntity> filter) {
+    private List<RetrievedChunk> retrieveFiltered(String query, int topK, Predicate<ContextChunkRepository.VectorRow> filter) {
         if (!settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
             return List.of();
         }
@@ -355,7 +361,7 @@ public class GeminiContextService {
         if (queryVector == null) {
             return List.of();
         }
-        List<ContextChunkEntity> corpus = repository.findAll();
+        List<ContextChunkRepository.VectorRow> corpus = repository.findAllVectorRows();
         if (filter != null) {
             corpus = corpus.stream().filter(filter).toList();
         }
@@ -369,12 +375,12 @@ public class GeminiContextService {
         // see. That is the same shape as the empty list this method returned for three days after the
         // Gemini quota ran out. Incomparable chunks are now excluded by dimension and counted out loud.
         int queryDimension = queryVector.length;
-        List<RetrievedChunk> scored = corpus.stream()
+        List<ScoredChunk> scored = corpus.stream()
                 .map(chunk -> java.util.Map.entry(chunk, parseEmbedding(chunk.getEmbedding())))
                 .filter(entry -> entry.getValue().length == queryDimension)
-                .map(entry -> new RetrievedChunk(entry.getKey().getSourceRef(), entry.getKey().getContent(),
+                .map(entry -> new ScoredChunk(entry.getKey().getId(), entry.getKey().getSourceRef(),
                         cosineSimilarity(queryVector, entry.getValue())))
-                .sorted(Comparator.comparingDouble(RetrievedChunk::similarity).reversed())
+                .sorted(Comparator.comparingDouble(ScoredChunk::similarity).reversed())
                 .collect(Collectors.toList());
 
         if (scored.isEmpty()) {
@@ -390,11 +396,24 @@ public class GeminiContextService {
                     corpus.size() - scored.size(), corpus.size(), queryDimension);
         }
 
-        double floor = dynamicSimilarityFloor(scored.stream().map(RetrievedChunk::similarity).toList());
-        return scored.stream()
+        double floor = dynamicSimilarityFloor(scored.stream().map(ScoredChunk::similarity).toList());
+        List<ScoredChunk> selected = scored.stream()
                 .filter(c -> c.similarity() >= floor)
                 .limit(topK)
                 .toList();
+        List<UUID> selectedIds = selected.stream().map(ScoredChunk::id).toList();
+        Map<UUID, ContextChunkEntity> contentById = StreamSupport
+                .stream(repository.findAllById(selectedIds).spliterator(), false)
+                .collect(Collectors.toMap(ContextChunkEntity::getId, chunk -> chunk));
+
+        List<RetrievedChunk> retrieved = new ArrayList<>();
+        for (ScoredChunk chunk : selected) {
+            ContextChunkEntity content = contentById.get(chunk.id());
+            if (content != null) {
+                retrieved.add(new RetrievedChunk(chunk.sourceRef(), content.getContent(), chunk.similarity()));
+            }
+        }
+        return retrieved;
     }
 
     // Common corpus/type constants shared by buildRoleAndPatternContext below and reindexStandingKnowledge

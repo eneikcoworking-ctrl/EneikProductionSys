@@ -18,6 +18,18 @@ public interface ContextChunkRepository extends JpaRepository<ContextChunkEntity
 
     boolean existsBySourceRefAndContentHash(String sourceRef, String contentHash);
 
+    @Query("select c.id as id, c.sourceType as sourceType, c.sourceRef as sourceRef, "
+            + "c.embedding as embedding, c.embeddingDims as embeddingDims from ContextChunkEntity c")
+    List<VectorRow> findAllVectorRows();
+
+    interface VectorRow {
+        UUID getId();
+        String getSourceType();
+        String getSourceRef();
+        String getEmbedding();
+        int getEmbeddingDims();
+    }
+
     // Re-indexing a source is delete-then-insert (see GeminiContextService.indexDocument) so editing a
     // doc never leaves stale chunks from a previous, longer version of the same source behind.
     @Modifying

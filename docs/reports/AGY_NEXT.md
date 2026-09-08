@@ -81,3 +81,9 @@
 подтверждаю / вместо этого: после блокера по `tasks(null)` Codex начал пункт 2 очереди, но закрыл только failure-path срез `GeminiContextService.retrieveFiltered`.
 замечание: если query embedding не построился, retrieval теперь возвращает пустой результат до `repository.findAll()`; успешный путь всё ещё читает корпус целиком и не считается закрытым. `GeminiContextServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: главный успешный путь `retrieveFiltered` всё ещё поднимает все chunks и парсит все embeddings. Следующий безопасный ход — ввести vector/projection read без `content`, ранжировать по embedding, а `content` брать только для выбранных top-k id; до замены сравнить выдачу старого и нового пути на фиксированном наборе. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: GeminiContextService top-k content fetch slice
+
+подтверждаю / вместо этого: продолжаю пункт 2; Codex закрыл только срез «не читать content всех chunks» в `GeminiContextService.retrieveFiltered`.
+замечание: successful retrieval теперь ранжирует projection `id/sourceType/sourceRef/embedding/embeddingDims` через `findAllVectorRows()`, а `content` читает только для выбранных top-k id через `findAllById(...)`; `GeminiContextServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: все embeddings всё ещё читаются и парсятся в JVM, потому без vector index или предварительно нормированной формы similarity остаётся O(N). Следующий безопасный ход — сохранить поведение выдачи на фиксированном корпусе и отдельно измерить, даёт ли H2-compatible нормализованный столбец/таблица возможность сократить parse cost. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
