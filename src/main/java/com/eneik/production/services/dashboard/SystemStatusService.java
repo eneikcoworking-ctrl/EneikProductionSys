@@ -276,7 +276,7 @@ public class SystemStatusService {
         List<Map<String, Object>> defectItems = new ArrayList<>();
 
         List<TaskEntity> tasks = projectId == null
-                ? taskRepository.findAll()
+                ? taskRepository.findByQualityGateReportIsNotNull()
                 : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
 
         for (TaskEntity task : tasks) {

@@ -105,6 +105,38 @@ class SystemStatusServiceTest {
 
 
     @Test
+    void globalQualityGateFetchesOnlyTasksWithQualityGateReports() throws Exception {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setDescription("global task");
+        task.setQualityGatePassed(false);
+        task.setQualityGateReport(readJson("{\"checks\":[{\"name\":\"unit\",\"passed\":false,\"failureReasons\":[\"red\"]}]}"));
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.findByQualityGateReportIsNotNull()).thenReturn(List.of(task));
+        SixSigmaAuditService audit = mock(SixSigmaAuditService.class);
+        when(audit.computeCtqBreakdown((UUID) null)).thenReturn(List.of());
+
+        SystemStatusService service = newService(tasks, audit);
+        Method method = SystemStatusService.class.getDeclaredMethod("qualityGate", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, (UUID) null);
+
+        assertThat(section).containsEntry("totalAttempts", 1L)
+                .containsEntry("totalOpportunities", 1L)
+                .containsEntry("defects", 1L)
+                .containsEntry("passedChecks", 0L)
+                .containsEntry("failedChecks", 1L);
+        assertThat((List<Map<String, Object>>) section.get("defectItems")).hasSize(1);
+        verify(tasks, never()).findAll();
+        verify(tasks).findByQualityGateReportIsNotNull();
+        verify(audit).computeCtqBreakdown((UUID) null);
+    }
+
+
+    @Test
     void globalJulesSessionSummaryUsesRepositoryCountsInsteadOfLoadingAllRows() throws Exception {
         JulesSessionRepository sessions = mock(JulesSessionRepository.class);
         when(sessions.count()).thenReturn(7L);

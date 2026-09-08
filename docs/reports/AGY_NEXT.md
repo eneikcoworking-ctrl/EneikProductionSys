@@ -69,3 +69,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только проектный срез `qualityGate(projectId)` внутри `SystemStatusService`.
 замечание: проектный путь больше не вызывает `taskRepository.findAll()` и не фильтрует все задачи в памяти; он использует `findByProjectIdOrderByCreatedAtDesc(projectId)`. `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: глобальный `qualityGate(null)` всё ещё читает все задачи, потому что разбирает `qualityGateReport` и строит defect items. Следующий безопасный ход — проверить, можно ли читать только задачи с непустым `qualityGateReport`; если да, добавить finder и Mockito-заслон `never().findAll()`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: SystemStatusService global quality-gate report slice
+
+подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только глобальный срез `qualityGate(null)` по задачам с quality-report.
+замечание: глобальный путь больше не вызывает `taskRepository.findAll()` ради quality-gate свода; он читает только задачи с непустым `qualityGateReport` через `findByQualityGateReportIsNotNull()`. `SystemStatusServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: в `SystemStatusService` остаются `tasks(null)` и `emsMetrics(null)`, где глобальный путь всё ещё читает все задачи. Следующий безопасный ход — проверить, является ли `tasks(null)` чистым summary; если да, считать статусы в repository с сохранением исключения carrier-задач. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
