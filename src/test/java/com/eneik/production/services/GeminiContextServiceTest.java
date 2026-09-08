@@ -154,6 +154,26 @@ class GeminiContextServiceTest {
     }
 
     @Test
+    void retrieveRelevantContextBySourceRefPrefixUsesPrefixVectorQuery() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        ContextChunkEntity chunk = chunk("role fact", "BARCAN-TAG-07_role.md", new float[]{1f, 0f});
+        ContextChunkRepository.VectorRow row = vectorRow(chunk);
+        when(repository.count()).thenReturn(1L);
+        when(repository.findVectorRowsBySourceRefStartingWith("BARCAN-TAG-07")).thenReturn(List.of(row));
+        when(repository.findAllById(List.of(chunk.getId()))).thenReturn(List.of(chunk));
+        when(mlPredictionServiceClient.embed("query")).thenReturn(new float[]{1f, 0f});
+
+        List<GeminiContextService.RetrievedChunk> result = service.retrieveRelevantContext(
+                "query", 5, "BARCAN-TAG-07");
+
+        assertEquals(1, result.size());
+        assertEquals("role fact", result.get(0).content());
+        verify(repository, never()).findAllVectorRows();
+        verify(repository).findVectorRowsBySourceRefStartingWith("BARCAN-TAG-07");
+    }
+
+    @Test
     void retrieveRelevantContextBySourceTypesUsesSourceTypeVectorQuery() {
         setUp("");
         when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);

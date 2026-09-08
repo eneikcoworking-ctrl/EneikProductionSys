@@ -342,8 +342,10 @@ public class GeminiContextService {
     /** Scoped to chunks whose sourceRef starts with the given prefix (e.g. a role tag - role charter and
      * philosopher-pattern files share that filename prefix, so this covers both in one call). */
     public List<RetrievedChunk> retrieveRelevantContext(String query, int topK, String sourceRefPrefix) {
-        return retrieveFiltered(query, topK,
-                sourceRefPrefix == null ? null : c -> c.getSourceRef() != null && c.getSourceRef().startsWith(sourceRefPrefix));
+        if (sourceRefPrefix == null) {
+            return retrieveFiltered(query, topK, null);
+        }
+        return retrieveFiltered(query, topK, () -> repository.findVectorRowsBySourceRefStartingWith(sourceRefPrefix), null);
     }
 
     /** Scoped to chunks whose sourceType is one of the given values (role-independent standing knowledge). */

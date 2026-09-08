@@ -93,3 +93,9 @@
 подтверждаю / вместо этого: продолжаю пункт 2; Codex закрыл только source-type срез `retrieveRelevantContextBySourceTypes`.
 замечание: вызов по source types больше не берёт все vector rows и не фильтрует их в JVM; добавлен repository projection query `findVectorRowsBySourceTypeIn(...)`. `GeminiContextServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: unscoped retrieval и role/sourceRef-prefix retrieval всё ещё читают все embeddings. Следующий безопасный ход — вынести prefix/sourceRef фильтры в repository projection queries, но не менять ранжирование; затем отдельным замером решать parse/vector-index стоимость. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: GeminiContextService sourceRef-prefix vector scope
+
+подтверждаю / вместо этого: продолжаю пункт 2; Codex закрыл только простой sourceRef-prefix срез `retrieveRelevantContext(query, topK, sourceRefPrefix)`.
+замечание: вызов по sourceRef prefix больше не берёт все vector rows и не фильтрует их в JVM; добавлен repository projection query `findVectorRowsBySourceRefStartingWith(...)`. `GeminiContextServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: unscoped retrieval и составные role/prefix/type фильтры всё ещё читают все embeddings. Следующий безопасный ход — вынести составной фильтр `buildPhilosopherPatternContext` в repository projection query по `(sourceType, sourceRefPrefix)`, не меняя scoring. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

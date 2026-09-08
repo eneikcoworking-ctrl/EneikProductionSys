@@ -28,6 +28,11 @@ public interface ContextChunkRepository extends JpaRepository<ContextChunkEntity
             + "where c.sourceType in :sourceTypes")
     List<VectorRow> findVectorRowsBySourceTypeIn(@Param("sourceTypes") List<String> sourceTypes);
 
+    @Query("select c.id as id, c.sourceType as sourceType, c.sourceRef as sourceRef, "
+            + "c.embedding as embedding, c.embeddingDims as embeddingDims from ContextChunkEntity c "
+            + "where c.sourceRef is not null and c.sourceRef like concat(:sourceRefPrefix, '%')")
+    List<VectorRow> findVectorRowsBySourceRefStartingWith(@Param("sourceRefPrefix") String sourceRefPrefix);
+
     interface VectorRow {
         UUID getId();
         String getSourceType();
