@@ -348,15 +348,18 @@ public class GeminiContextService {
         if (!settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
             return List.of();
         }
+        if (repository.count() == 0) {
+            return List.of();
+        }
+        float[] queryVector = mlPredictionServiceClient.embed(query);
+        if (queryVector == null) {
+            return List.of();
+        }
         List<ContextChunkEntity> corpus = repository.findAll();
         if (filter != null) {
             corpus = corpus.stream().filter(filter).toList();
         }
         if (corpus.isEmpty()) {
-            return List.of();
-        }
-        float[] queryVector = mlPredictionServiceClient.embed(query);
-        if (queryVector == null) {
             return List.of();
         }
 

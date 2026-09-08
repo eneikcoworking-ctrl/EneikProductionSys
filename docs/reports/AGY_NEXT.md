@@ -75,3 +75,9 @@
 подтверждаю / вместо этого: продолжаю пункт 1; Codex закрыл только глобальный срез `qualityGate(null)` по задачам с quality-report.
 замечание: глобальный путь больше не вызывает `taskRepository.findAll()` ради quality-gate свода; он читает только задачи с непустым `qualityGateReport` через `findByQualityGateReportIsNotNull()`. `SystemStatusServiceTest` пройден в Maven-контейнере.
 комментарий для Антигравити: механизм ещё не идеален: в `SystemStatusService` остаются `tasks(null)` и `emsMetrics(null)`, где глобальный путь всё ещё читает все задачи. Следующий безопасный ход — проверить, является ли `tasks(null)` чистым summary; если да, считать статусы в repository с сохранением исключения carrier-задач. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-08 Codex: GeminiContextService embedding-failure guard
+
+подтверждаю / вместо этого: после блокера по `tasks(null)` Codex начал пункт 2 очереди, но закрыл только failure-path срез `GeminiContextService.retrieveFiltered`.
+замечание: если query embedding не построился, retrieval теперь возвращает пустой результат до `repository.findAll()`; успешный путь всё ещё читает корпус целиком и не считается закрытым. `GeminiContextServiceTest` пройден в Maven-контейнере.
+комментарий для Антигравити: механизм ещё не идеален: главный успешный путь `retrieveFiltered` всё ещё поднимает все chunks и парсит все embeddings. Следующий безопасный ход — ввести vector/projection read без `content`, ранжировать по embedding, а `content` брать только для выбранных top-k id; до замены сравнить выдачу старого и нового пути на фиксированном наборе. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.

@@ -122,18 +122,20 @@ class GeminiContextServiceTest {
     void retrieveRelevantContextReturnsEmptyWhenQueryEmbeddingFails() {
         setUp("");
         when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
-        when(repository.findAll()).thenReturn(List.of(chunk("a", "ref1", new float[]{1f, 0f})));
+        when(repository.count()).thenReturn(1L);
         when(mlPredictionServiceClient.embed("query")).thenReturn(null);
 
         List<GeminiContextService.RetrievedChunk> result = service.retrieveRelevantContext("query", 5);
 
         assertTrue(result.isEmpty());
+        verify(repository, never()).findAll();
     }
 
     @Test
     void retrieveRelevantContextRanksByCosineSimilarityAndAppliesTopK() {
         setUp("");
         when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        when(repository.count()).thenReturn(2L);
         when(repository.findAll()).thenReturn(List.of(
                 chunk("exact match", "ref-match", new float[]{1f, 0f}),
                 chunk("orthogonal, irrelevant", "ref-irrelevant", new float[]{0f, 1f})
@@ -160,6 +162,7 @@ class GeminiContextServiceTest {
     void buildContextBlockFormatsRetrievedChunksWithSourceAttribution() {
         setUp("");
         when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        when(repository.count()).thenReturn(1L);
         when(repository.findAll()).thenReturn(List.of(chunk("relevant fact", "OBSERVER_LOG.md", new float[]{1f, 0f})));
         when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{1f, 0f});
 
