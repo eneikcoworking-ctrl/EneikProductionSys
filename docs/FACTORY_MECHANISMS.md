@@ -6156,6 +6156,37 @@ nothing for it to act on right now». То есть механизм разли�
 таблицу сессий — 14. Одна привычка, повторённая восемьдесят четыре раза, и она же — главная причина, почему
 лёгкая по замыслу система держится у гигабайта.
 
+
+**Общий механизм: дисциплина full-table reads** — не всякий `findAll()` дефект, но каждый неограниченный подъём строк обязан иметь владельца, класс пути и проверяемую причину.
+
+*Живое, 9 сентября 2026, Codex: такт заполнения записи, без правки кода.* Очередь называла 84 места; текущий замер после старых Codex-срезов даёт 76 вызовов `.findAll()` в `src/main/java`. Это не означает 76 дефектов: часть путей может быть admin-list, maintenance sweep, tiny lookup или deliberate cache/static build. Ошибка старого метода была в том, что число воспринималось как приглашение уменьшать счётчик, а не как механизм, требующий классификации.
+
+*Идеальная форма механизма:* любой полный подъём таблицы находится в реестре с пятью полями: owner of truth, caller/cadence, table/cardinality evidence, class (`hot summary`, `bounded UI list`, `project-scoped list`, `maintenance sweep`, `admin/export`, `static/cache build`, `small reference table`), и refutation. Summary/count/project-filter paths обязаны спрашивать хранилище ровно о нужной величине; row-list paths обязаны быть ограничены назначением UI, проектом, статусом, временем или явным maintenance budget. Уменьшение общего числа `findAll()` само по себе не является успехом.
+
+*Граница:* механизм описывает дисциплину чтения repository rows across backend. Он не запрещает все `findAll()`, не заменяет бизнес-логику, не требует менять callers без их записи механизма и не разрешает ломать API shape ради экономии памяти. Он запрещает только неклассифицированный полный подъём строк в hot path или подъём строк ради ответа, который по смыслу является счётчиком/агрегатом.
+
+*Входы:* текущий grep-inventory `.findAll()`; таблицы и их размер/cadence из живых замеров; список hot callers (`SystemStatusService`, context retrieval, orchestration/dashboard/metrics paths); UI/API contract evidence; repository methods that already express count, status, project, time or active-only predicates.
+
+*Выходы:* ranked inventory of remaining full-table reads; keep/replace decision with source evidence; per-path closure criterion; questions in `AGY_ASKS.md` where the safe predicate is unknowable; future implementation tasks only after the path is classified.
+
+*Связи и взаимодействия:* первый зависимый механизм — `SystemStatusService`, потому его record уже отделяет summary from bounded UI list. Второй — `GeminiContextService`, потому его record отделяет hot retrieval from reindex/static cache. Далее эта дисциплина касается controllers and services by evidence, not by shame: `FalsificationCycleService`, `QualityMetricsController`, `SixSigmaAuditService`, `ProjectOperationalContextService`, `ConstraintIdentificationService`, `EvidenceCoherenceService`, `ProjectFlowService`, `KaizenService`, internal probe/admin controllers and maintenance services.
+
+*Инварианты:* (1) each number has a command; (2) nonzero `findAll()` count is not a defect until classified; (3) hot summary cannot fetch rows just to count/filter them; (4) project-specific answer cannot fetch all projects' rows and filter in memory; (5) UI list cannot be called bounded unless the UI/API bound is named; (6) maintenance/cache full read must name cadence, owner and why it is outside hot path; (7) behavior compatibility must be defined before replacing a read; (8) if carrier/meta/task identity is needed, it must come from a reliable field/source, not string coincidence.
+
+*Сильная форма:* all 76 current `.findAll()` call sites are classified in a live inventory with owner, class, cadence, table evidence, keep/replace decision and refutation; every hot summary/project path has a repository aggregate/projection or a recorded blocker; future commits may say `считаю механизм идеальным` only when no unclassified hot full-table read remains.
+
+*Слабая форма:* grep count decreases, but remaining calls are unknown; or a call is replaced because it looks large, without proving caller semantics and API/UI contract. This is the harmful form the operator rejected.
+
+*Текущая форма:* не закрыта. Current evidence: `grep -RIn "\.findAll()" src/main/java --exclude-dir=target | wc -l` returns 76. Top files by current count: `FalsificationCycleService` 7, `QualityMetricsController` 7, `SixSigmaAuditService` 6, `SystemStatusService` 5, `ProjectOperationalContextService` 4. The record is now strong enough to prevent blind slices, but the full 76-row inventory is not yet filled.
+
+*Опровержение:* ask for any remaining `.findAll()` call site and require its registry row. If none exists, mechanism record is incomplete. Ask whether a changed path preserves UI/API output; if no fixture/snapshot/contract exists, implementation is not allowed. Ask whether a count/summary path still loads rows; if yes and not classified as bounded list/maintenance, the mechanism is violated.
+
+*Критерий закрытия:* fill the 76-row inventory, then classify each row as allowed or replacement-needed; open `AGY_ASKS.md` only for predicates that cannot be stated safely from evidence; only then allow code tacts for rows whose ideal replacement is known. The mechanism itself is ideal only when every remaining full-table read has a documented, checkable reason or has been replaced without changing the owning mechanism's contract.
+
+*Свидетельства такта:* `grep -RIn "\.findAll()" src/main/java --exclude-dir=target | wc -l`; `grep -RIn "\.findAll()" src/main/java --exclude-dir=target | awk -F: '{count[$1]++} END {for (f in count) print count[f], f}' | sort -nr | head -25`; `grep -RIn "taskRepository\.findAll()\|julesSessionRepository\.findAll()" src/main/java --exclude-dir=target`; `grep -n "ACP-025\|ACP-060\|ACP-061\|ACP-077" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN" docs/philosopher-patterns/philosophers/BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE_02_elvin-goldman.md`; `sed -n '80,88p' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`.
+
+*комментарий для Антигравити:* механизм не идеален. Следующий такт — не правка кода, а первая страница реестра: классифицировать top-10 `.findAll()` call sites by owner/cadence/class/refutation, starting with `FalsificationCycleService`, `QualityMetricsController`, `SixSigmaAuditService`, `SystemStatusService`, `ProjectOperationalContextService`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, publication anchor `A Causal Theory of Knowing / Epistemology and Cognition - reliabilism`, pattern `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`.
+
 # XXVI. Служба контекста: чем определяется, что исполнитель прочтёт
 
 **`GeminiContextService`** (740 строк) — выдаёт роли её устав и подходящие образцы, отбирая из выборки

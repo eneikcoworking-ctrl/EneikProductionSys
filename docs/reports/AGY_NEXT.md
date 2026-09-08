@@ -123,3 +123,9 @@
 подтверждаю / вместо этого: заполнена целая запись `GeminiContextService`, а не новый vector-scope срез. В запись добавлены идеальная форма, граница, входы/выходы, связи, инварианты, public surface classification, сильная/текущая форма, опровержение и критерий закрытия.
 замечание: код не менялся. Запись различает hot retrieval, maintenance reindex cleanup и deliberate static prompt-cache corpus, чтобы будущая реализация не сломала взаимодействия.
 комментарий для Антигравити: `GeminiContextService` не идеален в реализации. Следующий факт перед кодом — exact repository predicate для `buildProductWorkerContextBlock(role, query)` и fixture-сравнение sourceRefs с текущим поведением. Философия: `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, Алонзо Чёрч, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE`, family `RAG_GROUNDING_CAPSULE`, defect `D014 RAG hallucination`; дополнительно `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
+
+## 2026-09-09 Codex: full-table read discipline mechanism record
+
+подтверждаю / вместо этого: заполнена запись общего механизма full-table read discipline. Запись запрещает считать уменьшение grep-count успехом и требует классификации каждого `findAll()` по owner/cadence/class/refutation перед любой реализацией.
+замечание: код не менялся. Текущий замер после старых срезов: 76 вызовов `.findAll()` в `src/main/java`; это inventory input, не список дефектов.
+комментарий для Антигравити: механизм не идеален. Следующий такт — первая страница реестра: классифицировать top-10 `.findAll()` call sites по owner/cadence/class/refutation, начиная с `FalsificationCycleService`, `QualityMetricsController`, `SixSigmaAuditService`, `SystemStatusService`, `ProjectOperationalContextService`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`.
