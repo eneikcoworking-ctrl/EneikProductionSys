@@ -117,3 +117,9 @@
 подтверждаю / вместо этого: заполнена таблица классификации всех 16 секций `SystemStatusService`: какие секции являются owned snapshot, summary, bounded UI list, secondary projection или blocker list, кто владелец истины и что опровергает каждую секцию.
 замечание: код не менялся. Запись механизма стала пригодной для будущей реализации без случайных срезов; сам механизм в коде не объявлен идеальным.
 комментарий для Антигравити: `SystemStatusService` не идеален в реализации, но запись теперь показывает точные границы. Следующие факты для добавления перед кодом: доказанный carrier-source для `tasks(null)`, bound/limit для `accounts` и `conflictDpmo.activeConflicts`, агрегатный путь для global `emsMetrics`, и опровержение `systemHealth.status=ok` при stale progress. Философия: `BARCAN-TAG-00_CODE-GUARDIAN`, Людвиг Витгенштейн, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, family `ANTI_MIRROR_TELEMETRY`, defect `D013 Runtime drift`.
+
+## 2026-09-09 Codex: GeminiContextService full mechanism record
+
+подтверждаю / вместо этого: заполнена целая запись `GeminiContextService`, а не новый vector-scope срез. В запись добавлены идеальная форма, граница, входы/выходы, связи, инварианты, public surface classification, сильная/текущая форма, опровержение и критерий закрытия.
+замечание: код не менялся. Запись различает hot retrieval, maintenance reindex cleanup и deliberate static prompt-cache corpus, чтобы будущая реализация не сломала взаимодействия.
+комментарий для Антигравити: `GeminiContextService` не идеален в реализации. Следующий факт перед кодом — exact repository predicate для `buildProductWorkerContextBlock(role, query)` и fixture-сравнение sourceRefs с текущим поведением. Философия: `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, Алонзо Чёрч, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE`, family `RAG_GROUNDING_CAPSULE`, defect `D014 RAG hallucination`; дополнительно `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, defect `D010 Data lineage loss`.
