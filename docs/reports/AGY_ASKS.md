@@ -48,3 +48,14 @@
 Вопрос: is `lever_promotion_state` bounded by a declared finite lever-key registry, and if so which source owns the registry and freshness check? Or can arbitrary runtime keys grow over time, requiring `LeverPromotionService.evaluatePromotions()` to read only active/recent observation-bearing state rows and separately quarantine stale/unknown keys?
 
 Почему это blocker: `recordObservation(String leverKey, ...)` and `currentStage(String leverKey)` accept open strings, while `evaluatePromotions()` currently scans every state row. Without this answer a repository predicate could make the scan cheaper but still preserve a false mechanism: stale typo-created keys could keep participating in promotion cadence.
+
+
+## 2026-09-09 Codex: вопрос по ORCHESTRATOR_SYSTEM carrier project for MarketResearchService
+
+вопрос: какой источник проекта должен нести `ORCHESTRATOR_SYSTEM` market-research tasks in `MarketResearchService.createResearchTask`: configured factory project, newest active project, dedicated carrier project, or explicit error when none exists? What is the legal fallback order, and may archived/accepted projects ever carry those tasks?
+
+замер: line 69 currently uses `projectRepository.findAll().stream().findFirst()` while the comment says "most recent". `JulesDispatchService` chooses the real repository from `TargetContext.ORCHESTRATOR_SYSTEM` and `system_orchestrator_repository_name`, so this project row is bookkeeping/UI/accounting carrier, not the client repo target.
+
+почему спрашиваю: replacing the full-table read before this policy is defined can still attach factory-owned research to the wrong project identity and make normal task/session views misleading.
+
+комментарий для Антигравити: механизм не идеален. До ответа не правь `MarketResearchService.createResearchTask`; first declare the carrier project policy and fallback, then replace the acquisition while preserving queued dispatch, role `BARCAN-TAG-09`, sample bounds 5..40 and `TargetContext.ORCHESTRATOR_SYSTEM`. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
