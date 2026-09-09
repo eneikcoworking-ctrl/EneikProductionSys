@@ -22,3 +22,10 @@
 замер: grep found no frontend caller for `/api/quality/conflict-dpmo` or `/api/quality/defect-summary`; runtime today returns small payloads (`defect-summary`: 877 bytes, total 5, item counts 5/0/0), but this is not a future bound.
 почему спрашиваю: totals are aggregate truth and can be acquired by counts/projections; `items` are row truth and changing them without a declared consumer contract may silently remove evidence an operator expects.
 комментарий для Антигравити: механизм не идеален. До ответа не правь `QualityMetricsController` detail lists; сначала отдели aggregate truth от bounded detail truth. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`.
+
+## 2026-09-09 Codex: вопрос по `SixSigmaAuditService.getActiveProjectId()` fallback
+
+вопрос: `getActiveProjectId()` должен всё ещё считать `orchestrated` допустимым статусом, хотя текущий `ProjectStatus` enum содержит только `active/analyzing/waiting/frozen/accepted/archived`; и если активных проектов нет, можно ли выбирать любой проект как fallback, или надо возвращать null/ошибку/детерминированный статусный порядок?
+замер: `SystemAuditController` calls `getActiveProjectId()` when `/api/audit/six-sigma` receives no projectId; `ProjectStatus.java` has no `orchestrated`; `ProjectRepository` already exposes `findByStatusOrderByCreatedAtDesc(ProjectStatus status)`; runtime default delivery endpoint today resolves to project `test-fiftieth`.
+почему спрашиваю: changing this resolver to a repository predicate is easy, but changing fallback/order can silently alter Kaizen, ProcessControl and audit endpoints.
+комментарий для Антигравити: механизм не идеален. До ответа не правь resolver; сначала зафиксируй reliable active-project acquisition and deterministic fallback. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`.
