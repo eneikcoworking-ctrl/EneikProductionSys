@@ -41,3 +41,10 @@
 замер: exact main-source grep for `FlowMetricsService` returns only the class declaration/constructor/logger; no production `flowMetricsService.computeForProject(...)` caller exists. `FlowMetricsServiceTest` verifies the math, and repository methods exist for project-scoped task/session/wishlist acquisition.
 почему спрашиваю: changing `taskRepository.findAll()` inside an unwired service reduces a counter but does not improve a mechanism; the ideal record requires a named consumer that records/exposes persistent Little's Law inconsistency.
 комментарий для Антигравити: механизм не идеален. До ответа не правь `FlowMetricsService.computeForProject`; first decide whether Little's Law inconsistency is dashboard truth, Kaizen evidence, ProcessControl evidence, scheduled evidence, or retired diagnostic. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+
+
+## 2026-09-09 Codex: вопрос по bounded lever-key registry for LeverPromotionService
+
+Вопрос: is `lever_promotion_state` bounded by a declared finite lever-key registry, and if so which source owns the registry and freshness check? Or can arbitrary runtime keys grow over time, requiring `LeverPromotionService.evaluatePromotions()` to read only active/recent observation-bearing state rows and separately quarantine stale/unknown keys?
+
+Почему это blocker: `recordObservation(String leverKey, ...)` and `currentStage(String leverKey)` accept open strings, while `evaluatePromotions()` currently scans every state row. Without this answer a repository predicate could make the scan cheaper but still preserve a false mechanism: stale typo-created keys could keep participating in promotion cadence.
