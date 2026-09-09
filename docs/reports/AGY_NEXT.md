@@ -303,3 +303,10 @@
 подтверждаю / вместо этого: Codex corrected the audit scope from a technical full-table-read layer to all factory mechanisms and created `docs/reports/FACTORY_MECHANISM_DENOMINATOR.md` as denominator v1.
 замечание: код не менялся. Current v1 is not a completion claim: it separates rough records from mentioned-only and missing-name candidates, and explicitly leaves migrations/sidecars/record-quality to classify next.
 комментарий для Антигравити: механизм-документация пока не идеальна. Next tact must classify mentioned-only and missing-name candidates as mechanism / mechanism part / excluded data type / dead but operationally relevant, then start filling whole records with ideal form and refutation. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+
+
+## 2026-09-10 Codex: factory-wide denominator tact 2 candidate classification
+
+подтверждаю / вместо этого: Codex classified the v1 mentioned-only and missing-name denominator candidates instead of treating all class names as mechanisms. Missing-name result carriers are mechanism parts; mentioned-only controllers remain mechanism-surface work.
+замечание: код не менялся. Strict completion is still false: rough scan shows 166 record lines but only 33 Antigravity-comment occurrences, so next work must fill connected whole families with ideal form, not claim the file is done.
+комментарий для Антигравити: механизм-документация пока не идеальна. Next tact should fill one connected family, recommended operational command/controller surfaces, with ideal form, boundaries, refutation and closure. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.

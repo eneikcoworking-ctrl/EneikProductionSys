@@ -6800,6 +6800,20 @@ nothing for it to act on right now». То есть механизм разли�
 *комментарий для Антигравити:* механизм-документация пока не идеальна. Не используй technical acquisition inventory as proof that all mechanisms are described. Next tact must classify mentioned-only and missing-name candidates as mechanism / mechanism part / excluded data type / dead but operationally relevant, then start filling whole records with ideal form. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for mechanism identity vs source-file/class identity; common background `ACP-061 Hoare Triple Review`.
 
 
+
+*Живое, 10 сентября 2026, Codex: factory-wide denominator tact 2 — candidate classification v2, без правки кода.* This tact continues the scope correction: it classifies the v1 mentioned-only and missing-name candidates, without pretending the factory is closed.
+
+*Что доказано сейчас:* the 8 missing-name service candidates are mechanism parts, not standalone whole mechanisms: `OrchestrationCooldownException` belongs to orchestration cooldown semantics; `GateResult` belongs to gate closure; `JulesDispatchResult` belongs to dispatch accounting; `CollaboratorProvisioningResult`, `LinearProvisioningResult`, `ProjectFactoryResult`, `WorkspaceArtifacts` and `WorkspaceProvisioningResult` belong to the project-factory provisioning family. Mentioned-only services classify as: `ChessService` excluded-with-reason because the file is empty; `GeminiProjectObserverService` dead/inert but operationally relevant; `GateCheck`/`GateStage` gate-family parts; `GitHubProvisioningResult` project-factory part.
+
+*Что стало обязательным дальше:* all 23 mentioned-only controllers remain mechanism-surface work. They should be filled by connected families: public/basic ingress; dashboards/projections; operational command surfaces; settings/configuration; runtime self-reporting. Kaizen repositories are data owners inside Kaizen lifecycle, while `TocExecutionGraph` is stateful TOC graph behavior and must be recorded with TOC runtime, not excluded as data.
+
+*Strict-record quality check:* rough record presence is still not enough. Current scan: 166 rough record lines in `FACTORY_MECHANISMS.md` and only 33 Antigravity-comment occurrences. This is not a remaining count, but it proves strict ideal-form completion is false.
+
+*Свидетельства такта:* `sed -n '1,220p' docs/reports/FACTORY_MECHANISM_DENOMINATOR.md`; Python top-level source classifier; source summaries for mentioned-only/missing candidates; grep for result-carrier callers; `grep -ci "комментарий для Антигравити" docs/FACTORY_MECHANISMS.md`; rough-record scanner; protocol/philosophy rows.
+
+*комментарий для Антигравити:* механизм-документация пока не идеальна. Do not count result carriers as standalone mechanisms, and do not exclude controller surfaces just because they are “only endpoints”. Next tact should fill one connected whole family, recommended operational command/controller surfaces, with ideal form, boundaries, refutation and closure. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for mechanism identity vs class/endpoint identity; common background `ACP-061 Hoare Triple Review`.
+
+
 # XXVI. Служба контекста: чем определяется, что исполнитель прочтёт
 
 **`GeminiContextService`** (740 строк) — выдаёт роли её устав и подходящие образцы, отбирая из выборки
