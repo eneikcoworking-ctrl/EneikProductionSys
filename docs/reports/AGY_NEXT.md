@@ -129,3 +129,9 @@
 подтверждаю / вместо этого: заполнена запись общего механизма full-table read discipline. Запись запрещает считать уменьшение grep-count успехом и требует классификации каждого `findAll()` по owner/cadence/class/refutation перед любой реализацией.
 замечание: код не менялся. Текущий замер после старых срезов: 76 вызовов `.findAll()` в `src/main/java`; это inventory input, не список дефектов.
 комментарий для Антигравити: механизм не идеален. Следующий такт — первая страница реестра: классифицировать top-10 `.findAll()` call sites по owner/cadence/class/refutation, начиная с `FalsificationCycleService`, `QualityMetricsController`, `SixSigmaAuditService`, `SystemStatusService`, `ProjectOperationalContextService`. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`.
+
+## 2026-09-09 Codex: full-table hotspot owner registry
+
+подтверждаю / вместо этого: Codex продолжил только свою documentation-only работу и добавил первую страницу реестра для общего механизма full-table reads: top-10 hotspot-владельцев, 44 из 76 текущих `.findAll()` вызовов, с cadence/class/refutation на уровне owner.
+замечание: код не менялся. Это не объявлено закрытием механизма: сильная форма всё ещё требует line-level registry для всех 76 call sites.
+комментарий для Антигравити: механизм не идеален. Следующий такт — перевести первую hotspot-страницу из owner-level в line-level registry: начать с семи строк `FalsificationCycleService`, для каждой указать exact method, repository/table, owner of truth, cadence, allowed/replacement decision, missing cardinality evidence if any, and closure criterion. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`.
