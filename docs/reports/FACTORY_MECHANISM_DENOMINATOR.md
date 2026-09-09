@@ -122,3 +122,21 @@ Connected owner/parts named in the same family: `SystemSettingsService`, `system
 Not complete as implementation: missing actor/source audit, independent guard for debug/raw paths, explicit trusted boundary for raw secret resolution, and final decision on whether `/api/jules-configs` is retired, bridged to `accounts`, or kept inert.
 
 комментарий для Антигравити: settings/configuration documentation is now a whole-family record, but implementation remains non-ideal. Do not patch the endpoints separately; first answer the legacy Jules config fate and then enforce one configuration world plus audit/trusted-boundary rules. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; local governing patterns `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, `PRINCIPLED_INTEGRITY`, `WORLD_VERSION_MAP`; common background `ACP-061 Hoare Triple Review`.
+
+
+## 2026-09-10 Strict Family Record: Flow Observability And TOC Telemetry Surfaces
+
+Status: strict family record filled in `docs/FACTORY_MECHANISMS.md` by factory-wide tact 4.
+
+Moved from mentioned-only work:
+
+- `FlowSpineController`: strict-recorded as project flow read/observe/events surface.
+- `OperationalFlowCoreController`: strict-recorded as enforceable flow-core read/observe/events surface.
+- `TocSentinelController`: strict-recorded as TOC status/graph/event/resource HTTP telemetry surface.
+- `TocExecutionGraph`: strict-recorded as stateful in-memory TOC execution graph behavior.
+
+Connected owners named in the same family: `FlowSpineService`, `OperationalFlowCoreService`, `TocSentinelService`, `TocOptimizer`, `TocAnomalyDetector`, `FlowSpineEventRepository` and runtime TOC node/token/edge maps.
+
+Not complete as implementation: mutation endpoints still need explicit auth/call audit evidence; TOC unknown-token responses and graph restart non-durability need stronger operator-visible semantics; observe idempotency and mode separation need fixture proof before code changes.
+
+комментарий для Антигравити: flow observability/TOC telemetry documentation is now a whole-family record, but implementation remains non-ideal. Do not patch endpoints separately; preserve read vs observe vs control telemetry, durable vs in-memory truth, event bounds, idempotency and throttle/not-found semantics. Philosophy: Goldman reliability chain plus level-of-abstraction lock and Hoare triple review.
