@@ -59,3 +59,14 @@
 почему спрашиваю: replacing the full-table read before this policy is defined can still attach factory-owned research to the wrong project identity and make normal task/session views misleading.
 
 комментарий для Антигравити: механизм не идеален. До ответа не правь `MarketResearchService.createResearchTask`; first declare the carrier project policy and fallback, then replace the acquisition while preserving queued dispatch, role `BARCAN-TAG-09`, sample bounds 5..40 and `TargetContext.ORCHESTRATOR_SYSTEM`. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+
+
+## 2026-09-10 Codex: вопрос по legacy `/api/jules-configs` surface
+
+вопрос: what is the intended fate of `JulesConfigController` and `/api/jules-configs`: retire/delete the legacy surface, bridge it into the canonical `accounts` pool, or keep it as an explicitly inert legacy admin surface? If kept, what operator-visible text or status proves it does not control dispatch?
+
+замер: `V17__create_jules_configs.sql` created `jules_configs`; `V19__restructure_accounts_and_projects.sql` migrated data into `accounts` and drops `jules_configs`, while `JulesConfigController` still exposes list/create/update/delete and `JulesConfigEntity`/`JulesConfigRepository` still exist. Dispatch capacity now reads account records, not this old table.
+
+почему спрашиваю: without a declared fate, a POST/PUT to `/api/jules-configs` can appear to configure Jules while not changing the mechanism that actually dispatches sessions, creating two configuration worlds.
+
+комментарий для Антигравити: механизм не идеален. До ответа не правь `JulesConfigController`; first choose retired / accounts bridge / explicitly inert legacy surface, then test that operator-visible behavior matches the chosen world. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; local pattern `WORLD_VERSION_MAP`; common background `ACP-061 Hoare Triple Review`.

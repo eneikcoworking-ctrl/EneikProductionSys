@@ -105,3 +105,20 @@ All 23 mentioned-only controllers remain mechanism-surface work, not exclusions.
 A rough scan finds 166 rough record lines in `docs/FACTORY_MECHANISMS.md`, while only 33 occurrences of `комментарий для Антигравити` exist in the same file. This is not a direct remaining-mechanism count because many records are grouped, but it proves strict completion is not true yet. The next tact must start upgrading/filling by connected family, beginning with either controller surfaces or project-factory/gate mechanism parts.
 
 комментарий для Антигравити: механизм-документация пока не идеальна. The denominator now separates missing-name result carriers from real surfaces, but strict records are still missing. Next tact should fill a connected whole family, not another narrow symptom: recommended first family is controller surfaces that mutate runtime state (`SystemStatusController`, `InternalRepairController`, `SettingsController`, `JulesConfigController`, `MarketResearchController`, `KaizenController`, `TocSentinelController`). Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for source class vs mechanism surface identity; common background `ACP-061 Hoare Triple Review`.
+
+
+## 2026-09-10 Strict Family Record: Settings And Configuration Surfaces
+
+Status: strict family record filled in `docs/FACTORY_MECHANISMS.md` by factory-wide tact 3.
+
+Moved from mentioned-only surface work:
+
+- `SettingsController`: strict-recorded as the public/operator settings list/update surface.
+- `InternalSettingsController`: strict-recorded as raw internal setting resolver, with trust-boundary risk called out.
+- `JulesConfigController`: strict-recorded as legacy Jules config writer/list/delete surface, blocked by canonical-world question.
+
+Connected owner/parts named in the same family: `SystemSettingsService`, `system_settings`, `JulesConfigRepository`, `JulesConfigEntity`, `SettingDto`, `SettingUpdateRequest`, `JulesConfigDto`, migrations `V16`, `V17`, `V19`.
+
+Not complete as implementation: missing actor/source audit, independent guard for debug/raw paths, explicit trusted boundary for raw secret resolution, and final decision on whether `/api/jules-configs` is retired, bridged to `accounts`, or kept inert.
+
+комментарий для Антигравити: settings/configuration documentation is now a whole-family record, but implementation remains non-ideal. Do not patch the endpoints separately; first answer the legacy Jules config fate and then enforce one configuration world plus audit/trusted-boundary rules. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; local governing patterns `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, `PRINCIPLED_INTEGRITY`, `WORLD_VERSION_MAP`; common background `ACP-061 Hoare Triple Review`.
