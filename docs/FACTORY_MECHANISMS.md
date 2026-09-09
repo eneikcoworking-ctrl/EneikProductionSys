@@ -6786,6 +6786,20 @@ nothing for it to act on right now». То есть механизм разли�
 *комментарий для Антигравити:* механизм в реализации не идеален, но это safe future candidate после явного разрешения на код: in `ProjectFlowService.selectBadSession`, replace all-session acquisition for the automatic path with `JulesSessionRepository.findByTaskIdIn(tasksById.keySet())`, preserving explicit `sessionId` lookup, active statuses `queued/running/revising`, risk ordering, activity-count evidence and bad-session closure side effects. Fixture must prove foreign-project sessions are not materialized and same-project highest-risk active session is still selected. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for project task identity vs Jules session identity; common background `ACP-061 Hoare Triple Review`.
 
 
+
+*Живое, 9 сентября 2026, Codex: factory-wide denominator tact 1 — scope correction and denominator v1, без правки кода.* Operator correction accepted: the target is all factory mechanisms, not the narrower full-table-acquisition layer. This tact creates `docs/reports/FACTORY_MECHANISM_DENOMINATOR.md` as the new audit map and demotes the earlier technical inventory to a symptom, not a completion criterion.
+
+*Что доказано сейчас:* rough top-level source scan found service/controller/kaizen/toc/config layers and separated `recorded`, `mentioned only`, and `missing name`. Snapshot: services 139 files = 126 rough records, 5 mentioned-only, 8 missing-name candidates; controllers 35 = 12 rough records, 23 mentioned-only; kaizen 8 = 5 rough records, 3 mentioned-only; toc 10 = 8 rough records, 2 mentioned-only; config 3 = 3 rough records. Scheduled Java files are 28/28 recorded by rough name, but this does not prove ideal records.
+
+*Что ещё не доказано:* rough record presence does not mean ideal mechanism record. Controllers are command surfaces until classified; result carriers/exceptions may be mechanism parts rather than mechanisms; 137 SQL migrations still need behavioral-family classification; sidecars/scripts need a fresh filesystem pass. Therefore this is denominator v1, not completion.
+
+*Критерий закрытия широкого аудита:* every behavior-changing unit must be classified as whole mechanism, connected mechanism-family member, mechanism part, excluded data/result type, dead/inert but operationally relevant, or migration family. Every whole mechanism/family then needs ideal form, boundary, interactions, invariants, strong/weak form, refutation, closure, evidence and Antigravity advice.
+
+*Свидетельства такта:* `git status --short`; `git log -1 --oneline`; protocol/philosophy greps; Python source scan over top-level Java files; scheduled-file scan; migration count under `src/main/resources/db/migration`; new report `docs/reports/FACTORY_MECHANISM_DENOMINATOR.md`.
+
+*комментарий для Антигравити:* механизм-документация пока не идеальна. Не используй technical acquisition inventory as proof that all mechanisms are described. Next tact must classify mentioned-only and missing-name candidates as mechanism / mechanism part / excluded data type / dead but operationally relevant, then start filling whole records with ideal form. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for mechanism identity vs source-file/class identity; common background `ACP-061 Hoare Triple Review`.
+
+
 # XXVI. Служба контекста: чем определяется, что исполнитель прочтёт
 
 **`GeminiContextService`** (740 строк) — выдаёт роли её устав и подходящие образцы, отбирая из выборки
