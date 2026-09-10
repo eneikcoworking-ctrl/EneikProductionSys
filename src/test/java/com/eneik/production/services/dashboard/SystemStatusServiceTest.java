@@ -39,6 +39,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -101,6 +102,84 @@ class SystemStatusServiceTest {
         verify(tasks, never()).findAll();
         verify(tasks).findByProjectIdOrderByCreatedAtDesc(projectId);
         verify(audit).computeCtqBreakdown(projectId);
+    }
+
+    @Test
+    void getStatusConsolidatesTaskAcquisitionToOneQuery() {
+        UUID projectId = UUID.randomUUID();
+        TaskRepository tasks = mock(TaskRepository.class);
+        ProjectRepository projects = mock(ProjectRepository.class);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+        project.setName("TestProject");
+        when(projects.findById(projectId)).thenReturn(Optional.of(project));
+
+        TaskEntity sampleTask = new TaskEntity();
+        sampleTask.setId(UUID.randomUUID());
+        sampleTask.setProject(project);
+        sampleTask.setStatus(TaskStatus.done);
+        sampleTask.setQualityGatePassed(true);
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(sampleTask));
+
+        SystemStatusService service = new SystemStatusService(
+                mock(SystemSettingsService.class),
+                mock(AccountRepository.class),
+                tasks,
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                projects,
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                mock(GitHubApiBudgetService.class),
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
+
+        Map<String, Object> result = service.getStatus(projectId);
+
+        assertThat(result).isNotNull();
+        verify(tasks, times(1)).findByProjectIdOrderByCreatedAtDesc(projectId);
+    }
+
+    @Test
+    void getStatusNullProjectDoesNotQueryByProjectId() {
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.findAll()).thenReturn(List.of());
+        when(tasks.findByQualityGateReportIsNotNull()).thenReturn(List.of());
+        AccountRepository accounts = mock(AccountRepository.class);
+        when(accounts.findAllByOrderByNameAsc()).thenReturn(List.of());
+
+        SystemStatusService service = new SystemStatusService(
+                mock(SystemSettingsService.class),
+                accounts,
+                tasks,
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                mock(ProjectRepository.class),
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                mock(GitHubApiBudgetService.class),
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
+
+        Map<String, Object> result = service.getStatus(null);
+
+        assertThat(result).isNotNull();
+        verify(tasks, never()).findByProjectIdOrderByCreatedAtDesc(any());
+        verify(accounts).findAllByOrderByNameAsc();
+        verify(accounts, never()).findAll();
     }
 
 

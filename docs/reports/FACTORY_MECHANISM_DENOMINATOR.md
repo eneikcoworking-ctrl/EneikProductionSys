@@ -140,3 +140,31 @@ Connected owners named in the same family: `FlowSpineService`, `OperationalFlowC
 Not complete as implementation: mutation endpoints still need explicit auth/call audit evidence; TOC unknown-token responses and graph restart non-durability need stronger operator-visible semantics; observe idempotency and mode separation need fixture proof before code changes.
 
 комментарий для Антигравити: flow observability/TOC telemetry documentation is now a whole-family record, but implementation remains non-ideal. Do not patch endpoints separately; preserve read vs observe vs control telemetry, durable vs in-memory truth, event bounds, idempotency and throttle/not-found semantics. Philosophy: Goldman reliability chain plus level-of-abstraction lock and Hoare triple review.
+
+## 2026-09-10 Strict Family Record: Task Quality Gates And Verdict Surfaces
+
+Status: strict family record filled in `docs/FACTORY_MECHANISMS.md` by factory-wide Codex tact after the operator demanded a shared vocabulary.
+
+Moved from mentioned-only / mechanism-part work:
+
+- `GateCheck`, `GateStage`, `GateResult`: folded into the task-quality-gate family as applicability/stage/result parts, not standalone mechanisms.
+- `QualityGateController`: strict-recorded as an observation surface over quality-gate aggregate truth; implementation still non-ideal because it owns a duplicate all-task DPMO computation instead of the shared Six Sigma/report-corpus owner.
+- `VerdictController`: strict-recorded as the read-only HTTP surface for the verdict lattice; it observes readiness judgement and does not actuate dispatch/acceptance.
+- `BaseQualityGate`: corrected in the strict record as an outer wrapper around live nested `@Component` checks; future work must not call the whole file dead without preserving that distinction.
+- `VerdictGate`: included as the separate project-readiness claim gate so task-spec, implementation-result and project-readiness subjects stay distinct.
+
+Updated rough-presence scan after the record:
+
+| Layer | Source files | Rough records | Mentioned only | Missing name |
+| --- | ---: | ---: | ---: | ---: |
+| `src/main/java/com/eneik/production/services` | 139 | 129 | 10 | 0 |
+| `src/main/java/com/eneik/production/controllers` | 35 | 16 | 19 | 0 |
+| `src/main/java/com/eneik/production/kaizen` | 8 | 5 | 3 | 0 |
+| `src/main/java/com/eneik/production/toc` | 10 | 10 | 0 | 0 |
+| `src/main/java/com/eneik/production/config` | 3 | 3 | 0 | 0 |
+
+Antigravity comments in `docs/FACTORY_MECHANISMS.md`: 38. This still proves strict completion is false for the whole factory; it only proves this family now has a strict record.
+
+Remaining not-recorded rough-presence names after this pass: services/result carriers `ChessService`, `GeminiProjectObserverService`, `OrchestrationCooldownException`, `JulesDispatchResult`, `CollaboratorProvisioningResult`, `GitHubProvisioningResult`, `LinearProvisioningResult`, `ProjectFactoryResult`, `WorkspaceArtifacts`, `WorkspaceProvisioningResult`; controllers `GreetingController`, `HomeController`, `InternalJulesActivitiesProbeController`, `InternalRepairController`, `LinearSyncController`, `SystemAuditController`, `ClientDeliveryController`, `CommandDashboardController`, `DashboardController`, `OperationalTruthController`, `SystemDriftController`, `SystemStatusController`, `GithubAccessController`, `MarketResearchController`, `JulesMonitorController`, `RoleRulesController`, `InternalSettingsController`, `JulesConfigController`, `SettingsController`; kaizen `KaizenController`, `DefectJournalRepository`, `KaizenProposalRepository`.
+
+комментарий для Антигравити: gate-family documentation is now a whole-family record, but implementation is not ideal. Do not patch one gate or one endpoint separately; keep the three subjects distinct: task specification, implementation-result verification, project-readiness claim. Apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, and `ACP-061 Hoare Triple Review`. First remeasure reachability and denominator, then unify `QualityGateController` with the Six Sigma report-corpus owner, then decide the epistemic absent-evidence rule.

@@ -18,6 +18,8 @@ import java.util.UUID;
 public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     List<AccountEntity> findByProjectIdOrderByNameAsc(UUID projectId);
 
+    List<AccountEntity> findAllByOrderByNameAsc();
+
     List<AccountEntity> findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc();
 
     @Query("SELECT a FROM AccountEntity a WHERE " +

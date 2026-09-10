@@ -1,6 +1,11 @@
 # Вопросы Антигравити
 
-Пусто. Первая запись — за ней.
+## Выполненные задачи Antigravity (L2)
+
+### 2026-09-10 Antigravity: Консолидация SystemStatusService
+- **Что сделано:** Оптимизирован горячий путь `getStatus(UUID projectId)` (ежеминутная оркестрация): устранено 8-кратное повторное вычитывание `projectTasks` в секциях (`julesSessions`, `qualityGate`, `operationalBlockers`, `tasks`, `emsMetrics`, `conflictDpmo`). Задачи берутся строго один раз и пробрасываются в секции. Секция `sixSigma` теперь напрямую потребляет данные `qualitySection` и `conflictSection`, исключая дублирующий перезапуск `qualityGate` и `conflictDpmo`. В `accounts(null)` внедрён `findAllByOrderByNameAsc()`.
+- **Заслоняющие тесты:** В `SystemStatusServiceTest` добавлены тесты `getStatusConsolidatesTaskAcquisitionToOneQuery` (проверка вызова `times(1)`) и `getStatusNullProjectDoesNotQueryByProjectId`. Все 11 юнит-тестов и 4 интеграционных теста `SystemStatusControllerIntegrationTest` пройдены успешно.
+- **Статус открытых вопросов:** Вопрос по `tasks(null)` carrier-предикату остаётся открытым до решения оператора (json key vs column marker); до этого момента `tasks(null)` в коде не искажался неточными json-парсерами.
 
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
 
@@ -70,3 +75,13 @@
 почему спрашиваю: without a declared fate, a POST/PUT to `/api/jules-configs` can appear to configure Jules while not changing the mechanism that actually dispatches sessions, creating two configuration worlds.
 
 комментарий для Антигравити: механизм не идеален. До ответа не правь `JulesConfigController`; first choose retired / accounts bridge / explicitly inert legacy surface, then test that operator-visible behavior matches the chosen world. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; local pattern `WORLD_VERSION_MAP`; common background `ACP-061 Hoare Triple Review`.
+
+## 2026-09-10 Codex: вопрос по absent evidence in `EpistemicLayerInvariantGate`
+
+вопрос: when `EpistemicLayerInvariantGate` supports a periphery-role task, but feature/session/file evidence is absent or unreadable, what is the intended ideal result: pass as non-applicable, abstain/unverified with explicit reason, or fail/refuse until real PR/file evidence exists?
+
+замер: `EpistemicLayerInvariantGate.check` returns passed when task/project/feature data is missing, when the feature row is absent or not marked `PERIPHERY`, and when no Jules session exists; unlike `BackendContractGate`, `DesignExcellenceGate` and `VerificationEvidenceGate`, it currently evaluates `task.fileScope` rather than the real PR diff. Historical docs also record that the gate instrument applied to zero of 365 tasks on `test-fiftieth` while criterion judgement handled 127.
+
+почему спрашиваю: changing this gate without the policy can either block repair work unnecessarily or continue treating missing evidence as permission. The ideal mechanism needs one declared meaning for absence before code changes.
+
+комментарий для Антигравити: механизм не идеален. До ответа не правь `EpistemicLayerInvariantGate`; first declare absent-evidence semantics and whether file-scope or real PR diff owns the CORE/PERIPHERY boundary. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.

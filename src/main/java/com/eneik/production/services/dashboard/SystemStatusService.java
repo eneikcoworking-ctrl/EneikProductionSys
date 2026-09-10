@@ -37,6 +37,20 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * SystemStatusService: Central telemetry aggregator for factory status.
+ *
+ * Antigravity L2 Alignment (Ideal Model):
+ * - Hot path consolidation: projectTasks is acquired exactly once per getStatus(projectId)
+ *   and passed down to julesSessions, qualityGate, operationalBlockers, tasks, emsMetrics,
+ *   and conflictDpmo. This reduces DB roundtrips on the orchestration cycle from 8x to 1x.
+ * - Section coherence: sixSigma consumes pre-calculated qualitySection and conflictSection data
+ *   directly instead of duplicating downstream queries and calculations.
+ * - Bounded order on cold path: accounts(null) uses accountRepository.findAllByOrderByNameAsc()
+ *   instead of unbounded in-memory sorting.
+ * - Preserves Hoare-triple safety and backward compatibility for reflection-based test callers.
+ * Pattern: BARCAN-TAG-00_CODE-GUARDIAN / LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY.
+ */
 @Service
 public class SystemStatusService {
 
@@ -95,21 +109,26 @@ public class SystemStatusService {
     }
 
     public Map<String, Object> getStatus(UUID projectId) {
+        List<TaskEntity> projectTasks = projectId != null
+                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+                : null;
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("integrations", safeSection(() -> settingsService.listSettings()));
         status.put("accounts", safeSection(() -> accounts(projectId)));
         status.put("githubAccess", safeSection(this::latestGithubAccess));
         status.put("githubApiBudget", safeSection(() -> githubApiBudgetService.snapshot().asMap()));
         status.put("linearCompleteness", safeSection(() -> linearCompleteness(projectId)));
-        status.put("julesSessions", safeSection(() -> julesSessions(projectId)));
-        status.put("qualityGate", safeSection(() -> qualityGate(projectId)));
-        status.put("tasks", safeSection(() -> tasks(projectId)));
-        status.put("conflictDpmo", safeSection(() -> conflictDpmo(projectId)));
-        status.put("emsMetrics", safeSection(() -> emsMetrics(projectId)));
-        status.put("sixSigma", safeSection(() -> sixSigma(projectId)));
+        status.put("julesSessions", safeSection(() -> julesSessions(projectId, projectTasks)));
+        Object qualitySection = safeSection(() -> qualityGate(projectId, projectTasks));
+        status.put("qualityGate", qualitySection);
+        status.put("tasks", safeSection(() -> tasks(projectId, projectTasks)));
+        Object conflictSection = safeSection(() -> conflictDpmo(projectId, projectTasks));
+        status.put("conflictDpmo", conflictSection);
+        status.put("emsMetrics", safeSection(() -> emsMetrics(projectId, projectTasks)));
+        status.put("sixSigma", safeSection(() -> sixSigma(extractSectionData(qualitySection), extractSectionData(conflictSection))));
         status.put("aiResources", safeSection(googleAiResourceService::resourceMatrix));
         status.put("systemHealth", safeSection(this::systemHealth));
-        status.put("operationalBlockers", safeSection(() -> operationalBlockers(projectId)));
+        status.put("operationalBlockers", safeSection(() -> operationalBlockers(projectId, projectTasks)));
         status.put("runtimeSource", safeSection(this::runtimeSource));
         status.put("aiHealth", safeSection(aiHealthTracker::snapshot));
         return status;
@@ -121,7 +140,7 @@ public class SystemStatusService {
 
     private Map<String, Object> accounts(UUID projectId) {
         List<AccountEntity> accounts = projectId == null
-                ? accountRepository.findAll()
+                ? accountRepository.findAllByOrderByNameAsc()
                 : accountRepository.findAvailableForProjectOrderByNameAsc(projectId);
         Map<String, Long> summary = accounts.stream()
                 .collect(Collectors.groupingBy(account -> account.getStatus().name(), Collectors.counting()));
@@ -228,6 +247,10 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> julesSessions(UUID projectId) {
+        return julesSessions(projectId, null);
+    }
+
+    private Map<String, Object> julesSessions(UUID projectId, List<TaskEntity> scopedTasks) {
         if (projectId == null) {
             return julesSessionCounts(
                     julesSessionRepository.count(),
@@ -238,7 +261,9 @@ public class SystemStatusService {
                     julesSessionRepository.countByStatus("stuck"));
         }
 
-        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        List<TaskEntity> projectTasks = scopedTasks != null
+                ? scopedTasks
+                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
         List<JulesSessionEntity> sessions = projectTaskIds.isEmpty()
                 ? List.of()
@@ -268,6 +293,10 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> qualityGate(UUID projectId) {
+        return qualityGate(projectId, null);
+    }
+
+    private Map<String, Object> qualityGate(UUID projectId, List<TaskEntity> scopedTasks) {
         long totalAttempts = 0;
         long totalOpportunities = 0;
         long totalDefects = 0;
@@ -277,7 +306,7 @@ public class SystemStatusService {
 
         List<TaskEntity> tasks = projectId == null
                 ? taskRepository.findByQualityGateReportIsNotNull()
-                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+                : (scopedTasks != null ? scopedTasks : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId));
 
         for (TaskEntity task : tasks) {
             JsonNode report = task.getQualityGateReport();
@@ -344,6 +373,10 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> operationalBlockers(UUID projectId) {
+        return operationalBlockers(projectId, null);
+    }
+
+    private Map<String, Object> operationalBlockers(UUID projectId, List<TaskEntity> scopedTasks) {
         List<Map<String, Object>> blockers = new ArrayList<>();
         String stallStatus = settingsService.effectiveValue("system_stall_status");
         if (stallStatus != null && !stallStatus.isBlank()
@@ -367,7 +400,9 @@ public class SystemStatusService {
                 ? projectRepository.findAll()
                 : projectRepository.findById(projectId).map(List::of).orElse(List.of());
         for (ProjectEntity project : projects) {
-            List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+            List<TaskEntity> projectTasks = (projectId != null && scopedTasks != null && project.getId().equals(projectId))
+                    ? scopedTasks
+                    : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
             if (project.getStatus() == ProjectStatus.active && duplicateContent(projectTasks)) {
                 blockers.add(blocker("duplicate_content", "content_defect", "critical",
                         "project=" + project.getName() + "; duplicate task content threshold reached"));
@@ -462,9 +497,15 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> tasks(UUID projectId) {
-        List<TaskEntity> allTasks = projectId != null
+        return tasks(projectId, null);
+    }
+
+    private Map<String, Object> tasks(UUID projectId, List<TaskEntity> scopedTasks) {
+        List<TaskEntity> allTasks = scopedTasks != null
+                ? scopedTasks
+                : (projectId != null
                 ? taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
-                : taskRepository.findAll();
+                : taskRepository.findAll());
         List<TaskEntity> realWorkTasks = allTasks.stream().filter(t -> !isSystemMetaTask(t)).toList();
 
         Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
@@ -477,9 +518,15 @@ public class SystemStatusService {
     }
 
     private Object emsMetrics(UUID projectId) {
-        List<TaskEntity> tasks = projectId == null
+        return emsMetrics(projectId, null);
+    }
+
+    private Object emsMetrics(UUID projectId, List<TaskEntity> scopedTasks) {
+        List<TaskEntity> tasks = scopedTasks != null
+                ? scopedTasks
+                : (projectId == null
                 ? taskRepository.findAll()
-                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId));
         var wishlist = projectId == null
                 ? wishlistRepository.findAll()
                 : wishlistRepository.findByProjectId(projectId);
@@ -487,8 +534,12 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> sixSigma(UUID projectId) {
-        Map<String, Object> quality = qualityGate(projectId);
-        Map<String, Object> conflicts = conflictDpmo(projectId);
+        return sixSigma(qualityGate(projectId), conflictDpmo(projectId));
+    }
+
+    private Map<String, Object> sixSigma(Map<String, Object> quality, Map<String, Object> conflicts) {
+        if (quality == null) quality = Map.of();
+        if (conflicts == null) conflicts = Map.of();
 
         long qualityOpportunities = longValue(quality.get("totalOpportunities"));
         long qualityDefects = longValue(quality.get("defects"));
@@ -549,6 +600,10 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> conflictDpmo(UUID projectId) {
+        return conflictDpmo(projectId, null);
+    }
+
+    private Map<String, Object> conflictDpmo(UUID projectId, List<TaskEntity> scopedTasks) {
         List<PrReviewEntity> allReviews;
         List<TaskConflictEntity> allConflicts;
         List<TaskConflictEntity> activeConflicts;
@@ -568,7 +623,9 @@ public class SystemStatusService {
             activeConflicts = taskConflictRepository.findActiveByResolutionStatusNot("auto_resolved");
             allConflicts = List.of();
         } else {
-            List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+            List<TaskEntity> projectTasks = scopedTasks != null
+                    ? scopedTasks
+                    : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
             Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
             List<JulesSessionEntity> projectSessions = projectTaskIds.isEmpty()
                     ? List.of()
@@ -863,6 +920,14 @@ public class SystemStatusService {
             section.put("error", e.getClass().getSimpleName());
             return section;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> extractSectionData(Object section) {
+        if (section instanceof Map<?, ?> map && Boolean.TRUE.equals(map.get("available")) && map.get("data") instanceof Map<?, ?> dataMap) {
+            return (Map<String, Object>) dataMap;
+        }
+        return Map.of();
     }
 
     @FunctionalInterface
