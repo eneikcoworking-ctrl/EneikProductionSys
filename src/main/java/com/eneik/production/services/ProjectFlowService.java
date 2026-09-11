@@ -3767,12 +3767,12 @@ public class ProjectFlowService {
         return dispatchToGeneralPool(compilerTask, java.util.Set.of(), null, taskCompilerAccountName());
     }
 
-    private void dispatchToGeneralPool(TaskEntity task) {
-        dispatchToGeneralPool(task, java.util.Set.of(), null, null);
+    private boolean dispatchToGeneralPool(TaskEntity task) {
+        return dispatchToGeneralPool(task, java.util.Set.of(), null, null);
     }
 
-    private void dispatchToGeneralPool(TaskEntity task, java.util.Set<String> excludedAccountNames) {
-        dispatchToGeneralPool(task, excludedAccountNames, null, null);
+    private boolean dispatchToGeneralPool(TaskEntity task, java.util.Set<String> excludedAccountNames) {
+        return dispatchToGeneralPool(task, excludedAccountNames, null, null);
     }
 
     private boolean dispatchToGeneralPool(TaskEntity task, java.util.Set<String> excludedAccountNames, String mode, String exactAccountName) {
@@ -3804,26 +3804,21 @@ public class ProjectFlowService {
                     }
                     return false;
                 }
-                long liveAccounts = accountRepository.countLiveAccounts();
-                long disabledAccounts = accountRepository.countByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
-                if (liveAccounts > 0 && disabledAccounts >= liveAccounts) {
-                    String disabledStatus = "All operational Jules accounts are disabled (" + disabledAccounts + " disabled); role context "
-                            + task.getRole().getTag();
-                    if (!disabledStatus.equals(task.getJulesDispatchStatus())) {
-                        task.setJulesDispatchStatus(disabledStatus);
-                        taskRepository.save(task);
-                    }
-                    log.warn("All operational Jules accounts are disabled ({} disabled); task {} stays queued for the next cycle",
-                            disabledAccounts, task.getId());
-                    return false;
-                }
-                String noCapacity = "No free Jules shared session slot available for role context "
-                        + task.getRole().getTag();
-                if (!noCapacity.equals(task.getJulesDispatchStatus())) {
-                    task.setJulesDispatchStatus(noCapacity);
+                GeneralPoolAdmissionDecision decision = evaluateGeneralPoolAdmissionDecision(
+                        accountOpt,
+                        task.getProject() != null ? task.getProject().getId() : null,
+                        task.getRole() != null ? task.getRole().getTag() : null,
+                        excludedAccountNames,
+                        excludedForThisAttempt,
+                        task.getId(),
+                        maxConcurrentJulesSessionsPerAccount,
+                        maxDailySessionsPerAccount
+                );
+                log.warn(decision.logMessage());
+                if (!decision.dispatchStatus().equals(task.getJulesDispatchStatus())) {
+                    task.setJulesDispatchStatus(decision.dispatchStatus());
                     taskRepository.save(task);
                 }
-                log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
                 return false;
             }
 
@@ -3988,6 +3983,254 @@ public class ProjectFlowService {
 
     public AccountAdmissionOutcome evaluateNamedAccountAdmission(String exactAccountName, int maxSessions) {
         return evaluateNamedAccountAdmissionDecision(Optional.empty(), exactAccountName, null, maxSessions).outcome();
+    }
+
+    public record GeneralPoolAdmissionDecision(
+            AccountAdmissionOutcome outcome,
+            java.util.Set<AccountAdmissionOutcome> violatedConjuncts,
+            String logMessage,
+            String dispatchStatus
+    ) {
+        public GeneralPoolAdmissionDecision(
+                AccountAdmissionOutcome outcome,
+                String logMessage,
+                String dispatchStatus
+        ) {
+            this(outcome, java.util.Set.of(outcome), logMessage, dispatchStatus);
+        }
+    }
+
+    private boolean matchesCapability(String capabilities, String tag) {
+        if (tag == null || tag.isBlank()) {
+            return true;
+        }
+        if (capabilities == null || capabilities.isBlank() || "*".equals(capabilities.trim())) {
+            return true;
+        }
+        String[] parts = capabilities.split(",");
+        for (String p : parts) {
+            if (p.trim().equalsIgnoreCase(tag.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Prescription 22 (PART_WHOLE_OWNERSHIP / D004, Law 12, mirroring evaluateNamedAccountAdmissionDecision):
+     * Resolves the exact failure reason when a general-pool admission fails.
+     * Evaluates all specific conjuncts across candidate accounts in the general pool
+     * (disabled, daily limit, resting status, session slot capacity, exclusions),
+     * ensuring that daily limit or account disablement is never falsely reported as session slot exhaustion.
+     */
+    public GeneralPoolAdmissionDecision evaluateGeneralPoolAdmissionDecision(
+            Optional<AccountEntity> lockedAccountOpt,
+            UUID projectId,
+            String roleTag,
+            java.util.Set<String> excludedAccountNames,
+            String excludedForThisAttempt,
+            UUID taskId,
+            int maxSessions,
+            int maxDailySessions) {
+        if (lockedAccountOpt != null && lockedAccountOpt.isPresent()) {
+            return new GeneralPoolAdmissionDecision(
+                    AccountAdmissionOutcome.ADMITTED,
+                    java.util.Set.of(AccountAdmissionOutcome.ADMITTED),
+                    String.format("General-pool account '%s' admitted; task %s", lockedAccountOpt.get().getName(), taskId),
+                    "Admitted"
+            );
+        }
+        List<AccountEntity> allAccounts = accountRepository.findAll();
+        if (allAccounts.isEmpty()) {
+            long liveAccounts = accountRepository.countLiveAccounts();
+            long disabledAccounts = accountRepository.countByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
+            if (liveAccounts > 0 && disabledAccounts >= liveAccounts) {
+                return new GeneralPoolAdmissionDecision(
+                        AccountAdmissionOutcome.DISABLED,
+                        java.util.Set.of(AccountAdmissionOutcome.DISABLED),
+                        String.format("All operational Jules accounts are disabled (%d disabled); task %s stays queued for the next cycle", disabledAccounts, taskId),
+                        "All operational Jules accounts are disabled (" + disabledAccounts + " disabled); role context " + roleTag
+                );
+            }
+            return new GeneralPoolAdmissionDecision(
+                    AccountAdmissionOutcome.NOT_FOUND,
+                    java.util.Set.of(AccountAdmissionOutcome.NOT_FOUND),
+                    String.format("No Jules accounts configured in pool; task %s stays queued for the next cycle", taskId),
+                    "No Jules accounts in pool for role context " + roleTag
+            );
+        }
+        List<AccountEntity> operational = allAccounts.stream()
+                .filter(a -> a.getStatus() != AccountStatus.decommissioned)
+                .toList();
+        if (operational.isEmpty()) {
+            return new GeneralPoolAdmissionDecision(
+                    AccountAdmissionOutcome.RETIRED,
+                    java.util.Set.of(AccountAdmissionOutcome.RETIRED),
+                    String.format("All Jules accounts are decommissioned (%d accounts); task %s stays queued for the next cycle", allAccounts.size(), taskId),
+                    "All Jules accounts are decommissioned; role context " + roleTag
+            );
+        }
+        List<AccountEntity> enabledAccounts = operational.stream()
+                .filter(AccountEntity::isEnabled)
+                .toList();
+        int disabledCount = operational.size() - enabledAccounts.size();
+        if (enabledAccounts.isEmpty()) {
+            return new GeneralPoolAdmissionDecision(
+                    AccountAdmissionOutcome.DISABLED,
+                    java.util.Set.of(AccountAdmissionOutcome.DISABLED),
+                    String.format("All operational Jules accounts are disabled (%d disabled); task %s stays queued for the next cycle", disabledCount, taskId),
+                    "All operational Jules accounts are disabled (" + disabledCount + " disabled); role context " + roleTag
+            );
+        }
+
+        java.util.EnumSet<AccountAdmissionOutcome> poolViolations = java.util.EnumSet.noneOf(AccountAdmissionOutcome.class);
+        if (disabledCount > 0) {
+            poolViolations.add(AccountAdmissionOutcome.DISABLED);
+        }
+
+        int dailyLimitedCount = 0;
+        int restingCount = 0;
+        int sessionsExhaustedCount = 0;
+        int excludedCount = 0;
+        int reproducedOnRecheckCount = 0;
+
+        for (AccountEntity a : enabledAccounts) {
+            java.util.EnumSet<AccountAdmissionOutcome> accViolations = java.util.EnumSet.noneOf(AccountAdmissionOutcome.class);
+            AccountStatus st = a.getStatus();
+            if (st == AccountStatus.offline) {
+                accViolations.add(AccountAdmissionOutcome.RETIRED);
+            }
+            if (st == AccountStatus.daily_limited || st == AccountStatus.api_blocked) {
+                accViolations.add(AccountAdmissionOutcome.RESTING);
+                restingCount++;
+            }
+            if (a.getApiKey() == null || a.getApiKey().trim().isEmpty()) {
+                accViolations.add(AccountAdmissionOutcome.DISABLED);
+            }
+            if (a.getCurrentProjectId() != null && projectId != null && !a.getCurrentProjectId().equals(projectId)) {
+                accViolations.add(AccountAdmissionOutcome.EXCLUDED_BY_RULE);
+                excludedCount++;
+            }
+            if (roleTag != null && !matchesCapability(a.getCapabilities(), roleTag)) {
+                accViolations.add(AccountAdmissionOutcome.EXCLUDED_BY_RULE);
+                excludedCount++;
+            }
+            if (excludedForThisAttempt != null && a.getName().equals(excludedForThisAttempt)) {
+                accViolations.add(AccountAdmissionOutcome.EXCLUDED_BY_RULE);
+                excludedCount++;
+            }
+            if (excludedAccountNames != null && excludedAccountNames.contains(a.getName())) {
+                accViolations.add(AccountAdmissionOutcome.EXCLUDED_BY_RULE);
+                excludedCount++;
+            }
+            int dailyDispatched = a.getSessionsDispatchedToday();
+            int dailyCeiling = a.getEstimatedDailyCapacity() != null ? a.getEstimatedDailyCapacity() : maxDailySessions;
+            if (dailyDispatched >= dailyCeiling) {
+                accViolations.add(AccountAdmissionOutcome.DAILY_LIMIT_EXCEEDED);
+                dailyLimitedCount++;
+            }
+            int openSessions = accountRepository.countOpenSessions(a.getId());
+            int concurrentLimit = a.getEstimatedConcurrentCapacity() != null
+                    ? a.getEstimatedConcurrentCapacity()
+                    : (a.getMaxConcurrentSessions() != null ? a.getMaxConcurrentSessions() : maxSessions);
+            if (openSessions >= concurrentLimit) {
+                accViolations.add(AccountAdmissionOutcome.SESSIONS_EXHAUSTED);
+                sessionsExhaustedCount++;
+            }
+            if (accViolations.isEmpty()) {
+                reproducedOnRecheckCount++;
+            } else {
+                poolViolations.addAll(accViolations);
+            }
+        }
+
+        if (reproducedOnRecheckCount > 0) {
+            return new GeneralPoolAdmissionDecision(
+                    AccountAdmissionOutcome.REFUSAL_NOT_REPRODUCED_ON_RECHECK,
+                    java.util.Set.of(AccountAdmissionOutcome.LOCKED_BY_CONCURRENT_CLAIM, AccountAdmissionOutcome.REFUSAL_NOT_REPRODUCED_ON_RECHECK),
+                    String.format("Jules general-pool accounts passed admission check on recheck (%d account(s) eligible); refusal not reproduced (concurrent lock or transient state change); task %s stays queued for the next cycle",
+                            reproducedOnRecheckCount, taskId),
+                    "Jules general pool accounts busy on recheck (locked or state change); role context " + roleTag
+            );
+        }
+
+        java.util.EnumSet<AccountAdmissionOutcome> enabledViolations = java.util.EnumSet.copyOf(poolViolations);
+        enabledViolations.remove(AccountAdmissionOutcome.DISABLED);
+
+        if (enabledViolations.size() == 1) {
+            AccountAdmissionOutcome sole = enabledViolations.iterator().next();
+            if (sole == AccountAdmissionOutcome.DAILY_LIMIT_EXCEEDED) {
+                String disabledClause = disabledCount > 0 ? ", " + disabledCount + " disabled" : "";
+                return new GeneralPoolAdmissionDecision(
+                        AccountAdmissionOutcome.DAILY_LIMIT_EXCEEDED,
+                        poolViolations,
+                        String.format("All enabled Jules accounts exceeded daily limit (%d daily limited%s); task %s stays queued for the next cycle",
+                                dailyLimitedCount, disabledClause, taskId),
+                        "All enabled Jules accounts exceeded daily limit (" + dailyLimitedCount + " daily limited" + disabledClause + "); role context " + roleTag
+                );
+            }
+            if (sole == AccountAdmissionOutcome.RESTING) {
+                String disabledClause = disabledCount > 0 ? ", " + disabledCount + " disabled" : "";
+                return new GeneralPoolAdmissionDecision(
+                        AccountAdmissionOutcome.RESTING,
+                        poolViolations,
+                        String.format("All enabled Jules accounts are resting/blocked (%d resting%s); task %s stays queued for the next cycle",
+                                restingCount, disabledClause, taskId),
+                        "All enabled Jules accounts are resting/blocked (" + restingCount + " resting" + disabledClause + "); role context " + roleTag
+                );
+            }
+            if (sole == AccountAdmissionOutcome.SESSIONS_EXHAUSTED) {
+                String disabledClause = disabledCount > 0 ? " (" + disabledCount + " disabled)" : "";
+                return new GeneralPoolAdmissionDecision(
+                        AccountAdmissionOutcome.SESSIONS_EXHAUSTED,
+                        poolViolations,
+                        String.format("No general-pool account has free capacity right now%s; task %s stays queued for the next cycle",
+                                disabledClause, taskId),
+                        "No free Jules shared session slot available for role context " + roleTag
+                );
+            }
+            if (sole == AccountAdmissionOutcome.EXCLUDED_BY_RULE) {
+                String disabledClause = disabledCount > 0 ? ", " + disabledCount + " disabled" : "";
+                return new GeneralPoolAdmissionDecision(
+                        AccountAdmissionOutcome.EXCLUDED_BY_RULE,
+                        poolViolations,
+                        String.format("All eligible Jules accounts excluded by rule (%d excluded%s); task %s stays queued for the next cycle",
+                                excludedCount, disabledClause, taskId),
+                        "All eligible Jules accounts excluded by rule (" + excludedCount + " excluded" + disabledClause + "); role context " + roleTag
+                );
+            }
+        }
+
+        // Multiple distinct failure conjuncts across the pool
+        java.util.List<String> reasonParts = new java.util.ArrayList<>();
+        if (dailyLimitedCount > 0) {
+            reasonParts.add(dailyLimitedCount + " daily limited");
+        }
+        if (sessionsExhaustedCount > 0) {
+            reasonParts.add(sessionsExhaustedCount + " slots exhausted");
+        }
+        if (restingCount > 0) {
+            reasonParts.add(restingCount + " resting/blocked");
+        }
+        if (excludedCount > 0) {
+            reasonParts.add(excludedCount + " excluded by rule");
+        }
+        if (disabledCount > 0) {
+            reasonParts.add(disabledCount + " disabled");
+        }
+        String combinedReasons = String.join(", ", reasonParts);
+
+        return new GeneralPoolAdmissionDecision(
+                AccountAdmissionOutcome.MULTIPLE_CONJUNCTS_VIOLATED,
+                poolViolations,
+                String.format("Jules general pool admission refused (%s); task %s stays queued for the next cycle", combinedReasons, taskId),
+                "Jules general pool accounts unavailable (" + combinedReasons + "); role context " + roleTag
+        );
+    }
+
+    public AccountAdmissionOutcome evaluateGeneralPoolAdmission(UUID projectId, String roleTag, int maxSessions, int maxDailySessions) {
+        return evaluateGeneralPoolAdmissionDecision(
+                Optional.empty(), projectId, roleTag, java.util.Set.of(), null, null, maxSessions, maxDailySessions).outcome();
     }
 
     // Charter Pattern #12: resolves the account(s) that implemented the code a review-fallback batch is
@@ -5657,7 +5900,10 @@ public class ProjectFlowService {
             return null;
         }
         java.util.Set<String> excludedAccountNames = implementerAccountNamesForReviewFallback(reviewTask);
-        dispatchToGeneralPool(reviewTask, excludedAccountNames);
+        boolean dispatched = dispatchToGeneralPool(reviewTask, excludedAccountNames);
+        if (!dispatched) {
+            return null;
+        }
         return reviewTask.getId();
     }
 

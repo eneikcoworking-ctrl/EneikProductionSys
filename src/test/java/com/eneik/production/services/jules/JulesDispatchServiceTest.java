@@ -2948,6 +2948,10 @@ class JulesDispatchServiceTest {
         activeFallback.setProject(project);
         activeFallback.setStatus(TaskStatus.claimed);
 
+        JulesSessionEntity activeSession = new JulesSessionEntity();
+        activeSession.setTaskId(activeFallback.getId());
+        when(julesSessionRepository.findByTaskIdIn(anyList())).thenReturn(List.of(activeSession));
+
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(activeFallback));
         when(projectFlowService.isReviewFallbackTask(activeFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(activeFallback)).thenReturn(List.of(targetTaskId));
@@ -2968,6 +2972,10 @@ class JulesDispatchServiceTest {
         completedFallback.setProject(project);
         completedFallback.setStatus(TaskStatus.done);
 
+        JulesSessionEntity completedSession = new JulesSessionEntity();
+        completedSession.setTaskId(completedFallback.getId());
+        when(julesSessionRepository.findByTaskIdIn(anyList())).thenReturn(List.of(completedSession));
+
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
@@ -2977,6 +2985,43 @@ class JulesDispatchServiceTest {
         assertTrue(julesDispatchService.reviewFallbackTargetsInFlight(projectId).isEmpty());
         assertEquals(Set.of(targetTaskId + "::https://github.com/org/repo/pull/1::abc123"),
                 julesDispatchService.reviewFallbackTargetsEverAttempted(projectId));
+    }
+
+    @Test
+    void unstartedCarrierTaskWithoutSessionIsNotAttemptedAndDoesNotBlockTargets() {
+        // Prescription 22 (PART_WHOLE_OWNERSHIP / D004): Existence is not an attempt.
+        // A carrier task created in queued status that never started a Jules session (e.g. general pool starved)
+        // must NOT burn the target's poka-yoke key, nor be treated as in-flight.
+        UUID projectId = UUID.randomUUID();
+        UUID targetTaskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity queuedCarrier = new TaskEntity();
+        queuedCarrier.setId(UUID.randomUUID());
+        queuedCarrier.setProject(project);
+        queuedCarrier.setStatus(TaskStatus.queued);
+
+        TaskEntity target = new TaskEntity();
+        target.setId(targetTaskId);
+        target.setStatus(TaskStatus.pending_review);
+        target.setProject(project);
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(queuedCarrier, target));
+        when(projectFlowService.isReviewFallbackTask(queuedCarrier)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(queuedCarrier)).thenReturn(List.of(targetTaskId));
+        when(projectFlowService.reviewFallbackTargetPrUrls(queuedCarrier)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
+        when(projectFlowService.reviewFallbackTargetDiffHashes(queuedCarrier)).thenReturn(List.of("abc123"));
+
+        // No sessions exist for this carrier task in jules_sessions
+        when(julesSessionRepository.findByTaskIdIn(anyList())).thenReturn(List.of());
+
+        // Carrier task without session is NOT in flight
+        assertTrue(julesDispatchService.reviewFallbackTargetsInFlight(projectId).isEmpty());
+
+        // Target key is NOT burned: reviewFallbackTargetsEverAttempted is empty!
+        assertTrue(julesDispatchService.reviewFallbackTargetsEverAttempted(projectId).isEmpty());
     }
 
     @Test
@@ -2996,6 +3041,10 @@ class JulesDispatchServiceTest {
         completedFallback.setId(UUID.randomUUID());
         completedFallback.setProject(project);
         completedFallback.setStatus(TaskStatus.done);
+
+        JulesSessionEntity completedSession = new JulesSessionEntity();
+        completedSession.setTaskId(completedFallback.getId());
+        when(julesSessionRepository.findByTaskIdIn(anyList())).thenReturn(List.of(completedSession));
 
         TaskEntity target = new TaskEntity();
         target.setId(targetTaskId);
@@ -3031,6 +3080,10 @@ class JulesDispatchServiceTest {
         completedFallback.setProject(project);
         completedFallback.setStatus(TaskStatus.done);
 
+        JulesSessionEntity completedSession = new JulesSessionEntity();
+        completedSession.setTaskId(completedFallback.getId());
+        when(julesSessionRepository.findByTaskIdIn(anyList())).thenReturn(List.of(completedSession));
+
         TaskEntity target = new TaskEntity();
         target.setId(targetTaskId);
         target.setStatus(TaskStatus.pending_review);
@@ -3062,6 +3115,10 @@ class JulesDispatchServiceTest {
         completedFallback.setId(UUID.randomUUID());
         completedFallback.setProject(project);
         completedFallback.setStatus(TaskStatus.done);
+
+        JulesSessionEntity completedSession = new JulesSessionEntity();
+        completedSession.setTaskId(completedFallback.getId());
+        when(julesSessionRepository.findByTaskIdIn(anyList())).thenReturn(List.of(completedSession));
 
         TaskEntity target = new TaskEntity();
         target.setId(targetTaskId);

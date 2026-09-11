@@ -16,6 +16,30 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-11 22:45 UTC — Antigravity (L2): Предписание 22 закрыто (`PART_WHOLE_OWNERSHIP` / D004, Закон 12 / `TRUTH_STATUS_TABLE` / D012)**
+
+1. **Опровержение исходной гипотезы по коду (Ground-Truth):**
+   - Проверено по коду: `:reservedName` в `lockNextJulesAccountWithCapacity` никогда не получает имя компилятора (`ProjectFlowService:3788` передаёт `excludedForThisAttempt` — имя аккаунта, отказавшего на предыдущей итерации попытки; `InternalGeminiObserverController:288` передаёт `null`). `taskCompilerAccountName()` никогда не исключается из общего пула.
+   - Пустота общего пула была вызвана шестью выключенными операционными аккаунтами (`enabled=false`) и исчерпанием суточного лимита на `eneikdru` (`sessions_dispatched_today >= estimated_daily_capacity`, 501 при лимите 15). Счётчик растёт на принятой сессии (`AccountHealthService:275`) и сбрасывается в 00:05 UTC. Раздел 22 в `FACTORY_MECHANISMS.md` переписан на основе фактических измерений.
+
+2. **Устранение категориальной ошибки сгорания ключа цели (`PART_WHOLE_OWNERSHIP` / D004):**
+   - В `JulesDispatchService.reviewFallbackTargetsEverAttempted` и `reviewFallbackTargetsInFlight` введена фильтрация по реальным сессиям: `julesSessionRepository.findByTaskIdIn(carrierTaskIds)`.
+   - Если носитель ревью был создан, но сессия не была запущена (например, из-за нехватки аккаунтов в пуле), он считается непробованным (`unattempted`) и не находящимся в полете (`not in-flight`).
+   - Ключ цели (`targetId::prUrl::diffHash`) не сгорает, и цель не блокируется от последующих попыток допуска.
+   - `ProjectFlowService.dispatchReviewFallbackTask` возвращает `null`, если `dispatchToGeneralPool` вернул `false` (нет доступных аккаунтов), предотвращая ложные логи об успешной отправке.
+
+3. **Честная диагностика конъюнктов допуска общего пула (Закон 12, `AccountAdmissionOutcome`):**
+   - `AccountAdmissionOutcome` расширен исходами `DAILY_LIMIT_EXCEEDED` и `EXCLUDED_BY_RULE`.
+   - В `ProjectFlowService` реализован `evaluateGeneralPoolAdmissionDecision`, зеркальный к `evaluateNamedAccountAdmissionDecision`.
+   - При отказе блокировки аккаунта в общем пуле выявляются точные нарушенные конъюнкты (`DAILY_LIMIT_EXCEEDED`, `DISABLED`, `RESTING`, `SESSIONS_EXHAUSTED`, `EXCLUDED_BY_RULE`, `REFUSAL_NOT_REPRODUCED_ON_RECHECK`, `MULTIPLE_CONJUNCTS_VIOLATED`).
+   - Исключена ложная симуляция исчерпания параллельных сессионных слотов: при превышении суточного лимита (как у `eneikdru`) статус и лог фиксируют суточный лимит и число выключенных аккаунтов (`"All enabled Jules accounts exceeded daily limit (1 daily limited, 6 disabled); role context <tag>"`), не заявляя ложное `"No free Jules shared session slot available"`.
+
+4. **Заслоны (138/138 зелёные в контейнере Maven):**
+   - `JulesDispatchServiceTest.unstartedCarrierTaskWithoutSessionIsNotAttemptedAndDoesNotBlockTargets`: носитель ревью в очереди без сессии Jules не помечает цель пробованной и оставляет её доступной для допуска.
+   - `ProjectAdmissionLaw25aTest`: заслон транзакционной демаркации Law 25a подтверждает, что доступ к `julesSessionRepository` строго локален (factory local data) и изолирован от сетевых вызовов Jules API.
+   - `GeneralPoolAdmissionTruthTableTest` (10/10): таблица истинности всех исходов допуска общего пула, включая воспроизведение боевого инцидента с суточным лимитом и выключенными аккаунтами.
+   - `NamedAccountAdmissionTruthTableTest` (10/10), `ProjectFlowServiceLaw1JulesDispatchTest` (4/4), `AccountLifecycleInvariantTest` (5/5).
+
 **2026-09-11 22:00 UTC — Antigravity (L2): Предписание 21 закрыто (`INSTITUTIONAL_FACT_REGISTER` / D007, Закон 12), остатки Предписания 20 закрыты**
 
 1. **Остатки Предписания 20 закрыты:**

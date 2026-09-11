@@ -3507,9 +3507,20 @@ public class JulesDispatchService {
     Set<UUID> reviewFallbackTargetsInFlight(UUID projectId) {
         // Scoped to the project (2026-08-28): the predicate below is already per-project, so reading the
         // whole task table first paid a cost proportional to all history for an answer of a few rows.
-        return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        List<TaskEntity> carrierTasks = projectTasks.stream()
                 .filter(projectFlowService::isReviewFallbackTask)
                 .filter(task -> !isTerminalTask(task))
+                .toList();
+        if (carrierTasks.isEmpty()) {
+            return java.util.Collections.emptySet();
+        }
+        List<UUID> carrierTaskIds = carrierTasks.stream().map(TaskEntity::getId).toList();
+        java.util.Set<UUID> carrierTasksWithSessions = julesSessionRepository.findByTaskIdIn(carrierTaskIds).stream()
+                .map(com.eneik.production.models.persistence.JulesSessionEntity::getTaskId)
+                .collect(java.util.stream.Collectors.toSet());
+        return carrierTasks.stream()
+                .filter(task -> carrierTasksWithSessions.contains(task.getId()))
                 .flatMap(task -> projectFlowService.reviewFallbackTargetTaskIds(task).stream())
                 .collect(java.util.stream.Collectors.toSet());
     }
@@ -3531,37 +3542,52 @@ public class JulesDispatchService {
         // ~400 tasks. The tasks were already all in hand; asking the database again for rows already read
         // is the same defect as asking GitHub once per task.
         List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        List<TaskEntity> carrierTasks = projectTasks.stream()
+                .filter(projectFlowService::isReviewFallbackTask)
+                .toList();
+        if (carrierTasks.isEmpty()) {
+            return keys;
+        }
+        List<UUID> carrierTaskIds = carrierTasks.stream().map(TaskEntity::getId).toList();
+        java.util.Set<UUID> carrierTasksWithSessions = julesSessionRepository.findByTaskIdIn(carrierTaskIds).stream()
+                .map(com.eneik.production.models.persistence.JulesSessionEntity::getTaskId)
+                .collect(java.util.stream.Collectors.toSet());
+
         Map<UUID, TaskEntity> byId = new java.util.HashMap<>();
         for (TaskEntity task : projectTasks) {
             byId.put(task.getId(), task);
         }
-        projectTasks.stream()
-                .filter(projectFlowService::isReviewFallbackTask)
-                .forEach(task -> {
-                    List<UUID> ids = projectFlowService.reviewFallbackTargetTaskIds(task);
-                    List<String> urls = projectFlowService.reviewFallbackTargetPrUrls(task);
-                    List<String> hashes = projectFlowService.reviewFallbackTargetDiffHashes(task);
-                    for (int i = 0; i < ids.size(); i++) {
-                        UUID targetId = ids.get(i);
-                        // A batch that completed without a verdict entry for this specific target never
-                        // actually reviewed it (applyReviewVerdictToTask's null-verdict branch) - excluding
-                        // it here, while its per-target retry counter is still under the cap, is what makes
-                        // it eligible for a genuine re-review next processPendingReviewBatch tick instead of
-                        // being pre-blocked by this same poka-yoke forever. See
-                        // PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY.
-                        TaskEntity target = byId.get(targetId);
-                        if (target != null
-                                && target.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review
-                                && projectFlowService.reviewFallbackNullVerdictRetryCount(target) > 0
-                                && projectFlowService.reviewFallbackNullVerdictRetryCount(target)
-                                        < com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES) {
-                            continue;
-                        }
-                        String url = i < urls.size() ? urls.get(i) : "";
-                        String hash = i < hashes.size() ? hashes.get(i) : "";
-                        keys.add(targetId + "::" + url + "::" + hash);
-                    }
-                });
+        for (TaskEntity task : carrierTasks) {
+            // Prescription 22 (PART_WHOLE_OWNERSHIP / D004): Existence is not an attempt.
+            // A carrier task that was queued but never had a Jules session started was never attempted;
+            // its targets must not be burned by the poka-yoke guard.
+            if (!carrierTasksWithSessions.contains(task.getId())) {
+                continue;
+            }
+            List<UUID> ids = projectFlowService.reviewFallbackTargetTaskIds(task);
+            List<String> urls = projectFlowService.reviewFallbackTargetPrUrls(task);
+            List<String> hashes = projectFlowService.reviewFallbackTargetDiffHashes(task);
+            for (int i = 0; i < ids.size(); i++) {
+                UUID targetId = ids.get(i);
+                // A batch that completed without a verdict entry for this specific target never
+                // actually reviewed it (applyReviewVerdictToTask's null-verdict branch) - excluding
+                // it here, while its per-target retry counter is still under the cap, is what makes
+                // it eligible for a genuine re-review next processPendingReviewBatch tick instead of
+                // being pre-blocked by this same poka-yoke forever. See
+                // PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY.
+                TaskEntity target = byId.get(targetId);
+                if (target != null
+                        && target.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review
+                        && projectFlowService.reviewFallbackNullVerdictRetryCount(target) > 0
+                        && projectFlowService.reviewFallbackNullVerdictRetryCount(target)
+                                < com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES) {
+                    continue;
+                }
+                String url = i < urls.size() ? urls.get(i) : "";
+                String hash = i < hashes.size() ? hashes.get(i) : "";
+                keys.add(targetId + "::" + url + "::" + hash);
+            }
+        }
         return keys;
     }
 

@@ -351,6 +351,7 @@ class ProjectAdmissionLaw25aTest {
                 "taskRepository",
                 "projectFlowService",
                 "persistentWorkerSessionService",
+                "julesSessionRepository",
                 "self",
                 "log"
         );

@@ -21,6 +21,12 @@ public enum AccountAdmissionOutcome {
     /** Account has reached or exceeded its max concurrent session capacity. */
     SESSIONS_EXHAUSTED,
 
+    /** Account has reached or exceeded its daily session limit (Prescription 22). */
+    DAILY_LIMIT_EXCEEDED,
+
+    /** Account is excluded by workflow rule, role restriction, or retry exclusion (Prescription 22). */
+    EXCLUDED_BY_RULE,
+
     /** More than one conjunct failed (e.g. account is disabled AND in daily limit). All failed conjuncts are named. */
     MULTIPLE_CONJUNCTS_VIOLATED,
 
