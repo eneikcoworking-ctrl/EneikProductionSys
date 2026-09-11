@@ -54,6 +54,7 @@ import java.util.regex.Pattern;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -177,6 +178,8 @@ class ProjectAdmissionLaw25aTest {
         assertNotNull(admitted.getId());
         assertEquals("New Greenfield Project", admitted.getName());
         assertEquals(ProjectStatus.active, admitted.getStatus());
+        assertNull(admitted.getRepositoryUrl(), "Repository URL must be null prior to constructive proof of GitHub creation");
+        assertNull(admitted.getRepoUrl(), "Repo URL must be null prior to constructive proof of GitHub creation");
 
         ArgumentCaptor<WishlistEntity> wishlistCaptor = ArgumentCaptor.forClass(WishlistEntity.class);
         verify(wishlistRepository).save(wishlistCaptor.capture());
@@ -229,6 +232,8 @@ class ProjectAdmissionLaw25aTest {
         assertNotNull(dto);
         assertEquals("Resilient Project", dto.name());
         assertEquals("provision_failed", dto.factoryStatus());
+        assertNull(dto.repositoryUrl(), "Repository URL must be null when external provisioning fails");
+        assertNull(dto.repoUrl(), "Repo URL must be null when external provisioning fails");
 
         // Verify project and wishlist were saved locally despite external outage
         // 1st save is atomic local admission; 2nd save records provision_failed status

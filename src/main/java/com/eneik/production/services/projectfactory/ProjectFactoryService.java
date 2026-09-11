@@ -35,7 +35,7 @@ public class ProjectFactoryService {
             throw new IllegalArgumentException("name_conflict");
         }
 
-        String repositoryUrl = firstNonBlank(github.repositoryUrl(), project.getRepositoryUrl());
+        String repositoryUrl = github.repositoryUrl();
         LinearProvisioningResult linear = linearProjectFactoryClient.provision(project, repositoryUrl);
 
         registerStandardHotspots(project.getId());
@@ -105,10 +105,6 @@ public class ProjectFactoryService {
 
     private boolean startsWith(String value, String prefix) {
         return value != null && value.startsWith(prefix);
-    }
-
-    private String firstNonBlank(String first, String fallback) {
-        return first == null || first.isBlank() ? fallback : first;
     }
 
     private String report(WorkspaceProvisioningResult workspace,

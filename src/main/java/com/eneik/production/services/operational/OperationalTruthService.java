@@ -324,6 +324,7 @@ public class OperationalTruthService {
                 .count();
         int qualityGateUnapplied = (int) tasks.stream()
                 .filter(task -> task.getQualityGateReport() != null && task.isDeliveryVerificationAbsent())
+                .filter(task -> task.getCreatedAt() == null || task.getCreatedAt().isAfter(cutoff))
                 .count();
         int screenshots = (int) reviews.stream()
                 .filter(review -> review.getScreenshotUrls() != null && !review.getScreenshotUrls().isBlank())

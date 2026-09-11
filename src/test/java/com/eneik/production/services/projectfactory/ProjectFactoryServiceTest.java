@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -69,6 +70,46 @@ class ProjectFactoryServiceTest {
         ProjectFactoryResult result = service.provision(project);
 
         assertEquals("ready_local", result.factoryStatus());
+    }
+
+    @Test
+    void skippedGitHubProvisioningYieldsNullRepositoryUrl() {
+        ProjectFactoryService service = service();
+        ProjectEntity project = project();
+        project.setRepositoryUrl("https://github.com/phantom/repo");
+
+        when(workspaceFactoryService.provision(project))
+                .thenReturn(new WorkspaceProvisioningResult("/tmp/project", artifacts, "workspace ready"));
+        when(gitHubProjectFactoryClient.provision(project, artifacts))
+                .thenReturn(new GitHubProvisioningResult("skipped: GITHUB_TOKEN is not configured", null, null));
+        when(linearProjectFactoryClient.provision(project, null))
+                .thenReturn(new LinearProvisioningResult("skipped: Linear disabled", null, null));
+        when(hotspotFileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectFactoryResult result = service.provision(project);
+
+        assertNull(result.repositoryUrl(),
+                "Repository URL must be null when GitHub provisioning is skipped, never falling back to pre-recorded phantom URL");
+    }
+
+    @Test
+    void failedGitHubProvisioningYieldsNullRepositoryUrl() {
+        ProjectFactoryService service = service();
+        ProjectEntity project = project();
+        project.setRepositoryUrl("https://github.com/phantom/repo");
+
+        when(workspaceFactoryService.provision(project))
+                .thenReturn(new WorkspaceProvisioningResult("/tmp/project", artifacts, "workspace ready"));
+        when(gitHubProjectFactoryClient.provision(project, artifacts))
+                .thenReturn(new GitHubProvisioningResult("failed: GitHub returned HTTP 500", null, null));
+        when(linearProjectFactoryClient.provision(project, null))
+                .thenReturn(new LinearProvisioningResult("skipped: Linear disabled", null, null));
+        when(hotspotFileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ProjectFactoryResult result = service.provision(project);
+
+        assertNull(result.repositoryUrl(),
+                "Repository URL must be null when GitHub provisioning fails, never falling back to pre-recorded phantom URL");
     }
 
     private ProjectFactoryService service() {

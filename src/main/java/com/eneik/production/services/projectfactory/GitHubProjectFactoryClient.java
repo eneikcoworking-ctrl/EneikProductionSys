@@ -63,13 +63,12 @@ public class GitHubProjectFactoryClient {
     }
 
     public GitHubProvisioningResult provision(ProjectEntity project, WorkspaceArtifacts artifacts) {
-        String fallbackUrl = "https://github.com/" + organization + "/" + project.getRepositoryName();
         String token = selectGitHubToken();
         if (!settingsService.effectiveBoolean("github_enabled")) {
-            return new GitHubProvisioningResult("skipped: GitHub provisioning disabled", fallbackUrl, null);
+            return new GitHubProvisioningResult("skipped: GitHub provisioning disabled", null, null);
         }
         if (token == null || token.isBlank()) {
-            return new GitHubProvisioningResult("skipped: GITHUB_TOKEN is not configured", fallbackUrl, null);
+            return new GitHubProvisioningResult("skipped: GITHUB_TOKEN is not configured", null, null);
         }
 
         try {
@@ -83,8 +82,8 @@ public class GitHubProjectFactoryClient {
 
             if (response.statusCode() == 201) {
                 JsonNode json = objectMapper.readTree(response.body());
-                String repoUrl = json.path("html_url").asText(fallbackUrl);
-                String repoId = json.path("id").asText(null);
+                String repoUrl = json.hasNonNull("html_url") ? json.get("html_url").asText() : null;
+                String repoId = json.hasNonNull("id") ? json.get("id").asText() : null;
                 String owner = repositoryOwner(json);
                 List<String> uploadErrors = uploadBootstrapFiles(owner, project, artifacts, token);
                 List<String> configurationWarnings = configureRepository(owner, project.getRepositoryName(), token);
@@ -111,22 +110,35 @@ public class GitHubProjectFactoryClient {
 
             if (response.statusCode() == 422) {
                 String detail = preview(response.body());
+                String verifiedRepoUrl = null;
+                String verifiedRepoId = null;
+                try {
+                    HttpRequest checkRequest = baseRequest("/repos/" + encode(organization) + "/" + encode(project.getRepositoryName()), token).GET().build();
+                    HttpResponse<String> checkResp = httpClient.send(checkRequest, HttpResponse.BodyHandlers.ofString());
+                    if (checkResp.statusCode() == 200) {
+                        JsonNode checkJson = objectMapper.readTree(checkResp.body());
+                        verifiedRepoUrl = checkJson.hasNonNull("html_url") ? checkJson.get("html_url").asText() : null;
+                        verifiedRepoId = checkJson.hasNonNull("id") ? checkJson.get("id").asText() : null;
+                    }
+                } catch (Exception e) {
+                    log.debug("Failed to verify existing repository on GitHub: {}", e.getMessage());
+                }
                 List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError("Repository exists or blocked: " + detail);
-                return new GitHubProvisioningResult("exists or blocked by GitHub validation: " + detail, fallbackUrl, null, List.of(detail), collaborators);
+                return new GitHubProvisioningResult("exists or blocked by GitHub validation: " + detail, verifiedRepoUrl, verifiedRepoId, List.of(detail), collaborators);
             }
 
             String detail = preview(response.body());
             List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError("GitHub error " + response.statusCode() + ": " + detail);
-            return new GitHubProvisioningResult("failed: GitHub returned HTTP " + response.statusCode() + " " + detail, fallbackUrl, null, List.of(detail), collaborators);
+            return new GitHubProvisioningResult("failed: GitHub returned HTTP " + response.statusCode() + " " + detail, null, null, List.of(detail), collaborators);
         } catch (InterruptedException e) {
             log.error("SYSTEM CRITICAL: Failed to send GitHub invitations for project: {} due to interruption", project.getName(), e);
             Thread.currentThread().interrupt();
             List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError("Interrupted");
-            return new GitHubProvisioningResult("failed: GitHub provisioning interrupted", fallbackUrl, null, List.of("interrupted"), collaborators);
+            return new GitHubProvisioningResult("failed: GitHub provisioning interrupted", null, null, List.of("interrupted"), collaborators);
         } catch (Exception e) {
             log.error("SYSTEM CRITICAL: Failed to send GitHub invitations for project: {}", project.getName(), e);
             List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError(e.getMessage());
-            return new GitHubProvisioningResult("failed: " + e.getMessage(), fallbackUrl, null, List.of(e.getMessage()), collaborators);
+            return new GitHubProvisioningResult("failed: " + e.getMessage(), null, null, List.of(e.getMessage()), collaborators);
         }
     }
 

@@ -263,12 +263,12 @@ class LeanValueTest {
         assertThat(w1.getLeanValue()).isEqualTo(LeanValue.essential);
         org.mockito.Mockito.verify(technicalLeadCompiler).createTaskFromWishlist(w1.getId());
 
-        // 2. Unresolved without Kano immediately transitions to dismissed with clear audit trail (never hangs forever, no artificial countdown on compileAttempts)
+        // 2. Unresolved without Kano remains held in pending with undetermined value (non-final state, awaiting value re-evaluation; never discarded or irreversibly dismissed)
         WishlistEntity w2 = new WishlistEntity();
         w2.setLeanValue(LeanValue.undetermined);
         boolean a1 = service.processCompiledWishlistWithUndeterminedValue(w2);
         assertThat(a1).isFalse();
-        assertThat(w2.getStatus()).isEqualTo(WishlistStatus.dismissed);
+        assertThat(w2.getStatus()).isEqualTo(WishlistStatus.pending);
         assertThat(w2.getLeanValue()).isEqualTo(LeanValue.undetermined);
     }
 

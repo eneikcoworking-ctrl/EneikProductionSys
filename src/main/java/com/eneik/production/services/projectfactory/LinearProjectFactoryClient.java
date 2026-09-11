@@ -79,7 +79,9 @@ public class LinearProjectFactoryClient {
             ObjectNode variables = objectMapper.createObjectNode();
             ObjectNode input = objectMapper.createObjectNode();
             input.put("name", project.getName());
-            input.put("description", "Eneik Product Factory project. Repository: " + repositoryUrl);
+            input.put("description", repositoryUrl != null && !repositoryUrl.isBlank()
+                    ? "Eneik Product Factory project. Repository: " + repositoryUrl
+                    : "Eneik Product Factory project.");
             ArrayNode teamIds = objectMapper.createArrayNode();
             teamIds.add(teamId);
             input.set("teamIds", teamIds);

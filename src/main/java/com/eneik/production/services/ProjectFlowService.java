@@ -304,8 +304,6 @@ public class ProjectFlowService {
             project.setStatus(ProjectStatus.active);
         }
         project.setRepositoryName(project.getSlug());
-        project.setRepositoryUrl("https://github.com/" + githubOrganization + "/" + project.getSlug());
-        project.setRepoUrl(project.getRepositoryUrl());
         project.setLinearProjectKey(project.getSlug().toUpperCase(Locale.ROOT).replace("-", "_"));
 
         ProjectEntity saved = projectRepository.save(project);
@@ -3303,9 +3301,10 @@ public class ProjectFlowService {
                     wishlist.getId(), epicKano);
             return false;
         }
-        wishlist.setStatus(WishlistStatus.dismissed);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.undetermined);
         wishlistRepository.save(wishlist);
-        log.warn("ProjectFlowService: wishlist {} dismissed: lean value undetermined (no Kano class on epic)",
+        log.info("ProjectFlowService: wishlist {} held in pending: lean value undetermined (no Kano class on epic), awaiting value re-evaluation",
                 wishlist.getId());
         return false;
     }
