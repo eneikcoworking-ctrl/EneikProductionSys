@@ -180,4 +180,49 @@ class GitHubPullRequestServiceTest {
         assertTrue(GitHubPullRequestService.parseDirectoryFileNames(null).isEmpty());
         assertTrue(GitHubPullRequestService.parseDirectoryFileNames(objectMapper.createObjectNode()).isEmpty());
     }
+
+    @Test
+    void missingClassifierCausesWriteSitesToFailClosedImmediately() {
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+        GitHubPullRequestService service = new GitHubPullRequestService(
+                mock(GithubConfig.class), settingsService, objectMapper, mock(GitHubApiBudgetService.class),
+                (com.eneik.production.services.CodeChangeClassifier) null);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+
+        // All 4 writing sites must return false without ever touching settings or network
+        assertFalse(service.commitFile(project, "src/App.java", "test".getBytes(), "msg"));
+        assertFalse(service.upsertFile(project, "src/App.java", "test".getBytes(), "msg"));
+        assertFalse(service.resolveFileConflictWithMain(project, "feature", "src/App.java"));
+        assertFalse(service.resolveProductCodeConflictWithMain(project, "feature", "src/App.java"));
+
+        verifyNoInteractions(settingsService);
+    }
+
+    @Test
+    void presentClassifierEnablesGuardAndReachesNextValidationStage() {
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+        com.eneik.production.services.CodeChangeClassifier classifier =
+                mock(com.eneik.production.services.CodeChangeClassifier.class);
+        GitHubPullRequestService service = new GitHubPullRequestService(
+                mock(GithubConfig.class), settingsService, objectMapper, mock(GitHubApiBudgetService.class), classifier);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+
+        org.mockito.Mockito.when(classifier.isFactoryRecordFile("src/App.java")).thenReturn(false);
+        org.mockito.Mockito.when(classifier.isFactoryRecordFile(".eneik/task-plan.json")).thenReturn(true);
+
+        // Factory record is refused by classifier guard without touching settings
+        assertFalse(service.commitFile(project, ".eneik/task-plan.json", "{}".getBytes(), "msg"));
+        verifyNoInteractions(settingsService);
+
+        // Non-factory file passes classifier guard and proceeds to settings check
+        org.mockito.Mockito.when(settingsService.effectiveBoolean("github_enabled")).thenReturn(false);
+        assertFalse(service.commitFile(project, "src/App.java", "content".getBytes(), "msg"));
+        org.mockito.Mockito.verify(settingsService).effectiveBoolean("github_enabled");
+    }
 }

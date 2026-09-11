@@ -82,8 +82,16 @@ public class GitHubPullRequestService {
     public GitHubPullRequestService(GithubConfig githubConfig,
                                     SystemSettingsService settingsService,
                                     ObjectMapper objectMapper,
+                                    GitHubApiBudgetService githubApiBudgetService,
+                                    com.eneik.production.services.CodeChangeClassifier codeChangeClassifier) {
+        this(githubConfig, settingsService, objectMapper, githubApiBudgetService, null, codeChangeClassifier);
+    }
+
+    public GitHubPullRequestService(GithubConfig githubConfig,
+                                    SystemSettingsService settingsService,
+                                    ObjectMapper objectMapper,
                                     GitHubApiBudgetService githubApiBudgetService) {
-        this(githubConfig, settingsService, objectMapper, githubApiBudgetService, null);
+        this(githubConfig, settingsService, objectMapper, githubApiBudgetService, null, null);
     }
 
     public GitHubPullRequestService(GithubConfig githubConfig,
@@ -91,6 +99,15 @@ public class GitHubPullRequestService {
                             ObjectMapper objectMapper,
                             GitHubApiBudgetService githubApiBudgetService,
                             HttpClient httpClient) {
+        this(githubConfig, settingsService, objectMapper, githubApiBudgetService, httpClient, null);
+    }
+
+    public GitHubPullRequestService(GithubConfig githubConfig,
+                            SystemSettingsService settingsService,
+                            ObjectMapper objectMapper,
+                            GitHubApiBudgetService githubApiBudgetService,
+                            HttpClient httpClient,
+                            com.eneik.production.services.CodeChangeClassifier codeChangeClassifier) {
         this.githubConfig = githubConfig;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
@@ -98,6 +115,11 @@ public class GitHubPullRequestService {
         // Bounded connect timeout (2026-07-24/25 incident) - see JulesApiClient for the full incident note;
         // same fix applied uniformly across every outbound HTTP client in the codebase.
         this.httpClient = httpClient != null ? httpClient : HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
+        this.codeChangeClassifier = codeChangeClassifier;
+        if (codeChangeClassifier == null) {
+            log.error("CRITICAL CONFIGURATION DEFECT: CodeChangeClassifier is null in GitHubPullRequestService! "
+                    + "Law 2 File Channel prohibition cannot be verified (Prescription 18: TRUTH_STATUS_TABLE / D012).");
+        }
     }
 
     /**
@@ -735,7 +757,12 @@ public class GitHubPullRequestService {
      * caller here uses a fresh timestamped path, so collisions are not expected.
      */
     public boolean commitFile(ProjectEntity project, String path, byte[] content, String commitMessage) {
-        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+        if (codeChangeClassifier == null) {
+            log.error("GitHub commit-file refused: CodeChangeClassifier is missing (status: UNVERIFIED). "
+                    + "Unverified file write to client repository is forbidden (Law 2 / Prescription 18: TRUTH_STATUS_TABLE / D012)");
+            return false;
+        }
+        if (codeChangeClassifier.isFactoryRecordFile(path)) {
             log.warn("GitHub commit-file refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
             return false;
         }
@@ -787,7 +814,12 @@ public class GitHubPullRequestService {
      * consequently accumulated build artifacts that made every pair of compiling tasks conflict.
      */
     public boolean upsertFile(ProjectEntity project, String path, byte[] content, String commitMessage) {
-        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+        if (codeChangeClassifier == null) {
+            log.error("GitHub upsert-file refused: CodeChangeClassifier is missing (status: UNVERIFIED). "
+                    + "Unverified file write to client repository is forbidden (Law 2 / Prescription 18: TRUTH_STATUS_TABLE / D012)");
+            return false;
+        }
+        if (codeChangeClassifier.isFactoryRecordFile(path)) {
             log.warn("GitHub upsert-file refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
             return false;
         }
@@ -859,7 +891,12 @@ public class GitHubPullRequestService {
         if (project == null || branch == null || branch.isBlank() || path == null || path.isBlank()) {
             return false;
         }
-        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+        if (codeChangeClassifier == null) {
+            log.error("GitHub resolveFileConflictWithMain refused: CodeChangeClassifier is missing (status: UNVERIFIED). "
+                    + "Unverified file write to client repository is forbidden (Law 2 / Prescription 18: TRUTH_STATUS_TABLE / D012)");
+            return false;
+        }
+        if (codeChangeClassifier.isFactoryRecordFile(path)) {
             log.warn("GitHub resolveFileConflictWithMain refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
             return false;
         }
@@ -923,7 +960,12 @@ public class GitHubPullRequestService {
     }
 
     public boolean resolveProductCodeConflictWithMain(ProjectEntity project, String branch, String path) {
-        if (codeChangeClassifier != null && codeChangeClassifier.isFactoryRecordFile(path)) {
+        if (codeChangeClassifier == null) {
+            log.error("GitHub resolveProductCodeConflictWithMain refused: CodeChangeClassifier is missing (status: UNVERIFIED). "
+                    + "Unverified file write to client repository is forbidden (Law 2 / Prescription 18: TRUTH_STATUS_TABLE / D012)");
+            return false;
+        }
+        if (codeChangeClassifier.isFactoryRecordFile(path)) {
             log.warn("GitHub resolveProductCodeConflictWithMain refused: path '{}' is a factory record file (Law 2 File Channel Invariant)", path);
             return false;
         }
@@ -1983,13 +2025,16 @@ public class GitHubPullRequestService {
     private static final java.util.regex.Pattern BLOCKER_PR_TITLE = java.util.regex.Pattern.compile(
             "(?i)(^|\\W)(blocker|halt|contradiction|blocked by|cannot proceed)(\\W|$)");
 
-    // Optional so every existing constructor call (including the many hand-built ones in tests) keeps
-    // compiling; a null classifier degrades this guard to "no guard", never to a crash.
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    // Prescription 18 (TRUTH_STATUS_TABLE / D012): Injected via primary constructor.
+    // In production, CodeChangeClassifier is mandatory for file-writing sites.
     private com.eneik.production.services.CodeChangeClassifier codeChangeClassifier;
 
     public void setCodeChangeClassifier(com.eneik.production.services.CodeChangeClassifier codeChangeClassifier) {
         this.codeChangeClassifier = codeChangeClassifier;
+    }
+
+    public com.eneik.production.services.CodeChangeClassifier getCodeChangeClassifier() {
+        return this.codeChangeClassifier;
     }
 
     /**
@@ -2011,7 +2056,11 @@ public class GitHubPullRequestService {
      * is the more expensive error - see CodeChangeClassifier's own doc on that trade-off.
      */
     private boolean refusedByFactoryPokaYoke(ProjectEntity project, int pullNumber, String prTitle) {
-        if (codeChangeClassifier == null || project == null) {
+        if (project == null) {
+            return false;
+        }
+        if (codeChangeClassifier == null) {
+            log.warn("Merge-time poka-yoke: CodeChangeClassifier is missing (status: UNVERIFIED) - fail-open by design, merge proceeds (Prescription 18: TRUTH_STATUS_TABLE / D012)");
             return false;
         }
         String title = prTitle == null ? "" : prTitle;

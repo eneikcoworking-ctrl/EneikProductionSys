@@ -209,16 +209,16 @@ class DeliveryRealityLaw2CarrierChannelTest {
     }
 
     @Test
-    @DisplayName("Law 2 File Channel Corollary: commitFile, upsertFile, copyFile, and resolveProductCodeConflictWithMain refuse factory records")
+    @DisplayName("Law 2 File Channel Corollary: commitFile, upsertFile, copyFile, resolveFileConflictWithMain, and resolveProductCodeConflictWithMain refuse factory records")
     void writingSitesRefuseFactoryRecords() {
         com.eneik.production.services.github.GitHubPullRequestService ghService =
                 new com.eneik.production.services.github.GitHubPullRequestService(
                         new com.eneik.production.config.GithubConfig(),
                         systemSettingsService,
                         new ObjectMapper(),
-                        mock(com.eneik.production.services.github.GitHubApiBudgetService.class)
+                        mock(com.eneik.production.services.github.GitHubApiBudgetService.class),
+                        new com.eneik.production.services.CodeChangeClassifier()
                 );
-        ghService.setCodeChangeClassifier(new com.eneik.production.services.CodeChangeClassifier());
 
         byte[] content = "{}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
@@ -227,7 +227,30 @@ class DeliveryRealityLaw2CarrierChannelTest {
         assertFalse(ghService.commitFile(project, ".eneik/records/qa-verification-test.json", content, "qa"));
         assertFalse(ghService.upsertFile(project, ".eneik/records/review-verdict-test.json", content, "verdict"));
         assertFalse(ghService.copyFile(project, "some/path.json", ".eneik/records/archived-plan.json", "archive"));
+        assertFalse(ghService.resolveFileConflictWithMain(project, "feature-branch", ".eneik/records/conflict-test.json"));
         assertFalse(ghService.resolveProductCodeConflictWithMain(project, "feature-branch", ".eneik/records/conflict-test.json"));
+    }
+
+    @Test
+    @DisplayName("Prescription 18 (TRUTH_STATUS_TABLE / D012): writing sites refuse writes when CodeChangeClassifier is missing (fail-closed, status UNVERIFIED)")
+    void writingSitesRefuseWhenCodeChangeClassifierIsMissing() {
+        com.eneik.production.services.github.GitHubPullRequestService ghService =
+                new com.eneik.production.services.github.GitHubPullRequestService(
+                        new com.eneik.production.config.GithubConfig(),
+                        systemSettingsService,
+                        new ObjectMapper(),
+                        mock(com.eneik.production.services.github.GitHubApiBudgetService.class),
+                        (com.eneik.production.services.CodeChangeClassifier) null
+                );
+
+        byte[] content = "valid product code".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+        // Without classifier, writes must fail closed immediately with UNVERIFIED status (cannot silently disable guard)
+        assertFalse(ghService.commitFile(project, "src/main/App.java", content, "commit"));
+        assertFalse(ghService.upsertFile(project, "src/main/App.java", content, "upsert"));
+        assertFalse(ghService.copyFile(project, "src/main/Old.java", "src/main/App.java", "copy"));
+        assertFalse(ghService.resolveFileConflictWithMain(project, "feature-branch", "src/main/App.java"));
+        assertFalse(ghService.resolveProductCodeConflictWithMain(project, "feature-branch", "src/main/App.java"));
     }
 
     /**
@@ -299,13 +322,17 @@ class DeliveryRealityLaw2CarrierChannelTest {
                         + "A site added here is a new way for a factory record to enter the product tree: name it "
                         + "in this set, and guard it, or do not add it.");
 
-        // Every site in the pinned set must refuse a factory record before it writes. copyFile is deliberately
-        // NOT here: it issues no PUT of its own, it delegates to commitFile, and the behavioural test above
-        // proves the refusal reaches it.
+        // Every site in the pinned set must refuse a factory record before it writes, and refuse when
+        // CodeChangeClassifier is missing (Prescription 18 / TRUTH_STATUS_TABLE / D012). copyFile is
+        // deliberately NOT here: it issues no PUT of its own, it delegates to commitFile, and the
+        // behavioural test above proves the refusal reaches it.
         for (String site : writingSites) {
             assertTrue(bodies.get(site).contains("isFactoryRecordFile"),
                     "Law 2 File Channel violation: " + site + " writes into the client repository without "
                             + "checking isFactoryRecordFile first");
+            assertTrue(bodies.get(site).contains("codeChangeClassifier == null"),
+                    "Prescription 18 / TRUTH_STATUS_TABLE violation: " + site + " writes into the client repository without "
+                            + "checking if codeChangeClassifier is null first (silently disabling guard)");
         }
     }
 

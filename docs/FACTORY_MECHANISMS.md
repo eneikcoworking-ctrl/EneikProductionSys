@@ -404,9 +404,8 @@ nothing for it to act on right now» — очередь была пуста. Э�
 **уборка есть свидетельство нарушения, а не его отсутствия.** К моменту снятия работа на порождение файла уже
 потрачена, diff испорчен, окно с заводской записью в PR клиента состоялось. Заслон, удаляющий файл, и канал,
 неспособный его пронести, — разные вещи.
-*Философия:* `PROHIBITION_AS_CODE` (D006) — **сильная**, заслон
-`DeliveryRealityLaw2CarrierChannelTest`. Остаток: классификатор внедряется «необязательно», и отсутствие бина
-выключило бы запрет молча. Опровержение: убрать бин и посмотреть, отличается ли поведение точки записи.
+*Философия:* `PROHIBITION_AS_CODE` (D006) и `TRUTH_STATUS_TABLE` (D012) — **сильная**, заслон
+`DeliveryRealityLaw2CarrierChannelTest` и `GitHubPullRequestServiceTest`. Отсутствие классификатора переведено в третий исход (отказ записи fail-closed / UNVERIFIED). Опровержение: убрать бин и проверить поведение точек записи.
 
 **`GitHubApiBudgetService`** — бюджет обращений к GitHub.
 *Связи:* вызывают 4; ничего не зовёт и не пишет.
@@ -2142,17 +2141,19 @@ Things with Words*. Сильная форма дословно: «назван �
 
 ---
 
-### 18. Запрет на заводские файлы можно молча выключить · `TRUTH_STATUS_TABLE` (D012)
+### 18. Запрет на заводские файлы можно молча выключить · `TRUTH_STATUS_TABLE` (D012) · **СДЕЛАНО (держится)**
 
-*Замер:* классификатор внедряется как `@Autowired(required = false)`; в живом контексте бин есть и запрет
-работает — проверено. Но отсутствие бина выключило бы запрет **молча**.
+*Замер:* классификатор внедрялся как `@Autowired(required = false)`; в живом контексте бин есть и запрет
+работает — проверено. Но отсутствие бина выключало запрет **молча**: `if (codeChangeClassifier != null && isFactoryRecordFile(path))`.
 
-*Делать:* сделать отсутствие классификатора **видимым третьим исходом**: запись при старте либо отказ
-запуска. «Не могу проверить» не имеет права выглядеть как «проверил».
+*Сделано (2026-09-11):*
+1. **Обязательность внедрения (`CodeChangeClassifier`):** конструктор с `CodeChangeClassifier` объявлен основным `@Autowired`-конструктором `GitHubPullRequestService`. При старте контекста Spring не может запуститься без бина (fail-closed конфигурации). Сохранены перегрузки для существующих тестов, фиксирующие критическую ошибку конфигурации в логе при передаче `null`.
+2. **Третий исход («не проверено» / status UNVERIFIED):** все 4 точки записи в репозиторий клиента (`commitFile`, `upsertFile`, `resolveFileConflictWithMain`, `resolveProductCodeConflictWithMain`) при `codeChangeClassifier == null` немедленно отвергают запись (возвращают `false`) с регистрацией отказа: `Unverified file write to client repository is forbidden (Law 2 / Prescription 18: TRUTH_STATUS_TABLE / D012)`.
+3. **Видимость при fail-open:** в `refusedByFactoryPokaYoke` сохранён проектный fail-open, но отсутствие классификатора перестало быть тихим пропуском — регистрируется явное предупреждение `status: UNVERIFIED`.
 
-*Заслон:* при отсутствующем классификаторе точка записи не ведёт себя так же, как при исправном.
+*Заслон:* `DeliveryRealityLaw2CarrierChannelTest.writingSitesRefuseWhenCodeChangeClassifierIsMissing` проверяет, что при отсутствующем классификаторе все 4 точки записи и делегирующий `copyFile` отвергают операцию (fail-closed); `theSetOfRepositoryFileWritingSitesIsPinned` структурно верифицирует, что каждая пишущая точка множества содержит проверку `codeChangeClassifier == null`. `GitHubPullRequestServiceTest.missingClassifierCausesWriteSitesToFailClosedImmediately` и `presentClassifierEnablesGuardAndReachesNextValidationStage` проверяют поведенческое различие точек записи с классификатором и без него.
 
-*Опровержение:* убрать бин и посмотреть, отличается ли поведение.
+*Опровержение:* убрать бин — точки записи отвергают запись, не пропуская файл вслепую; заслон падает, если вернуть молчаливый пропуск.
 
 ---
 

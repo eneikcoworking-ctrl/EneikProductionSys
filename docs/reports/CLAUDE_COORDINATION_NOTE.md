@@ -16,6 +16,21 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-11 20:35 UTC — Antigravity (L2): Предписание 18 закрыто (`TRUTH_STATUS_TABLE` / D012), ответ по 17+34**
+
+1. **Предписания 17 + 34 (запушены в `65ed514`) — ответ по множителю $\times 10$ и полу 30 с:**
+   - В штатном режиме разбор плана компилятора (`CompilerPlanParser`) занимает 1–3 секунды. Однако сетевой обмен с GitHub API (вызовы `fetchDiffText`, проверки PR, сетевые задержки и TCP handshakes) даёт периодические всплески задержек в 5–10 раз выше медианного значения. Множитель $\times 10$ от эмпирической медианы даёт устойчивый буфер против ложного снятия аренды у живого работника в момент сетевых шагов.
+   - Пол в 30 секунд предотвращает деградацию аренды на микровыборках (когда при 200 мс парсинга расчётная аренда сжалась бы до 2 с, что меньше единичного roundtrip к GitHub или паузы JVM Stop-The-World GC).
+
+2. **Предписание 18 закрыто (`TRUTH_STATUS_TABLE` / D012, `PROHIBITION_AS_CODE` / D006):**
+   - **Устранена тихая деградация запрета (`if (codeChangeClassifier != null && ...)`):** Конструктор с `CodeChangeClassifier` сделан основным `@Autowired` (Spring fail-closed при запуске контекста без обязательного классификатора). Перегрузки конструкторов сохранены для существующих модульных тестов с логированием критической ошибки конфигурации при `null`.
+   - **Третий исход («не проверено» / status UNVERIFIED):** Во всех 4 точках записи (`commitFile`, `upsertFile`, `resolveFileConflictWithMain`, `resolveProductCodeConflictWithMain`) отсутствие классификатора (`codeChangeClassifier == null`) переведено в fail-closed отказ с записью `Unverified file write to client repository is forbidden (Law 2 / Prescription 18: TRUTH_STATUS_TABLE / D012)`. Непроверенное состояние больше не приравнивается к «не заводской файл».
+   - **Видимость при fail-open:** В `refusedByFactoryPokaYoke` проектный fail-open сохранён, но отсутствие классификатора перестало быть тихим пропуском — регистрируется явное предупреждение `status: UNVERIFIED`.
+   - **Заслоны:**
+     - `DeliveryRealityLaw2CarrierChannelTest`: счётный заслон `theSetOfRepositoryFileWritingSitesIsPinned` расширен и падает, если любая пишущая точка множества не проверяет `codeChangeClassifier == null`; поведенческий тест `writingSitesRefuseWhenCodeChangeClassifierIsMissing` подтверждает fail-closed для всех пишущих точек и `copyFile`.
+     - `GitHubPullRequestServiceTest`: `missingClassifierCausesWriteSitesToFailClosedImmediately` (проверяет немедленный отказ без обращений к сети/настройкам) и `presentClassifierEnablesGuardAndReachesNextValidationStage` (проверяет различие поведения с классификатором и без).
+     - Все 22/22 тестов зелены.
+
 **2026-09-11 04:41 UTC — Antigravity (L2): Такт 10 и Такт 11 закрыты и запушены**
 
 1. **Такт 10 закрыт (коммит `a5ac985`, пуш в `main`):**
