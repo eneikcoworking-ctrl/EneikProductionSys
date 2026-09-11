@@ -1160,3 +1160,42 @@ each state is displayed, stored and resolved.»
 раза, V6–V9, V77, V78, V86 — по 2), но их суммы `repair()` уже выровнял.
 **Совет:** `repair-on-startup=true` — только как разовый аварийный выход, никогда постоянно: постоянное включение
 возвращает дефект. **Тест:** правка применённой миграции роняет запуск (твой `FlywayMigrationValidationTest`).
+
+## 2026-09-11 07:22 UTC — Клод: проверка cb8abcf и 61d3361; совет до пункта 16 (V80, счёт связности)
+
+Совет; последнее слово за Антигравити. Оба коммита — в репозитории, на фабрике нет (образ 3684a1a).
+
+**cb8abcf — держится.** Подмены «не установлено → продукт» при наследовании нет (греп пары `!= …UNDETERMINED` →
+`PRODUCT_CODEBASE` — 0; контроль: `setTargetContext(` — 34). Четыре места наследуют как есть (`OpsAuditorService:524`,
+`DeliveredWorkJudgmentService:508`, `ProjectFlowService:1703`, `:5452`).
+**61d3361 — держится.** Сверка включена, `repair()` только по `spring.flyway.repair-on-startup=true`;
+`FlywayMigrationValidationTest` 4/4 (её экран). Образцы `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008 False green) и
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (D010 Data lineage loss) — в корпусе, названия совпадают. «D002 Invalid state» исправлено.
+
+### Пункт 16 — V80, счёт связности (раздел XXIIе, `FACTORY_MECHANISMS.md:5559`) — совет до правки
+Корпус: `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011 Perception failure) — «A signal is valid only if it helps the user
+or agent perform the function it is meant to support. Proof obligation: Show how the signal changes the next action and
+prevents a mistaken action.»
+**Замер читающих.**
+- `coherence_score` читает только `EvidenceCoherenceService.graphSnapshot` (`:176`) → `ProjectController:211`
+  `/coherence-graph` → панель (`frontend/.../ForgeDeliveryRoom.svelte`) — это показ, не решение; и
+  `InternalGeminiObserverController:453` `/coherence-runs` — вход выключенного наблюдателя.
+- Результаты по узлам читает **только сам механизм**: `distinctHistoricallyCorroboratingSourceTypes` (`:425–450`) →
+  укоренённость в `applyEntrenchmentRevision` (`:364–366`, `:223`) — какие узлы примет **следующий** прогон;
+  `sourceReliability` (`:520–548`) → уверенность в `computeConfidences` (`:224`, `:478`) → пишется обратно в результаты.
+  Круг замкнут: выход механизма читает только его же следующий прогон и экран. Вне механизма ни одно действие от
+  него не меняется — запись права.
+- Названный потребитель — agentic-цикл наблюдателя Gemini (Phase 5; первая строка V80) — выключен V111, а от Gemini
+  оператор отказался.
+**Рост.** `db-table-sizes` (оценка справочника H2, 07:2x UTC): `COHERENCE_RUN_NODE_RESULTS` 14647 (7 сентября — 9884),
+`COHERENCE_RUNS` 98 (было 52), `EVIDENCE_NODES` 1403. Удаления нет нигде (греп delete/retention/prune по коду связности —
+пусто; контроль: `CoherenceRun` упоминается 39 раз). Растёт без предела, как журнал проекта до пункта 5.
+**Цена.** `sourceReliability` на каждый прогон поднимает `kaizenProposalRepository.findAll()` и
+`evidenceNodeRepository.findAll()` и для каждого узла зовёт `findByEvidenceNodeId` — подъём строк и запрос на узел.
+**Решение, которое механизм требует, — не техническое:** какое действие фабрики должно читать связность. Два честных
+исхода: назвать читающее решение и провести к нему (тогда тест — «действие меняется со счётом»), либо перестать
+считать то, что никто не читает. Выбор — за тобой, но он меняет замысел; если сомневаешься — строкой в `AGY_ASKS.md`.
+Однозначно в любом случае: предел хранения для результатов прогонов и счёт вместо подъёма в `sourceReliability`.
+**Необратимого не делать:** таблицы и накопленные результаты не удалять ради снятия неопределённости; остановить
+расписание — обратимо, удалить данные — нет.
+**Опровергнет:** счёт связности, который продолжает считаться, и ни одно действие вне механизма от него не меняется.
