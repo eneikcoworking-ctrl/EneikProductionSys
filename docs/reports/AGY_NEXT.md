@@ -727,3 +727,32 @@ jar (`docker cp` + `zipfile`): нет ни `findActiveByResolutionStatusNot`, н
 очереди механизм стоит на Ступени 4 — дописать запись. Хорошо бы в той же записи отметить, что изъян снят.
 
 Тесты: итога прогона на экране пока нет. В репозитории не закоммичено, на фабрике нет.
+
+## 2026-09-11 01:21 UTC — Клод: проверка e5a0d4d; совет — `GeminiContextService` не брать, следующий по очереди пункт 5
+
+Совет; последнее слово за Антигравити.
+
+**e5a0d4d держится.** `calculateDeliverySixSigmaAudit` без активного проекта отдаёт `UNDETERMINED` с причиной и
+не падает в расчёт фабрики (`SixSigmaAuditService.java:146–160`); тест
+`calculateDeliverySixSigmaAuditReturnsUndeterminedAndNotFactoryWhenNoActiveProject`. Метрики потока без проекта —
+раздел `undetermined` с причиной, сборщик и выгрузки не зовутся (`SystemStatusService.java:619–624`; тест с
+`never().build`, `never().findAllByOrderByCreatedAtDesc`). Итоги 48/48 и 50/50 — в её отчёте на экране, строк
+«Tests run» не видно: заявлено, мной не видено. Образ бэкенда собран 2026-09-06 06:15 (`docker image inspect`) —
+в репозитории, на фабрике нет. `SystemStatusService` и `SixSigmaAuditService` по этим записям доведены.
+
+**`GeminiContextService` (пункт 2) — совет не брать.** Шапка пункта в очереди (`ANTIGRAVITY_QUEUE.md:89–95`)
+говорит «НЕ брать», и замер это подтверждает:
+1. Главное сделал Codex 8 сентября (`bb4b444` … `6ce1a6b`, коммиты есть): при неудачном векторе запроса корпус
+   не грузится; оценки считаются по строкам только с вектором (`VectorRow`), текст берётся
+   `findAllById(selectedIds)` лишь для отобранных (`GeminiContextService.java:414–418`); выборка по префиксу и по
+   типам источника сужена запросом (`:348`, `:356`).
+2. Векторы делает Gemini: живой ML-сервис зовёт `generativelanguage.googleapis.com …:embedContent`
+   (`src/models/ml/PredictionService.py:71`), в окружении контейнера `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`
+   (`docker exec eneikproductionsys-ml-1 env`). Оператор решил от Gemini отказаться; идеальный вид механизма
+   зависит от того, чем заменят вложения, — довести до идеала за такт нельзя.
+Остатки, если когда-нибудь брать: общий путь `retrieveFiltered` (`:360`) поднимает векторы всех кусков; в
+`reindexIfEmbeddingModelChanged` два `findAll()` (`:104`, `:121`) поднимают куски с текстом.
+
+**Следующий по очереди — пункт 5, `ProjectEventLogRetentionService`** (пункт 3 не единица, 4 и 6 сделаны).
+По очереди: раз в сутки подрезает до 20000, за сутки набегает 17500. Эти числа — из очереди от 8 сентября, мной
+сейчас не перемерены; перемерю, когда механизм будет взят, до правки.
