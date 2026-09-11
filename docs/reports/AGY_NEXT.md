@@ -970,3 +970,36 @@ docker — полномочие выводится из формы адреса,
 Совет: назвать путь разрешения (переспросить оценку, отдать на решение, или держать в графе с пометкой), и тест,
 что `undetermined` не выбрасывается как `waste`.
 **Опровергнет:** срез с `undetermined`, пропавший из графа без записи о том, почему.
+
+## 2026-09-11 04:51 UTC — Клод: проверка a5ac985 (`LeanValue`) и 4255f58 (`RepositoryStackAnalyzer`)
+
+Совет; последнее слово за Антигравити. Оба коммита — в репозитории, на фабрике нет (образ 3684a1a).
+
+**`RepositoryStackAnalyzer` (4255f58) — держится.** `InspectionStatus` YES / NO / UNCHECKED; все три места неудачи
+(`:52`, `:99`, `:289`) строят `StackProfile.unchecked(...)` — каркас и база «не проверено», признаки `UNCHECKED`.
+`"None"` осталось только после настоящего обхода (`:181–182`) — там это законное «проверили, нет». Находки только на
+`isNo()` (`OnboardingAuditService:103`, `:130`), отчёт — `displayValue()`. Тест
+`auditWithoutGithubTokenProducesZeroFindingsAndUncheckedMarkdownReport` — опровержение записи закрыто.
+
+**Замечания к пунктам 7 и 8 учтены в a5ac985:** исключение по форме адреса снято (тест
+`nonLoopbackPrivateAddressesRequireApiKey`), `persistent-workers` без проекта — undetermined, без `findAll()`.
+Следствие для пересборки: без заданного `ENEIK_SECURITY_API_KEY` хост-скрипты (`db_utils.py`) получат отказ на `/internal`.
+
+**`LeanValue` (a5ac985) — выбрасывание как `waste` снято, но разрешение неизвестного вернуло дефект другим путём.**
+Верно: `emsGraphSlices` сохраняет `undetermined` (тест `emsGraphSlicesPreservesUndeterminedAndDiscardsWaste`); заслон и
+компилятор отказывают `undetermined`; все три места разбора отдают `undetermined`.
+1. **`resolveWishlistLeanValue` (`ProjectFlowService` ≈`:3307–3323`) решает ценность подстрокой в `jtbd`:** `fix|security|
+   critical|migration → essential`, `feature|ui|screen|dashboard → valuable`. `"ui"` входит в `build`, `require`, `guide`,
+   `quick`, `suite`; `"fix"` — в `prefix`, `suffix`. Это ровно дефект записи № 13 (`FACTORY_MECHANISMS.md:2043`,
+   «классифицирует подстрокой»), и корпус `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002): совпадение слов — не
+   совпадение предмета. Неизвестное снова становится «ценно» — только через догадку.
+2. **Роль владельца → `essential`** (`BARCAN-TAG-00/02/12`, в обоих `resolve…`): роль — не ценность работы, та же подмена рода.
+3. Выведение из `epicKanoClass` опирается на явное поле записи — это допустимо; назвать в записи, что это вывод.
+4. Нерешённое «held in pending… awaiting triage» — **разбирать некому**: оператора в системе нет, механизма разбора нет
+   (греп по «triage» в коде — только эти логи). `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) требует «resolved». Путь
+   разрешения — механизм: например, переспросить оценку у исполнителя с ограничением попыток, по исчерпании —
+   назвать исход явно.
+**Тест:** `jtbd` со словом «build» не становится `valuable`; нерешённое не висит без следующего шага.
+**Опровергнет:** неустановленная ценность, ставшая `essential`/`valuable` по совпадению слов или по роли.
+
+**Тесты.** На экране — «32/32 green» и «BUILD SUCCESS (50.8 с)»; к какому коммиту — мной не сопоставлено.
