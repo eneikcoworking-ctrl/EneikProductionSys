@@ -75,15 +75,16 @@ public class SystemStatusController {
         return systemStatusService.getStatus(projectId);
     }
 
-    // Raw JDBC executor with no auth of its own - gated behind an explicit, off-by-default feature flag
-    // (debug_sql_endpoint_enabled) so it can never be live in an environment nobody deliberately opted
-    // into. See docs/reports/POST_MORTEM_test-twenty-eighth_2026-07-19.md §5 item 6.
+    // Raw JDBC executor with no auth of its own - gated behind an environment-only feature flag
+    // (DEBUG_SQL_ENDPOINT_ENABLED / debug.sql-endpoint.enabled) so it cannot be toggled on-the-fly via
+    // API/settings by anyone holding an operator key. Requires explicit environment configuration before startup.
+    // See docs/reports/POST_MORTEM_test-twenty-eighth_2026-07-19.md §5 item 6 and Prescription 24 (BOUNDARY_TOPOLOGY / D006).
     @PostMapping("/sql")
     public Object runSql(@RequestBody String sql) {
         if (!systemSettingsService.effectiveBoolean("debug_sql_endpoint_enabled")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Debug SQL endpoint is disabled. Enable it explicitly via the debug_sql_endpoint_enabled setting "
-                            + "(or DEBUG_SQL_ENDPOINT_ENABLED env var) for this environment before use.");
+                    "Debug SQL endpoint is disabled. Enable it explicitly via environment variable (DEBUG_SQL_ENDPOINT_ENABLED) "
+                            + "or system property (debug.sql-endpoint.enabled) for this environment before use.");
         }
         String trimmed = sql.trim().toUpperCase();
         if (trimmed.startsWith("SELECT") || trimmed.startsWith("SHOW") || trimmed.startsWith("DESC")) {

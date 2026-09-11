@@ -12,7 +12,7 @@ services:
       GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-001}
       GEMINI_REQUEST_TIMEOUT_SECONDS: ${GEMINI_REQUEST_TIMEOUT_SECONDS:-10}
     ports:
-      - "8000:8000"
+      - "${BIND_IP:-127.0.0.1}:8000:8000"
     volumes:
       - .:/project
     healthcheck:
@@ -42,7 +42,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./runtime-launcher-workspace:/workspace
     ports:
-      - "8091:8091"
+      - "${BIND_IP:-127.0.0.1}:8091:8091"
     # 2026-08-16 - this was the only one of the factory's three dependencies with no healthcheck, which is
     # why it could be down all of 2026-08-15 with nothing saying so. Probes /openapi.json rather than
     # /healthcheck: every route this service publishes is POST, and two of them (/launch, /teardown) act
@@ -83,7 +83,7 @@ services:
     volumes:
       - ./data/judgment-shadow:/shadow
     ports:
-      - "8093:8093"
+      - "${BIND_IP:-127.0.0.1}:8093:8093"
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8093/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
@@ -204,7 +204,7 @@ services:
     # case rather than reserving; adjust it from a real peak, and treat this number as provisional.
     mem_limit: 1g
     ports:
-      - "8080:8080"
+      - "${BIND_IP:-127.0.0.1}:8080:8080"
     depends_on:
       ml:
         condition: service_healthy
@@ -223,7 +223,7 @@ services:
     environment:
       VITE_API_BASE_URL: http://localhost:8080
     ports:
-      - "3000:3000"
+      - "${BIND_IP:-127.0.0.1}:3000:3000"
     depends_on:
       - backend
     # 2026-08-28. nginx:alpine serving a directory of static files built at image time - no Node at

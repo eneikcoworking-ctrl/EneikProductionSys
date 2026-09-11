@@ -188,4 +188,37 @@ class SystemSettingsServiceTest {
 
         verify(defectJournalRepository, never()).save(any());
     }
+
+    @Test
+    void debugSqlEndpointCannotBeModifiedViaApiSettings() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        Environment environment = mock(Environment.class);
+        SystemSettingsService settings = new SystemSettingsService(jdbcTemplate, environment);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                settings.save("debug_sql_endpoint_enabled", "true"));
+
+        assertThat(ex.getMessage()).contains("Setting 'debug_sql_endpoint_enabled' cannot be modified via API");
+        assertThat(ex.getMessage()).contains("DEBUG_SQL_ENDPOINT_ENABLED");
+    }
+
+    @Test
+    void debugSqlEndpointIgnoresDatabaseAndReadsFromEnvironmentOnly() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        Environment environment = mock(Environment.class);
+        SystemSettingsService settings = new SystemSettingsService(jdbcTemplate, environment);
+
+        // Database has "true", but environment has nothing / not set
+        when(jdbcTemplate.query(anyString(), any(ResultSetExtractor.class), eq("debug_sql_endpoint_enabled")))
+                .thenReturn(Optional.of("true"));
+        when(environment.getProperty("DEBUG_SQL_ENDPOINT_ENABLED")).thenReturn(null);
+        when(environment.getProperty("debug.sql-endpoint.enabled")).thenReturn(null);
+
+        // Must read false because database value is ignored for debug_sql_endpoint_enabled
+        assertThat(settings.effectiveBoolean("debug_sql_endpoint_enabled")).isFalse();
+
+        // When environment explicitly enables it, it reads true
+        when(environment.getProperty("DEBUG_SQL_ENDPOINT_ENABLED")).thenReturn("true");
+        assertThat(settings.effectiveBoolean("debug_sql_endpoint_enabled")).isTrue();
+    }
 }

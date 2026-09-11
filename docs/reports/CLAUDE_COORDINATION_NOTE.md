@@ -16,6 +16,34 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-11 23:15 UTC — Antigravity (L2): Предписание 24 закрыто (`BOUNDARY_TOPOLOGY` / D006), остаток Предписания 22 закрыт (`PART_WHOLE_OWNERSHIP` / D004)**
+
+1. **Предписание 24 закрыто (`BOUNDARY_TOPOLOGY` / D006):**
+   - **Сетевой контур по умолчанию замкнут на loopback:** в `docker-compose.yml` порты всех сервисов стека (`8000`, `8091`, `8093`, `8080`, `3000`) переведены на привязку `${BIND_IP:-127.0.0.1}:<port>:<port>`. Без явного переопределения ни один сервис не слушает внешний сетевой интерфейс `0.0.0.0`. Это снимает анонимный `GET /api/accounts` снаружи на сетевом уровне без ломки локальной фронтенд-панели и CLI-инструментов.
+   - **Санация CORS (`WebConfig`):** устранён небезопасный wildcard `allowedOriginPatterns("*")` с `allowCredentials(true)`. Введён строгий белый список доверенных локальных портов оператора (`DEFAULT_ALLOWED_ORIGINS`: `http://localhost:3000`, `http://127.0.0.1:3000`, `http://localhost:5173`, `http://127.0.0.1:5173`, `http://localhost:8080`, `http://127.0.0.1:8080`) с поддержкой внешнего переопределения через свойство `eneik.security.cors.allowed-origins`. Заслонено в `WebConfigCorsTest` (3/3).
+   - **Защита эндпоинта `/sql` от обхода через настройки:** ключ `debug_sql_endpoint_enabled` в `SystemSettingsService` запрещён к модификации через API (`rejectIfMalformed` выбрасывает `IllegalArgumentException`). В методе `effectiveSetting` чтение значения из БД отключено — флаг активируется исключительно через переменную окружения `DEBUG_SQL_ENDPOINT_ENABLED` или системное свойство. Комментарий и текст отказа в `SystemStatusController` приведены в точное соответствие с кодом. Заслонено в `SystemSettingsServiceTest` (2 новых теста: `debugSqlEndpointCannotBeModifiedViaApiSettings`, `debugSqlEndpointIgnoresDatabaseAndReadsFromEnvironmentOnly`).
+   - **Прикладная граница:** сохранена и подтверждена перехватчиком `ApiAuthorizationInterceptor` (`ApiAuthorizationInterceptorTest`, 17/17).
+
+2. **Остаток Предписания 22 закрыт (`PART_WHOLE_OWNERSHIP` / D004):**
+   - Разрешено дублирование логики отбора в SQL (`lockNextJulesAccountWithCapacity`) и объяснения в Java (`evaluateGeneralPoolAdmissionDecision`).
+   - Создан заслон-согласование `GeneralPoolAdmissionCoherenceIntegrationTest` (12 тестов на реальной БД H2). Проверяет инвариант эквивалентности: `lockNextJulesAccountWithCapacity(...)` пуст тогда и только тогда, когда `evaluateGeneralPoolAdmissionDecision(...)` возвращает исход != `ADMITTED`, и названный нарушенный конъюнкт в точности соответствует состоянию аккаунтов в БД:
+     - `ADMITTED` при наличии пригодного аккаунта;
+     - `DISABLED` при `enabled=false`;
+     - `DAILY_LIMIT_EXCEEDED` при превышении суточного лимита;
+     - `RESTING` при `status=daily_limited` или `api_blocked`;
+     - `RETIRED` при `status=decommissioned` или `offline`;
+     - `SESSIONS_EXHAUSTED` при исчерпании одновременных сессий;
+     - `EXCLUDED_BY_RULE` при несовпадении capabilities, исключении по CSV `excluded_account_names`, исключении по `excludedForThisAttempt`, или несовпадении проекта.
+   - **Обнаружен и устранен скрытый дефект:** в `evaluateGeneralPoolAdmissionDecision` отсутствовала ветка для `AccountAdmissionOutcome.RETIRED`, из-за чего аккаунты со статусом `offline` ошибочно попадали в `MULTIPLE_CONJUNCTS_VIOLATED`. Ветка добавлена, счетчик `retiredCount` и расшифровка в `reasonParts` реализованы.
+
+3. **Заслоны (86/86 зелёные в контейнере Maven):**
+   - `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12)
+   - `GeneralPoolAdmissionTruthTableTest` (11/11)
+   - `WebConfigCorsTest` (3/3)
+   - `SystemSettingsServiceTest` (11/11)
+   - `ApiAuthorizationInterceptorTest` (17/17)
+   - Регрессионный пакет (`AccountLifecycleInvariantTest`, `NamedAccountAdmissionTruthTableTest`, `ProjectAdmissionLaw25aTest`, `SystemStatusControllerIntegrationTest`, `SettingsControllerIntegrationTest` — 32/32).
+
 **2026-09-11 22:45 UTC — Antigravity (L2): Предписание 22 закрыто (`PART_WHOLE_OWNERSHIP` / D004, Закон 12 / `TRUTH_STATUS_TABLE` / D012)**
 
 1. **Опровержение исходной гипотезы по коду (Ground-Truth):**

@@ -4092,6 +4092,7 @@ public class ProjectFlowService {
         int restingCount = 0;
         int sessionsExhaustedCount = 0;
         int excludedCount = 0;
+        int retiredCount = 0;
         int reproducedOnRecheckCount = 0;
 
         for (AccountEntity a : enabledAccounts) {
@@ -4099,6 +4100,7 @@ public class ProjectFlowService {
             AccountStatus st = a.getStatus();
             if (st == AccountStatus.offline) {
                 accViolations.add(AccountAdmissionOutcome.RETIRED);
+                retiredCount++;
             }
             if (st == AccountStatus.daily_limited || st == AccountStatus.api_blocked) {
                 accViolations.add(AccountAdmissionOutcome.RESTING);
@@ -4179,6 +4181,16 @@ public class ProjectFlowService {
                         "All enabled Jules accounts are resting/blocked (" + restingCount + " resting" + disabledClause + "); role context " + roleTag
                 );
             }
+            if (sole == AccountAdmissionOutcome.RETIRED) {
+                String disabledClause = disabledCount > 0 ? ", " + disabledCount + " disabled" : "";
+                return new GeneralPoolAdmissionDecision(
+                        AccountAdmissionOutcome.RETIRED,
+                        poolViolations,
+                        String.format("All enabled Jules accounts are retired/offline (%d offline%s); task %s stays queued for the next cycle",
+                                retiredCount, disabledClause, taskId),
+                        "All enabled Jules accounts are retired/offline (" + retiredCount + " offline" + disabledClause + "); role context " + roleTag
+                );
+            }
             if (sole == AccountAdmissionOutcome.SESSIONS_EXHAUSTED) {
                 String disabledClause = disabledCount > 0 ? " (" + disabledCount + " disabled)" : "";
                 return new GeneralPoolAdmissionDecision(
@@ -4211,6 +4223,9 @@ public class ProjectFlowService {
         }
         if (restingCount > 0) {
             reasonParts.add(restingCount + " resting/blocked");
+        }
+        if (retiredCount > 0) {
+            reasonParts.add(retiredCount + " retired/offline");
         }
         if (excludedCount > 0) {
             reasonParts.add(excludedCount + " excluded by rule");

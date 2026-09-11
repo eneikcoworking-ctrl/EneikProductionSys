@@ -259,6 +259,17 @@ public class SystemSettingsService {
         // where the two can still be told apart; afterwards the information is simply gone. Whoever means
         // off writes "false", and the decision survives as a decision.
         SettingDefinition definition = DEFINITIONS.get(key);
+
+        // Prescription 24 (BOUNDARY_TOPOLOGY / D006):
+        // debug_sql_endpoint_enabled is an unauthenticated raw JDBC executor. It can never be toggled
+        // on-the-fly via API/settings by anyone holding an operator key. Must be explicitly opted into
+        // per-environment via environment variable (DEBUG_SQL_ENDPOINT_ENABLED) or system property.
+        if ("debug_sql_endpoint_enabled".equals(key)) {
+            throw new IllegalArgumentException(
+                    "Setting 'debug_sql_endpoint_enabled' cannot be modified via API. "
+                    + "It can only be configured via environment variable (DEBUG_SQL_ENDPOINT_ENABLED) or system property.");
+        }
+
         if (definition != null && definition.enabledFlag()) {
             String normalized = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
             if (!"true".equals(normalized) && !"false".equals(normalized)) {
@@ -288,9 +299,11 @@ public class SystemSettingsService {
 
     private EffectiveSetting effectiveSetting(String key) {
         SettingDefinition definition = requireDefinition(key);
-        Optional<String> databaseValue = databaseValue(definition.key());
-        if (databaseValue.isPresent() && !databaseValue.get().isBlank()) {
-            return new EffectiveSetting(databaseValue.get(), "database");
+        if (!"debug_sql_endpoint_enabled".equals(key)) {
+            Optional<String> databaseValue = databaseValue(definition.key());
+            if (databaseValue.isPresent() && !databaseValue.get().isBlank()) {
+                return new EffectiveSetting(databaseValue.get(), "database");
+            }
         }
 
         String envValue = firstNonBlank(
