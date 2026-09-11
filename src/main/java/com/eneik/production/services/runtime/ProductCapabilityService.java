@@ -32,10 +32,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  *     V_p = |{ c in C : LCB_0.95(c) >= theta }|
  *
- * <p><b>Where C comes from.</b> The product's own OpenAPI contract, {@code docs/contracts/<feature>.openapi.yaml},
- * produced by BARCAN-TAG-12 at stage 27. The denominator is therefore what the product ASSERTS about
+ * <p><b>Where C comes from.</b> The product's own OpenAPI contracts in {@code docs/contracts/},
+ * produced by the product's API-contract layer. The denominator is therefore what the product ASSERTS about
  * itself, not what the factory decomposed it into - Charter invariant 8, which requires the counted set to
- * be declared and its exclusions enumerated. Capabilities the contract does not declare are not counted,
+ * be declared and its exclusions enumerated. Capabilities the contracts do not declare are not counted,
  * and that is visible rather than absorbed.
  *
  * <p><b>Why the lower bound and not the mean.</b> The mean rewards ignorance: a capability observed once,
@@ -77,10 +77,18 @@ public class ProductCapabilityService {
     private final RuntimeLauncherClient launcherClient;
     private final CapabilityObservationRepository observationRepository;
 
+    /**
+     * Cache of declared capabilities per project ID. Avoids repeating directory listings and contract fetches
+     * when the branch and commit SHA have not changed.
+     */
+    private final ConcurrentHashMap<UUID, CachedDeclaredCapabilities> capabilityCache = new ConcurrentHashMap<>();
+
+    private record CachedDeclaredCapabilities(String branch, String commitSha, List<DeclaredCapability> capabilities) {}
+
     public ProductCapabilityService(FeatureRepository featureRepository,
-                                     GitHubPullRequestService gitHubPullRequestService,
-                                     RuntimeLauncherClient launcherClient,
-                                     CapabilityObservationRepository observationRepository) {
+                                  GitHubPullRequestService gitHubPullRequestService,
+                                  RuntimeLauncherClient launcherClient,
+                                  CapabilityObservationRepository observationRepository) {
         this.featureRepository = featureRepository;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.launcherClient = launcherClient;
@@ -90,18 +98,6 @@ public class ProductCapabilityService {
     /** One capability the product declares, and where it declared it. */
     public record DeclaredCapability(String key, String path, String sourceContract) {
     }
-
-    /**
-     * Cache of declared capabilities per project until main commit / ref changes or is invalidated.
-     * INUS_FACTOR_CHECK (D007): prevent querying known-absent contracts repeatedly on an unchanged ref.
-     */
-    private final Map<UUID, CachedDeclaredCapabilities> capabilityCache = new ConcurrentHashMap<>();
-
-    private record CachedDeclaredCapabilities(
-            String branch,
-            String commitSha,
-            List<DeclaredCapability> capabilities
-    ) {}
 
     public void invalidateCache(UUID projectId) {
         if (projectId != null) {
@@ -114,18 +110,19 @@ public class ProductCapabilityService {
     }
 
     /**
-     * The capabilities this product declares, read from the contracts its own API-contract role produced.
-     * TechnicalLeadCompiler writes {@code docs/contracts/<featureName>.openapi.yaml} for BARCAN-TAG-12,
-     * so the feature title determines the path exactly.
+     * The capabilities this product declares, read from OpenAPI contracts in {@code docs/contracts/}.
+     * The product asserts its own capabilities directly in domain-named contract files (e.g.
+     * {@code StrainManagement.openapi.yaml}), NOT through factory-internal feature title translations.
+     *
+     * <p>When the contracts directory cannot be read (API error, missing token, or directory read failure),
+     * declared capabilities are treated as unmeasurable/empty — never guessed from database feature titles.
      *
      * <p>INUS_FACTOR_CHECK (D007): queries the directory once rather than asking N individual 404 questions,
      * and caches known results until the branch or commit SHA advances.
      * BOUNDARY_TOPOLOGY (D006): loads DB entities before network operations so database connections
      * are never held across external HTTP calls.
      * <p>DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009) / LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY (D013):
-     * The product's declared capabilities are derived from what the product itself asserts in its contracts
-     * directory ({@code docs/contracts/*.openapi.yaml}, {@code *.yaml}, etc.), NOT by guessing file names from
-     * the factory's internal feature titles.
+     * Eliminates sense-reference split by discovering physical contract files rather than guessing names.
      */
     public List<DeclaredCapability> declaredCapabilities(ProjectEntity project) {
         return declaredCapabilities(project, null);
@@ -173,31 +170,9 @@ public class ProductCapabilityService {
                     }
                 }
             }
-        } else {
-            // Fallback if listDirectoryFiles is not supported or stubbed (backward compatibility with legacy mocks)
-            List<FeatureEntity> features = featureRepository.findByProjectId(project.getId());
-            if (features != null && !features.isEmpty()) {
-                for (FeatureEntity feature : features) {
-                    String title = feature.getTitle();
-                    if (title == null || title.isBlank()) {
-                        continue;
-                    }
-                    String path = "docs/contracts/" + title.toLowerCase(Locale.ROOT).replace(' ', '-') + ".openapi.yaml";
-                    String content = gitHubPullRequestService
-                            .fetchFileContent(project, branch, path)
-                            .orElse(null);
-                    if (content == null) {
-                        continue;
-                    }
-                    for (String route : getRoutesOf(content)) {
-                        String key = "GET " + route;
-                        if (seen.add(key)) {
-                            declared.add(new DeclaredCapability(key, route, path));
-                        }
-                    }
-                }
-            }
         }
+        // If filesInDirectory is empty (API error or directory read failure):
+        // Rule: unmeasurable / empty — NEVER guess file names from feature titles.
 
         List<DeclaredCapability> immutableDeclared = List.copyOf(declared);
         capabilityCache.put(project.getId(), new CachedDeclaredCapabilities(branch, commitSha, immutableDeclared));

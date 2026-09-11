@@ -35,6 +35,15 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>When a previously refusing proposition transitions back to {@link Verdict#PERMIT} or {@link Verdict#ABSTAIN},
  *       it is cleared from the active ledger, ensuring any subsequent regression will be recorded anew.</li>
  * </ul>
+ *
+ * <p><b>Cadence (Section XVI §8):</b> governed by {@code verdict.observation.cadence-ticks} (default 5 ticks = 5 minutes).
+ * The continuous orchestrator ticks every 60s; running 1.17s reconciliation and 2 infrastructure network probes
+ * every 60s introduces unnecessary churn. A 5-minute cadence balances fresh teleosemantic feedback with minimal
+ * runtime overhead. Immediate evaluation can always be triggered via {@link #observe(UUID, boolean)} with force=true.
+ *
+ * <p><b>Ledger lifecycle:</b> the {@code activeRefusals} ledger is in-memory. On process restart, the ledger starts
+ * clean so that the initial observation cycle re-affirms currently active baseline refusals (e.g. 9 doctrine refusals)
+ * in {@link DefectJournalService} once, re-establishing continuous defect visibility across process restarts.
  */
 @Service
 public class AutonomousVerdictObservationService {
@@ -52,19 +61,19 @@ public class AutonomousVerdictObservationService {
     // Cadence tracking per project
     private final Map<UUID, AtomicLong> projectTickCounters = new ConcurrentHashMap<>();
 
-    @Value("${verdict.observation.cadence-ticks:1}")
-    private int cadenceTicks = 1;
+    @Value("${verdict.observation.cadence-ticks:5}")
+    private int cadenceTicks = 5;
 
     public AutonomousVerdictObservationService(VerdictReconciliation reconciliation,
                                               DefectJournalService defectJournalService) {
-        this(reconciliation, defectJournalService, 1);
+        this(reconciliation, defectJournalService, 5);
     }
 
     public AutonomousVerdictObservationService(VerdictReconciliation reconciliation,
                                               DefectJournalService defectJournalService,
                                               int cadenceTicks) {
-        this.reconciliation = reconciliation;
-        this.defectJournalService = defectJournalService;
+        this.reconciliation = Objects.requireNonNull(reconciliation, "reconciliation must not be null");
+        this.defectJournalService = Objects.requireNonNull(defectJournalService, "defectJournalService must not be null");
         this.cadenceTicks = Math.max(1, cadenceTicks);
     }
 

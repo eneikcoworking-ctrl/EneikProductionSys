@@ -526,6 +526,23 @@
     - `falsificationHarness_allContractsInDirectoryParsedWithoutFeatureTitleGuessing`: фальсифицирующий заслон — проверяет, что контракты с именами доменов (`StrainManagement.openapi.yaml`, `EmployeeDossier.openapi.yaml`) парсятся независимо от несовпадающих заголовков фич в БД (`Strain Management API`), `README.md` не запрашивается по сети, `declaredCapabilities` строго больше нуля (3 маршрута) с точными источниками.
   - Регрессия: `ProductCapabilityServiceTest` (14/14), `BetaPosteriorTest` (9/9), `ClientRuntimeObservabilityServiceTest` (29/29), `ProductLaunchabilityServiceTest` (22/22), `RuntimeHealthShiftDetectorTest` (9/9) — 83/83 green.
 
+**Закрыто (Такт 28):** Ликвидация псевдо-заглушечной ветки догадок в `ProductCapabilityService`, очистка комментариев, каденс вердиктов (`DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011):
+- **Устранение боевого fallback на догадки по фичам (`ProductCapabilityService`):**
+  - Из `declaredCapabilities` полностью ликвидирована ветка `else`, пытавшаяся при `listDirectoryFiles == Optional.empty()` угадывать имена контрактов по kebab-case заголовка фич БД.
+  - Инвариант: «не удалось прочитать каталог» (сбой GitHub, API, сети) $\rightarrow$ возможности объявляются *неопределёнными* (пустой список), а не реконструируются через фальшивые догадки фабрики.
+  - Заслоняющий тест `falsificationHarness_directoryReadFailureYieldsEmptyCapabilitiesWithZeroGuessedRequests`: при сбое чтения каталога возвращается пустой список возможностей и делается ровно **0** сетевых вызовов `fetchFileContent` (ни один kebab-путь не запрашивается).
+- **Очистка устаревших комментариев от расхождения смысла и имени (D009):**
+  - В Javadoc класса `ProductCapabilityService` (:35) и метода `declaredCapabilities` (:117–129) удалены строки о том, что заголовок фичи строго определяет путь контракта («the feature title determines the path exactly»). Зафиксировано прямое выведение возможностей из контрактов каталога `docs/contracts/`.
+- **Настройка каденса и документирование жизненного цикла вердиктов (Предписание 8, D011):**
+  - В `AutonomousVerdictObservationService` и `application.properties` каденс по умолчанию установлен в `5` тиков (5 минут / 300 секунд, свойство `verdict.observation.cadence-ticks=5`). Это устраняет ежеминутный холостой прогон сведения (1,17 с и 2 сетевых зонда инфраструктуры), сохраняя оперативную телеметрию в пределах 5 минут.
+  - Задокументирован жизненный цикл in-memory реестра `activeRefusals`: очистка при рестарте процесса обеспечивает повторное однократное подтверждение активных базовых отказов (9 отказов доктрины) в `DefectJournalService` при загрузке, после чего действует строгая дельта-запись.
+- **Заслоняющие тесты:**
+  - `ProductCapabilityServiceTest`: 15/15 green.
+  - `AutonomousVerdictObservationServiceTest`: 6/6 green.
+  - `ContinuousOrchestrationServiceTest`: 7/7 green.
+  - `ClientRuntimeObservabilityServiceTest`: 29/29 green.
+  - Регрессия: 57/57 green.
+
 **В работе дальше:**
 - **Предписание 9** (`VerdictGate` — теперь предписание 8 выполнено и разблокировало анализ гейта).
 - **Предписание 23** (восстановление выключенных аккаунтов, пп. 2–4).

@@ -99,8 +99,10 @@ class ProductCapabilityServiceTest {
         var observations = mock(CapabilityObservationRepository.class);
         ProjectEntity project = project();
 
-        when(features.findByProjectId(project.getId())).thenReturn(List.of(feature("Protocols API")));
-        when(github.fetchFileContent(any(), any(), any())).thenReturn(Optional.of(CONTRACT));
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of("protocols.openapi.yaml")));
+        when(github.fetchFileContent(project, "main", "docs/contracts/protocols.openapi.yaml"))
+                .thenReturn(Optional.of(CONTRACT));
         when(launcher.fetchHtml(any())).thenReturn(new RuntimeLauncherClient.FetchResult(200, "ok", 5, null));
 
         int satisfied = serviceWith(features, github, launcher, observations).probeAll(project, "http://localhost:18080");
@@ -111,8 +113,7 @@ class ProductCapabilityServiceTest {
         verify(launcher, never()).fetchHtml("http://localhost:18080/materials/{id}");
     }
 
-    // A feature whose contract does not exist is excluded from the denominator, and that exclusion is
-    // visible rather than absorbed - Charter invariant 8.
+    // When the contracts directory has no contracts, declared capabilities are empty and nothing is probed.
     @Test
     void aFeatureWithNoDeclaredContractIsNotCounted() {
         var features = mock(FeatureRepository.class);
@@ -121,8 +122,8 @@ class ProductCapabilityServiceTest {
         var observations = mock(CapabilityObservationRepository.class);
         ProjectEntity project = project();
 
-        when(features.findByProjectId(project.getId())).thenReturn(List.of(feature("Undeclared Feature")));
-        when(github.fetchFileContent(any(), any(), any())).thenReturn(Optional.empty());
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of()));
 
         var service = serviceWith(features, github, launcher, observations);
         assertTrue(service.declaredCapabilities(project).isEmpty());
@@ -427,5 +428,37 @@ class ProductCapabilityServiceTest {
         verify(github, never()).fetchFileContent(project, "main", "docs/contracts/README.md");
         // No kebab guessed files were fetched
         verify(github, never()).fetchFileContent(project, "main", "docs/contracts/strain-management-api.openapi.yaml");
+    }
+
+    /**
+     * DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009) / LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY (D013):
+     * When directory listing fails (Optional.empty()), declared capabilities must be empty (undecidable).
+     * The service MUST NEVER fall back to guessing contract file names from feature titles.
+     * Falsification check: zero calls to fetchFileContent for any guessed paths.
+     */
+    @Test
+    void falsificationHarness_directoryReadFailureYieldsEmptyCapabilitiesWithZeroGuessedRequests() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(
+                feature("Strain Management API"),
+                feature("Moodle SSO Connector")
+        ));
+        // GitHub directory listing failed / returned Optional.empty()
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.empty());
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        List<ProductCapabilityService.DeclaredCapability> declared = service.declaredCapabilities(project);
+
+        // Must be empty (undecidable), not guessed
+        assertTrue(declared.isEmpty());
+        // Falsification check: ZERO fetchFileContent calls must be made (proves no feature-guessing fallback)
+        verify(github, never()).fetchFileContent(any(), any(), any());
     }
 }
