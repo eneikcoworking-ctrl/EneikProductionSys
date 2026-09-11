@@ -1,0 +1,208 @@
+package com.eneik.production.security;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Tests for ApiAuthorizationInterceptor verifying the Rights/Duties Matrix and Prohibition as Code
+ * (DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX, DZHOZEF_RAZ_01_PROHIBITION_AS_CODE / D006 Authorization ambiguity).
+ *
+ * Proof obligation: Show the matrix and tests for at least one allowed and one denied action per relation.
+ */
+class ApiAuthorizationInterceptorTest {
+
+    private static final String VALID_KEY = "eneik-test-secret-key-42";
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ApiAuthorizationInterceptor interceptor = new ApiAuthorizationInterceptor(VALID_KEY, objectMapper);
+
+    @Test
+    @DisplayName("Relation 1: Unauthenticated request to mutating AI resource endpoints is denied with 401 UNAUTHORIZED")
+    void mutatingAiEndpointsWithoutCredentialsAreDeniedWith401() throws Exception {
+        String[] mutatingPaths = {
+                "/api/ai/resources/probe-models",
+                "/api/ai/resources/design-drafts-cleanup",
+                "/api/ai/resources/design-assets",
+                "/api/ai/resources/stitch-design-system",
+                "/api/ai/resources/video-assets"
+        };
+
+        for (String path : mutatingPaths) {
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+            request.setRequestURI(path);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+
+            assertFalse(allowed, "Mutating endpoint " + path + " must be denied without credentials");
+            assertEquals(401, response.getStatus(), "Status must be 401 Unauthorized for " + path);
+
+            JsonNode body = objectMapper.readTree(response.getContentAsString());
+            assertEquals("UNAUTHORIZED", body.get("code").asText());
+            assertTrue(body.get("error").asText().contains("Authorization required"));
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 2: Mutating AI request with invalid credentials is denied with 403 FORBIDDEN")
+    void mutatingAiEndpointsWithInvalidKeyAreDeniedWith403() throws Exception {
+        // Test with invalid X-API-Key
+        MockHttpServletRequest request1 = new MockHttpServletRequest("POST", "/api/ai/resources/probe-models");
+        request1.setRequestURI("/api/ai/resources/probe-models");
+        request1.addHeader("X-API-Key", "invalid-key-xyz");
+        MockHttpServletResponse response1 = new MockHttpServletResponse();
+
+        boolean allowed1 = interceptor.preHandle(request1, response1, new Object());
+        assertFalse(allowed1);
+        assertEquals(403, response1.getStatus());
+        JsonNode body1 = objectMapper.readTree(response1.getContentAsString());
+        assertEquals("FORBIDDEN", body1.get("code").asText());
+
+        // Test with invalid Bearer token
+        MockHttpServletRequest request2 = new MockHttpServletRequest("POST", "/api/ai/resources/probe-models");
+        request2.setRequestURI("/api/ai/resources/probe-models");
+        request2.addHeader("Authorization", "Bearer invalid-token-abc");
+        MockHttpServletResponse response2 = new MockHttpServletResponse();
+
+        boolean allowed2 = interceptor.preHandle(request2, response2, new Object());
+        assertFalse(allowed2);
+        assertEquals(403, response2.getStatus());
+        JsonNode body2 = objectMapper.readTree(response2.getContentAsString());
+        assertEquals("FORBIDDEN", body2.get("code").asText());
+    }
+
+    @Test
+    @DisplayName("Relation 3: Mutating AI request with valid credentials is authorized and allowed")
+    void mutatingAiEndpointsWithValidKeyAreAllowed() throws Exception {
+        // Via X-API-Key
+        MockHttpServletRequest requestApiKey = new MockHttpServletRequest("POST", "/api/ai/resources/probe-models");
+        requestApiKey.setRequestURI("/api/ai/resources/probe-models");
+        requestApiKey.addHeader("X-API-Key", VALID_KEY);
+        MockHttpServletResponse responseApiKey = new MockHttpServletResponse();
+
+        boolean allowedApiKey = interceptor.preHandle(requestApiKey, responseApiKey, new Object());
+        assertTrue(allowedApiKey, "Valid X-API-Key must be allowed");
+        assertEquals(200, responseApiKey.getStatus());
+
+        // Via Bearer token
+        MockHttpServletRequest requestBearer = new MockHttpServletRequest("POST", "/api/ai/resources/design-drafts-cleanup");
+        requestBearer.setRequestURI("/api/ai/resources/design-drafts-cleanup");
+        requestBearer.addHeader("Authorization", "Bearer " + VALID_KEY);
+        MockHttpServletResponse responseBearer = new MockHttpServletResponse();
+
+        boolean allowedBearer = interceptor.preHandle(requestBearer, responseBearer, new Object());
+        assertTrue(allowedBearer, "Valid Bearer token must be allowed");
+        assertEquals(200, responseBearer.getStatus());
+    }
+
+    @Test
+    @DisplayName("Relation 4: Safe read-only GET endpoints on /api/ai/resources are allowed without credentials")
+    void safeReadEndpointsArePubliclyAllowed() throws Exception {
+        String[] readPaths = {
+                "/api/ai/resources",
+                "/api/ai/resources/design-consistency-audit",
+                "/api/ai/resources/stitch-tools-debug",
+                "/api/ai/resources/video-assets/sample-project"
+        };
+
+        for (String path : readPaths) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+            request.setRequestURI(path);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+            assertTrue(allowed, "Read-only GET path " + path + " must be allowed without credentials");
+            assertEquals(200, response.getStatus());
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 5: External non-localhost request to /internal/** without credentials is denied with 403 FORBIDDEN")
+    void externalInternalEndpointRequestWithoutCredentialsIsDeniedWith403() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/tasks");
+        request.setRequestURI("/internal/tasks");
+        request.setRemoteAddr("198.51.100.24"); // external IP
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+        assertFalse(allowed, "External access to internal endpoint must be denied");
+        assertEquals(403, response.getStatus());
+
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertEquals("FORBIDDEN", body.get("code").asText());
+        assertTrue(body.get("error").asText().contains("restricted to localhost"));
+    }
+
+    @Test
+    @DisplayName("Relation 6: Localhost request to /internal/** is allowed")
+    void localhostInternalEndpointRequestIsAllowed() throws Exception {
+        String[] loopbacks = {"127.0.0.1", "::1", "localhost"};
+
+        for (String ip : loopbacks) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/tasks");
+            request.setRequestURI("/internal/tasks");
+            request.setRemoteAddr(ip);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+            assertTrue(allowed, "Localhost " + ip + " must be allowed on /internal/tasks");
+            assertEquals(200, response.getStatus());
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 7: External request to /internal/** with valid operator credentials is allowed")
+    void externalInternalEndpointRequestWithValidCredentialsIsAllowed() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/tasks");
+        request.setRequestURI("/internal/tasks");
+        request.setRemoteAddr("198.51.100.24"); // external IP
+        request.addHeader("X-API-Key", VALID_KEY);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+        assertTrue(allowed, "External request with valid operator key must be allowed");
+        assertEquals(200, response.getStatus());
+    }
+
+    @Test
+    @DisplayName("Relation 8: When API key is not configured, mutating AI requests are rejected with 403 FORBIDDEN")
+    void mutatingAiEndpointsWhenApiKeyNotConfiguredAreDeniedWith403() throws Exception {
+        ApiAuthorizationInterceptor unconfiguredInterceptor = new ApiAuthorizationInterceptor("", objectMapper);
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/ai/resources/probe-models");
+        request.setRequestURI("/api/ai/resources/probe-models");
+        request.addHeader("X-API-Key", "any-key-attempt");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = unconfiguredInterceptor.preHandle(request, response, new Object());
+        assertFalse(allowed, "Must be denied when API key is not configured");
+        assertEquals(403, response.getStatus());
+
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertEquals("FORBIDDEN", body.get("code").asText());
+        assertTrue(body.get("error").asText().contains("not configured"));
+    }
+
+    @Test
+    @DisplayName("Relation 9: Docker bridge gateway (.1) on /internal/** is recognized as local host")
+    void dockerBridgeGatewayInternalEndpointRequestIsAllowed() throws Exception {
+        String[] hostGateways = {"172.18.0.1", "172.17.0.1", "10.0.0.1", "192.168.1.1"};
+
+        for (String ip : hostGateways) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/tasks");
+            request.setRequestURI("/internal/tasks");
+            request.setRemoteAddr(ip);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+            assertTrue(allowed, "Docker bridge gateway " + ip + " must be allowed on /internal/tasks");
+            assertEquals(200, response.getStatus());
+        }
+    }
+}

@@ -148,8 +148,9 @@ public class GoogleAiResourceController {
     @GetMapping("/video-assets/{projectSlug}")
     public List<Map<String, String>> listVideoAssets(@PathVariable String projectSlug) {
         try {
-            Path dir = Paths.get("./data/video-assets", projectSlug);
-            if (!Files.exists(dir)) {
+            Path root = Paths.get("./data/video-assets").toAbsolutePath().normalize();
+            Path dir = root.resolve(projectSlug).normalize();
+            if (!dir.startsWith(root) || !Files.exists(dir)) {
                 return Collections.emptyList();
             }
             try (var stream = Files.list(dir)) {

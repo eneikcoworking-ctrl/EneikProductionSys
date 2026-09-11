@@ -19,6 +19,9 @@ class Database:
 
         req = urllib.request.Request(url, data=payload, method=method)
         req.add_header("Content-Type", "application/json")
+        api_key = os.environ.get("ENEIK_SECURITY_API_KEY")
+        if api_key:
+            req.add_header("X-API-Key", api_key)
 
         try:
             with urllib.request.urlopen(req, timeout=5) as res:

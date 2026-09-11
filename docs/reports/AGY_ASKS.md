@@ -129,7 +129,38 @@
      - `contentKeyLengthIsStrictlyBoundedRegardlessOfBatchSize`: заслон против `Value too long for column CONTENT_KEY` — пачка из 20 пожеланий и пачка из 50 пожеланий дают длину ровно 109 символов $\le 255$; перестановка 20 пожеланий даёт идентичный ключ.
      - `everySiteThatMintsACompilerTaskGivesItAnIdentity`: структурный заслон сохранения ровно 2 фабрик компиляторов и 2 вызовов `setContentKey(`.
   2. Прогон Maven в Docker (`BUILD SUCCESS`): `CompilerTaskIdentityTest` 3/3 green.
-- **Что берётся следующим:** Такт 8 — следующий механизм по очереди `ANTIGRAVITY_QUEUE.md`.
+- **Что берётся следующим:** Такт 8 — завершён в текущем такте (см. ниже).
+
+### 2026-09-11 Antigravity: Такт 8 — Защита изменяющих входов ИИ и служебных путей GoogleAiResourceController (пункт 7 очереди, разделы XXXVIII, XXXIV)
+- **Что сделано:** Механизм авторизации и защиты внешних/внутренних интерфейсов доведён до идеала целиком:
+  1. **Матрица прав и обязанностей (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006 Authorization ambiguity):**
+     - Составлена и реализована в коде матрица прав и обязанностей акторов для всех 9 эндпоинтов `GoogleAiResourceController` и всех путей `/internal/**`.
+     - Безопасные чтения (`GET /api/ai/resources`, `GET /api/ai/resources/design-consistency-audit`, `GET /api/ai/resources/stitch-tools-debug`, `GET /api/ai/resources/video-assets/**`) сохранены доступными для дашборда и телеметрии.
+     - Все 5 изменяющих и расходных операций (`POST /api/ai/resources/probe-models`, `/design-drafts-cleanup`, `/design-assets`, `/stitch-design-system`, `/video-assets`) закрыты строгим авторизационным заслоном.
+  2. **Запрет как исполняемый код (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006):**
+     - Создан `ApiAuthorizationInterceptor` (`com.eneik.production.security`), зарегистрированный в `WebConfig.addInterceptors` на `/api/ai/resources/**` и `/internal/**`.
+     - Запрос к изменяющим AI-эндпоинтам без заголовка `X-API-Key` или `Authorization: Bearer` немедленно получает отказ `401 Unauthorized` с машиночитаемым JSON-объяснением (`{"error": "...", "code": "UNAUTHORIZED", "status": 401}`).
+     - Запрос с неверным ключом получает отказ `403 Forbidden` (`{"error": "...", "code": "FORBIDDEN", "status": 403}`).
+     - Запрос к внутренним путям (`/internal/**`) со стороннего хоста (не loopback `127.0.0.1` / `::1` и не docker bridge gateway `172.x.x.1`) без валидного токена оператора получает отказ `403 Forbidden` (`{"error": "...", "code": "FORBIDDEN", "status": 403}`).
+     - Взаимодействие скриптов хоста (`scripts/modules/db_utils.py`) с `/internal/**` поддержано: docker-proxy шлюз (`.1` в приватных сетях `172.16-31.x.1`, `10.x.x.1`, `192.168.x.1`) признаётся локальным хостом, а также добавлена передача заголовка `X-API-Key` из переменной среды `ENEIK_SECURITY_API_KEY`.
+     - Сравнение секретов реализовано в константном времени через `MessageDigest.isEqual` для предотвращения атак по времени (timing attacks).
+     - Принцип «Не знаю ≢ всё хорошо»: если переменная `ENEIK_SECURITY_API_KEY` не сконфигурирована в окружении (по умолчанию пустая), изменяющие операции закрыты с `403 Forbidden` («server API key is not configured»). Никаких зашитых в открытый код ключей по умолчанию не существует.
+  3. **Ликвидация уязвимости Path Traversal (H3 Security Audit):**
+     - В `GoogleAiResourceController.listVideoAssets` добавлена строгая проверка нормализованного пути через `dir.startsWith(root)`, исключающая выход за пределы `./data/video-assets` при передаче `..` в `projectSlug`.
+- **Чем проверено:**
+  1. `ApiAuthorizationInterceptorTest`: 9/9 green — проверка всех отношений матрицы прав и обязанностей:
+     - 5 изменяющих AI-эндпоинтов без заголовков -> 401 Unauthorized.
+     - Изменяющий вызов с неверным `X-API-Key` и неверным `Bearer` -> 403 Forbidden.
+     - Изменяющий вызов с валидным `X-API-Key` и валидным `Bearer` -> 200 / допуск.
+     - Безопасные чтения GET -> допуск без токена.
+     - Внешний неавторизованный запрос к `/internal/tasks` -> 403 Forbidden.
+     - Запрос с localhost к `/internal/tasks` -> допуск.
+     - Запрос с docker bridge gateway (`172.18.0.1`, `172.17.0.1`, `10.0.0.1`, `192.168.1.1`) к `/internal/tasks` -> допуск.
+     - Внешний запрос к `/internal/tasks` с валидным токеном -> допуск.
+     - Запрос при несконфигурированном ключе API -> 403 Forbidden («server API key is not configured»).
+  2. `GoogleAiResourceControllerTest`: 1/1 green — проверка предотвращения path traversal при `..` и вложенных путях.
+  3. Регрессия: 53 теста green (`CompilerTaskIdentityTest`, `ProjectEventLogRetentionServiceTest`, `SixSigmaAuditServiceTest`, `QualityGateControllerTest`, `TaskCarrierBackfillServiceTest`, `ApiAuthorizationInterceptorTest`, `GoogleAiResourceControllerTest`).
+- **Что берётся следующим:** Такт 9 — следующий механизм по очереди `ANTIGRAVITY_QUEUE.md`.
 
 
 
