@@ -100,7 +100,7 @@ public class OnboardingAuditService {
         }
 
         // Critical: No tests but production claimed in README
-        if (!stackProfile.hasTests() && stackProfile.declaredPurpose().toLowerCase().contains("production")) {
+        if (stackProfile.hasTests().isNo() && stackProfile.declaredPurpose().toLowerCase().contains("production")) {
             findings.add(createFindingEntity(project, "BARCAN-TAG-06", "critical", "README.md", null,
                     "Critical quality gap: Project claims production readiness, but no test suite was found."));
         }
@@ -127,14 +127,16 @@ public class OnboardingAuditService {
         }
 
         // Major: Lack of CI
-        if (!stackProfile.hasCI()) {
+        if (stackProfile.hasCI().isNo()) {
             findings.add(createFindingEntity(project, "BARCAN-TAG-05", "major", ".github/workflows/ci.yml", null,
                     "Major DevOps finding: No automated CI workflows found in .github/workflows/. PR builds and checks cannot run automatically."));
         }
 
         // Minor: Incomplete documentation / design system
-        findings.add(createFindingEntity(project, "BARCAN-TAG-11", "minor", "README.md", null,
-                "Minor: Incomplete user documentation or missing CSS design system details."));
+        if (!stackProfile.isUnchecked()) {
+            findings.add(createFindingEntity(project, "BARCAN-TAG-11", "minor", "README.md", null,
+                    "Minor: Incomplete user documentation or missing CSS design system details."));
+        }
 
         // Save findings to DB
         auditFindingRepository.saveAll(findings);
@@ -212,9 +214,9 @@ public class OnboardingAuditService {
         sb.append("- **Primary Language:** ").append(profile.primaryLanguage()).append("\n");
         sb.append("- **Framework:** ").append(profile.framework()).append("\n");
         sb.append("- **Database:** ").append(profile.database()).append("\n");
-        sb.append("- **Monorepo:** ").append(profile.isMonorepo() ? "Yes" : "No").append("\n");
-        sb.append("- **Has CI:** ").append(profile.hasCI() ? "Yes" : "No").append("\n");
-        sb.append("- **Has Tests:** ").append(profile.hasTests() ? "Yes" : "No").append("\n");
+        sb.append("- **Monorepo:** ").append(profile.isMonorepo().displayValue()).append("\n");
+        sb.append("- **Has CI:** ").append(profile.hasCI().displayValue()).append("\n");
+        sb.append("- **Has Tests:** ").append(profile.hasTests().displayValue()).append("\n");
         sb.append("- **Declared Purpose:** ").append(profile.declaredPurpose()).append("\n");
         sb.append("- **Default Branch:** ").append(profile.defaultBranch()).append("\n");
         sb.append("- **Baseline Commit SHA:** ").append(profile.baselineCommitSha()).append("\n");

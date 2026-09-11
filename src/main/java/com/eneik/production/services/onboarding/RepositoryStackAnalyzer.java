@@ -49,8 +49,7 @@ public class RepositoryStackAnalyzer {
         String token = settingsService.effectiveValue("github_token");
         if (token == null || token.isBlank()) {
             log.warn("GitHub token not configured, returning empty StackProfile");
-            StackProfile empty = new StackProfile("Unknown", "None", "None", false, false, false,
-                    "GitHub token not configured.", "main", "", 0, 0);
+            StackProfile empty = StackProfile.unchecked("GitHub token not configured.", "main", "");
             return new AnalysisResult(empty, Collections.emptyList());
         }
 
@@ -97,8 +96,7 @@ public class RepositoryStackAnalyzer {
             HttpResponse<String> treeResponse = httpClient.send(treeRequest, HttpResponse.BodyHandlers.ofString());
             if (treeResponse.statusCode() != 200) {
                 log.warn("Failed to get recursive tree: HTTP {}", treeResponse.statusCode());
-                StackProfile empty = new StackProfile("Unknown", "None", "None", false, false, false,
-                        "Could not fetch tree from GitHub.", defaultBranch, baselineCommitSha, 0, 0);
+                StackProfile empty = StackProfile.unchecked("Could not fetch tree from GitHub.", defaultBranch, baselineCommitSha);
                 return new AnalysisResult(empty, Collections.emptyList());
             }
 
@@ -280,15 +278,15 @@ public class RepositoryStackAnalyzer {
                 }
             }
 
-            StackProfile profile = new StackProfile(primaryLanguage, framework, database, hasCI, hasTests,
-                    isMonorepo, declaredPurpose, defaultBranch, baselineCommitSha, totalFiles, analyzedFiles);
+            StackProfile profile = new StackProfile(primaryLanguage, framework, database,
+                    InspectionStatus.of(hasCI), InspectionStatus.of(hasTests), InspectionStatus.of(isMonorepo),
+                    declaredPurpose, defaultBranch, baselineCommitSha, totalFiles, analyzedFiles);
 
             return new AnalysisResult(profile, filesToScan);
 
         } catch (Exception e) {
             log.error("Error during repository stack analysis for {}", repositoryName, e);
-            StackProfile errorProfile = new StackProfile("Unknown", "None", "None", false, false, false,
-                    "Error during analysis: " + e.getMessage(), "main", "", 0, 0);
+            StackProfile errorProfile = StackProfile.unchecked("Error during analysis: " + e.getMessage(), "main", "");
             return new AnalysisResult(errorProfile, Collections.emptyList());
         }
     }

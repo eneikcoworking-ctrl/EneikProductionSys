@@ -216,6 +216,31 @@
   4. Полная регрессия фабрики: 68 тестов green (`LeanValueTest`, `ApiAuthorizationInterceptorTest`, `InternalGeminiObserverControllerTest`, `GoogleAiResourceControllerTest`, `GlobalExceptionHandlerTest`, `CompilerTaskIdentityTest`, `ProjectEventLogRetentionServiceTest`, `SixSigmaAuditServiceTest`, `QualityGateControllerTest`, `TaskCarrierBackfillServiceTest`).
 - **Что берётся следующим:** Такт 11 — Пункт 10 очереди (`RepositoryStackAnalyzer`, раздел XXXI: трёхзначный тип обхода репозитория заказчика вместо `boolean`, предотвращение ложных находок при недоступности GitHub).
 
+### 2026-09-11 Antigravity: Такт 11 — RepositoryStackAnalyzer и OnboardingAuditService целиком (пункт 10 очереди, Раздел XXXI)
+- **Что сделано:** Механизм анализа репозитория заказчика доведён до идеала целиком:
+  1. **Трёхзначный статус обхода по Белнапу и сохранение границы рода по Райлу (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):**
+     - Введён тип `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) с методами `isYes()`, `isNo()`, `isUnchecked()`, `displayValue()`.
+     - `StackProfile`: поля `hasCI`, `hasTests`, `isMonorepo` переведены с примитивного `boolean` на `InspectionStatus`. Добавлен метод фабрики `StackProfile.unchecked(declaredPurpose, defaultBranch, baselineCommitSha)` и метод `isUnchecked()`.
+     - `RepositoryStackAnalyzer`: три точки формирования профиля при отсутствии токена (строка 52), сбое обхода дерева git (строка 100) и исключении (строка 290) возвращают `StackProfile.unchecked(...)` со статусами `UNCHECKED`, а текстовые поля `framework` и `database` устанавливаются в `"не проверено"`, устранив подмену неудачи фабрики фактом об отсутствии («нет»).
+  2. **Устранение ложных находок о заказчике в `OnboardingAuditService`:**
+     - Находка критического дефекта (строка 103) выставляется строго при `stackProfile.hasTests().isNo()` (и наличии слова "production" в заявленной цели). При статусе `UNCHECKED` дефект не выставляется.
+     - Находка отсутствия CI (строка 130) выставляется строго при `stackProfile.hasCI().isNo()`. При статусе `UNCHECKED` дефект не выставляется.
+     - Находка по документации (строка 136) не выставляется при `stackProfile.isUnchecked()`.
+     - При отсутствии доступа к GitHub или токена аудит формирует ровно **0** находок о заказчике (`findings` пуст).
+     - Генератор отчёта `docs/reports/onboarding-audit-{slug}.md` выводит `"не проверено"` для непроверенных компонентов и 0 находок.
+- **Чем проверено:**
+  1. `RepositoryStackAnalyzerTest` (6/6 green):
+     - `missingGithubTokenReturnsUncheckedProfileWithTriStateStatus`: проверка `isUnchecked() == true`, `framework == "не проверено"`, `database == "не проверено"`, `hasCI/hasTests/isMonorepo == UNCHECKED`, `filesToScan.isEmpty()`.
+     - `blankGithubTokenReturnsUncheckedProfile`.
+  2. `OnboardingAuditServiceTest` (5/5 green):
+     - `auditWithoutGithubTokenProducesZeroFindingsAndUncheckedMarkdownReport`: верификация 0 находок о заказчике (`saveAll` получает пустой список) и генерации отчёта со всеми признаками "не проверено" и 0 findings.
+     - `auditWithInspectedRepositoryAndNoTestsFilesCriticalFindingWhenProductionClaimed`: подтверждение нахождения дефекта `BARCAN-TAG-06` при доказанном отсутствии тестов.
+     - `auditWithInspectedRepositoryAndNoCiFilesMajorFinding`: подтверждение нахождения дефекта `BARCAN-TAG-05` при доказанном отсутствии CI.
+     - `auditWithInspectedRepositoryAndVerifiedCiAndTestsDoesNotFileCiOrTestFindings`: отсутствие ложных срабатываний при наличии тестов и CI.
+     - `categoryBoundaryPreservedBetweenAccessFailureAndRepositoryReality`: строгий фальсифицирующий тест границы рода — при сбое доступа 0 находок, при инспекции реального отсутствия тестов и CI — 2 находки.
+  3. Полный регрессионный прогон: 32 теста green в Maven Docker (`RepositoryStackAnalyzerTest`, `OnboardingAuditServiceTest`, `LeanValueTest`, `ApiAuthorizationInterceptorTest`, `InternalGeminiObserverControllerTest`).
+- **Что берётся следующим:** Такт 12 — Пункт 11 очереди (`OperationalTruthService`, раздел XXVII: доверие начинается с не установленного и растёт по свидетельствам, а не с 1.0 с одними вычитаниями).
+
 
 
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
