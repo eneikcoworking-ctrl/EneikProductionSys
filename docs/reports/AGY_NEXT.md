@@ -877,3 +877,58 @@ docker-proxy. Теперь замерено: пробный `python -m http.serv
 в журнале пробы `172.18.0.1 - - "GET /probe-from-host"`. Проба удалена. Контрольный запрос из соседнего контейнера
 не прошёл (в `judgment-proxy` нет curl) — эта половина не замерена. Вывод прежний: проверка loopback в
 `ApiAuthorizationInterceptor` хост-скрипты не пропустит.
+
+## 2026-09-11 02:01 UTC — Клод: совет заранее по пунктам 9, 10, 11 (корпус сверен)
+
+Совет; последнее слово за Антигравити. Правило оператора: корпус сверять всегда, когда берётся задача (шапка
+очереди). Ниже каждый образец прочитан **в корпусе** (`philosopher_patterns_index.json`, поле `agent_rule`;
+`04_FACTORY_DERIVED_PATTERNS.md`), не по пересказу записи. Все три механизма на HEAD не починены.
+
+### Пункт 9 — `LeanValue` (запись № 42, `FACTORY_MECHANISMS.md:3242`)
+Корпус: `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — «Represent true, false, unknown and inconsistent states
+explicitly… Proof obligation: Show how each state is displayed, stored and resolved.»
+**Замер.** Неизвестное становится утверждением в **трёх** местах, а не в одном: `JulesDispatchService.parseLeanValue`
+(`:4492–4498`) — `catch → valuable`; `ProjectFlowService:2030–2035` — нет поля → `"essential"`, не разобралось →
+`essential`; `ProjectFlowService:3250` — `null → essential`. Решают значение: `BaseQualityGate:24–25` — сравнение
+**строки** payload с `waste.name()`; `ProjectFlowService:2137`, `:3123` — сравнение со значением типа.
+Хранение: `lean_value VARCHAR(16)` (V12), `@Enumerated(STRING)`, ограничений нет — новое значение длиной до 16
+символов ляжет без миграции.
+**Не трогать:** писатели, ставящие `essential` осознанно (`OpsAuditorService:412`, `ProjectFlowService:895`, `:5578`,
+`DeliveryRealityProducerService:221` и др.) — это их суждение, не подмена неизвестного.
+**Совет.** Значение «не установлено» в `LeanValue`; все три места разбора отдают его, а не утверждение; решающие
+места — `switch` без `default`, чтобы новое значение не компилировалось без обработки (так исполняется
+опровержение записи дословно). Что делает заслон муды с неустановленным — решение: не пропускать как ценное.
+**Тест:** неразбираемое значение → не `valuable`/`essential`; заслон не засчитывает его ценным.
+**Опровергнет:** вызывающий, который компилируется, не обработав «не установлено».
+
+### Пункт 10 — `RepositoryStackAnalyzer` (раздел XXXI, `FACTORY_MECHANISMS.md:7190`)
+Корпус: `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012, как выше) и `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) —
+«Reject code that treats… an observation as authority… without an adapter. Proof obligation: Point to the type,
+schema or adapter that preserves the category boundary.»
+**Замер.** `StackProfile` (`onboarding/StackProfile.java`): `hasCI`, `hasTests`, `isMonorepo` — `boolean`. Три места
+строят профиль «не смогли посмотреть» теми же `false`: `RepositoryStackAnalyzer:52` (нет токена), `:100` (неудача
+обхода), `:290` (ошибка). Читающий один — `OnboardingAuditService`: `:103` находка по `!hasTests()`, `:130` по
+`!hasCI()`, `:215–217` отчёт «No». Других читающих нет (греп `.hasCI()|.hasTests()|.isMonorepo()` вне него — пусто).
+Строки `framework`/`database` = `"None"` в тех же трёх местах — та же подмена для строк: «нет» вместо «не проверено».
+**Живое:** разбор не запускался (новых проектов нет) — дефект отложенный, проверяется только тестом.
+**Совет.** Тип с тремя исходами (есть / нет / не проверено) вместо `boolean` — это и есть «type that preserves the
+category boundary»; читающий заводит находку только на «нет»; отчёт пишет «не проверено».
+**Тест:** без токена GitHub — ноль находок о заказчике, в отчёте «не проверено».
+**Опровергнет:** находка «нет тестов» при неудавшемся обходе.
+
+### Пункт 11 — `OperationalTruthService` (раздел XXVII, `FACTORY_MECHANISMS.md:6978`)
+Корпус: `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` (D006) — «Do not authorize a risky action from belief or intention
+alone; require knowledge-grade evidence. Proof obligation: Attach the check, trace or permission source…»;
+`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` (D010) — сильная: «растут медленно и пакетно… теряются немедленно…
+путь вниз существует для каждой ступени, с которой есть путь вверх».
+**Замер.** `trust()` (`:406–447`): `score = 1.0`, шесть вычитаний, ни одного прибавления; положительные свидетельства
+(`mergedReviews`, `qualityGatePassed`) пишутся только текстом в `positives` и на счёт не влияют. Живое сейчас
+(`/api/projects/<id>/operational-truth`): 0,7, «watch»; свидетельства — 638 слияний, 310 пройденных заслонов, 444
+непройденных, 26 дефектов за сутки. Кто читает счёт: `TrustSnapshotService:85` пишет его в снимок (для подбора
+весов по V90) — других решающих читающих нет.
+**Не трогать:** веса вычитаний — они назначены рукой, и это признано (V90 заведена, чтобы подобрать их по исходам).
+**Совет.** Без единого положительного свидетельства — уровень «не установлено», а не «trusted»; рост — только от
+свидетельств. У живого проекта свидетельства есть, поэтому живое число сменится только если меняется шкала;
+если шкала меняется — снимки `TrustSnapshotService` до и после несравнимы, это назвать в записи.
+**Тест:** проект без свидетельств → не «trusted». **Опровергнет:** путь, где отсутствие свидетельств даёт
+положительную оценку.
