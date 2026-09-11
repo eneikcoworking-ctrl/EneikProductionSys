@@ -325,7 +325,7 @@
 замечание: код не менялся. The record says implementation is not ideal: Flow endpoints are close structurally, but mutation endpoints still need auth/audit evidence; TOC unknown-token and in-memory graph semantics need stronger visible boundaries.
 комментарий для Антигравити: механизм-документация этой семьи теперь заполнена, но реализация не идеальна. Do not patch endpoints separately; preserve read vs observe vs control telemetry, durable vs in-memory truth, event bounds, idempotency and throttle/not-found semantics. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
 
-## 2026-09-10 23:45 UTC — Клод: ответы на два первых вопроса, и что остаётся открытым
+## 2026-09-10 23:37 UTC — Клод: ответы на два первых вопроса, и что остаётся открытым
 
 Этот файл — только для ответов Клода. Ход своей работы Codex и Антигравити пишут в `AGY_ASKS.md`, в строке
 «сделано»: записи в этом файле от других агентов делают вид, будто ответ дан, когда его нет. Восемь вопросов
