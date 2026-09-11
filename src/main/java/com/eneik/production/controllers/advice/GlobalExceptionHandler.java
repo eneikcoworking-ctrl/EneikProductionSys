@@ -43,6 +43,29 @@ public class GlobalExceptionHandler {
         return body(HttpStatus.NOT_FOUND, e.getMessage());
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParameter(
+            org.springframework.web.bind.MissingServletRequestParameterException e) {
+        log.warn("Missing request parameter: {}", e.getMessage());
+        return body(HttpStatus.BAD_REQUEST, e.getMessage());
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleTypeMismatch(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException e) {
+        String msg = String.format("Failed to convert parameter '%s' with value '%s' to required type '%s'",
+                e.getName(), e.getValue(), e.getRequiredType() != null ? e.getRequiredType().getSimpleName() : "unknown");
+        log.warn("Type mismatch: {}", msg);
+        return body(HttpStatus.BAD_REQUEST, msg);
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleNotReadable(
+            org.springframework.http.converter.HttpMessageNotReadableException e) {
+        log.warn("Malformed request body: {}", e.getMessage());
+        return body(HttpStatus.BAD_REQUEST, "Required request body is missing or unreadable");
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleBadRequest(IllegalArgumentException e) {
         return body(HttpStatus.BAD_REQUEST, e.getMessage());

@@ -224,11 +224,17 @@ public class InternalGeminiObserverController {
     }
 
     @GetMapping("/persistent-workers")
-    public List<java.util.Map<String, Object>> persistentWorkers(@RequestParam UUID projectId) {
-        return persistentWorkerSessionRepository.findByProjectId(projectId).stream()
+    public List<java.util.Map<String, Object>> persistentWorkers(@RequestParam(required = false) UUID projectId) {
+        UUID effectiveProjectId = projectId != null ? projectId : resolveSingleActiveProjectId();
+        List<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> sessions = (effectiveProjectId != null)
+                ? persistentWorkerSessionRepository.findByProjectId(effectiveProjectId)
+                : persistentWorkerSessionRepository.findAll();
+
+        return sessions.stream()
                 .map(w -> {
                     java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
                     m.put("id", w.getId());
+                    m.put("projectId", w.getProjectId());
                     m.put("purpose", w.getPurpose());
                     m.put("carrierTaskId", w.getCarrierTaskId());
                     m.put("retiredAt", w.getRetiredAt());
@@ -258,13 +264,31 @@ public class InternalGeminiObserverController {
     // method dispatchQueuedTasks itself uses, with the real project id and tag, to see directly whether it
     // finds a candidate account or not - ground truth instead of re-deriving the WHERE clause by hand.
     @GetMapping("/dispatch-capacity-probe")
-    public java.util.Map<String, Object> dispatchCapacityProbe(@RequestParam UUID projectId, @RequestParam String tag) {
-        var found = accountRepository.lockNextJulesAccountWithCapacity(projectId, tag, 3, null, 15, null);
-        java.util.Map<String, Object> result = new java.util.HashMap<>();
+    public java.util.Map<String, Object> dispatchCapacityProbe(
+            @RequestParam(required = false) UUID projectId,
+            @RequestParam(required = false, defaultValue = "BARCAN-TAG-11") String tag) {
+        UUID effectiveProjectId = projectId != null ? projectId : resolveSingleActiveProjectId();
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
         result.put("tag", tag);
+
+        if (effectiveProjectId == null) {
+            result.put("status", "UNDETERMINED_PROJECT");
+            result.put("found", false);
+            result.put("message", "No single active project found. Provide 'projectId' parameter explicitly.");
+            return result;
+        }
+
+        result.put("projectId", effectiveProjectId);
+        var found = accountRepository.lockNextJulesAccountWithCapacity(effectiveProjectId, tag, 3, null, 15, null);
         result.put("found", found.isPresent());
         found.ifPresent(a -> result.put("accountName", a.getName()));
         return result;
+    }
+
+    private UUID resolveSingleActiveProjectId() {
+        List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+        return activeProjects.size() == 1 ? activeProjects.get(0).getId() : null;
     }
 
     // Pure diagnostic (2026-08-08, live dispute continued): dispatchCapacityProbe returned found=false for

@@ -160,7 +160,29 @@
      - Запрос при несконфигурированном ключе API -> 403 Forbidden («server API key is not configured»).
   2. `GoogleAiResourceControllerTest`: 1/1 green — проверка предотвращения path traversal при `..` и вложенных путях.
   3. Регрессия: 53 теста green (`CompilerTaskIdentityTest`, `ProjectEventLogRetentionServiceTest`, `SixSigmaAuditServiceTest`, `QualityGateControllerTest`, `TaskCarrierBackfillServiceTest`, `ApiAuthorizationInterceptorTest`, `GoogleAiResourceControllerTest`).
-- **Что берётся следующим:** Такт 9 — следующий механизм по очереди `ANTIGRAVITY_QUEUE.md`.
+- **Что берётся следующим:** Такт 9 — устранение сбоев 500 на `/dispatch-capacity-probe` и `/persistent-workers` в `InternalGeminiObserverController` и централизованный маппинг параметров в `GlobalExceptionHandler`.
+
+### 2026-09-11 Antigravity: Такт 9 — Устранение ложных отказов HTTP 500 в InternalGeminiObserverController (пункт 8 очереди, раздел XXIII)
+- **Что сделано:** Устранена категориальная ошибка превращения клиентских запросов и отсутствующих параметров в ошибку сервера `HTTP 500 Internal Server Error` (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006):
+  1. **Централизация маппинга клиентских ошибок (`GlobalExceptionHandler`):**
+     - Добавлены обработчики `MissingServletRequestParameterException`, `MethodArgumentTypeMismatchException` и `HttpMessageNotReadableException`, возвращающие корректный статус `400 Bad Request` с понятным описанием пропущенного или невалидного поля вместо падения в универсальный `500 Unexpected Error` со стектрейсом в логах.
+  2. **Устойчивость и детерминированный fallback (`InternalGeminiObserverController`):**
+     - В эндпоинте `/persistent-workers` параметр `projectId` сделан опциональным (`@RequestParam(required = false)`): при отсутствии явного ID проект разрешается автоматически по единственному активному проекту в БД (`projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`). Если активного проекта нет — возвращаются все сессии воркеров через `persistentWorkerSessionRepository.findAll()`. Исход: HTTP 200 с валидным списком, ноль падений 500.
+     - В эндпоинте `/dispatch-capacity-probe` параметр `projectId` сделан опциональным, а `tag` получил каноническое дефолтное значение `"BARCAN-TAG-11"`. При вызове без параметров активный проект разрешается автоматически. Если активного проекта нет, возвращается 200 JSON со статусом `UNDETERMINED_PROJECT`, `found: false` и понятным объяснением, предотвращая падение сервера.
+- **Чем проверено:**
+  1. `InternalGeminiObserverControllerTest`: 6/6 green:
+     - `persistentWorkers` с явным `projectId` возвращает сессии проекта.
+     - `persistentWorkers` без параметров разрешает активный проект и возвращает его сессии.
+     - `persistentWorkers` без параметров при отсутствии активного проекта возвращает все воркеры через `findAll()`.
+     - `dispatchCapacityProbe` с явными параметрами проверяет capacity аккаунтов.
+     - `dispatchCapacityProbe` без параметров разрешает активный проект и дефолтный тег `"BARCAN-TAG-11"`.
+     - `dispatchCapacityProbe` без параметров при отсутствии активного проекта отдаёт `UNDETERMINED_PROJECT` (HTTP 200) без 500.
+  2. `GlobalExceptionHandlerTest`: 3/3 green:
+     - `MissingServletRequestParameterException` -> 400 Bad Request.
+     - `MethodArgumentTypeMismatchException` -> 400 Bad Request.
+     - `HttpMessageNotReadableException` -> 400 Bad Request.
+  3. Полная регрессия фабрики: 62 теста green (`CompilerTaskIdentityTest`, `ProjectEventLogRetentionServiceTest`, `SixSigmaAuditServiceTest`, `QualityGateControllerTest`, `TaskCarrierBackfillServiceTest`, `ApiAuthorizationInterceptorTest`, `GoogleAiResourceControllerTest`, `InternalGeminiObserverControllerTest`, `GlobalExceptionHandlerTest`).
+- **Что берётся следующим:** Такт 10 — Пункт 9 очереди (`LeanValue`: неизвестное становится утверждением ценности в трёх местах, раздел 42).
 
 
 
