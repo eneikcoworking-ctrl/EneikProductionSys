@@ -341,6 +341,30 @@
   6. Полный прогон в Docker-контейнере Maven: 35/35 тестов green (`BUILD SUCCESS`, 01:13 мин).
 - **Что берётся следующим:** Такт 15 — Пункт 14 очереди (`TargetContext` · пункт 43: отсутствие значения «не установлено», устранение уничтожения и подмены неизвестного контекста цели задачи).
 
+### 2026-09-11 Antigravity: Такт 17 — EvidenceCoherenceService (пункт 16 очереди, V80, Раздел XXIIe)
+- **Что сделано (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011 Perception failure):**
+  1. **Ликвидация N+1 и O(N) entity loads в JVM:**
+     - В `KaizenProposalRepository` добавлен `long countByStatus(String status);`. В `sourceReliability` вызовы `kaizenProposalRepository.findAll()` заменены на прямые `countByStatus("STANDARDIZED")` и `countByStatus("REVERTED")`.
+     - В `CoherenceRunNodeResultRepository` добавлены агрегаты `countDistinctEvaluatedNodesBySourceType(sourceType)` и `countDistinctAcceptedNodesBySourceType(sourceType)`. Устранены `evidenceNodeRepository.findAll()` и поштучные N+1 вызовы `findByEvidenceNodeId(nodeId)` на каждый узел.
+     - В `computeConfidences` внедрено кэширование надёжности типов источников (`Map<String, Double> reliabilityCache`) на цикл согласования, исключающее повторные обращения к БД для одинаковых типов источников.
+     - В `distinctHistoricallyCorroboratingSourceTypes` загрузка всех строк через `findByEvidenceNodeId` заменена на точечный `existsByEvidenceNodeIdAndAcceptedTrue(nodeId)`.
+  2. **Предел хранения (Retention Ceiling):**
+     - Добавлена настройка `coherence.max-runs-per-project` (по умолчанию `30`).
+     - В `runCoherenceCycle` внедрён метод `pruneOldRuns(projectId)`: при превышении лимита старые прогоны удаляются через `coherenceRunRepository.deleteAll(excess)`. Благодаря внешнему ключу `ON DELETE CASCADE` в таблице `coherence_run_node_results`, дочерние строки результатов удаляются базой данных автоматически. Исторические данные сохранены (без деструктивных SQL-миграций).
+     - В `CoherenceRunRepository` добавлен `findByProjectIdIsNullOrderByRanAtDesc()` для обрезки глобальных прогонов (`projectId == null`).
+  3. **Остановка холостого расписания (Idling Halt):**
+     - Добавлен флаг `coherence.scheduled-cycle-enabled: false` (в `application.properties` и коде). При отсутствии внешнего потребителя периодический цикл `@Scheduled` пропускается без обращений к проектам и базе данных, предотвращая лавинообразное накопление мёртвых строк.
+- **Чем проверено:**
+  - `EvidenceCoherenceServiceTest` (21/21 green):
+    - `kaizenReliabilityUsesRealOutcomeGroundTruthWhenEnoughSamplesExist`: проверяет расчёт надёжности Kaizen через `countByStatus` и заслоняет `never().findAll()`.
+    - `nonKaizenSourceFallsBackToCoherenceEngineAcceptanceHistoryWhenNoOutcomeDataExists`: проверяет расчёт через `countDistinctEvaluatedNodesBySourceType` и заслоняет `never().findAll()`.
+    - `twoAgreeingCorroboratingSourcesProduceHigherConfidenceThanEitherAlone`: проверяет корректность объединения логитов без выгрузки всех сущностей (`never().findAll()`).
+    - `periodicCycleSkippedWhenScheduledCycleDisabled`: подтверждает, что при выключенном флаге расписания опрос проектов и узлов не выполняется.
+    - `periodicCycleRunsWhenScheduledCycleEnabled`: подтверждает запуск цикла при включении флага.
+    - `retentionPrunesOldRunsExceedingLimitForProject`: подтверждает обрезку старых прогонов проекта при превышении лимита.
+    - `retentionPrunesGlobalRunsWhenProjectIdIsNull`: подтверждает обрезку старых глобальных прогонов при превышении лимита.
+- **Что берётся следующим:** Такт 18 — Пункт 17 очереди (`VerificationEvidenceGate` · пункт 45: подмена отсутствия проверок их успешностью).
+
 
 
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
@@ -418,6 +442,17 @@
 
 замер: `EpistemicLayerInvariantGate.check` returns passed when task/project/feature data is missing, when the feature row is absent or not marked `PERIPHERY`, and when no Jules session exists; unlike `BackendContractGate`, `DesignExcellenceGate` and `VerificationEvidenceGate`, it currently evaluates `task.fileScope` rather than the real PR diff. Historical docs also record that the gate instrument applied to zero of 365 tasks on `test-fiftieth` while criterion judgement handled 127.
 
-почему спрашиваю: changing this gate without the policy can either block repair work unnecessarily or continue treating missing evidence as permission. The ideal mechanism needs one declared meaning for absence before code changes.
-
 комментарий для Антигравити: механизм не идеален. До ответа не правь `EpistemicLayerInvariantGate`; first declare absent-evidence semantics and whether file-scope or real PR diff owns the CORE/PERIPHERY boundary. Применимая философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+
+## 2026-09-11 Antigravity: вопрос по читающему действию для EvidenceCoherence (пункт 16 очереди, V80)
+
+вопрос: Какое конкретное производственное действие фабрики должно читать сигнал связности `coherence_score` / вердикты узлов графа свидетельств?
+Три архитектурных варианта:
+  1. **Качественный заслон признака в FeatureService:** В `FeatureService.evaluateFeatureHypothesis` превратить информационный лог в реальный гейт допуска: отклонять/блокировать эпик или переводить в карантин, если `coherenceScore < threshold` или имеются активные противоречия с ядром (`CORE`).
+  2. **Сигнал операционной реальности в OperationalTruthService:** Транслировать падение связности графа (`coherenceScore < 0.0`) как операционный блокер или системную находку (`SYSTEMIC_DEFECT`), инициирующую задачу анализа расхождений.
+  3. **Консервация механизма:** Оставить фоновое расписание выключенным (`coherence.scheduled-cycle-enabled=false`), сохранив функционал как callable-инструмент (on-demand via `/coherence-graph`) до ввода в строй нового целевого потребителя.
+
+замер: На текущий момент `coherence_score` читается только UI-эндпоинтом `/coherence-graph` (`ForgeDeliveryRoom.svelte`) и деактивированным `InternalGeminiObserverController:453` (`/coherence-runs`). Узловые результаты читаются только внутри самого сервиса для укоренённости и надёжности источников следующего прогона. Первоначальный потребитель (agentic-loop Gemini, V80) был выключен в V111. Таблицы выросли до 14647 результатов без единого внешнего потребителя.
+
+почему спрашиваю: Согласно корпусному паттерну `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011 Perception failure), сигнал имеет смысл только тогда, когда он меняет последующее действие и предотвращает ошибочное действие («Show how the signal changes the next action and prevents a mistaken action»). Без явного внешнего читателя сигнал замкнут на самого себя.
+

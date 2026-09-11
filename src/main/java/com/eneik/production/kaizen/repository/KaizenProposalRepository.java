@@ -10,4 +10,5 @@ public interface KaizenProposalRepository extends JpaRepository<KaizenProposalEn
     List<KaizenProposalEntity> findByProjectId(UUID projectId);
     List<KaizenProposalEntity> findByCategoryAndStatusIn(String category, List<String> statuses);
     List<KaizenProposalEntity> findByStatusIn(List<String> statuses);
+    long countByStatus(String status);
 }

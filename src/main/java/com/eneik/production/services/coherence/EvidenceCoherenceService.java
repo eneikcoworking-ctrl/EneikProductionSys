@@ -94,6 +94,10 @@ public class EvidenceCoherenceService {
     // reliability instead of recovery-cooldown duration.
     @Value("${coherence.min-reliability-samples:10}")
     private int minReliabilitySamples;
+    @Value("${coherence.scheduled-cycle-enabled:false}")
+    private boolean scheduledCycleEnabled;
+    @Value("${coherence.max-runs-per-project:30}")
+    private int maxRunsPerProject;
 
     private final EvidenceNodeRepository evidenceNodeRepository;
     private final CoherenceRunRepository coherenceRunRepository;
@@ -179,9 +183,13 @@ public class EvidenceCoherenceService {
     }
 
     /** Same 2h cadence as KaizenService's own periodic cycle - not a coincidence, both reconcile the same
-     * evidence window. */
+     * evidence window. Halted when scheduledCycleEnabled is false to avoid dead background loops. */
     @Scheduled(fixedRate = 7200000, initialDelay = 120000)
     public void periodicCoherenceCycle() {
+        if (!scheduledCycleEnabled) {
+            log.debug("[COHERENCE] Periodic scheduled cycle is disabled (coherence.scheduled-cycle-enabled=false); skipping.");
+            return;
+        }
         try {
             for (var project : projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)) {
                 runCoherenceCycle(project.getId());
@@ -250,9 +258,26 @@ public class EvidenceCoherenceService {
             coherenceRunNodeResultRepository.save(result);
         }
 
+        pruneOldRuns(projectId);
+
         log.info("[COHERENCE] Run {} for project {}: {} node(s), {} accepted, coherenceScore={}",
                 run.getId(), projectId, n, run.getAcceptedNodes(), String.format("%.4f", coherenceScore));
         return run;
+    }
+
+    void pruneOldRuns(UUID projectId) {
+        if (maxRunsPerProject <= 0) {
+            return;
+        }
+        List<CoherenceRunEntity> runs = projectId != null
+                ? coherenceRunRepository.findByProjectIdOrderByRanAtDesc(projectId)
+                : coherenceRunRepository.findByProjectIdIsNullOrderByRanAtDesc();
+        if (runs.size() > maxRunsPerProject) {
+            List<CoherenceRunEntity> excess = runs.subList(maxRunsPerProject, runs.size());
+            coherenceRunRepository.deleteAll(excess);
+            log.info("[COHERENCE-RETENTION] Pruned {} old coherence runs exceeding max limit of {} for project {}",
+                    excess.size(), maxRunsPerProject, projectId);
+        }
     }
 
     double[][] buildWeightMatrix(List<EvidenceNodeEntity> nodes) {
@@ -437,8 +462,7 @@ public class EvidenceCoherenceService {
             if (node.getPolarity() != polarity) {
                 continue;
             }
-            boolean everAccepted = coherenceRunNodeResultRepository.findByEvidenceNodeId(node.getId()).stream()
-                    .anyMatch(CoherenceRunNodeResultEntity::isAccepted);
+            boolean everAccepted = coherenceRunNodeResultRepository.existsByEvidenceNodeIdAndAcceptedTrue(node.getId());
             if (everAccepted) {
                 sourceTypes.add(node.sourceType());
             }
@@ -474,8 +498,10 @@ public class EvidenceCoherenceService {
             }
         }
 
+        Map<String, Double> reliabilityCache = new HashMap<>();
         for (EvidenceNodeEntity node : unclustered) {
-            confidences.put(node.getId(), sigmoid(logit(sourceReliability(node.sourceType()))));
+            double rel = reliabilityCache.computeIfAbsent(node.sourceType(), this::sourceReliability);
+            confidences.put(node.getId(), sigmoid(logit(rel)));
         }
         for (List<EvidenceNodeEntity> clusterNodes : clusters.values()) {
             // Only members that AGM/ECHO left accepted (agreeing) corroborate each other - a cluster can
@@ -489,7 +515,8 @@ public class EvidenceCoherenceService {
             for (List<EvidenceNodeEntity> group : byPolarity.values()) {
                 double combinedLogit = 0.0;
                 for (EvidenceNodeEntity node : group) {
-                    combinedLogit += logit(sourceReliability(node.sourceType()));
+                    double rel = reliabilityCache.computeIfAbsent(node.sourceType(), this::sourceReliability);
+                    combinedLogit += logit(rel);
                 }
                 double confidence = sigmoid(combinedLogit);
                 for (EvidenceNodeEntity node : group) {
@@ -505,41 +532,25 @@ public class EvidenceCoherenceService {
      * AccountHealthService.computeCooldownMinutes (specific data -> pooled data -> prior):
      *   1. KAIZEN_PROPOSAL only: real outcome ground truth (STANDARDIZED vs REVERTED) - the strongest
      *      signal available anywhere in this system, since a proposal's post-metric is actually re-measured,
-     *      not just judged by consensus.
-     *   2. All 4 source types: empirical acceptance rate within this same coherence engine's own history -
-     *      not "ground truth", but a real, honestly-labeled foundherentist signal (how often this source's
-     *      claims have coherently agreed with the rest of the evidence graph) - available for every source,
-     *      not just Kaizen, unlike the original narrower design.
+     *      not just judged by consensus. Evaluated via direct count query, no full entity scan.
+     *   2. All source types: empirical acceptance rate within this same coherence engine's own history -
+     *      evaluated via direct database COUNT(DISTINCT) queries across evaluated vs accepted nodes,
+     *      avoiding O(N) entity loads and N+1 queries.
      *   3. Flat 0.5 (uncalibrated) when neither tier has enough samples (< minReliabilitySamples) to trust -
      *      never fabricated from too little data.
      */
     double sourceReliability(String sourceType) {
         if ("KAIZEN_PROPOSAL".equals(sourceType)) {
-            long standardized = kaizenProposalRepository.findAll().stream()
-                    .filter(p -> "STANDARDIZED".equals(p.getStatus())).count();
-            long reverted = kaizenProposalRepository.findAll().stream()
-                    .filter(p -> "REVERTED".equals(p.getStatus())).count();
+            long standardized = kaizenProposalRepository.countByStatus("STANDARDIZED");
+            long reverted = kaizenProposalRepository.countByStatus("REVERTED");
             if (standardized + reverted >= minReliabilitySamples) {
                 return (double) standardized / (standardized + reverted);
             }
         }
 
-        long accepted = 0;
-        long total = 0;
-        for (EvidenceNodeEntity node : evidenceNodeRepository.findAll()) {
-            if (!sourceType.equals(node.sourceType())) {
-                continue;
-            }
-            List<CoherenceRunNodeResultEntity> history = coherenceRunNodeResultRepository.findByEvidenceNodeId(node.getId());
-            if (history.isEmpty()) {
-                continue;
-            }
-            total++;
-            if (history.stream().anyMatch(CoherenceRunNodeResultEntity::isAccepted)) {
-                accepted++;
-            }
-        }
+        long total = coherenceRunNodeResultRepository.countDistinctEvaluatedNodesBySourceType(sourceType);
         if (total >= minReliabilitySamples) {
+            long accepted = coherenceRunNodeResultRepository.countDistinctAcceptedNodesBySourceType(sourceType);
             return (double) accepted / total;
         }
 

@@ -102,7 +102,22 @@
      - Создан фальсифицирующий тестовый класс `FlywayMigrationValidationTest` (4/4 green): доказано, что модификация контрольной суммы применённой миграции роняет запуск с `FlywayValidateException`, а `repair()` запускается только по явному флагу.
      - Итоговый запуск: 33/33 тестов green в контейнере Maven (BUILD SUCCESS).
 
-9. **Что берётся следующим:** Такт 17 — Пункт 16 очереди (`V80`, раздел XXIIе `FACTORY_MECHANISMS.md`: счёт связности считается и не читается — 9884 посчитанных исхода, ни одного читающего для решения).
+9. **Такт 17 закрыт (`EvidenceCoherenceService`, пункт 16 очереди, `V80`, раздел XXIIе `FACTORY_MECHANISMS.md`, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011 Perception failure):**
+   - **Ликвидация N+1 и O(N) вычитки всех сущностей в JVM:**
+     - В `KaizenProposalRepository` добавлен `countByStatus(status)`. В `sourceReliability` вызовы `findAll()` заменены на `countByStatus("STANDARDIZED")` и `countByStatus("REVERTED")`.
+     - В `CoherenceRunNodeResultRepository` добавлены агрегаты `countDistinctEvaluatedNodesBySourceType(sourceType)` и `countDistinctAcceptedNodesBySourceType(sourceType)`. Устранены `evidenceNodeRepository.findAll()` и поштучные N+1 запросы `findByEvidenceNodeId(nodeId)`.
+     - В `computeConfidences` внедрено кэширование надёжности типов источников (`reliabilityCache`) на цикл согласования.
+     - В `distinctHistoricallyCorroboratingSourceTypes` загрузка сущностей через `findByEvidenceNodeId` заменена на точечный `existsByEvidenceNodeIdAndAcceptedTrue(nodeId)`.
+   - **Предел хранения (Retention Ceiling):**
+     - Добавлена настройка `coherence.max-runs-per-project=30`.
+     - В `runCoherenceCycle` внедрён метод `pruneOldRuns(projectId)`: избыточные прогоны удаляются через `coherenceRunRepository.deleteAll(excess)` с автоматическим каскадным удалением дочерних строк результатов базой (`ON DELETE CASCADE`). Накопленные исторические данные в БД не удалялись необратимо через миграции.
+     - В `CoherenceRunRepository` добавлен метод `findByProjectIdIsNullOrderByRanAtDesc()` для обрезки глобальных прогонов (`projectId == null`).
+   - **Остановка холостого расписания (Idling Halt):**
+     - Добавлен флаг `coherence.scheduled-cycle-enabled: false` (по умолчанию `false`). При отсутствии читателя фоновый 2-часовой цикл `@Scheduled` не выполняет расчётов и не плодит мёртвые записи в БД.
+     - В `AGY_ASKS.md` задан вопрос оператору/Клоду о целевом читающем действии фабрики (гейт в `FeatureService`, сигнал операционной реальности или консервация).
+   - Заслонено в `EvidenceCoherenceServiceTest` (21/21 green, включая `never().findAll()` для обоих репозиториев, проверку обрезки по лимиту для проектных и глобальных прогонов, проверку остановки расписания).
+
+10. **Что берётся следующим:** Такт 18 — Пункт 17 очереди (`VerificationEvidenceGate` · пункт 45: подмена отсутствия проверок их успешностью).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface CoherenceRunRepository extends JpaRepository<CoherenceRunEntity, UUID> {
     List<CoherenceRunEntity> findByProjectIdOrderByRanAtDesc(UUID projectId);
+    List<CoherenceRunEntity> findByProjectIdIsNullOrderByRanAtDesc();
 }

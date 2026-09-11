@@ -22,7 +22,10 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -66,6 +69,8 @@ class EvidenceCoherenceServiceTest {
         ReflectionTestUtils.setField(service, "reconciliationWindowHours", 24);
         ReflectionTestUtils.setField(service, "initialActivation", 0.01);
         ReflectionTestUtils.setField(service, "minReliabilitySamples", 10);
+        ReflectionTestUtils.setField(service, "scheduledCycleEnabled", false);
+        ReflectionTestUtils.setField(service, "maxRunsPerProject", 30);
     }
 
     private EvidenceNodeEntity node(UUID id, UUID projectId, UUID featureId, Integer prNumber,
@@ -189,11 +194,9 @@ class EvidenceCoherenceServiceTest {
 
         when(evidenceNodeRepository.findByProjectIdAndFeatureId(projectId, featureId))
                 .thenReturn(List.of(oldNeg1, oldNeg2, newPos));
-        when(coherenceRunNodeResultRepository.findByEvidenceNodeId(oldNeg1.getId())).thenReturn(
-                List.of(acceptedResult()));
-        when(coherenceRunNodeResultRepository.findByEvidenceNodeId(oldNeg2.getId())).thenReturn(
-                List.of(acceptedResult()));
-        when(coherenceRunNodeResultRepository.findByEvidenceNodeId(newPos.getId())).thenReturn(List.of());
+        when(coherenceRunNodeResultRepository.existsByEvidenceNodeIdAndAcceptedTrue(oldNeg1.getId())).thenReturn(true);
+        when(coherenceRunNodeResultRepository.existsByEvidenceNodeIdAndAcceptedTrue(oldNeg2.getId())).thenReturn(true);
+        when(coherenceRunNodeResultRepository.existsByEvidenceNodeIdAndAcceptedTrue(newPos.getId())).thenReturn(false);
 
         // This run's raw ECHO verdict: both the (already-entrenched) negative side and the new lone positive
         // node happened to come out accepted (e.g. the positive node had no other corroboration but the
@@ -228,36 +231,20 @@ class EvidenceCoherenceServiceTest {
 
     @Test
     void kaizenReliabilityUsesRealOutcomeGroundTruthWhenEnoughSamplesExist() {
-        List<KaizenProposalEntity> proposals = new ArrayList<>();
-        for (int i = 0; i < 8; i++) {
-            proposals.add(kaizenProposalEntity("STANDARDIZED"));
-        }
-        for (int i = 0; i < 2; i++) {
-            proposals.add(kaizenProposalEntity("REVERTED"));
-        }
-        when(kaizenProposalRepository.findAll()).thenReturn(proposals);
+        when(kaizenProposalRepository.countByStatus("STANDARDIZED")).thenReturn(8L);
+        when(kaizenProposalRepository.countByStatus("REVERTED")).thenReturn(2L);
 
         assertThat(service.sourceReliability("KAIZEN_PROPOSAL")).isEqualTo(0.8);
+        verify(kaizenProposalRepository, never()).findAll();
     }
 
     @Test
     void nonKaizenSourceFallsBackToCoherenceEngineAcceptanceHistoryWhenNoOutcomeDataExists() {
-        List<EvidenceNodeEntity> history = new ArrayList<>();
-        for (int i = 0; i < 7; i++) {
-            EvidenceNodeEntity n = node(UUID.randomUUID(), UUID.randomUUID(), null, null, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING, "x");
-            history.add(n);
-            when(coherenceRunNodeResultRepository.findByEvidenceNodeId(n.getId())).thenReturn(List.of(acceptedResult()));
-        }
-        for (int i = 0; i < 3; i++) {
-            EvidenceNodeEntity n = node(UUID.randomUUID(), UUID.randomUUID(), null, null, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING, "x");
-            history.add(n);
-            CoherenceRunNodeResultEntity rejected = new CoherenceRunNodeResultEntity();
-            rejected.setAccepted(false);
-            when(coherenceRunNodeResultRepository.findByEvidenceNodeId(n.getId())).thenReturn(List.of(rejected));
-        }
-        when(evidenceNodeRepository.findAll()).thenReturn(history);
+        when(coherenceRunNodeResultRepository.countDistinctEvaluatedNodesBySourceType("DEFECT_JOURNAL")).thenReturn(10L);
+        when(coherenceRunNodeResultRepository.countDistinctAcceptedNodesBySourceType("DEFECT_JOURNAL")).thenReturn(7L);
 
         assertThat(service.sourceReliability("DEFECT_JOURNAL")).isEqualTo(0.7);
+        verify(evidenceNodeRepository, never()).findAll();
     }
 
     private KaizenProposalEntity kaizenProposalEntity(String status) {
@@ -289,23 +276,9 @@ class EvidenceCoherenceServiceTest {
         b.setDefectJournalId(null);
         b.setCodeIntegrityFindingId(UUID.randomUUID());
 
-        // Force both source types to the SAME moderate (non-saturating) reliability via the coherence-
-        // history fallback tier: 7 accepted / 3 rejected each = 0.7, not 1.0, so the combination effect is
-        // actually visible instead of both individual and combined values saturating near the sigmoid ceiling.
-        List<EvidenceNodeEntity> allHistory = new ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            EvidenceNodeEntity h1 = node(UUID.randomUUID(), projectId, null, null, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING, "h1");
-            allHistory.add(h1);
-            when(coherenceRunNodeResultRepository.findByEvidenceNodeId(h1.getId()))
-                    .thenReturn(List.of(i < 7 ? acceptedResult() : rejectedResult()));
-            EvidenceNodeEntity h2 = node(UUID.randomUUID(), projectId, null, null, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING, "h2");
-            h2.setDefectJournalId(null);
-            h2.setCodeIntegrityFindingId(UUID.randomUUID());
-            allHistory.add(h2);
-            when(coherenceRunNodeResultRepository.findByEvidenceNodeId(h2.getId()))
-                    .thenReturn(List.of(i < 7 ? acceptedResult() : rejectedResult()));
-        }
-        when(evidenceNodeRepository.findAll()).thenReturn(allHistory);
+        // Both source types return 7 accepted / 10 evaluated = 0.7
+        when(coherenceRunNodeResultRepository.countDistinctEvaluatedNodesBySourceType(any())).thenReturn(10L);
+        when(coherenceRunNodeResultRepository.countDistinctAcceptedNodesBySourceType(any())).thenReturn(7L);
 
         double soloReliability = service.sourceReliability("DEFECT_JOURNAL"); // 0.7
 
@@ -313,6 +286,7 @@ class EvidenceCoherenceServiceTest {
 
         assertThat(confidences.get(a.getId())).isEqualTo(confidences.get(b.getId())); // same cluster, same polarity -> combined equally
         assertThat(confidences.get(a.getId())).isGreaterThan(soloReliability);
+        verify(evidenceNodeRepository, never()).findAll();
     }
 
     // --- runCoherenceCycle: persistence and the empty-window skip ---------------------------------------
@@ -348,5 +322,70 @@ class EvidenceCoherenceServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getTotalNodes()).isEqualTo(2);
         org.mockito.Mockito.verify(coherenceRunNodeResultRepository, org.mockito.Mockito.times(2)).save(any());
+    }
+
+    // --- FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK (D011 Perception failure) -----------------------------
+
+    @Test
+    void periodicCycleSkippedWhenScheduledCycleDisabled() {
+        ReflectionTestUtils.setField(service, "scheduledCycleEnabled", false);
+
+        service.periodicCoherenceCycle();
+
+        verify(projectRepository, never()).findByStatusOrderByCreatedAtDesc(any());
+        verify(evidenceNodeRepository, never()).findByProjectIdAndCreatedAtAfter(any(), any());
+    }
+
+    @Test
+    void periodicCycleRunsWhenScheduledCycleEnabled() {
+        ReflectionTestUtils.setField(service, "scheduledCycleEnabled", true);
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(any())).thenReturn(List.of());
+
+        service.periodicCoherenceCycle();
+
+        verify(projectRepository).findByStatusOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    void retentionPrunesOldRunsExceedingLimitForProject() {
+        UUID projectId = UUID.randomUUID();
+        ReflectionTestUtils.setField(service, "maxRunsPerProject", 2);
+
+        List<CoherenceRunEntity> runs = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            CoherenceRunEntity r = new CoherenceRunEntity();
+            r.setId(UUID.randomUUID());
+            r.setProjectId(projectId);
+            runs.add(r);
+        }
+        when(coherenceRunRepository.findByProjectIdOrderByRanAtDesc(projectId)).thenReturn(runs);
+
+        service.pruneOldRuns(projectId);
+
+        verify(coherenceRunRepository).deleteAll(argThat(iterable -> {
+            List<CoherenceRunEntity> deleted = (List<CoherenceRunEntity>) iterable;
+            return deleted.size() == 3 && deleted.equals(runs.subList(2, 5));
+        }));
+    }
+
+    @Test
+    void retentionPrunesGlobalRunsWhenProjectIdIsNull() {
+        ReflectionTestUtils.setField(service, "maxRunsPerProject", 1);
+
+        List<CoherenceRunEntity> runs = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            CoherenceRunEntity r = new CoherenceRunEntity();
+            r.setId(UUID.randomUUID());
+            r.setProjectId(null);
+            runs.add(r);
+        }
+        when(coherenceRunRepository.findByProjectIdIsNullOrderByRanAtDesc()).thenReturn(runs);
+
+        service.pruneOldRuns(null);
+
+        verify(coherenceRunRepository).deleteAll(argThat(iterable -> {
+            List<CoherenceRunEntity> deleted = (List<CoherenceRunEntity>) iterable;
+            return deleted.size() == 2 && deleted.equals(runs.subList(1, 3));
+        }));
     }
 }
