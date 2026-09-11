@@ -81,7 +81,19 @@
      - Расширены `ProjectFactoryServiceTest` (4/4 green) и `ProjectAdmissionLaw25aTest` (5/5 green) проверками сохранения `null` в обоих полях при пропуске или сбое внешнего заведения.
      - Итоговый запуск: 35/35 тестов green в контейнере Maven (BUILD SUCCESS).
 
-7. **Что берётся следующим:** Такт 15 — Пункт 14 очереди (`TargetContext` · пункт 43: отсутствие значения «не установлено», устранение подмены неизвестного контекста цели задачи).
+7. **Такт 15 закрыт (коммит `61873c9`, пуш в `main`):**
+   - **`TargetContext` (пункт 14 очереди, запись № 43 `FACTORY_MECHANISMS.md`, закон 2: Carrier isolation, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012 Policy contradiction, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002 Category error):**
+     - В перечисление `TargetContext` добавлено явное третье состояние `UNDETERMINED` и хелперы `isUndetermined()`, `isProductCodebase()`, `isOrchestratorSystem()`.
+     - `TaskEntity.targetContext` и `WishlistEntity.targetContext` инициализируются значением `UNDETERMINED`. Геттеры при `null` возвращают `UNDETERMINED` — ликвидировано тройное уничтожение «не установлено» (`null -> PRODUCT_CODEBASE`).
+     - Исторические строки базы данных в миграции V64 (`DEFAULT 'PRODUCT_CODEBASE'`) не переписываются (сохранение исторической истины).
+     - Все 20 мест создания `WishlistEntity` в 9 сервисах (`AutoMergeService`, `FalsificationCycleService`, `OpsAuditorService`, `ProjectFlowService`, `DesignSystemFalsificationService`, `DeliveredWorkJudgmentService`, `ProductLaunchabilityService`, `LaunchabilityConstraintService`, `JulesDispatchService`) и 12 мест создания `TaskEntity` явно объявляют целевой контекст по смыслу.
+     - `JulesDispatchService.dispatchInternal` и `ProjectFlowService.dispatchQueuedTasks` заслонены: задача с `null` или `UNDETERMINED` целевым контекстом отклоняется от внешней раздачи (`status = failed`, явный `closureReason = "Dispatch rejected: target context is undetermined"`, внешний Jules-сеанс не создаётся), защищая репозиторий заказчика от неконтролируемой мутации.
+     - `PlannedWorkRecoveryService.isMetaTask` усилен: проверяет `isCarrier() || targetContext == ORCHESTRATOR_SYSTEM` и строго отвергает задачи с `targetContext == PRODUCT_CODEBASE`, сохраняя совместимость для ненаследованных/исторических задач.
+     - Исправлены названия дефектов в javadoc тестов (`LeanValueTest` -> D012 Policy contradiction, `GitHubProjectFactoryClientTest` -> D007 Evidence gap).
+     - Создан заслоняющий тестовый класс `TargetContextTest` (4/4 green).
+     - Итоговый запуск: 133/133 тестов green в контейнере Maven (BUILD SUCCESS).
+
+8. **Что берётся следующим:** Такт 16 — Пункт 15 очереди (`EneikProductionApplication` / Flyway, пункт 49 `FACTORY_MECHANISMS.md`: сверка миграций отключена дважды — `repair()` перед каждой миграцией и `validate-on-migrate=false`).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов
