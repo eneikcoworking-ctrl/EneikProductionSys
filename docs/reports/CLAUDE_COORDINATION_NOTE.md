@@ -112,12 +112,29 @@
      - Добавлена настройка `coherence.max-runs-per-project=30`.
      - В `runCoherenceCycle` внедрён метод `pruneOldRuns(projectId)`: избыточные прогоны удаляются через `coherenceRunRepository.deleteAll(excess)` с автоматическим каскадным удалением дочерних строк результатов базой (`ON DELETE CASCADE`). Накопленные исторические данные в БД не удалялись необратимо через миграции.
      - В `CoherenceRunRepository` добавлен метод `findByProjectIdIsNullOrderByRanAtDesc()` для обрезки глобальных прогонов (`projectId == null`).
+     - *Примечание по семантике:* Обрезка до 30 прогонов меняет смысл предиката «хоть раз принят» (`everAccepted`) с «за всю историю» на «за последние 30 прогонов», если фоновый цикл будет включён.
    - **Остановка холостого расписания (Idling Halt):**
      - Добавлен флаг `coherence.scheduled-cycle-enabled: false` (по умолчанию `false`). При отсутствии читателя фоновый 2-часовой цикл `@Scheduled` не выполняет расчётов и не плодит мёртвые записи в БД.
      - В `AGY_ASKS.md` задан вопрос оператору/Клоду о целевом читающем действии фабрики (гейт в `FeatureService`, сигнал операционной реальности или консервация).
    - Заслонено в `EvidenceCoherenceServiceTest` (21/21 green, включая `never().findAll()` для обоих репозиториев, проверку обрезки по лимиту для проектных и глобальных прогонов, проверку остановки расписания).
 
-10. **Что берётся следующим:** Такт 18 — Пункт 17 очереди (`VerificationEvidenceGate` · пункт 45: подмена отсутствия проверок их успешностью).
+10. **Такт 18 закрыт (`FlowSpineService` / `ClientAcceptanceTraversalRepository`, пункт 17 очереди, `V100`, раздел XXIIк `FACTORY_MECHANISMS.md`, `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` / D007 Evidence gap, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009 Intent-behavior skew):**
+    - **Ликвидация подмены «построено» на «показано/принято»:**
+      - В `FlowSpineService.valueStatus` устранена категориальная ошибка, приравнивавшая состояние готовности кода `DELIVERED` (`completeFeatures >= totalFeatures`) к `client_value_delivered`.
+      - При отсутствии подтверждённых обходов заказчиком (`!input.hasClientAcceptanceTraversal()`) состояние `DELIVERED` возвращает строго `"scope_built_awaiting_acceptance"`.
+      - Значение `"client_value_delivered"` возвращается строго в финальном статусе `ACCEPTED` либо в `DELIVERED` при наличии хотя бы одного подтверждённого обхода заказчиком (`clientAcceptanceTraversals > 0`).
+      - Читатель `AcceptanceVerdictLayer` сохранён без изменений (он честно проверяет бриф, профиль корпуса и факт прохода именно заказчиком `walked_by="client"`).
+    - **Интеграция репозитория свидетельств приёмки:**
+      - В `ClientAcceptanceTraversalRepository` добавлен метод `countByProjectIdAndWalkedByIgnoreCase(UUID projectId, String walkedBy)`.
+      - В `FlowSpineService` внедрён `ClientAcceptanceTraversalRepository` (с 10-аргументным конструктором для обратной совместимости).
+      - В `StateInputs` добавлено поле `int clientAcceptanceTraversals`, хелпер `hasClientAcceptanceTraversal()` и 24-аргументный конструктор для сохранения совместимости существующих тестов.
+    - **Заслоняющие тесты:**
+      - `FlowSpineServiceTest.deliveredRequiresAllFeaturesComplete`: ожидает `"scope_built_awaiting_acceptance"` вместо `"client_value_delivered"`.
+      - Добавлен тест `deliveredStateWithZeroClientAcceptanceTraversalsDoesNotClaimClientValueDelivered`: проверяет оба исхода `DELIVERED` (без обходов -> `scope_built_awaiting_acceptance`, с обходом заказчика -> `client_value_delivered`) и `ACCEPTED` -> `client_value_delivered`.
+      - Успешно пройдены 31 тест в `FlowSpineServiceTest`, `FailingReviewCompositionTest`, `ReviewArtifactInvariantTest` и 13 тестов в `AcceptanceVerdictLayerTest`, `OperationalFlowCoreServiceTest`.
+    - **Открытый вопрос в `AGY_ASKS.md`:** Каким каналом свидетельства прохода заказчика заносятся в систему (внешний webhook/API, агентский сеанс на живом инстансе или операторский шлюз).
+
+11. **Что берётся следующим:** Такт 19 — Пункт 18 очереди (`GeminiContextCacheManager` · раздел XLII: снять java-овский кэш как дублирующий питоновский).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

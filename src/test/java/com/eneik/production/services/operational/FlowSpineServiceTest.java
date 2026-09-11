@@ -104,8 +104,30 @@ class FlowSpineServiceTest {
                 0, 0, 0, 3, 0, 0, 5, 0, 2, 2, 6, 6, true, "ok", false);
 
         assertEquals("DELIVERED", FlowSpineService.decideState(input));
-        assertEquals("client_value_delivered", FlowSpineService.valueStatus("DELIVERED", input));
+        assertEquals("scope_built_awaiting_acceptance", FlowSpineService.valueStatus("DELIVERED", input));
         assertFalse(FlowSpineService.isBlockingState("DELIVERED"));
+    }
+
+    @Test
+    void deliveredStateWithZeroClientAcceptanceTraversalsDoesNotClaimClientValueDelivered() {
+        // NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT (D007 Evidence gap)
+        // DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009 Intent-behavior skew)
+        // Built scope is not client acceptance. Without witnessed client acceptance traversal,
+        // DELIVERED yields scope_built_awaiting_acceptance.
+        FlowSpineService.StateInputs unaccepted = new FlowSpineService.StateInputs(
+                ProjectStatus.active, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 3, 0, 0, "", 0, 5, 0, 2, 2, 6, 6, true, "ok", false, 0);
+        assertEquals("DELIVERED", FlowSpineService.decideState(unaccepted));
+        assertEquals("scope_built_awaiting_acceptance", FlowSpineService.valueStatus("DELIVERED", unaccepted));
+
+        FlowSpineService.StateInputs clientAccepted = new FlowSpineService.StateInputs(
+                ProjectStatus.active, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 3, 0, 0, "", 0, 5, 0, 2, 2, 6, 6, true, "ok", false, 1);
+        assertEquals("DELIVERED", FlowSpineService.decideState(clientAccepted));
+        assertEquals("client_value_delivered", FlowSpineService.valueStatus("DELIVERED", clientAccepted));
+
+        // ACCEPTED state always yields client_value_delivered
+        assertEquals("client_value_delivered", FlowSpineService.valueStatus("ACCEPTED", unaccepted));
     }
 
     @Test

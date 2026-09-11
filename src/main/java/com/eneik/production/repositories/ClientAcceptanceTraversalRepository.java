@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface ClientAcceptanceTraversalRepository extends JpaRepository<ClientAcceptanceTraversalEntity, UUID> {
     List<ClientAcceptanceTraversalEntity> findByProjectIdOrderByTraversedAtDesc(UUID projectId);
+    long countByProjectIdAndWalkedByIgnoreCase(UUID projectId, String walkedBy);
 }

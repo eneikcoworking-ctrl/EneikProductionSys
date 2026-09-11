@@ -456,3 +456,28 @@
 
 почему спрашиваю: Согласно корпусному паттерну `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011 Perception failure), сигнал имеет смысл только тогда, когда он меняет последующее действие и предотвращает ошибочное действие («Show how the signal changes the next action and prevents a mistaken action»). Без явного внешнего читателя сигнал замкнут на самого себя.
 
+## 2026-09-11 Antigravity: Такт 18 — V100 (Client Acceptance Traversals vs FlowSpine Delivery Status)
+
+### Что сделано:
+1. **Демаркация «построено» vs «показано/принято» (`NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` / D007 Evidence gap, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009 Intent-behavior skew):**
+   - Устранена категориальная ошибка в `FlowSpineService.valueStatus`: при переходе в состояние `DELIVERED` по критерию готовности кода (`completeFeatures >= totalFeatures`), фабрика больше не присваивает статус `client_value_delivered` авансом.
+   - Если число подтверждённых обходов заказчиком равно 0 (`!input.hasClientAcceptanceTraversal()`), `valueStatus` возвращает строго `"scope_built_awaiting_acceptance"`.
+   - Значение `"client_value_delivered"` возвращается строго в статусе `ACCEPTED` либо в статусе `DELIVERED` при наличии хотя бы одного подтверждённого обхода заказчиком (`clientAcceptanceTraversals > 0`).
+2. **Интеграция с ClientAcceptanceTraversalRepository:**
+   - В `ClientAcceptanceTraversalRepository` добавлен метод `countByProjectIdAndWalkedByIgnoreCase(UUID projectId, String walkedBy)`.
+   - В `FlowSpineService` внедрён `ClientAcceptanceTraversalRepository` (с сохранением 10-аргументного конструктора для обратной совместимости).
+   - В `StateInputs` добавлено поле `int clientAcceptanceTraversals`, хелпер `hasClientAcceptanceTraversal()` и 24-аргументный конструктор для обратной совместимости с существующими тестами.
+   - Читатель `AcceptanceVerdictLayer` сохранён без изменений: он строго проверяет бриф, профиль корпуса и факт прохода именно заказчиком (`walked_by="client"`).
+3. **Заслоняющие тесты:**
+   - В `FlowSpineServiceTest.deliveredRequiresAllFeaturesComplete` подтверждено возвращение `scope_built_awaiting_acceptance`.
+   - Добавлен тест `deliveredStateWithZeroClientAcceptanceTraversalsDoesNotClaimClientValueDelivered`, проверяющий оба исхода `DELIVERED` (без обходов -> `scope_built_awaiting_acceptance`, с обходом заказчика -> `client_value_delivered`) и статус `ACCEPTED`.
+   - Все 31 тест в `FlowSpineServiceTest`, `FailingReviewCompositionTest`, `ReviewArtifactInvariantTest` green; все 13 тестов в `AcceptanceVerdictLayerTest` и `OperationalFlowCoreServiceTest` green.
+
+### Вопрос по каналу поступления свидетельств приёмки (V100, раздел XXIIк):
+**Вопрос:** Каким образом внешнее свидетельство прохода заказчика должно попадать в таблицу `client_acceptance_traversals` (где до сих пор 0 записей при 2309 суждениях о доставке в сутки)?
+Варианты:
+  1. **Внешний Webhook / REST эндпоинт приёмки:** Завести публичный или аутентифицированный эндпоинт `POST /api/projects/{id}/acceptance-traversals` (с полями `profileId`, `actor`, `link`, `evidence`, `instanceUrl`), вызываемый клиентским демо-стендом, порталом заказчика или внешним UI.
+  2. **Интерактивный агентский сеанс с меткой клиента:** В `ProductLaunchabilityService` / сессиях прогона пользовательских путей на развёрнутом инстансе регистрировать обход только при явном подтверждении со стороны внешнего интерфейса заказчика.
+  3. **Операторский шлюз подписания:** Ручная регистрация обхода оператором фабрики при получении подписанного акта приёмки от заказчика.
+
+

@@ -10,6 +10,7 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.ClientAcceptanceTraversalRepository;
 import com.eneik.production.repositories.FlowSpineEventRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.PrReviewRepository;
@@ -88,6 +89,7 @@ public class FlowSpineService {
     private final SystemStatusService systemStatusService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final LeverPromotionService leverPromotionService;
+    private final ClientAcceptanceTraversalRepository traversalRepository;
 
     private static final Logger log = LoggerFactory.getLogger(FlowSpineService.class);
 
@@ -101,6 +103,24 @@ public class FlowSpineService {
                             SystemStatusService systemStatusService,
                             MLPredictionServiceClient mlPredictionServiceClient,
                             LeverPromotionService leverPromotionService) {
+        this(projectRepository, taskRepository, wishlistRepository, julesSessionRepository,
+                prReviewRepository, flowSpineEventRepository, readinessService, systemStatusService,
+                mlPredictionServiceClient, leverPromotionService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public FlowSpineService(ProjectRepository projectRepository,
+                            TaskRepository taskRepository,
+                            WishlistRepository wishlistRepository,
+                            JulesSessionRepository julesSessionRepository,
+                            PrReviewRepository prReviewRepository,
+                            FlowSpineEventRepository flowSpineEventRepository,
+                            ClientDeliverableReadinessService readinessService,
+                            SystemStatusService systemStatusService,
+                            MLPredictionServiceClient mlPredictionServiceClient,
+                            LeverPromotionService leverPromotionService,
+                            @org.springframework.beans.factory.annotation.Autowired(required = false)
+                            ClientAcceptanceTraversalRepository traversalRepository) {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.wishlistRepository = wishlistRepository;
@@ -111,6 +131,7 @@ public class FlowSpineService {
         this.systemStatusService = systemStatusService;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.leverPromotionService = leverPromotionService;
+        this.traversalRepository = traversalRepository;
     }
 
     @Transactional(readOnly = true)
@@ -169,7 +190,7 @@ public class FlowSpineService {
         String systemStatus = systemStallStatus(systemStatusService.getStatus(projectId));
         boolean duplicateContent = duplicateContent(tasks);
 
-        StateInputs inputs = inputs(project.getStatus(), tasks, wishlist, sessions, reviews, readiness,
+        StateInputs inputs = inputs(projectId, project.getStatus(), tasks, wishlist, sessions, reviews, readiness,
                 systemStatus, duplicateContent);
         String currentState = decideState(inputs);
         FlowSpineDto.Transition next = nextTransition(currentState, inputs);
@@ -268,7 +289,10 @@ public class FlowSpineService {
 
     static String valueStatus(String state, StateInputs input) {
         return switch (state) {
-            case "DELIVERED", "ACCEPTED" -> "client_value_delivered";
+            case "ACCEPTED" -> "client_value_delivered";
+            case "DELIVERED" -> (input != null && input.hasClientAcceptanceTraversal())
+                    ? "client_value_delivered"
+                    : "scope_built_awaiting_acceptance";
             case "UNDER_REVIEW", "VERIFYING_DELIVERY" -> "value_evidence_pending";
             case "QUEUED", "IMPLEMENTING", "DECOMPOSING" -> "value_in_progress";
             case "NO_SCOPE", "IDLE_NO_ACTIONABLE_WORK" -> "no_current_value_flow";
@@ -362,6 +386,18 @@ public class FlowSpineService {
     }
 
     private StateInputs inputs(ProjectStatus projectStatus,
+                               List<TaskEntity> tasks,
+                               List<WishlistEntity> wishlist,
+                               List<JulesSessionEntity> sessions,
+                               List<PrReviewEntity> reviews,
+                               ClientDeliverableReadinessService.Readiness readiness,
+                               String systemStatus,
+                               boolean duplicateContent) {
+        return inputs(null, projectStatus, tasks, wishlist, sessions, reviews, readiness, systemStatus, duplicateContent);
+    }
+
+    private StateInputs inputs(UUID projectId,
+                               ProjectStatus projectStatus,
                                List<TaskEntity> tasks,
                                List<WishlistEntity> wishlist,
                                List<JulesSessionEntity> sessions,
@@ -574,13 +610,17 @@ public class FlowSpineService {
         // lines in thirty minutes about a fact that cannot change - and it ended by asking for a human
         // reading, which is a branch this factory no longer has (operator, same day).
 
+        int clientAcceptanceTraversals = traversalRepository != null && projectId != null
+                ? (int) traversalRepository.countByProjectIdAndWalkedByIgnoreCase(projectId, "client")
+                : 0;
+
         return new StateInputs(
                 projectStatus, queued, active, review, done, failed, blocked,
                 pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews,
                 reviewTasksWithoutArtifact, failingReviewComposition, failingReviews,
                 qualityGatePassed, qualityGateFailed, readiness.totalFeatures(), readiness.completeFeatures(),
                 readiness.totalDeliverables(), readiness.mergedDeliverables(), readiness.decompositionComplete(),
-                systemStatus, duplicateContent);
+                systemStatus, duplicateContent, clientAcceptanceTraversals);
     }
 
     private FlowSpineDto.Transition nextTransition(String state, StateInputs input) {
@@ -1183,8 +1223,46 @@ public class FlowSpineService {
             int mergedDeliverables,
             boolean decompositionComplete,
             String systemStatus,
-            boolean duplicateContentDetected
+            boolean duplicateContentDetected,
+            int clientAcceptanceTraversals
     ) {
+        public StateInputs(
+                ProjectStatus projectStatus,
+                long queuedTasks,
+                long activeTasks,
+                long reviewTasks,
+                long doneTasks,
+                long failedTasks,
+                long blockedTasks,
+                long pendingWishlist,
+                long compilingWishlist,
+                long openSessions,
+                int mergedReviews,
+                int openReviews,
+                long reviewTasksWithoutArtifact,
+                String failingReviewComposition,
+                int failingReviews,
+                int qualityGatePassed,
+                int qualityGateFailed,
+                int totalFeatures,
+                int completeFeatures,
+                int totalDeliverables,
+                int mergedDeliverables,
+                boolean decompositionComplete,
+                String systemStatus,
+                boolean duplicateContentDetected
+        ) {
+            this(projectStatus, queuedTasks, activeTasks, reviewTasks, doneTasks, failedTasks, blockedTasks,
+                    pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews,
+                    reviewTasksWithoutArtifact, failingReviewComposition, failingReviews,
+                    qualityGatePassed, qualityGateFailed, totalFeatures, completeFeatures,
+                    totalDeliverables, mergedDeliverables, decompositionComplete,
+                    systemStatus, duplicateContentDetected, 0);
+        }
+
+        public boolean hasClientAcceptanceTraversal() {
+            return clientAcceptanceTraversals > 0;
+        }
     }
     /**
      * Work that finished and was never asked whether it delivered - the part of "never asked" that names a
