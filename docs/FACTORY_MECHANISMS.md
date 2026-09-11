@@ -2295,13 +2295,17 @@ account has free capacity right now`.
 неотличимо от несуществующей сущности.
 
 *Что сделано точно:*
-1. **Институциональный факт (`INSTITUTIONAL_FACT_REGISTER` / D007):** любое изменение `enabled` или `status`
-   в `AccountController` порождает проверяемую запись в `DefectJournalEntity` с фиксацией правила
-   (`ACCOUNT_DECOMMISSION_RULE`, `ACCOUNT_LIFECYCLE_ENABLEMENT_RULE`, `ACCOUNT_OPERATIONAL_STATUS_RULE`),
-   причины, старого/нового состояния и времени.
+1. **Институциональный факт и разделение родов (`INSTITUTIONAL_FACT_REGISTER` / D007, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):**
+   любое изменение `enabled` или `status` в `AccountController`, а также нормализация противоречивых сущностей
+   в `AccountHealthService` порождает институциональную запись аудита с категорией `INSTITUTIONAL_AUDIT`, уровнем
+   `INFO` и фиксацией правила (`ACCOUNT_DECOMMISSION_RULE`, `ACCOUNT_LIFECYCLE_ENABLEMENT_RULE`,
+   `ACCOUNT_OPERATIONAL_STATUS_RULE`, `ACCOUNT_LIFECYCLE_NORMALIZATION_RULE`), причины и времени.
+   Записи аудита институциональных фактов исключены из выборок дефектов в `DefectJournalService` и
+   `OperationalTruthService`, предотвращая категориальное загрязнение предложений Кайдзен и штрафов доверия.
 2. **Единый жизненный цикл (`ACTUAL_OBJECT_REGISTER` / D002):** списание (`decommissioned`) на уровне сущности
    и контроллера принудительно выставляет `enabled = false`. Включение списанного аккаунта запрещено (HTTP 400 /
-   `IllegalStateException`). Исторические противоречивые строки в БД нормализуются в `AccountHealthService`.
+   `IllegalStateException`). Исторические противоречивые строки в БД нормализуются через сущность с созданием
+   записи аудита на каждый переход, выполняясь строго однократно без повторного холостого шума на последующих тактах.
 3. **Видимость выключенных (`TRUTH_STATUS_TABLE` / D012):** в `AccountHealthService.recoverEligibleAccounts`
    выключенные операционные аккаунты явно инспектируются; при нуле кандидатов выводится факт:
    `"zero recovery candidates in pool; N operational account(s) are currently disabled"`. В детекторах застоя
@@ -2309,17 +2313,21 @@ account has free capacity right now`.
    рабочие и явно отображаются в телеметрии.
 4. **Выход из поглощающего состояния (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):** при выключении
    дольше 24 часов эмиттится сигнал «предлагается к возврату в пул оператором» без автоматического списания.
-5. **Детекция монополии по Чёрчу (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):** порог монополии выводится из
-   размера живого пула $N$ как $(N-1)/N$ с отсечками в диапазоне $[0.70, 0.90]$. При доминировании одного аккаунта
-   выводится предупреждение и пишется дефект `ACCOUNT_MONOPOLY_CONCENTRATION`.
+5. **Детекция монополии по Чёрчу из распределения (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):** порог монополии
+   выводится из наблюдаемого биномиального распределения сессий: $T = p_0 + 3\sigma = 1/N + 3\sqrt{\frac{p_0(1-p_0)}{S}}$.
+   На живом пуле из 7 аккаунтов и 38 сессий порог составляет ~31.3%, что надежно отлавливает концентрацию 66% (25 из 38)
+   на одном аккаунте. Запись дефекта монополии дедуплицируется: при сохранении монополии на последующих обходах повторные
+   записи в журнал подавляются (урок предписания 8).
 6. **Заслон:** при всех выключенных аккаунтах `dispatchToGeneralPool` фиксирует статус и лог
    `"All operational Jules accounts are disabled (N disabled)"`, строго без слова «ёмкость» / «capacity».
 
 *Заслоны в тестах:*
-- `AccountLifecycleInvariantTest`: фиксация институционального аудита при смене состояния, взаимное исключение `decommissioned` и `enabled`.
+- `AccountLifecycleInvariantTest`: фиксация институционального аудита (`INSTITUTIONAL_AUDIT`, `INFO`), взаимное исключение `decommissioned` и `enabled`.
+- `DefectJournalServiceTest`: подтверждает, что институциональный аудит не попадает в выборку дефектов для Кайдзен и Парето.
+- `OperationalTruthServiceTest`: подтверждает, что институциональный аудит не снижает оценку доверия и не отображается в списке дефектов.
 - `ProjectFlowServiceLaw1JulesDispatchTest.falsificationHarness_allAccountsDisabledReportsDisabledStatusWithoutCapacityWord`:
   опровергает появление слова «ёмкость» / «capacity» при всех выключенных аккаунтах.
-- `AccountHealthServiceTest`: видимость выключенных при нуле кандидатов, вывод порога монополии по Чёрчу, реакция на монополию.
+- `AccountHealthServiceTest`: видимость выключенных при нуле кандидатов, вывод порога монополии по Чёрчу через биномиальную дисперсию, дедупликация монополии между последовательными обходами, однократная нормализация сущностей с аудитом.
 - `BottleneckDetectionServiceTest`: выключенные аккаунты не маскируются под рабочие и входят в диагностику затора.
 
 ---

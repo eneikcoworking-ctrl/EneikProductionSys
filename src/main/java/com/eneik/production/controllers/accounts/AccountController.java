@@ -132,8 +132,8 @@ public class AccountController {
                         String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Rule: %s. Reason: %s",
                                 account.getName(), wasStatus, account.getStatus(), wasEnabled, account.isEnabled(), rule, reason);
                         defectJournalRepository.save(new DefectJournalEntity(
-                                null, null, null, "MEDIUM", "ACCOUNT_LIFECYCLE", account.getName(),
-                                "ACCOUNT_STATE_TRANSITION",
+                                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", account.getName(),
+                                rule,
                                 description,
                                 account.isEnabled() ? 1.0 : 0.0));
                         log.info("Institutional Fact Audit: {}", description);
@@ -172,8 +172,8 @@ public class AccountController {
                         String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Rule: %s. Reason: %s",
                                 account.getName(), wasStatus, account.getStatus(), wasEnabled, account.isEnabled(), rule, "Status updated via /status endpoint");
                         defectJournalRepository.save(new DefectJournalEntity(
-                                null, null, null, "MEDIUM", "ACCOUNT_LIFECYCLE", account.getName(),
-                                "ACCOUNT_STATE_TRANSITION",
+                                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", account.getName(),
+                                rule,
                                 description,
                                 account.isEnabled() ? 1.0 : 0.0));
                         log.info("Institutional Fact Audit: {}", description);

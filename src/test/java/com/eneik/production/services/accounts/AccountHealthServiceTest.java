@@ -18,11 +18,14 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -408,23 +411,26 @@ class AccountHealthServiceTest {
     void derivedMonopolyCutoffObeysAlonzoChurchSpecification() {
         // Alonzo Church derived cutoff (ALONZO_CHERCH_21_DERIVED_CUTOFF / D010):
         // N <= 1: 1.0 (degenerate pool, no monopoly possible)
+        assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(1, 20), 1e-6);
+        assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(0, 20), 1e-6);
+
+        // Insufficient sample (S < N): 1.0 (declared bound when variance cannot be distinguished)
+        assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(4, 2), 1e-6);
+        assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(4, 0), 1e-6);
+
+        // N = 4, S = 20: p0 = 0.25, variance = 0.25 * 0.75 / 20 = 0.009375, sigma = 0.096825, cutoff = 0.25 + 3*sigma ≈ 0.54047
+        double cutoffN4S20 = AccountHealthService.derivedMonopolyCutoff(4, 20);
+        assertEquals(0.25 + 3.0 * Math.sqrt((0.25 * 0.75) / 20.0), cutoffN4S20, 1e-6);
+        assertTrue(cutoffN4S20 > 0.50 && cutoffN4S20 < 0.60);
+
+        // Live system check: N = 7, S = 38: p0 = 1/7 ≈ 0.142857, sigma = sqrt((6/49)/38) ≈ 0.056767
+        // cutoff = 0.142857 + 3 * 0.056767 ≈ 0.313158 (~31.3%)
+        double cutoffN7S38 = AccountHealthService.derivedMonopolyCutoff(7, 38);
+        assertEquals((1.0 / 7.0) + 3.0 * Math.sqrt(((1.0 / 7.0) * (6.0 / 7.0)) / 38.0), cutoffN7S38, 1e-6);
+        assertTrue(cutoffN7S38 > 0.30 && cutoffN7S38 < 0.35);
+
+        // Degenerate overload
         assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(1), 1e-6);
-        assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(0), 1e-6);
-
-        // N = 2: (2-1)/2 = 0.50 -> clamped to declared floor 0.70
-        assertEquals(0.70, AccountHealthService.derivedMonopolyCutoff(2), 1e-6);
-
-        // N = 3: (3-1)/3 = 0.667 -> clamped to declared floor 0.70
-        assertEquals(0.70, AccountHealthService.derivedMonopolyCutoff(3), 1e-6);
-
-        // N = 4: (4-1)/4 = 0.75
-        assertEquals(0.75, AccountHealthService.derivedMonopolyCutoff(4), 1e-6);
-
-        // N = 7: (7-1)/7 = 0.85714...
-        assertEquals(6.0 / 7.0, AccountHealthService.derivedMonopolyCutoff(7), 1e-6);
-
-        // N = 22: (22-1)/22 = 0.9545 -> clamped to declared ceiling 0.90
-        assertEquals(0.90, AccountHealthService.derivedMonopolyCutoff(22), 1e-6);
     }
 
     @Test
@@ -437,11 +443,12 @@ class AccountHealthServiceTest {
         when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
         when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
         when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
         when(accountRepository.countLiveAccounts()).thenReturn(4L);
         when(accountRepository.findById(acc1)).thenReturn(Optional.of(entity1));
 
         // Total 20 sessions: acc1 has 18 sessions (90%), acc2 has 2 sessions (10%).
-        // Pool of 4 live accounts -> derived cutoff is (4-1)/4 = 0.75 (75%). 90% >= 75% -> monopoly detected!
+        // Pool of 4 live accounts, 20 sessions -> derived cutoff is ~54.0%. 90% >= 54% -> monopoly detected!
         List<Object[]> sessionCounts = new ArrayList<>();
         sessionCounts.add(new Object[]{acc1, 18L});
         sessionCounts.add(new Object[]{acc2, 2L});
@@ -464,10 +471,11 @@ class AccountHealthServiceTest {
         when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
         when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
         when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
         when(accountRepository.countLiveAccounts()).thenReturn(4L);
 
         // Total 20 sessions: acc1 has 10 (50%), acc2 has 10 (50%).
-        // Pool of 4 live accounts -> derived cutoff is 0.75. 50% < 75% -> no monopoly!
+        // Pool of 4 live accounts -> derived cutoff is ~54%. 50% < 54% -> no monopoly!
         List<Object[]> sessionCounts = new ArrayList<>();
         sessionCounts.add(new Object[]{acc1, 10L});
         sessionCounts.add(new Object[]{acc2, 10L});
@@ -477,5 +485,80 @@ class AccountHealthServiceTest {
 
         verify(defectJournalRepository, never()).save(argThat(defect ->
                 "ACCOUNT_MONOPOLY_CONCENTRATION".equals(defect.getDefectType())));
+    }
+
+    @Test
+    void monopolyDetectionDeduplicatesAcrossConsecutiveSweeps() {
+        UUID acc1 = UUID.randomUUID();
+        UUID acc2 = UUID.randomUUID();
+        AccountEntity entity1 = account("acc-monopoly-dedup", AccountStatus.idle, 0, Instant.now());
+        entity1.setId(acc1);
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.countLiveAccounts()).thenReturn(4L);
+        when(accountRepository.findById(acc1)).thenReturn(Optional.of(entity1));
+
+        List<Object[]> sessionCounts = new ArrayList<>();
+        sessionCounts.add(new Object[]{acc1, 18L});
+        sessionCounts.add(new Object[]{acc2, 2L});
+        when(julesSessionRepository.countDispatchedSessionsByAccountSince(any())).thenReturn(sessionCounts);
+
+        // Sweep 1: monopoly is detected -> 1 defect record saved
+        service.recoverEligibleAccounts();
+        verify(defectJournalRepository, times(1)).save(argThat(defect ->
+                "ACCOUNT_MONOPOLY_CONCENTRATION".equals(defect.getDefectType())));
+
+        // Sweep 2: identical monopoly persists -> deduplicated, 0 new defect records saved!
+        service.recoverEligibleAccounts();
+        verify(defectJournalRepository, times(1)).save(argThat(defect ->
+                "ACCOUNT_MONOPOLY_CONCENTRATION".equals(defect.getDefectType())));
+    }
+
+    @Test
+    void normalizationNormalizesContradictoryAccountsAndEmitsAuditRecordOnce() {
+        AccountEntity contradictoryAccount = account("contradictory-acc", AccountStatus.idle, 0, Instant.now());
+        // Set contradictory state via reflection / mock
+        contradictoryAccount.setStatus(AccountStatus.decommissioned);
+        // Force enabled = true to simulate unnormalized DB row
+        try {
+            var field = AccountEntity.class.getDeclaredField("enabled");
+            field.setAccessible(true);
+            field.setBoolean(contradictoryAccount, true);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        assertTrue(contradictoryAccount.isEnabled());
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        // First pass returns contradictory account, second pass returns empty
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned))
+                .thenReturn(List.of(contradictoryAccount))
+                .thenReturn(Collections.emptyList());
+
+        // Sweep 1
+        service.recoverEligibleAccounts();
+        assertFalse(contradictoryAccount.isEnabled());
+        verify(accountRepository).save(contradictoryAccount);
+        verify(defectJournalRepository).save(argThat(d ->
+                "INSTITUTIONAL_AUDIT".equals(d.getCategory())
+                        && "INFO".equals(d.getSeverity())
+                        && "ACCOUNT_LIFECYCLE_NORMALIZATION_RULE".equals(d.getDefectType())
+                        && "contradictory-acc".equals(d.getSourceComponent())));
+
+        // Sweep 2: no more contradictory accounts -> no further saves
+        reset(accountRepository, defectJournalRepository);
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+
+        service.recoverEligibleAccounts();
+        verify(accountRepository, never()).save(any());
+        verify(defectJournalRepository, never()).save(any());
     }
 }

@@ -312,9 +312,4 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     long countByEnabledTrueAndStatusNot(AccountStatus status);
 
     Optional<AccountEntity> findByName(String name);
-
-    @Modifying
-    @Transactional
-    @Query("UPDATE AccountEntity a SET a.enabled = false WHERE a.status = com.eneik.production.models.persistence.AccountStatus.decommissioned AND a.enabled = true")
-    int normalizeDecommissionedAccounts();
 }

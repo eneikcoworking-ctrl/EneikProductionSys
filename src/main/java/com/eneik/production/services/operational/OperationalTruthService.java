@@ -92,7 +92,10 @@ public class OperationalTruthService {
         List<JulesSessionEntity> sessions = sessionsForTasks(tasks);
         List<PrReviewEntity> reviews = reviewsForSessions(sessions);
         List<DefectJournalEntity> recentDefects = defectJournalRepository.findByProjectIdAndCreatedAtAfter(
-                projectId, Instant.now().minus(24, ChronoUnit.HOURS));
+                projectId, Instant.now().minus(24, ChronoUnit.HOURS))
+                .stream()
+                .filter(d -> !com.eneik.production.kaizen.service.DefectJournalService.NON_DEFECT_AUDIT_CATEGORIES.contains(d.getCategory()))
+                .toList();
 
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(projectId);
         String systemStatus = systemStallStatus(systemStatusService.getStatus(projectId));

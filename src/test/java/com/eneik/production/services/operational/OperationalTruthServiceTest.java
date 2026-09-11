@@ -630,4 +630,47 @@ class OperationalTruthServiceTest {
         assertTrue(dto.trust().warnings().stream().anyMatch(w -> w.contains("1 task(s) have failed quality-gate evidence.")));
         assertFalse(dto.trust().warnings().stream().anyMatch(w -> w.contains("unapplied")));
     }
+
+    @Test
+    void institutionalAuditRecordsDoNotPenalizeTrustOrCountAsDefects() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var flow = mock(com.eneik.production.services.ProjectFlowService.class);
+
+        var service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus, flow);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+
+        // Return an institutional audit record from defectJournalRepository
+        var auditRecord = new com.eneik.production.kaizen.model.DefectJournalEntity(
+                projectId, null, null, "INFO", "INSTITUTIONAL_AUDIT", "eneikdru",
+                "ACCOUNT_LIFECYCLE_ENABLEMENT_RULE", "Account enabled toggled", 1.0);
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of(auditRecord));
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+
+        // Audit record must be excluded from defects and trust warnings
+        assertEquals(0, dto.defects().recentDefects());
+        assertTrue(dto.defects().items().isEmpty());
+        assertFalse(dto.trust().warnings().stream().anyMatch(w -> w.contains("defect-journal item(s)")));
+    }
 }

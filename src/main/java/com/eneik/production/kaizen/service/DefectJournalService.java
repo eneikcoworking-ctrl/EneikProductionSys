@@ -67,11 +67,34 @@ public class DefectJournalService {
         return saved;
     }
 
+    /**
+     * Categories reserved for institutional fact / audit records rather than system defects.
+     * Readers of defects (Kaizen, Pareto, OperationalTrust) exclude these to prevent category errors (GILBERT_RAYL_03 / D002).
+     */
+    public static final java.util.Set<String> NON_DEFECT_AUDIT_CATEGORIES = java.util.Set.of(
+            "INSTITUTIONAL_AUDIT",
+            "ACCOUNT_LIFECYCLE_AUDIT",
+            "AUDIT_TRAIL"
+    );
+
+    public DefectJournalEntity recordInstitutionalAudit(String sourceComponent, String ruleName,
+                                                        String description, Double metricValue) {
+        DefectJournalEntity audit = new DefectJournalEntity(
+                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", sourceComponent,
+                ruleName, description, metricValue
+        );
+        DefectJournalEntity saved = defectJournalRepository.save(audit);
+        log.info("[INSTITUTIONAL-AUDIT] Rule '{}' recorded for '{}': {}", ruleName, sourceComponent, description);
+        return saved;
+    }
+
     public List<DefectJournalEntity> getDefectsInWindow(UUID projectId, int windowHours) {
         Instant fromTime = Instant.now().minus(windowHours, ChronoUnit.HOURS);
-        if (projectId != null) {
-            return defectJournalRepository.findByProjectIdAndCreatedAtAfter(projectId, fromTime);
-        }
-        return defectJournalRepository.findByCreatedAtAfter(fromTime);
+        List<DefectJournalEntity> raw = (projectId != null)
+                ? defectJournalRepository.findByProjectIdAndCreatedAtAfter(projectId, fromTime)
+                : defectJournalRepository.findByCreatedAtAfter(fromTime);
+        return raw.stream()
+                .filter(d -> !NON_DEFECT_AUDIT_CATEGORIES.contains(d.getCategory()))
+                .toList();
     }
 }

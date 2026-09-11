@@ -543,28 +543,33 @@
   - `ClientRuntimeObservabilityServiceTest`: 29/29 green.
   - Регрессия: 57/57 green.
 
-**Закрыто (Такт 29):** Предписание 23 (`FACTORY_MECHANISMS.md`, раздел XVI §23) — единый жизненный цикл аккаунтов, институциональный факт с аудитом, деривативный порог монополии и заслон против подмены «выключен» на «ёмкость»:
-- **Реестр институциональных фактов (`INSTITUTIONAL_FACT_REGISTER` / D007 Evidence gap):**
-  - Любая мутация флага `enabled` или статуса аккаунта через `PATCH /api/accounts/{id}` в `AccountController` порождает неизменяемую институциональную запись аудита в `DefectJournalEntity` с типом `ACCOUNT_STATE_TRANSITION`, указанием правила (`ACCOUNT_DECOMMISSION_RULE`, `ACCOUNT_LIFECYCLE_ENABLEMENT_RULE`, `ACCOUNT_OPERATIONAL_STATUS_RULE`), старого и нового значений, причины и временной метки.
-- **Единый жизненный цикл и разрешение противоречий (`ACTUAL_OBJECT_REGISTER` / D002, `TRUTH_STATUS_TABLE` / D012):**
+**Закрыто (Такт 29):** Предписание 23 (`FACTORY_MECHANISMS.md`, раздел XVI §23) — единый жизненный цикл аккаунтов, институциональный факт с аудитом, разделение родов (аудит не дефект), биномиальный деривативный порог монополии и заслон против подмены «выключен» на «ёмкость»:
+- **Реестр институциональных фактов и ликвидация категориальной ошибки (`INSTITUTIONAL_FACT_REGISTER` / D007, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):**
+  - Любая мутация флага `enabled` или статуса аккаунта через `PATCH /api/accounts/{id}` в `AccountController` порождает институциональную запись аудита с категорией `INSTITUTIONAL_AUDIT`, уровнем `INFO` и указанием правила (`ACCOUNT_DECOMMISSION_RULE`, `ACCOUNT_LIFECYCLE_ENABLEMENT_RULE`, `ACCOUNT_OPERATIONAL_STATUS_RULE`), старого и нового значений, причины и времени.
+  - В `DefectJournalService.getDefectsInWindow` и `OperationalTruthService.build`: не-дефектные категории аудита (`INSTITUTIONAL_AUDIT`, `ACCOUNT_LIFECYCLE_AUDIT`, `AUDIT_TRAIL`) фильтруются и исключаются из выборок дефектов. Административный аудит больше не превращается в ложный дефект, не загрязняет предложения Кайдзен (Muda, BufferTuning) и не штрафует оценку доверия проекта.
+- **Единый жизненный цикл и разрешение противоречий через сущность (`ACTUAL_OBJECT_REGISTER` / D002, `TRUTH_STATUS_TABLE` / D012):**
   - Устранено двоевластие между `status=decommissioned` и `enabled=false`.
   - В `AccountEntity`: перевод статуса в `decommissioned` атомарно сбрасывает `enabled = false`; попытка установить `enabled = true` на списанном аккаунте отвергается с `IllegalStateException` (в контроллере — HTTP 400 с явным объяснением).
-  - В `AccountRepository` и `AccountHealthService.recoverEligibleAccounts`: внедрена JPQL-нормализация `normalizeDecommissionedAccounts()` (`UPDATE AccountEntity a SET a.enabled = false WHERE a.status = 'decommissioned' AND a.enabled = true`), очищающая исторические противоречивые строки БД при каждом обходе.
+  - Массовый JPQL `UPDATE` мимо сущности ликвидирован. В `AccountHealthService.recoverEligibleAccounts`: нормализация исторических противоречивых строк выполняется через сущность (`findByStatusAndEnabledTrue(decommissioned)`), переводит `enabled=false` с фиксацией правила `ACCOUNT_LIFECYCLE_NORMALIZATION_RULE` и записью в аудит на каждый переход. На последующих тактах при отсутствии противоречий выполняется строго 0 обращений и 0 записей.
 - **Отказ от необратимого авто-списания и предложение к возврату (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):**
   - В `AccountHealthService.recoverEligibleAccounts`: автоматическое необратимое списание исключено. Аккаунты, выключенные более 24 часов (`statusChangedAt`), логируются как «предлагается к возврату» без самовольного перевода в `decommissioned`.
   - При `candidates.isEmpty()` и наличии выключенных аккаунтов выводится явное эпистемическое сообщение: `No eligible accounts found for recovery (N operational accounts currently disabled)`.
-- **Математически выведенный порог монополии (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):**
-  - Вместо жестко зашитого числа (например 0.75 или 0.90) внедрен `derivedMonopolyCutoff(int livePoolSize)`: порог монополии вычисляется от живого пула $N$ как $(N-1)/N$, ограниченный отрезком $[0.70, 0.90]$ (для $N=4$ порог 0.75, для $N=10$ — 0.90).
-  - При превышении порога в 6-часовом окне раздач логируется предупреждение о концентрации без блокировки.
+- **Порог монополии выведен из распределения сессий (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):**
+  - Порог монополии $T$ рассчитывается из наблюдаемого биномиального распределения сессий окна $S$ при равномерной ротации $p_0 = 1/N$: $T = p_0 + 3\sigma = 1/N + 3\sqrt{\frac{p_0(1-p_0)}{S}}$.
+  - При отсутствии различимости ($S < N$ или $N \le 1$) порог возвращает предел $1.0$.
+  - На живых данных Hetzner ($N=7, S=38$) порог равен ~31.3%, что строго и надёжно фальсифицирует случай концентрации 66% (25 из 38) на одном аккаунте `eneikdru`.
+  - **Дедупликация записи монополии:** внедрён реестр активных монополий `activeMonopolies`. Повторные тики с той же монополией подавляют повторную запись в журнал (урок предписания 8); запись производится только при появлении или существенном изменении доли.
 - **Заслон фальсификации против подмены понятий («выключен» вместо «ёмкость»):**
   - В `ProjectFlowService.dispatchToGeneralPool`: если пул пуст и все операционные аккаунты выключены (`disabledAccounts >= liveAccounts`), статус задачи выставляется как `"All operational Jules accounts are disabled (N disabled)..."`.
   - Заслон строго гарантирует: сообщение лога и статус задачи **не содержат** слова «capacity» / «ёмкость».
   - В `BottleneckDetectionService` выключенные аккаунты выделены в отдельную метрику `disabledAccounts` и явно перечисляются в причине узкого места, не маскируясь под нехватку слотов.
   - В `ContinuousOrchestrationService` затор по причине отключения всех аккаунтов отделен от легитимной занятости задачами.
-- **Заслоняющие тесты (34/34 green в контейнере Maven):**
-  - `AccountLifecycleInvariantTest` (4/4): аудит институциональных фактов, `decommissioned` влечет `enabled=false`, отказ включения списанного (400), guard на сущности.
+- **Заслоняющие тесты (56/56 green в контейнере Maven):**
+  - `AccountLifecycleInvariantTest` (4/4): аудит институциональных фактов с `INSTITUTIONAL_AUDIT` и `INFO`, `decommissioned` влечет `enabled=false`, отказ включения списанного (400), guard на сущности.
+  - `DefectJournalServiceTest` (3/3): проверка исключения записей `INSTITUTIONAL_AUDIT` из выборок дефектов окна Кайдзен и проектов.
+  - `OperationalTruthServiceTest` (17/17): включая `institutionalAuditRecordsDoNotPenalizeTrustOrCountAsDefects`.
+  - `AccountHealthServiceTest` (25/25): Church derived cutoff через биномиальную дисперсию (3-sigma), дедупликация записи монополии между последовательными обходами, нормализация через сущность с записью институционального аудита и однократным выполнением, видимость выключенных при нуле кандидатов, предложение к возврату >24ч.
   - `ProjectFlowServiceLaw1JulesDispatchTest` (4/4): включая `falsificationHarness_allAccountsDisabledReportsDisabledStatusWithoutCapacityWord`.
-  - `AccountHealthServiceTest` (23/23): проверка нормализации, вывод N выключенных, предложение к возврату >24ч, Church derived cutoff (N=1, 4, 10, 100), монополия.
   - `BottleneckDetectionServiceTest` (3/3): разделение выключенных и занятых аккаунтов.
 
 **В работе дальше:**

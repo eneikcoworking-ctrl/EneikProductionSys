@@ -93,6 +93,7 @@ public class AccountEntity {
         }
     }
     public Instant getStatusChangedAt() { return statusChangedAt; }
+    public void setStatusChangedAt(Instant statusChangedAt) { this.statusChangedAt = statusChangedAt; }
     public String getCapabilities() { return capabilities; }
     public void setCapabilities(String capabilities) { this.capabilities = capabilities; }
     public Instant getLastHeartbeat() { return lastHeartbeat; }

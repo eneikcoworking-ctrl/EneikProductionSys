@@ -18,10 +18,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Sole owner of a Jules account's HEALTH state (idle / api_blocked / daily_limited) - 2026-08-01, closing
@@ -75,6 +78,7 @@ public class AccountHealthService {
     private final AccountRoleSuccessStatsRepository accountRoleSuccessStatsRepository;
     private final LeverPromotionService leverPromotionService;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
+    private final Map<UUID, Double> activeMonopolies = new ConcurrentHashMap<>();
 
     public static final String F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY = "F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY";
 
@@ -391,11 +395,24 @@ public class AccountHealthService {
      */
     @Transactional
     public int recoverEligibleAccounts() {
-        // ACTUAL_OBJECT_REGISTER (D002): unify lifecycle - decommissioned accounts cannot be enabled.
-        accountRepository.normalizeDecommissionedAccounts();
+        // ACTUAL_OBJECT_REGISTER (D002) / INSTITUTIONAL_FACT_REGISTER (D007):
+        // Resolve contradictory state via entity lifecycle with audit record per transition.
+        Instant now = Instant.now();
+        List<AccountEntity> contradictory = accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned);
+        if (!contradictory.isEmpty()) {
+            for (AccountEntity acc : contradictory) {
+                acc.setEnabled(false);
+                acc.setStatusChangedAt(now);
+                accountRepository.save(acc);
+                String desc = String.format("Account '%s' normalized: decommissioned account forced to enabled=false to resolve contradictory state (D002/D012). Rule: ACCOUNT_LIFECYCLE_NORMALIZATION_RULE", acc.getName());
+                defectJournalRepository.save(new DefectJournalEntity(
+                        null, null, null, "INFO", "INSTITUTIONAL_AUDIT", acc.getName(),
+                        "ACCOUNT_LIFECYCLE_NORMALIZATION_RULE", desc, 0.0));
+                log.info("Institutional Fact Audit (Normalization): {}", desc);
+            }
+        }
 
         List<AccountEntity> blocked = accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked);
-        Instant now = Instant.now();
         int recovered = 0;
         for (AccountEntity account : blocked) {
             Instant changedAt = account.getStatusChangedAt();
@@ -457,16 +474,25 @@ public class AccountHealthService {
 
     /**
      * Alonzo Church derived cutoff (ALONZO_CHERCH_21_DERIVED_CUTOFF / D010):
-     * Cutoff is derived from the live pool size N, rather than an arbitrary constant.
-     * Fair share is 1/N. Cutoff scales with (N - 1) / N, bounded by declared floor (0.70) and ceiling (0.90).
-     * For degenerate pools (N <= 1), returns 1.0 (no monopoly possible).
+     * Cutoff is derived from the actual observed distribution of dispatches:
+     * Fair share under uniform rotation is p0 = 1/N.
+     * Dispersion under binomial dispatch across S sessions: sigma = sqrt(p0 * (1 - p0) / S).
+     * Derived cutoff is fair share plus 3-sigma statistical deviation: T = p0 + 3.0 * sigma.
+     * When there is no variance to distinguish (S < N or N <= 1 or S <= 0), returns declared bound 1.0.
      */
-    public static double derivedMonopolyCutoff(int livePoolSize) {
-        if (livePoolSize <= 1) {
+    public static double derivedMonopolyCutoff(int livePoolSize, long totalSessions) {
+        if (livePoolSize <= 1 || totalSessions <= 0 || totalSessions < livePoolSize) {
             return 1.0;
         }
-        double derived = (double) (livePoolSize - 1) / livePoolSize;
-        return Math.min(0.90, Math.max(0.70, derived));
+        double p0 = 1.0 / livePoolSize;
+        double variance = (p0 * (1.0 - p0)) / totalSessions;
+        double sigma = Math.sqrt(variance);
+        double cutoff = p0 + 3.0 * sigma;
+        return Math.min(1.0, Math.max(p0, cutoff));
+    }
+
+    public static double derivedMonopolyCutoff(int livePoolSize) {
+        return derivedMonopolyCutoff(livePoolSize, 20L);
     }
 
     void checkAccountMonopoly(Instant now) {
@@ -493,27 +519,43 @@ public class AccountHealthService {
                 return;
             }
 
-            double cutoff = derivedMonopolyCutoff((int) livePoolSize);
+            double cutoff = derivedMonopolyCutoff((int) livePoolSize, totalSessions);
+            Set<UUID> currentMonopolyAccounts = new HashSet<>();
             for (Map.Entry<UUID, Long> entry : countsByAccount.entrySet()) {
                 double share = (double) entry.getValue() / totalSessions;
                 if (share >= cutoff) {
+                    currentMonopolyAccounts.add(entry.getKey());
                     String accountName = accountRepository.findById(entry.getKey())
                             .map(AccountEntity::getName)
                             .orElse(entry.getKey().toString());
-                    log.warn("AccountHealthService / rotation: monopoly detected on account '{}': carrying {}% of dispatches ({}/{}) over past {}h against live pool of {} accounts (derived cutoff {}%)",
-                            accountName, Math.round(share * 100), entry.getValue(), totalSessions,
-                            monopolyWindowHours, livePoolSize, Math.round(cutoff * 100));
-                    defectJournalRepository.save(new DefectJournalEntity(
-                            null, null, null, "HIGH", HEALTH_CATEGORY, accountName,
-                            "ACCOUNT_MONOPOLY_CONCENTRATION",
-                            "Account '" + accountName + "' monopoly detected: carrying " + Math.round(share * 100) +
-                                    "% of dispatches (" + entry.getValue() + "/" + totalSessions + ") against pool of " + livePoolSize,
-                            share));
+                    Double previousShare = activeMonopolies.get(entry.getKey());
+                    boolean stateChanged = (previousShare == null) || (Math.abs(previousShare - share) >= 0.05);
+                    if (stateChanged) {
+                        activeMonopolies.put(entry.getKey(), share);
+                        log.warn("AccountHealthService / rotation: monopoly detected on account '{}': carrying {}% of dispatches ({}/{}) over past {}h against live pool of {} accounts (derived cutoff {}%)",
+                                accountName, Math.round(share * 100), entry.getValue(), totalSessions,
+                                monopolyWindowHours, livePoolSize, Math.round(cutoff * 100));
+                        defectJournalRepository.save(new DefectJournalEntity(
+                                null, null, null, "HIGH", HEALTH_CATEGORY, accountName,
+                                "ACCOUNT_MONOPOLY_CONCENTRATION",
+                                "Account '" + accountName + "' monopoly detected: carrying " + Math.round(share * 100) +
+                                        "% of dispatches (" + entry.getValue() + "/" + totalSessions + ") against pool of " + livePoolSize,
+                                share));
+                    } else {
+                        log.debug("AccountHealthService: account '{}' monopoly persists with unchanged share ({}%) - skipping duplicate defect record",
+                                accountName, Math.round(share * 100));
+                    }
                 }
             }
+            // Clean up resolved monopolies so future recurrences can be recorded fresh
+            activeMonopolies.keySet().removeIf(id -> !currentMonopolyAccounts.contains(id));
         } catch (Exception e) {
             log.warn("AccountHealthService: failed to check account monopoly: {}", e.getMessage());
         }
+    }
+
+    Map<UUID, Double> getActiveMonopolies() {
+        return activeMonopolies;
     }
 
     /**

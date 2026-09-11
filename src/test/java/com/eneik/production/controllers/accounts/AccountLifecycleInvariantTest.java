@@ -64,7 +64,9 @@ class AccountLifecycleInvariantTest {
         verify(defectJournalRepository).save(captor.capture());
         DefectJournalEntity audit = captor.getValue();
         assertThat(audit.getSourceComponent()).isEqualTo("test-acc");
-        assertThat(audit.getDefectType()).isEqualTo("ACCOUNT_STATE_TRANSITION");
+        assertThat(audit.getCategory()).isEqualTo("INSTITUTIONAL_AUDIT");
+        assertThat(audit.getSeverity()).isEqualTo("INFO");
+        assertThat(audit.getDefectType()).isEqualTo("ACCOUNT_LIFECYCLE_ENABLEMENT_RULE");
         assertThat(audit.getDescription()).contains("ACCOUNT_LIFECYCLE_ENABLEMENT_RULE");
         assertThat(audit.getDescription()).contains("Operator manual rotation pause");
         assertThat(audit.getDescription()).contains("enabled: true -> false");
@@ -91,6 +93,9 @@ class AccountLifecycleInvariantTest {
         ArgumentCaptor<DefectJournalEntity> captor = ArgumentCaptor.forClass(DefectJournalEntity.class);
         verify(defectJournalRepository).save(captor.capture());
         DefectJournalEntity audit = captor.getValue();
+        assertThat(audit.getCategory()).isEqualTo("INSTITUTIONAL_AUDIT");
+        assertThat(audit.getSeverity()).isEqualTo("INFO");
+        assertThat(audit.getDefectType()).isEqualTo("ACCOUNT_DECOMMISSION_RULE");
         assertThat(audit.getDescription()).contains("ACCOUNT_DECOMMISSION_RULE");
         assertThat(audit.getDescription()).contains("status: idle -> decommissioned");
     }
