@@ -309,7 +309,37 @@
   3. `TrustSnapshotServiceTest` (8/8 green).
   4. `LeanValueTest` (7/7 green).
   5. Прогон Maven в Docker: 34/34 теста green (`BUILD SUCCESS`, 45.8 с).
-- **Что берётся следующим:** Такт 14 — Пункт 13 очереди (`LinearIssuePayloadService` / `ProjectFlowService` или `FalsificationCycleService`).
+- **Что берётся следующим:** Такт 14 — завершён в текущем такте (см. ниже).
+
+### 2026-09-11 Antigravity: Такт 14 — GitHubProjectFactoryClient, ProjectFactoryService, ProjectFlowService (пункт 13 очереди, Раздел XXXII; поправки LeanValue и OperationalTruthService)
+- **Что сделано:**
+  1. **Ликвидация фантомных адресов репозиториев (`NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` / D007, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009):**
+     - Устранены все три точки фабрикации адреса до создания удаленной сущности:
+       1. В `GitHubProjectFactoryClient.provision` полностью удалена переменная `fallbackUrl`. Во всех ветках пропуска или ошибок (`skipped: GitHub provisioning disabled`, `skipped: GITHUB_TOKEN is not configured`, HTTP-ошибки, InterruptedException, Exception) клиент возвращает `null` вместо предварительно сконструированной строки.
+       2. При создании репозитория (HTTP 201) адрес `repoUrl` извлекается из реального объекта доказательства `html_url` ответа GitHub (или `null` при отсутствии).
+       3. Для brownfield-онбординга (HTTP 422 `exists or blocked`) выполняется доказательная верификация реального существования репозитория на GitHub через `GET /repos/{org}/{repo}`. При HTTP 200 извлекается проверенный `html_url`; при отсутствии верификации — строго `null`.
+       4. В `ProjectFlowService.admitProject` ликвидирована презумпция существования: удалены строки предзаписи `project.setRepositoryUrl` и `project.setRepoUrl` — при заведении проекта адрес репозитория остаётся `null`.
+       5. В `ProjectFactoryService` устранена подмена рода через `firstNonBlank(github.repositoryUrl(), project.getRepositoryUrl())`: сервис использует проверенный адрес `github.repositoryUrl()`. При неудаче или пропуске заведения репозитория `repositoryUrl` и `repoUrl` у проекта остаются строго `null`.
+       6. В `LinearProjectFactoryClient` описание задачи защищено от конкатенации `"Repository: null"`.
+  2. **Поправка по замечанию Клода: удержание `LeanValue.undetermined` в нефинальном состоянии (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+     - В `ProjectFlowService.processCompiledWishlistWithUndeterminedValue` снят необратимый перевод в `WishlistStatus.dismissed` при отсутствии класса Kano на эпике. Отклонять работу потому, что её ценность неизвестна, — значит совершать необратимое действие ради снятия неопределённости. Пожелание сохраняется в нефинальном состоянии `WishlistStatus.pending` с `leanValue = LeanValue.undetermined` в ожидании переоценки ценности.
+  3. **Выравнивание окна свежести в `OperationalTruthService` (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):**
+     - В методе `evidence()` счётчик `qualityGateUnapplied` выровнен с остальными индикаторами заслона по скользящему окну свежести `TRUST_RECENCY_WINDOW` (`30` дней).
+- **Чем проверено:**
+  1. `GitHubProjectFactoryClientTest` (3/3 green):
+     - Отключенный GitHub -> статус `skipped:`, `repositoryUrl = null`, `repositoryId = null`.
+     - Отсутствующий `GITHUB_TOKEN` -> статус `skipped:`, `repositoryUrl = null`.
+     - Пробельный `GITHUB_TOKEN` -> статус `skipped:`, `repositoryUrl = null`.
+  2. `ProjectFactoryServiceTest` (4/4 green):
+     - `skippedGitHubProvisioningYieldsNullRepositoryUrl`: пропуск заведения даёт строго `repositoryUrl = null`, не откатываясь на предзаписанный в проекте URL.
+     - `failedGitHubProvisioningYieldsNullRepositoryUrl`: отказ заведения даёт строго `repositoryUrl = null`.
+  3. `ProjectAdmissionLaw25aTest` (5/5 green):
+     - `admitProject` создаёт проект со строго `repositoryUrl = null` и `repoUrl = null`.
+     - Сбой внешнего заведения (`provision_failed`) оставляет у проекта `repositoryUrl = null` и `repoUrl = null`.
+  4. `LeanValueTest` (7/7 green): подтверждение удержания неразрешённого пожелания в `WishlistStatus.pending` с `LeanValue.undetermined`.
+  5. `OperationalTruthServiceTest` (16/16 green): подтверждение учёта окна свежести для всех категорий заслона качества.
+  6. Полный прогон в Docker-контейнере Maven: 35/35 тестов green (`BUILD SUCCESS`, 01:13 мин).
+- **Что берётся следующим:** Такт 15 — Пункт 14 очереди (`TargetContext` · пункт 43: отсутствие значения «не установлено», устранение уничтожения и подмены неизвестного контекста цели задачи).
 
 
 

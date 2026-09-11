@@ -63,11 +63,25 @@
      - В `OperationalTruthDto.EvidenceSummary` добавлен счётчик `qualityGateUnapplied` (с сохранением 8-аргументного конструктора для совместимости).
      - Введено скользящее окно свежести свидетельств `TRUST_RECENCY_WINDOW = Duration.ofDays(30)`: свидетельства старше 30 дней не удерживают доверие 1.0 вечно.
      - Заслонено в `OperationalTruthServiceTest` (16/16 green) и `TrustSnapshotServiceTest` (8/8 green).
-   - **`LeanValue` (раздел 42, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
-     - Устранён искусственный отсчёт на чужом счётчике `compileAttempts`. При отсутствии класса Kano на эпике скомпилированное пожелание с `undetermined` ценностью сразу детерминированно переводится в `WishlistStatus.dismissed` с понятной причиной и сохранением `leanValue = undetermined` (отличимо от `waste`).
-     - Заслонено в `LeanValueTest` (7/7 green).
+    - **`LeanValue` (раздел 42, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+      - По совету Клода: снят необратимый переход в `WishlistStatus.dismissed` при отсутствии класса Kano на эпике. Неразрешённое скомпилированное пожелание удерживается в нефинальном статусе `WishlistStatus.pending` с `leanValue = LeanValue.undetermined` в ожидании повторной переоценки ценности, не выбрасываясь и не отклоняясь необратимо.
+      - Заслонено в `LeanValueTest` (7/7 green).
 
-6. **Что берётся следующим:** Такт 14 — Пункт 13 очереди (`LinearIssuePayloadService` / `ProjectFlowService` или `FalsificationCycleService`).
+6. **Такт 14 закрыт (коммиты `36c2945` и `87eb42c`, пуш в `main`):**
+   - **`GitHubProjectFactoryClient` / `ProjectFactoryService` / `ProjectFlowService` (пункт 13 очереди, раздел XXXII, `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` / D007, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009):**
+     - В `GitHubProjectFactoryClient.provision` ликвидирован предварительно сфабрикованный адрес `fallbackUrl`.
+     - На всех ветках пропуска или сбоя (`skipped: GitHub provisioning disabled`, `skipped: GITHUB_TOKEN is not configured`, HTTP ошибки, исключения, прерывание) метод возвращает строго `null` в качестве `repositoryUrl` и `repositoryId`.
+     - На ветке 201 адрес `repoUrl` извлекается строго из доказательного объекта `html_url` ответа GitHub (или `null` при отсутствии).
+     - На ветке 422 для brownfield выполняется доказательная верификация реального существования репозитория на GitHub через `GET /repos/{org}/{repo}`. При HTTP 200 извлекается проверенный `html_url`; при отсутствии доказательства — строго `null`.
+     - В `ProjectFlowService.admitProject` ликвидирована презумпция существования: строки 307–308 (`project.setRepositoryUrl` и `project.setRepoUrl`) удалены; при заведении проекта адрес репозитория остаётся `null`.
+     - В `ProjectFactoryService` (строка 38) ликвидирован откат на фантомный адрес `firstNonBlank(github.repositoryUrl(), project.getRepositoryUrl())`. Сервис принимает реальный конструктивный адрес `github.repositoryUrl()`. При отказе или пропуске заведения репозитория `repositoryUrl` и `repoUrl` проекта остаются строго `null`.
+     - В `LinearProjectFactoryClient` описание задачи защищено от конкатенации `"Repository: null"`.
+     - В `OperationalTruthService` счётчик `qualityGateUnapplied` выровнен с соседними по скользящему окну свежести `TRUST_RECENCY_WINDOW` (`30` дней).
+     - Создан заслоняющий тестовый класс `GitHubProjectFactoryClientTest` (3/3 green).
+     - Расширены `ProjectFactoryServiceTest` (4/4 green) и `ProjectAdmissionLaw25aTest` (5/5 green) проверками сохранения `null` в обоих полях при пропуске или сбое внешнего заведения.
+     - Итоговый запуск: 35/35 тестов green в контейнере Maven (BUILD SUCCESS).
+
+7. **Что берётся следующим:** Такт 15 — Пункт 14 очереди (`TargetContext` · пункт 43: отсутствие значения «не установлено», устранение подмены неизвестного контекста цели задачи).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов
