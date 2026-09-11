@@ -22,7 +22,7 @@ import static org.mockito.Mockito.*;
 /**
  * Screen for first-class target context semantics
  * (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012 Policy contradiction,
- *  GILBERT_RAYL_03_CATEGORY_ERROR_SCAN / D002 Category error).
+ *  GILBERT_RAYL_03_CATEGORY_ERROR_SCAN / D002 Invalid state).
  *
  * Proof obligations:
  * 1. TargetContext explicitly represents PRODUCT_CODEBASE, ORCHESTRATOR_SYSTEM, and UNDETERMINED.

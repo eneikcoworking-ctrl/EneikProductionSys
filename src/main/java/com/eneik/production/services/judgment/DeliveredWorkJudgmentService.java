@@ -505,8 +505,7 @@ public class DeliveredWorkJudgmentService {
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
-        wishlist.setTargetContext(task.getTargetContext() != null && task.getTargetContext() != TargetContext.UNDETERMINED
-                ? task.getTargetContext() : TargetContext.PRODUCT_CODEBASE);
+        wishlist.setTargetContext(task.getTargetContext());
         wishlist.setSource(WishlistSource.delivery_refuted);
         // 2026-08-23. A finding inherits the epic of the task it is about. Without this the wishlist it
         // produces compiles into a task with no feature, and a feature closes when ITS tasks close - so the

@@ -1700,8 +1700,7 @@ public class ProjectFlowService {
 
         WishlistEntity followUp = new WishlistEntity();
         followUp.setProjectId(project.getId());
-        followUp.setTargetContext(task.getTargetContext() != null && task.getTargetContext() != TargetContext.UNDETERMINED
-                ? task.getTargetContext() : TargetContext.PRODUCT_CODEBASE);
+        followUp.setTargetContext(task.getTargetContext());
         followUp.setSource(WishlistSource.role_mismatch_followup);
         followUp.setSourceRoleTag(roleTag);
         followUp.setStatus(WishlistStatus.pending);
@@ -5450,8 +5449,7 @@ public class ProjectFlowService {
 
         TaskEntity reviewTask = new TaskEntity();
         reviewTask.setProject(originalTasks.get(0).getProject());
-        reviewTask.setTargetContext(originalTasks.get(0).getTargetContext() != null && originalTasks.get(0).getTargetContext() != TargetContext.UNDETERMINED
-                ? originalTasks.get(0).getTargetContext() : TargetContext.PRODUCT_CODEBASE);
+        reviewTask.setTargetContext(originalTasks.get(0).getTargetContext());
         reviewTask.setRole(compilerRole);
         if (isPersistentCarrier) {
             reviewTask.setTitle("Persistent PR review fallback worker (" + shortId(originalTasks.get(0).getProject().getId()) + ")");

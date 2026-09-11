@@ -521,8 +521,7 @@ public class OpsAuditorService {
 
         TaskEntity recovery = new TaskEntity();
         recovery.setProject(project);
-        recovery.setTargetContext(failedTask.getTargetContext() != null && failedTask.getTargetContext() != TargetContext.UNDETERMINED
-                ? failedTask.getTargetContext() : TargetContext.PRODUCT_CODEBASE);
+        recovery.setTargetContext(failedTask.getTargetContext());
         recovery.setRole(failedTask.getRole());
         recovery.setFeatureId(failedTask.getFeatureId());
         recovery.setTitle("Recovery: " + failedTask.getTitle());
