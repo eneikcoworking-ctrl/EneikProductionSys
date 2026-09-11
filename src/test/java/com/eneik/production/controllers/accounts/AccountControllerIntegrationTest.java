@@ -57,6 +57,10 @@ class AccountControllerIntegrationTest {
     @BeforeEach
     void setUp() {
         cleanDatabase();
+        restTemplate.getRestTemplate().setInterceptors(java.util.List.of((req, body, exec) -> {
+            req.getHeaders().set("X-API-Key", "eneik-test-secret-key-42");
+            return exec.execute(req, body);
+        }));
     }
 
     // Real HTTP calls against a random-port server can't use @Transactional rollback, so anything this class
@@ -72,7 +76,6 @@ class AccountControllerIntegrationTest {
         wishlistItemRepository.deleteAll();
         julesSessionRepository.deleteAll();
         claimRepository.deleteAll();
-        jdbcTemplate.update("DELETE FROM needs_human_review");
         jdbcTemplate.update("DELETE FROM task_conflicts");
         taskRepository.deleteAll();
         accountRepository.deleteAll();
@@ -203,5 +206,19 @@ class AccountControllerIntegrationTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(response.getBody()).isNotNull();
         return response.getBody();
+    }
+
+    @Test
+    void unauthenticatedMutatingAccountRequestsAreDeniedWith401() throws Exception {
+        java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(restTemplate.getRootUri() + "/api/accounts"))
+                .header("Content-Type", "application/json")
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString("{\"name\":\"unauth-agent\",\"capabilities\":\"BARCAN-TAG-01\"}"))
+                .build();
+        java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("\"code\":\"UNAUTHORIZED\"");
     }
 }

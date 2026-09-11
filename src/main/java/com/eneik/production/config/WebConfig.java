@@ -24,7 +24,7 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(apiAuthorizationInterceptor)
-                .addPathPatterns("/api/ai/resources/**", "/internal/**");
+                .addPathPatterns("/api/**", "/internal/**");
     }
 
     @Override

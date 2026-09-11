@@ -18,6 +18,14 @@ class SystemStatusControllerIntegrationTest {
     @Autowired
     private TestRestTemplate restTemplate;
 
+    @org.junit.jupiter.api.BeforeEach
+    void setUp() {
+        restTemplate.getRestTemplate().setInterceptors(java.util.List.of((req, body, exec) -> {
+            req.getHeaders().set("X-API-Key", "eneik-test-secret-key-42");
+            return exec.execute(req, body);
+        }));
+    }
+
     @Test
     void returnsGracefulStatusWithEmptyDataSources() {
         ResponseEntity<Map> response = restTemplate.getForEntity("/api/system-status", Map.class);

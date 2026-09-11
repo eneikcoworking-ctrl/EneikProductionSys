@@ -56,6 +56,7 @@ public class TocSentinelControllerTest {
                 """;
 
         mockMvc.perform(post("/api/toc/event/enter")
+                        .header("X-API-Key", "eneik-test-secret-key-42")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(enterJson))
                 .andExpect(status().isOk())
@@ -71,6 +72,7 @@ public class TocSentinelControllerTest {
                 """;
 
         mockMvc.perform(post("/api/toc/event/exit")
+                        .header("X-API-Key", "eneik-test-secret-key-42")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(exitJson))
                 .andExpect(status().isOk())

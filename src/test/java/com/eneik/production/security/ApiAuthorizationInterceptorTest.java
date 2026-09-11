@@ -217,4 +217,154 @@ class ApiAuthorizationInterceptorTest {
             assertEquals(200, respAllowed.getStatus());
         }
     }
+
+    @Test
+    @DisplayName("Relation 10: Unauthenticated mutating request to console endpoints (/api/accounts, /api/settings, /api/projects) is denied with 401 (Prescription 24)")
+    void mutatingConsoleEndpointsWithoutCredentialsAreDeniedWith401() throws Exception {
+        record TestCase(String method, String path) {}
+        TestCase[] testCases = {
+                new TestCase("POST", "/api/accounts"),
+                new TestCase("PATCH", "/api/accounts/acc-123"),
+                new TestCase("DELETE", "/api/accounts/acc-123"),
+                new TestCase("PUT", "/api/settings"),
+                new TestCase("POST", "/api/projects"),
+                new TestCase("DELETE", "/api/projects/proj-456"),
+                new TestCase("POST", "/api/wishlist"),
+                new TestCase("PATCH", "/api/wishlist/w-789/dismiss")
+        };
+
+        for (TestCase tc : testCases) {
+            MockHttpServletRequest request = new MockHttpServletRequest(tc.method, tc.path);
+            request.setRequestURI(tc.path);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+
+            assertFalse(allowed, "Mutating console endpoint " + tc.method + " " + tc.path + " must be denied without credentials");
+            assertEquals(401, response.getStatus(), "Status must be 401 Unauthorized for " + tc.path);
+
+            JsonNode body = objectMapper.readTree(response.getContentAsString());
+            assertEquals("UNAUTHORIZED", body.get("code").asText());
+            assertTrue(body.get("error").asText().contains("Authorization required"));
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 11: Mutating console request with invalid credentials is denied with 403 FORBIDDEN")
+    void mutatingConsoleEndpointsWithInvalidKeyAreDeniedWith403() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("PATCH", "/api/accounts/acc-123");
+        request.setRequestURI("/api/accounts/acc-123");
+        request.addHeader("X-API-Key", "invalid-key");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+        assertFalse(allowed);
+        assertEquals(403, response.getStatus());
+
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertEquals("FORBIDDEN", body.get("code").asText());
+    }
+
+    @Test
+    @DisplayName("Relation 12: Mutating console request with valid credentials (X-API-Key or Bearer) is authorized")
+    void mutatingConsoleEndpointsWithValidKeyAreAllowed() throws Exception {
+        // Via X-API-Key
+        MockHttpServletRequest reqKey = new MockHttpServletRequest("PATCH", "/api/accounts/acc-123");
+        reqKey.setRequestURI("/api/accounts/acc-123");
+        reqKey.addHeader("X-API-Key", VALID_KEY);
+        MockHttpServletResponse respKey = new MockHttpServletResponse();
+
+        boolean allowedKey = interceptor.preHandle(reqKey, respKey, new Object());
+        assertTrue(allowedKey, "Valid X-API-Key must be allowed for PATCH /api/accounts/acc-123");
+        assertEquals(200, respKey.getStatus());
+
+        // Via Bearer
+        MockHttpServletRequest reqBearer = new MockHttpServletRequest("PUT", "/api/settings");
+        reqBearer.setRequestURI("/api/settings");
+        reqBearer.addHeader("Authorization", "Bearer " + VALID_KEY);
+        MockHttpServletResponse respBearer = new MockHttpServletResponse();
+
+        boolean allowedBearer = interceptor.preHandle(reqBearer, respBearer, new Object());
+        assertTrue(allowedBearer, "Valid Bearer must be allowed for PUT /api/settings");
+        assertEquals(200, respBearer.getStatus());
+    }
+
+    @Test
+    @DisplayName("Relation 13: Webhooks (/api/webhooks/**) with mutating operations require credentials (NUEL_BELNAP_06_SUBSTITUTION_ORACLE / D009)")
+    void mutatingWebhookEndpointWithoutCredentialsIsDeniedWith401() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/webhooks/github");
+        request.setRequestURI("/api/webhooks/github");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+        assertFalse(allowed, "Webhook without credentials must be denied to prevent unauthorized PR spoofing");
+        assertEquals(401, response.getStatus());
+
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertEquals("UNAUTHORIZED", body.get("code").asText());
+    }
+
+    @Test
+    @DisplayName("Relation 13b: Webhook endpoint with valid API key is allowed")
+    void mutatingWebhookEndpointWithValidApiKeyIsAllowed() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/webhooks/github");
+        request.setRequestURI("/api/webhooks/github");
+        request.addHeader("X-API-Key", VALID_KEY);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+        assertTrue(allowed, "Webhook with valid API key must be allowed");
+        assertEquals(200, response.getStatus());
+    }
+
+    @Test
+    @DisplayName("Relation 14: Safe read-only GET endpoints on console paths are allowed without credentials")
+    void safeReadConsoleEndpointsArePubliclyAllowed() throws Exception {
+        String[] readPaths = {
+                "/api/accounts",
+                "/api/settings",
+                "/api/projects",
+                "/api/wishlist"
+        };
+
+        for (String path : readPaths) {
+            MockHttpServletRequest request = new MockHttpServletRequest("GET", path);
+            request.setRequestURI(path);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+            assertTrue(allowed, "Safe read GET path " + path + " must be allowed without credentials");
+            assertEquals(200, response.getStatus());
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 15: Mutating requests on /internal/** from localhost without credentials are denied with 401 (Prescription 59)")
+    void mutatingInternalRequestsFromLocalhostWithoutCredentialsAreDeniedWith401() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/internal/gemini-observer/retire-stuck-worker-now");
+        request.setRequestURI("/internal/gemini-observer/retire-stuck-worker-now");
+        request.setRemoteAddr("127.0.0.1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+        assertFalse(allowed, "Mutating internal operations from localhost must require credentials");
+        assertEquals(401, response.getStatus());
+
+        JsonNode body = objectMapper.readTree(response.getContentAsString());
+        assertEquals("UNAUTHORIZED", body.get("code").asText());
+    }
+
+    @Test
+    @DisplayName("Relation 16: Mutating requests on /internal/** with valid credentials are allowed")
+    void mutatingInternalRequestsWithValidCredentialsAreAllowed() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/internal/gemini-observer/retire-stuck-worker-now");
+        request.setRequestURI("/internal/gemini-observer/retire-stuck-worker-now");
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("X-API-Key", VALID_KEY);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = interceptor.preHandle(request, response, new Object());
+        assertTrue(allowed, "Mutating internal operations with valid key must be allowed");
+        assertEquals(200, response.getStatus());
+    }
 }

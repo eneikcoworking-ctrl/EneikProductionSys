@@ -11,6 +11,7 @@ import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -44,6 +45,10 @@ class SettingsControllerIntegrationTest {
     @BeforeEach
     void cleanSettings() {
         jdbcTemplate.update("DELETE FROM system_settings");
+        restTemplate.getRestTemplate().setInterceptors(java.util.List.of((req, body, exec) -> {
+            req.getHeaders().set("X-API-Key", "eneik-test-secret-key-42");
+            return exec.execute(req, body);
+        }));
     }
 
     @Test
@@ -119,5 +124,19 @@ class SettingsControllerIntegrationTest {
         assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(response.getBody()).containsEntry("value", "lin_test_secret");
         assertThat(response.getBody()).containsEntry("source", "database");
+    }
+
+    @Test
+    void unauthenticatedPutSettingsIsDeniedWith401() throws Exception {
+        java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                .uri(java.net.URI.create(restTemplate.getRootUri() + "/api/settings"))
+                .header("Content-Type", "application/json")
+                .PUT(java.net.http.HttpRequest.BodyPublishers.ofString("{\"key\":\"github_token\",\"value\":\"ghp_test\"}"))
+                .build();
+        java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(401);
+        assertThat(response.body()).contains("\"code\":\"UNAUTHORIZED\"");
     }
 }

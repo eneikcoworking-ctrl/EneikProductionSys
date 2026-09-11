@@ -60,22 +60,26 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
         String path = request.getRequestURI();
         String method = request.getMethod() != null ? request.getMethod().toUpperCase(Locale.ROOT) : "GET";
+        boolean isMutating = MUTATING_METHODS.contains(method);
 
         // Scope 1: Internal endpoints (/internal/**)
         if (path != null && path.startsWith("/internal/")) {
-            return checkInternalAccess(request, response, path);
+            if (isMutating) {
+                return checkMutatingOperation(request, response, path, method, "internal");
+            }
+            return checkInternalReadAccess(request, response, path);
         }
 
-        // Scope 2: Mutating AI resource operations (/api/ai/resources/**)
-        if (path != null && path.startsWith("/api/ai/resources") && MUTATING_METHODS.contains(method)) {
-            return checkMutatingAiResourceAccess(request, response, path, method);
+        // Scope 2: Mutating API operations (/api/** with POST/PUT/PATCH/DELETE)
+        if (path != null && path.startsWith("/api/") && isMutating) {
+            return checkMutatingOperation(request, response, path, method, "API");
         }
 
         // Safe reads and non-protected paths are allowed
         return true;
     }
 
-    private boolean checkInternalAccess(HttpServletRequest request, HttpServletResponse response, String path) throws IOException {
+    private boolean checkInternalReadAccess(HttpServletRequest request, HttpServletResponse response, String path) throws IOException {
         String remoteAddr = request.getRemoteAddr();
         boolean isLocal = isLoopback(remoteAddr);
 
@@ -102,25 +106,25 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
         return LOOPBACK_ADDRESSES.contains(remoteAddr) || remoteAddr.startsWith("127.");
     }
 
-    private boolean checkMutatingAiResourceAccess(HttpServletRequest request, HttpServletResponse response, String path, String method) throws IOException {
+    private boolean checkMutatingOperation(HttpServletRequest request, HttpServletResponse response, String path, String method, String surface) throws IOException {
         if (configuredApiKey.isBlank()) {
-            log.warn("[SECURITY][DENIAL] Mutating AI operation {} '{}' rejected: server API key is not configured in environment", method, path);
+            log.warn("[SECURITY][DENIAL] Mutating {} operation {} '{}' rejected: server API key is not configured in environment", surface, method, path);
             writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN",
-                    "Access denied: server API key is not configured; mutating AI resource operations are disabled");
+                    "Access denied: server API key is not configured; mutating " + surface + " operations are disabled");
             return false;
         }
 
         String token = extractToken(request);
 
         if (token == null || token.isBlank()) {
-            log.warn("[SECURITY][DENIAL] Unauthorized attempt to perform mutating AI operation {} '{}' without credentials", method, path);
+            log.warn("[SECURITY][DENIAL] Unauthorized attempt to perform mutating {} operation {} '{}' without credentials", surface, method, path);
             writeErrorResponse(response, HttpServletResponse.SC_UNAUTHORIZED, "UNAUTHORIZED",
-                    "Authorization required: missing X-API-Key or Authorization Bearer header for mutating AI resource operations");
+                    "Authorization required: missing X-API-Key or Authorization Bearer header for mutating " + surface + " operations");
             return false;
         }
 
         if (!isTokenValid(token)) {
-            log.warn("[SECURITY][DENIAL] Forbidden attempt to perform mutating AI operation {} '{}' with invalid key", method, path);
+            log.warn("[SECURITY][DENIAL] Forbidden attempt to perform mutating {} operation {} '{}' with invalid key", surface, method, path);
             writeErrorResponse(response, HttpServletResponse.SC_FORBIDDEN, "FORBIDDEN",
                     "Access denied: invalid authorization credentials");
             return false;

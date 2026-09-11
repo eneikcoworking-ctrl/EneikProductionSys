@@ -67,6 +67,7 @@ public class WishlistControllerIntegrationTest {
         );
 
         mockMvc.perform(post("/api/wishlist")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -88,6 +89,7 @@ public class WishlistControllerIntegrationTest {
         );
 
         mockMvc.perform(post("/api/wishlist")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
@@ -104,6 +106,7 @@ public class WishlistControllerIntegrationTest {
         );
 
         mockMvc.perform(post("/api/wishlist")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -119,6 +122,7 @@ public class WishlistControllerIntegrationTest {
         );
 
         mockMvc.perform(post("/api/wishlist")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -137,6 +141,7 @@ public class WishlistControllerIntegrationTest {
         // Now routed through ProjectFlowService.addWishlistItem (same as POST /projects/{id}/wishlist),
         // which reports a missing project as IllegalArgumentException -> 400, not 404.
         mockMvc.perform(post("/api/wishlist")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest());
@@ -184,10 +189,27 @@ public class WishlistControllerIntegrationTest {
         entity.setStatus(WishlistStatus.pending);
         entity = wishlistRepository.save(entity);
 
-        mockMvc.perform(patch("/api/wishlist/" + entity.getId() + "/dismiss"))
+        mockMvc.perform(patch("/api/wishlist/" + entity.getId() + "/dismiss")
+                .header("X-API-Key", "eneik-test-secret-key-42"))
                 .andExpect(status().isOk());
 
         WishlistEntity updated = wishlistRepository.findById(entity.getId()).get();
         assert updated.getStatus() == WishlistStatus.dismissed;
+    }
+
+    @Test
+    void unauthenticatedWishlistMutatingIsDeniedWith401() throws Exception {
+        WishlistRequestDto request = new WishlistRequestDto(
+                validProjectId,
+                WishlistSource.client,
+                null,
+                "Client feedback"
+        );
+
+        mockMvc.perform(post("/api/wishlist")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 }

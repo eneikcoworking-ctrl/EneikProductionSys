@@ -49,6 +49,7 @@ public class GreetingControllerIntegrationTest {
         String json = "{\"message\": \"Hello Agency\"}";
 
         mockMvc.perform(post("/api/v1/greetings")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json))
                 .andExpect(status().isCreated())
@@ -76,6 +77,7 @@ public class GreetingControllerIntegrationTest {
         String json = "{\"message\": \"Contact me at test@example.com\"}";
 
         mockMvc.perform(post("/api/v1/greetings")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json))
                 .andExpect(status().isCreated());
@@ -91,6 +93,7 @@ public class GreetingControllerIntegrationTest {
         String json = "{\"message\": \"My card is 1234-5678-1234-5678\"}";
 
         mockMvc.perform(post("/api/v1/greetings")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json))
                 .andExpect(status().isBadRequest())
@@ -106,6 +109,7 @@ public class GreetingControllerIntegrationTest {
         String json = "{\"message\": \"Testing Fallback\"}";
 
         mockMvc.perform(post("/api/v1/greetings")
+                .header("X-API-Key", "eneik-test-secret-key-42")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json))
                 .andExpect(status().isCreated())

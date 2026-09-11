@@ -65,10 +65,16 @@ class ProjectFlowIntegrationTest {
     private com.eneik.production.services.ContinuousOrchestrationService continuousOrchestrationService;
     @org.springframework.boot.test.mock.mockito.MockBean
     private com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.eneik.production.services.onboarding.RepositoryStackAnalyzer repositoryStackAnalyzer;
 
     @BeforeEach
     void setUp() {
         cleanDatabase();
+        restTemplate.getRestTemplate().setInterceptors(java.util.List.of((req, body, exec) -> {
+            req.getHeaders().set("X-API-Key", "eneik-test-secret-key-42");
+            return exec.execute(req, body);
+        }));
     }
 
     // This class uses TestRestTemplate against a real random-port server, so test methods cannot rely on
@@ -83,7 +89,6 @@ class ProjectFlowIntegrationTest {
 
     private void cleanDatabase() {
         claimRepository.deleteAll();
-        jdbcTemplate.update("DELETE FROM needs_human_review");
         jdbcTemplate.update("DELETE FROM task_conflicts");
         jdbcTemplate.update("DELETE FROM jules_sessions");
         taskRepository.deleteAll();
@@ -296,6 +301,17 @@ class ProjectFlowIntegrationTest {
 
     @Test
     void brownfieldOnboardingAuditAndActivationFlow() throws Exception {
+        org.mockito.Mockito.when(repositoryStackAnalyzer.analyze(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenReturn(new com.eneik.production.services.onboarding.RepositoryStackAnalyzer.AnalysisResult(
+                        new com.eneik.production.services.onboarding.StackProfile(
+                                "Java", "Spring Boot", "PostgreSQL",
+                                com.eneik.production.services.onboarding.InspectionStatus.NO,
+                                com.eneik.production.services.onboarding.InspectionStatus.NO,
+                                com.eneik.production.services.onboarding.InspectionStatus.NO,
+                                "Production enterprise backend", "main", "abc1234", 10, 10),
+                        java.util.Collections.emptyList()
+                ));
+
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
                 Map.of("name", "Legacy App", "onboardingMode", "brownfield", "initialWishlist", "Analyze and modernize the legacy app"),

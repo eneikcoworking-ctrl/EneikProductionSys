@@ -559,6 +559,43 @@
 ### Вопрос Оператору и Клоду по пробелу ACP-103…106:
 **Вопрос:** В нумерации общих аналитических паттернов (`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`) после `ACP-102` сразу идут `ACP-107` и `ACP-108`. Паттерны `ACP-103…106` упоминались в старом плане `LIVE_PRODUCT_PLAN_2026-08-19.md` (§9.3–9.5), но в текущий корпус не вошли. Планируется ли их формулирование и внесение в корпус (как общих паттернов фабрики), либо нумерация остаётся разреженной намеренно?
 
+### 2026-09-11 Antigravity: Такт 22 — Закрытие анонимного контура пульта управления (Предписания 24 + 59, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, `BOUNDARY_TOPOLOGY` / D006; `NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009)
+- **Что сделано:**
+  1. **Закрытие управляющего контура пультов (`BOUNDARY_TOPOLOGY`, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006):**
+     - В `WebConfig` и `ApiAuthorizationInterceptor` область действия расширена на все изменяющие методы (`POST`, `PUT`, `PATCH`, `DELETE`) по маскам `/api/**` и `/internal/**`. Все 64 изменяющих входа защищены.
+     - Безопасные чтения (`GET`, `HEAD`, `OPTIONS`) сохранены открытыми для браузерного CORS и телеметрии.
+     - Предписание 59: изменяющие вызовы `/internal/**` теперь строго требуют авторизационных заголовков (`X-API-Key` или `Authorization: Bearer`), даже при запросах с `127.0.0.1`.
+     - Запрос без заголовков получает единый `401 UNAUTHORIZED`. Запрос с неверным ключом или при отсутствии сконфигурированного ключа на сервере — `403 FORBIDDEN`.
+  2. **Ликвидация подмены вебхуков (`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009):**
+     - Снято исключение `/api/webhooks/**`: до реализации отдельного механизма HMAC-подписи (`X-Hub-Signature-256`) и очистки заготовочных веток с `findAll()`, изменяющие запросы к вебхукам требуют авторизационного ключа.
+     - Анонимный вызов `POST /api/webhooks/github` без ключа немедленно получает отказ `401 UNAUTHORIZED`, предотвращая запуск поддельных PR opened с несанкционированным закрытием клеймов исполнителей, захватом аккаунтов и платными сессиями Jules.
+  3. **Изоляция тестового окружения:**
+     - В `src/test/resources/application-test.properties` добавлен тестовый ключ с явным комментарием: `# Test-only secret key for JUnit integration tests; not the production factory key`.
+     - `AccountControllerIntegrationTest`, `SettingsControllerIntegrationTest`, `WishlistControllerIntegrationTest`, `GreetingControllerIntegrationTest`, `ProjectFlowIntegrationTest`, `SystemStatusControllerIntegrationTest`, `TocSentinelControllerTest` обновлены с передачей тестового ключа. В тестах на 401 применён нативный `java.net.http.HttpClient`, предотвращающий JDK `HttpRetryException` потокового режима `HttpURLConnection`.
+     - В `ProjectFlowIntegrationTest` добавлен MockBean `RepositoryStackAnalyzer`, изолирующий brownfield onboarding flow от внешних запросов к GitHub.
+  4. **Предупреждение Оператору:**
+     - 8 изменяющих кнопок/запросов веб-панели администрирования (`/api/accounts`, `/api/ai/resources`, `/api/settings`, `/api/projects`, `/api/wishlist`) без передачи заголовка `X-API-Key` или `Bearer` начнут получать отказ `401 Unauthorized` / `403 Forbidden`.
+- **Чем проверено:**
+  1. `ApiAuthorizationInterceptorTest` (17/17 green):
+     - Изменяющие вызовы консолей (`/api/accounts`, `/api/settings`, `/api/projects`, `/api/wishlist`) без ключа -> 401 UNAUTHORIZED.
+     - Изменяющие вызовы консолей с валидным ключом (`X-API-Key`, `Bearer`) -> 200 OK.
+     - Вебхук `POST /api/webhooks/github` без ключа -> 401 UNAUTHORIZED (Relation 13).
+     - Вебхук `POST /api/webhooks/github` с валидным ключом -> 200 OK (Relation 13b).
+     - Безопасные чтения GET по всем путям -> 200 OK.
+     - Изменяющие вызовы `/internal/**` с localhost без ключа -> 401 UNAUTHORIZED.
+     - Изменяющие вызовы `/internal/**` с localhost с валидным ключом -> 200 OK.
+  2. Интеграционные тесты контроллеров:
+     - `AccountControllerIntegrationTest`: 5/5 green (включая живой сетевой отказ 401 через HttpClient).
+     - `SettingsControllerIntegrationTest`: 5/5 green.
+     - `WishlistControllerIntegrationTest`: 8/8 green.
+     - `GreetingControllerIntegrationTest`: 5/5 green.
+     - `TocSentinelControllerTest`: 2/2 green.
+     - `SystemStatusControllerIntegrationTest`: 5/5 green.
+     - `ProjectFlowIntegrationTest`: 5/5 green.
+     - Регрессия: 52 интеграционных теста green, BUILD SUCCESS.
+- **Что берётся следующим:** Пункт 2 из согласованного порядка — `CommandDashboardService` (Ступень 1): добавление пятого условия готовности («проход приёмки заказчика», `V100` / `clientAcceptanceTraversals > 0`).
+
+
 
 
 
