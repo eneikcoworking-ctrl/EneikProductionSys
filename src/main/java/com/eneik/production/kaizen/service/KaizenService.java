@@ -635,7 +635,7 @@ public class KaizenService {
 
         switch (proposal.getCategory()) {
             case BUFFER_TUNING -> {
-                long currentCap = tocSentinelService.getOptimizer().getMaxBufferCapacity();
+                long currentCap = tocSentinelService.getMaxBufferCapacity();
                 UUID targetProjectId = proposal.getProjectId() != null
                         ? proposal.getProjectId() : sixSigmaAuditService.getActiveProjectId();
                 long newCap = currentCap + 2; // safe floor if this project has no measured task-cycle variance yet
@@ -650,7 +650,7 @@ public class KaizenService {
                             recommendation.sampleSize(), String.format("%.4f", recommendation.throughputPerSecond()),
                             recommendation.bufferCapacity());
                 }
-                tocSentinelService.getOptimizer().setMaxBufferCapacity(newCap);
+                tocSentinelService.setMaxBufferCapacity(newCap);
                 log.info("[KAIZEN-ACTION] Micro-tuned DBR Max Buffer Capacity from {} to {} (variance-based, not a hardcoded increment).", currentCap, newCap);
             }
             case WASTE_REDUCTION -> {

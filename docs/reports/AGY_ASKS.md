@@ -16,7 +16,24 @@
   1. `QualityGateControllerTest` (2/2 green): проверка делегирования в глобальном и проектном разрезе.
   2. `SixSigmaAuditServiceTest` (16/16 green): тест `computeQualityGateDefectRateCategorizesMissingPassedFieldAsUndetermined` проверяет точный подсчёт `undetermined` без падения и заслоняет `never().findAll()`.
   3. `SystemStatusServiceTest` (11/11 green): регрессионная целостность статусного свода сохранена.
-- **Что берётся следующим:** Такт 3 — пункт 2 `docs/ANTIGRAVITY_QUEUE.md`: `GeminiContextService` (retrieval corpus parsing and vector query optimization).
+
+### 2026-09-11 Antigravity: Такт 3 — TocSentinelService целиком (пункты 4 и 6 очереди, Раздел XXXVII)
+- **Что сделано:**
+  1. **Анти-зеркальная телеметрия (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013):** `TocOptimizer` сохраняет кэшированный снимок `latestDbrStatus`. Метод `TocSentinelService.getDbrStatus()` теперь выполняет чистое чтение без вызова `evaluateConstraintsAndDbr()`, не рассчитывает arrival rate, не перезаписывает загрузку узлов (`setUtilization`) и не сбрасывает признаки главного ограничения (`setPrimaryConstraint`). Пересчёт выполняется только сторожем по расписанию (`periodicWatchdog()`) или при явном вызове `refreshDbrStatus()`.
+  2. **Инкапсуляция владения графом (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004):** Ликвидирована утечка внутренних мутируемых компонентов — геттеры `getGraph()`, `getAnomalyDetector()`, `getOptimizer()` полностью удалены из `TocSentinelService`. Необходимые вызовы проброшены через методы фасада: `getToken(id)`, `getNode(name)`, `getAllNodes()` (немодифицируемая коллекция), `getEdges()` (немодифицируемая коллекция), `getActiveTokenCount()`, `getGlobalArrivalRatePerSec()`, `getCompletedCountAllNodes()`, `getMaxBufferCapacity()`, `setMaxBufferCapacity(capacity)`. Вызывающие сервисы (`KaizenService`, `SixSigmaAuditService`, `TocSentinelController`) переведены на публичные методы сервиса.
+  3. **Обоснованная частота обхода (`ALONZO_CHERCH_21_DERIVED_CUTOFF`):** Частота сторожа переведена на конфигурируемое свойство `@Scheduled(fixedRateString = "${eneik.toc.sentinel-rate-ms:2000}")` и объявлена в `application.properties`: 2000 мс выведены из минимального цикла шага асинхронного пайплайна (~1.5–2.0с) для устранения эффекта Найквиста при расчёте входного потока и предотвращения холостого сжигания CPU.
+- **Чем проверено:**
+  1. `TocSentinelServiceTest` (6/6 green):
+     - `getDbrStatusDoesNotMutateGraphOrConstraintState`: 10 последовательных вызовов `getDbrStatus()` оставляют загрузку узла, признак главного ограничения и `lastEvaluatedAt` неизменными.
+     - `partWholeEncapsulationEnforcedWithoutLeakyComponentGetters`: рефлексивный запрет `getGraph`, `getAnomalyDetector`, `getOptimizer`; проверка неизменяемости коллекций узлов и ребер (`UnsupportedOperationException`).
+     - `watchdogCadenceAndExplicitRefreshSubordination`: проверка пересчёта по `refreshDbrStatus()` и `periodicWatchdog()`, срабатывание DBR-троттлинга при превышении буфера.
+  2. `TocSentinelControllerTest` (2/2 green): корректность работы REST-эндпоинтов `/api/toc/status`, `/constraint`, `/graph`, `/anomalies`, `/event/enter`, `/event/exit`, `/resource/*` через инкапсулированный фасад.
+  3. `KaizenServiceTest` (9/9 green): адаптивная подстройка DBR-буфера через `tocSentinelService.getMaxBufferCapacity()` / `setMaxBufferCapacity()`.
+  4. `SixSigmaAuditServiceTest` (16/16 green): расчет возможностей через `tocSentinelService.getCompletedCountAllNodes()`.
+  5. `SystemStatusServiceTest` (11/11 green): полная регрессионная целостность статусного свода.
+  Общий прогон: 47/47 тестов зелёные.
+- **Что берётся следующим:** Такт 4 — `SystemStatusService` целиком по директиве из `docs/reports/AGY_NEXT.md` (четыре `findAll()` на пути без проекта, столбец признака носителя, недоступность аккаунта по `status` и `enabled` с фиксацией сработавшего условия, падающий тест на краснеющую сводку при выключенных аккаунтах).
+
 
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
 

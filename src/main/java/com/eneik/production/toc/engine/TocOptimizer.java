@@ -25,9 +25,21 @@ public class TocOptimizer {
     private volatile boolean ropeThrottlingActive = false;
     private volatile String currentConstraintName = "NONE";
     private volatile Instant lastEvaluatedAt = Instant.now();
+    private volatile DbrStatus latestDbrStatus;
 
     public TocOptimizer(TocExecutionGraph graph) {
         this.graph = graph;
+        this.latestDbrStatus = new DbrStatus(
+                "NONE",
+                0,
+                0.0,
+                0.0,
+                0,
+                maxBufferCapacity,
+                false,
+                this.lastEvaluatedAt,
+                "System flow optimal. Primary constraint: 'NONE'."
+        );
     }
 
     /**
@@ -94,7 +106,7 @@ public class TocOptimizer {
 
         lastEvaluatedAt = Instant.now();
 
-        return new DbrStatus(
+        DbrStatus status = new DbrStatus(
                 constraintName,
                 bufferSize,
                 utilization,
@@ -105,6 +117,19 @@ public class TocOptimizer {
                 lastEvaluatedAt,
                 recommendation
         );
+        this.latestDbrStatus = status;
+
+        return status;
+    }
+
+    /**
+     * Returns the cached Drum-Buffer-Rope status snapshot from the most recent evaluation.
+     * Pure read operation: does not mutate graph nodes, change utilization, or alter constraint state.
+     * (LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY / D013)
+     */
+    public DbrStatus getLatestDbrStatus() {
+        DbrStatus current = this.latestDbrStatus;
+        return current != null ? current : evaluateConstraintsAndDbr();
     }
 
     /**
@@ -139,5 +164,23 @@ public class TocOptimizer {
 
     public void setMaxBufferCapacity(long maxBufferCapacity) {
         this.maxBufferCapacity = maxBufferCapacity;
+        DbrStatus current = this.latestDbrStatus;
+        if (current != null) {
+            boolean throttle = current.bufferSize() >= maxBufferCapacity;
+            this.ropeThrottlingActive = throttle;
+            this.latestDbrStatus = new DbrStatus(
+                    current.primaryConstraintNode(),
+                    current.constraintQueueLength(),
+                    current.constraintUtilization(),
+                    current.constraintMeanDurationMs(),
+                    current.bufferSize(),
+                    maxBufferCapacity,
+                    throttle,
+                    current.lastEvaluatedAt(),
+                    throttle
+                            ? String.format("Throttling active! Elevate priority of work targeting node '%s' and defer non-critical jobs.", current.primaryConstraintNode())
+                            : String.format("System flow optimal. Primary constraint: '%s'.", current.primaryConstraintNode())
+            );
+        }
     }
 }

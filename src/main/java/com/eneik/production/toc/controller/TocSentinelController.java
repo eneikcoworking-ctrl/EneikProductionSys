@@ -48,12 +48,12 @@ public class TocSentinelController {
     @GetMapping("/graph")
     public ResponseEntity<Map<String, Object>> getGraph() {
         Map<String, Object> res = new HashMap<>();
-        Collection<TocNode> nodes = tocSentinelService.getGraph().getAllNodes();
+        Collection<TocNode> nodes = tocSentinelService.getAllNodes();
         res.put("nodeCount", nodes.size());
         res.put("nodes", nodes);
-        res.put("edges", tocSentinelService.getGraph().getEdges());
-        res.put("activeTokenCount", tocSentinelService.getGraph().getActiveTokens().size());
-        res.put("arrivalRatePerSec", tocSentinelService.getGraph().getGlobalArrivalRatePerSec());
+        res.put("edges", tocSentinelService.getEdges());
+        res.put("activeTokenCount", tocSentinelService.getActiveTokenCount());
+        res.put("arrivalRatePerSec", tocSentinelService.getGlobalArrivalRatePerSec());
         return ResponseEntity.ok(res);
     }
 
@@ -72,7 +72,7 @@ public class TocSentinelController {
         int prio = req.priority() != null ? req.priority() : 0;
         String tid = req.tokenId();
 
-        TocToken token = tid != null ? tocSentinelService.getGraph().getToken(tid) : null;
+        TocToken token = tid != null ? tocSentinelService.getToken(tid) : null;
         if (token == null) {
             token = tid != null
                     ? tocSentinelService.startExecutionWithId(tid, scenario, prio)
@@ -97,7 +97,7 @@ public class TocSentinelController {
 
     @PostMapping("/event/exit")
     public ResponseEntity<Map<String, Object>> exitStep(@RequestBody StepExitRequest req) {
-        TocToken token = tocSentinelService.getGraph().getToken(req.tokenId());
+        TocToken token = tocSentinelService.getToken(req.tokenId());
         if (token != null) {
             tocSentinelService.exitStep(token, req.stepName(), req.success() != null ? req.success() : true);
         }
@@ -109,7 +109,7 @@ public class TocSentinelController {
 
     @PostMapping("/resource/acquire")
     public ResponseEntity<Map<String, Object>> acquireResource(@RequestBody ResourceRequest req) {
-        TocToken token = tocSentinelService.getGraph().getToken(req.tokenId());
+        TocToken token = tocSentinelService.getToken(req.tokenId());
         if (token != null) {
             tocSentinelService.acquireResource(token, req.resourceId());
         }
@@ -118,7 +118,7 @@ public class TocSentinelController {
 
     @PostMapping("/resource/wait")
     public ResponseEntity<Map<String, Object>> waitResource(@RequestBody ResourceRequest req) {
-        TocToken token = tocSentinelService.getGraph().getToken(req.tokenId());
+        TocToken token = tocSentinelService.getToken(req.tokenId());
         boolean deadlockDetected = false;
         if (token != null) {
             deadlockDetected = tocSentinelService.waitResource(token, req.resourceId());
@@ -128,7 +128,7 @@ public class TocSentinelController {
 
     @PostMapping("/resource/release")
     public ResponseEntity<Map<String, Object>> releaseResource(@RequestBody ResourceRequest req) {
-        TocToken token = tocSentinelService.getGraph().getToken(req.tokenId());
+        TocToken token = tocSentinelService.getToken(req.tokenId());
         if (token != null) {
             tocSentinelService.releaseResource(token, req.resourceId());
         }

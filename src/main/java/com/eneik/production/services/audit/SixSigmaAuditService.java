@@ -250,7 +250,7 @@ public class SixSigmaAuditService {
 
         // 4. Category D: TOC Sentinel Runtime Execution Anomalies
         var tocAnomalies = tocSentinelService.getRecentAnomalies();
-        long tocOpportunities = Math.max(tocSentinelService.getGraph().getCompletedCountAllNodes() * 2L, targetProjectId == null ? 50L : 10L);
+        long tocOpportunities = Math.max(tocSentinelService.getCompletedCountAllNodes() * 2L, targetProjectId == null ? 50L : 10L);
         long tocDefects = tocAnomalies.size();
 
         // Totals

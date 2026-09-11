@@ -146,7 +146,7 @@ public class TocSentinelServiceTest {
 
     @Test
     void testTocConstraintIdentificationAndDbrThrottling() {
-        optimizer.setMaxBufferCapacity(3);
+        sentinelService.setMaxBufferCapacity(3);
 
         // Simulate 5 tokens queuing in HEAVY_CALC
         for (int i = 0; i < 5; i++) {
@@ -154,6 +154,7 @@ public class TocSentinelServiceTest {
             sentinelService.enterStep(t, "HEAVY_CALC");
         }
 
+        sentinelService.periodicWatchdog();
         DbrStatus status = sentinelService.getDbrStatus();
         assertThat(status.primaryConstraintNode()).isEqualTo("HEAVY_CALC");
         assertThat(status.ropeThrottlingActive()).isTrue();
@@ -165,5 +166,105 @@ public class TocSentinelServiceTest {
         // High priority token (90) bypasses DBR throttle
         TocToken highPrio = sentinelService.startExecution("VIP_JOB", 90);
         assertThat(highPrio.getStatus()).isEqualTo(TocToken.TokenStatus.ACTIVE);
+    }
+
+    /**
+     * Flaw 1: getDbrStatus() must be a pure read and must not mutate graph or constraint flags.
+     * (LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY / D013)
+     */
+    @Test
+    void getDbrStatusDoesNotMutateGraphOrConstraintState() {
+        TocToken token = sentinelService.startExecution("INVARIANT_WORKFLOW", 10);
+        sentinelService.enterStep(token, "STAGE_X");
+        sentinelService.periodicWatchdog();
+
+        DbrStatus initialStatus = sentinelService.getDbrStatus();
+        TocNode node = sentinelService.getNode("STAGE_X");
+        assertThat(node).isNotNull();
+
+        double initialUtilization = node.getUtilization();
+        boolean initialConstraintFlag = node.isPrimaryConstraint();
+        java.time.Instant initialEvaluatedAt = initialStatus.lastEvaluatedAt();
+
+        // 10 successive reads without watchdog ticks must be completely pure
+        for (int i = 0; i < 10; i++) {
+            DbrStatus readStatus = sentinelService.getDbrStatus();
+            assertThat(readStatus.primaryConstraintNode()).isEqualTo(initialStatus.primaryConstraintNode());
+            assertThat(readStatus.lastEvaluatedAt()).isEqualTo(initialEvaluatedAt);
+            assertThat(readStatus.constraintUtilization()).isEqualTo(initialStatus.constraintUtilization());
+            assertThat(readStatus.bufferSize()).isEqualTo(initialStatus.bufferSize());
+            assertThat(node.getUtilization()).isEqualTo(initialUtilization);
+            assertThat(node.isPrimaryConstraint()).isEqualTo(initialConstraintFlag);
+        }
+    }
+
+    /**
+     * Flaw 2: Leaky component getters (getGraph, getAnomalyDetector, getOptimizer) are eliminated.
+     * Encapsulation is enforced and callers use guarded query methods.
+     * (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004)
+     */
+    @Test
+    void partWholeEncapsulationEnforcedWithoutLeakyComponentGetters() {
+        // Reflection check: getters getGraph, getAnomalyDetector, getOptimizer must not exist
+        Class<?> clazz = sentinelService.getClass();
+        assertThat(java.util.Arrays.stream(clazz.getMethods()).map(java.lang.reflect.Method::getName))
+                .doesNotContain("getGraph", "getAnomalyDetector", "getOptimizer");
+
+        // Encapsulated operations work cleanly through TocSentinelService
+        sentinelService.setMaxBufferCapacity(42);
+        assertThat(sentinelService.getMaxBufferCapacity()).isEqualTo(42);
+
+        TocToken token = sentinelService.startExecution("ENCAPSULATION_TEST", 15);
+        assertThat(sentinelService.getToken(token.getTokenId())).isNotNull();
+        assertThat(sentinelService.getActiveTokenCount()).isGreaterThanOrEqualTo(1);
+
+        sentinelService.enterStep(token, "STEP_ENCAPSULATED");
+        assertThat(sentinelService.getAllNodes()).isNotEmpty();
+        assertThat(sentinelService.getNode("STEP_ENCAPSULATED")).isNotNull();
+
+        // Collections returned must be unmodifiable (safe snapshots)
+        var nodes = sentinelService.getAllNodes();
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () ->
+                nodes.add(new TocNode("ILLEGAL_EXTERNAL_MUTATION"))
+        );
+
+        var edges = sentinelService.getEdges();
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class, () ->
+                edges.add(new com.eneik.production.toc.model.TocEdge("A", "B"))
+        );
+
+        sentinelService.exitStep(token, "STEP_ENCAPSULATED", true);
+        sentinelService.endExecution(token, true);
+        assertThat(sentinelService.getCompletedCountAllNodes()).isGreaterThanOrEqualTo(1);
+    }
+
+    /**
+     * Flaw 3: Watchdog cadence is derived and refreshDbrStatus allows explicit re-evaluation.
+     * (ALONZO_CHERCH_21_DERIVED_CUTOFF)
+     */
+    @Test
+    void watchdogCadenceAndExplicitRefreshSubordination() {
+        sentinelService.setMaxBufferCapacity(2);
+
+        TocToken t1 = sentinelService.startExecution("FLOW_1", 10);
+        sentinelService.enterStep(t1, "BOTTLENECK_STEP");
+
+        DbrStatus beforeRefresh = sentinelService.getDbrStatus();
+        assertThat(beforeRefresh.ropeThrottlingActive()).isFalse();
+
+        // Explicit refresh recalculates constraints immediately
+        DbrStatus refreshed = sentinelService.refreshDbrStatus();
+        assertThat(refreshed.primaryConstraintNode()).isEqualTo("BOTTLENECK_STEP");
+
+        TocToken t2 = sentinelService.startExecution("FLOW_2", 10);
+        sentinelService.enterStep(t2, "BOTTLENECK_STEP");
+
+        sentinelService.periodicWatchdog();
+        DbrStatus statusAfterBufferExceeded = sentinelService.getDbrStatus();
+        assertThat(statusAfterBufferExceeded.ropeThrottlingActive()).isTrue();
+
+        // Throttling subordinations hold
+        TocToken blocked = sentinelService.startExecution("FLOW_3", 10);
+        assertThat(blocked.getStatus()).isEqualTo(TocToken.TokenStatus.THROTTLED);
     }
 }

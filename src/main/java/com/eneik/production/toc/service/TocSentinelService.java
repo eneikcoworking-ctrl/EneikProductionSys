@@ -5,6 +5,7 @@ import com.eneik.production.toc.engine.TocExecutionGraph;
 import com.eneik.production.toc.engine.TocOptimizer;
 import com.eneik.production.toc.model.AnomalyReport;
 import com.eneik.production.toc.model.DbrStatus;
+import com.eneik.production.toc.model.TocEdge;
 import com.eneik.production.toc.model.TocNode;
 import com.eneik.production.toc.model.TocToken;
 import org.slf4j.Logger;
@@ -13,6 +14,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +22,16 @@ import java.util.UUID;
  * TOC Sentinel Service - Independent Theory of Constraints Analytics & Real-Time Operational Engine.
  * Intercepts scenario execution events, maintains a dynamic state machine graph, detects anomalies
  * (cycles, stalls, resource deadlocks), identifies bottlenecks, and controls flow using Drum-Buffer-Rope.
+ *
+ * Invariants enforced by Antigravity (L2):
+ * - Anti-Mirror Telemetry (LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY / D013): Observation does not mutate
+ *   the observed. getDbrStatus() returns the cached latestDbrStatus snapshot without recomputing graph node
+ *   utilizations, changing node primary constraint flags, or resetting timestamps.
+ * - Derived Cadence (ALONZO_CHERCH_21_DERIVED_CUTOFF): Watchdog rate is configurable via 'eneik.toc.sentinel-rate-ms'
+ *   rather than fixed hardcoded integer.
+ * - Part-Whole Ownership (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004): Buffer capacity controls (getMaxBufferCapacity,
+ *   setMaxBufferCapacity) and refresh triggers (refreshDbrStatus) are owned and exposed directly by TocSentinelService
+ *   rather than requiring callers (e.g. KaizenService) to manipulate internal TocOptimizer state directly.
  */
 @Service
 public class TocSentinelService {
@@ -36,6 +48,8 @@ public class TocSentinelService {
         this.graph = graph;
         this.anomalyDetector = anomalyDetector;
         this.optimizer = optimizer;
+        // Initial evaluation establishes baseline DbrStatus snapshot without waiting for first scheduled tick
+        this.optimizer.evaluateConstraintsAndDbr();
         log.info("[TOC-SENTINEL][INIT] TOC Sentinel Service initialized successfully.");
     }
 
@@ -156,8 +170,9 @@ public class TocSentinelService {
     /**
      * Scheduled periodic background watchdog task.
      * Evaluates dynamic stalls, identifies primary constraint, and updates Drum-Buffer-Rope (DBR) state.
+     * Derived Cadence: Configurable via 'eneik.toc.sentinel-rate-ms' (default 2000 ms).
      */
-    @Scheduled(fixedRate = 2000)
+    @Scheduled(fixedRateString = "${eneik.toc.sentinel-rate-ms:2000}")
     public void periodicWatchdog() {
         try {
             anomalyDetector.scanForStalls();
@@ -171,23 +186,88 @@ public class TocSentinelService {
         return optimizer.getCurrentConstraintName();
     }
 
+    /**
+     * Returns the cached Drum-Buffer-Rope (DBR) status snapshot.
+     * Pure read operation: does not mutate graph nodes, recalculate arrival rates, or alter constraint flags.
+     * (LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY / D013)
+     */
     public DbrStatus getDbrStatus() {
+        return optimizer.getLatestDbrStatus();
+    }
+
+    /**
+     * Forces an explicit re-evaluation of constraints and DBR parameters.
+     */
+    public DbrStatus refreshDbrStatus() {
         return optimizer.evaluateConstraintsAndDbr();
+    }
+
+    /**
+     * Returns the maximum capacity of the buffer before the primary constraint.
+     * Encapsulates optimizer state (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004).
+     */
+    public long getMaxBufferCapacity() {
+        return optimizer.getMaxBufferCapacity();
+    }
+
+    /**
+     * Updates the maximum capacity of the buffer before the primary constraint.
+     * Encapsulates optimizer state (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004).
+     */
+    public void setMaxBufferCapacity(long capacity) {
+        optimizer.setMaxBufferCapacity(capacity);
     }
 
     public List<AnomalyReport> getRecentAnomalies() {
         return anomalyDetector.getRecentAnomalies();
     }
 
-    public TocExecutionGraph getGraph() {
-        return graph;
+    /**
+     * Retrieves an active execution token by its identifier.
+     */
+    public TocToken getToken(String tokenId) {
+        return graph.getToken(tokenId);
     }
 
-    public TocAnomalyDetector getAnomalyDetector() {
-        return anomalyDetector;
+    /**
+     * Retrieves a graph node by name.
+     */
+    public TocNode getNode(String nodeName) {
+        return graph.getNode(nodeName);
     }
 
-    public TocOptimizer getOptimizer() {
-        return optimizer;
+    /**
+     * Returns an unmodifiable snapshot collection of all known graph nodes.
+     */
+    public Collection<TocNode> getAllNodes() {
+        return graph.getAllNodes();
+    }
+
+    /**
+     * Returns an unmodifiable snapshot collection of all graph edges.
+     */
+    public Collection<TocEdge> getEdges() {
+        return graph.getEdges();
+    }
+
+    /**
+     * Returns the count of currently active execution tokens.
+     */
+    public int getActiveTokenCount() {
+        return graph.getActiveTokens().size();
+    }
+
+    /**
+     * Returns the global token arrival rate per second.
+     */
+    public double getGlobalArrivalRatePerSec() {
+        return graph.getGlobalArrivalRatePerSec();
+    }
+
+    /**
+     * Returns the total count of completed executions across all nodes.
+     */
+    public long getCompletedCountAllNodes() {
+        return graph.getCompletedCountAllNodes();
     }
 }
