@@ -226,9 +226,15 @@ public class InternalGeminiObserverController {
     @GetMapping("/persistent-workers")
     public List<java.util.Map<String, Object>> persistentWorkers(@RequestParam(required = false) UUID projectId) {
         UUID effectiveProjectId = projectId != null ? projectId : resolveSingleActiveProjectId();
-        List<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> sessions = (effectiveProjectId != null)
-                ? persistentWorkerSessionRepository.findByProjectId(effectiveProjectId)
-                : persistentWorkerSessionRepository.findAll();
+        if (effectiveProjectId == null) {
+            java.util.Map<String, Object> undetermined = new java.util.LinkedHashMap<>();
+            undetermined.put("status", "UNDETERMINED_PROJECT");
+            undetermined.put("message", "No single active project found. Provide 'projectId' parameter explicitly.");
+            return List.of(undetermined);
+        }
+
+        List<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> sessions =
+                persistentWorkerSessionRepository.findByProjectId(effectiveProjectId);
 
         return sessions.stream()
                 .map(w -> {

@@ -41,7 +41,6 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
             "localhost"
     );
 
-    private static final Pattern DOCKER_BRIDGE_GATEWAY_PATTERN = Pattern.compile("^172\\.(1[6-9]|2[0-9]|3[0-1])\\.[0-9]+\\.1$");
 
     private static final Set<String> MUTATING_METHODS = Set.of(
             "POST", "PUT", "PATCH", "DELETE"
@@ -78,7 +77,7 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
 
     private boolean checkInternalAccess(HttpServletRequest request, HttpServletResponse response, String path) throws IOException {
         String remoteAddr = request.getRemoteAddr();
-        boolean isLocal = isLoopbackOrHostGateway(remoteAddr);
+        boolean isLocal = isLoopback(remoteAddr);
 
         if (isLocal) {
             return true;
@@ -96,23 +95,11 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
         return false;
     }
 
-    private boolean isLoopbackOrHostGateway(String remoteAddr) {
+    private boolean isLoopback(String remoteAddr) {
         if (remoteAddr == null || remoteAddr.isBlank()) {
             return false;
         }
-        if (LOOPBACK_ADDRESSES.contains(remoteAddr) || remoteAddr.startsWith("127.")) {
-            return true;
-        }
-        // Host gateway via docker-proxy on docker bridge networks (ends with .1 in private ranges)
-        if (remoteAddr.endsWith(".1")) {
-            if (remoteAddr.startsWith("10.") || remoteAddr.startsWith("192.168.")) {
-                return true;
-            }
-            if (DOCKER_BRIDGE_GATEWAY_PATTERN.matcher(remoteAddr).matches()) {
-                return true;
-            }
-        }
-        return false;
+        return LOOPBACK_ADDRESSES.contains(remoteAddr) || remoteAddr.startsWith("127.");
     }
 
     private boolean checkMutatingAiResourceAccess(HttpServletRequest request, HttpServletResponse response, String path, String method) throws IOException {

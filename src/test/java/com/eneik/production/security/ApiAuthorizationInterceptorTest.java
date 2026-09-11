@@ -190,19 +190,31 @@ class ApiAuthorizationInterceptorTest {
     }
 
     @Test
-    @DisplayName("Relation 9: Docker bridge gateway (.1) on /internal/** is recognized as local host")
-    void dockerBridgeGatewayInternalEndpointRequestIsAllowed() throws Exception {
+    @DisplayName("Relation 9: Non-loopback private addresses (.1) on /internal/** without API key are denied with 403 (GILBERT_RAYL_03_CATEGORY_ERROR_SCAN)")
+    void nonLoopbackPrivateAddressesRequireApiKey() throws Exception {
         String[] hostGateways = {"172.18.0.1", "172.17.0.1", "10.0.0.1", "192.168.1.1"};
 
         for (String ip : hostGateways) {
-            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/internal/tasks");
-            request.setRequestURI("/internal/tasks");
-            request.setRemoteAddr(ip);
-            MockHttpServletResponse response = new MockHttpServletResponse();
+            // Without API key -> denied
+            MockHttpServletRequest reqDenied = new MockHttpServletRequest("GET", "/internal/tasks");
+            reqDenied.setRequestURI("/internal/tasks");
+            reqDenied.setRemoteAddr(ip);
+            MockHttpServletResponse respDenied = new MockHttpServletResponse();
 
-            boolean allowed = interceptor.preHandle(request, response, new Object());
-            assertTrue(allowed, "Docker bridge gateway " + ip + " must be allowed on /internal/tasks");
-            assertEquals(200, response.getStatus());
+            boolean allowed = interceptor.preHandle(reqDenied, respDenied, new Object());
+            assertFalse(allowed, "Address " + ip + " without API key must not be allowed via address-form wildcard");
+            assertEquals(403, respDenied.getStatus());
+
+            // With valid API key -> allowed
+            MockHttpServletRequest reqAllowed = new MockHttpServletRequest("GET", "/internal/tasks");
+            reqAllowed.setRequestURI("/internal/tasks");
+            reqAllowed.setRemoteAddr(ip);
+            reqAllowed.addHeader("X-API-Key", VALID_KEY);
+            MockHttpServletResponse respAllowed = new MockHttpServletResponse();
+
+            boolean allowedWithKey = interceptor.preHandle(reqAllowed, respAllowed, new Object());
+            assertTrue(allowedWithKey, "Address " + ip + " with valid API key must be allowed");
+            assertEquals(200, respAllowed.getStatus());
         }
     }
 }

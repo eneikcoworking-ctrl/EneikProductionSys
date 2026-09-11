@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -118,19 +119,16 @@ class InternalGeminiObserverControllerTest {
     }
 
     @Test
-    @DisplayName("persistentWorkers without projectId falls back to findAll when no active project exists")
-    void persistentWorkersWithoutProjectIdFallsBackToAllWhenNoActiveProject() {
+    @DisplayName("persistentWorkers without projectId returns UNDETERMINED_PROJECT when no single active project exists")
+    void persistentWorkersWithoutProjectIdReturnsUndeterminedWhenNoActiveProject() {
         when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active))
                 .thenReturn(List.of());
-
-        PersistentWorkerSessionEntity worker = new PersistentWorkerSessionEntity();
-        worker.setId(UUID.randomUUID());
-        when(persistentWorkerSessionRepository.findAll()).thenReturn(List.of(worker));
 
         List<Map<String, Object>> result = controller.persistentWorkers(null);
 
         assertThat(result).hasSize(1);
-        verify(persistentWorkerSessionRepository).findAll();
+        assertThat(result.get(0).get("status")).isEqualTo("UNDETERMINED_PROJECT");
+        verify(persistentWorkerSessionRepository, never()).findAll();
     }
 
     @Test

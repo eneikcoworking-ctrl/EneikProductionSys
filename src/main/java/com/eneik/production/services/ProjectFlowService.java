@@ -2027,12 +2027,16 @@ public class ProjectFlowService {
                 java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = new java.util.ArrayList<>();
                 if (rawSlices.isArray()) {
                     for (com.fasterxml.jackson.databind.JsonNode slice : rawSlices) {
-                        String leanValueRaw = slice.path("leanValue").asText("essential");
+                        String leanValueRaw = slice.hasNonNull("leanValue") ? slice.path("leanValue").asText() : null;
                         com.eneik.production.models.persistence.LeanValue leanValue;
-                        try {
-                            leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw);
-                        } catch (Exception e) {
-                            leanValue = com.eneik.production.models.persistence.LeanValue.essential;
+                        if (leanValueRaw != null && !leanValueRaw.isBlank()) {
+                            try {
+                                leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw.trim().toLowerCase(java.util.Locale.ROOT));
+                            } catch (Exception e) {
+                                leanValue = com.eneik.production.models.persistence.LeanValue.undetermined;
+                            }
+                        } else {
+                            leanValue = com.eneik.production.models.persistence.LeanValue.undetermined;
                         }
                         slices.add(new MLPredictionServiceClient.TaskSliceMetadata(
                                 slice.path("title").asText(""),
@@ -2134,9 +2138,27 @@ public class ProjectFlowService {
         }
 
         if (wishlist.getCompiledByRole() != null) {
-            if (wishlist.getLeanValue() != LeanValue.waste) {
+            if (wishlist.getLeanValue() == LeanValue.essential || wishlist.getLeanValue() == LeanValue.valuable) {
                 technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
                 return true;
+            }
+            if (wishlist.getLeanValue() == LeanValue.waste) {
+                wishlist.setStatus(WishlistStatus.dismissed);
+                wishlistRepository.save(wishlist);
+                log.info("ProjectFlowService: wishlist {} dismissed as waste", wishlist.getId());
+                return false;
+            }
+            if (wishlist.getLeanValue() == LeanValue.undetermined) {
+                LeanValue resolved = resolveWishlistLeanValue(wishlist);
+                if (resolved == LeanValue.essential || resolved == LeanValue.valuable) {
+                    wishlist.setLeanValue(resolved);
+                    wishlistRepository.save(wishlist);
+                    log.info("ProjectFlowService: resolved undetermined lean_value to {} for wishlist {}", resolved, wishlist.getId());
+                    technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+                    return true;
+                }
+                log.warn("ProjectFlowService: wishlist {} held in pending: lean_value is undetermined and requires triage", wishlist.getId());
+                return false;
             }
             return false;
         }
@@ -3064,15 +3086,22 @@ public class ProjectFlowService {
                 sliceWishlist.setCynefinDomain(slice.cynefinDomain());
                 sliceWishlist = wishlistRepository.save(sliceWishlist);
                 compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole, epicPlan.kanoClass());
-                TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
-                        sliceWishlist.getId(),
-                        stageAnchor,
-                        graphKey,
-                        index,
-                        graphSlices.size(),
-                        dependencyEdgeReason(stageAnchor, ownerRole),
-                        flywayCache
-                );
+                WishlistEntity updatedSliceWishlist = wishlistRepository.findById(sliceWishlist.getId()).orElse(sliceWishlist);
+                TaskEntity createdTask = null;
+                if (updatedSliceWishlist.getLeanValue() == LeanValue.undetermined) {
+                    log.warn("Slice '{}' for wishlist {} has undetermined lean value; held in graph with pending status awaiting triage",
+                            slice.title(), wishlist.getId());
+                } else {
+                    createdTask = technicalLeadCompiler.createTaskFromWishlist(
+                            sliceWishlist.getId(),
+                            stageAnchor,
+                            graphKey,
+                            index,
+                            graphSlices.size(),
+                            dependencyEdgeReason(stageAnchor, ownerRole),
+                            flywayCache
+                    );
+                }
                 lastInStage = createdTask != null ? createdTask : lastInStage;
                 index++;
             }
@@ -3115,7 +3144,7 @@ public class ProjectFlowService {
         }
     }
 
-    private java.util.List<MLPredictionServiceClient.TaskSliceMetadata> emsGraphSlices(
+    public static java.util.List<MLPredictionServiceClient.TaskSliceMetadata> emsGraphSlices(
             WishlistEntity wishlist,
             java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices) {
         java.util.Map<String, MLPredictionServiceClient.TaskSliceMetadata> unique = new java.util.LinkedHashMap<>();
@@ -3134,13 +3163,13 @@ public class ProjectFlowService {
                 .toList();
     }
 
-    private String sliceSemanticKey(WishlistEntity wishlist, MLPredictionServiceClient.TaskSliceMetadata slice) {
+    static String sliceSemanticKey(WishlistEntity wishlist, MLPredictionServiceClient.TaskSliceMetadata slice) {
         return targetRoleForSlice(wishlist, slice) + "|"
                 + normalizeForGraph(slice.jtbd()) + "|"
                 + normalizeForGraph(slice.acceptanceCriteria());
     }
 
-    private String normalizeForGraph(String value) {
+    static String normalizeForGraph(String value) {
         if (value == null) {
             return "";
         }
@@ -3243,16 +3272,55 @@ public class ProjectFlowService {
             }
         }
 
+        LeanValue sliceValue = slice.leanValue() != null ? slice.leanValue() : LeanValue.undetermined;
+        if (sliceValue == LeanValue.undetermined) {
+            sliceValue = resolveSliceLeanValue(slice, epicKanoClass, ownerRole);
+        }
+
         technicalLeadCompiler.compile(
                 wishlistId,
                 ORCHESTRATOR_ROLE,
                 defaultText(slice.jtbd(), fallbackTaskSlice("").jtbd()),
-                slice.leanValue() != null ? slice.leanValue() : LeanValue.essential,
+                sliceValue,
                 defaultText(slice.tocConstraintRef(), "TOC-CONSTRAINT-DECOMPOSITION"),
                 defaultText(slice.sixSigmaMetric(), "Escaped defects <= 5%"),
                 compiledDod(ownerRole, slice, epicKanoClass),
                 acceptanceCriteria
         );
+    }
+
+    public static LeanValue resolveSliceLeanValue(MLPredictionServiceClient.TaskSliceMetadata slice, String epicKanoClass, String ownerRole) {
+        if ("Must-Be".equalsIgnoreCase(epicKanoClass)) {
+            return LeanValue.essential;
+        }
+        if ("Performance".equalsIgnoreCase(epicKanoClass) || "Attractive".equalsIgnoreCase(epicKanoClass)) {
+            return LeanValue.valuable;
+        }
+        if ("Reverse/Waste".equalsIgnoreCase(epicKanoClass)) {
+            return LeanValue.waste;
+        }
+        if ("BARCAN-TAG-00".equals(ownerRole) || "BARCAN-TAG-02".equals(ownerRole) || "BARCAN-TAG-12".equals(ownerRole)) {
+            return LeanValue.essential;
+        }
+        return LeanValue.undetermined;
+    }
+
+    public static LeanValue resolveWishlistLeanValue(WishlistEntity wishlist) {
+        if (wishlist == null) {
+            return LeanValue.undetermined;
+        }
+        String jtbd = wishlist.getJtbd() != null ? wishlist.getJtbd().toLowerCase(java.util.Locale.ROOT) : "";
+        String role = wishlist.getSourceRoleTag();
+        if ("BARCAN-TAG-00".equals(role) || "BARCAN-TAG-02".equals(role) || "BARCAN-TAG-12".equals(role)) {
+            return LeanValue.essential;
+        }
+        if (jtbd.contains("fix") || jtbd.contains("security") || jtbd.contains("critical") || jtbd.contains("migration")) {
+            return LeanValue.essential;
+        }
+        if (jtbd.contains("feature") || jtbd.contains("ui") || jtbd.contains("screen") || jtbd.contains("dashboard")) {
+            return LeanValue.valuable;
+        }
+        return LeanValue.undetermined;
     }
 
     // Phase 8 (2026-07-21, operator directive): Kano moved off the task level entirely (customer-value
@@ -3273,7 +3341,7 @@ public class ProjectFlowService {
                 + roleSpecificReadiness;
     }
 
-    private String targetRoleForSlice(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice) {
+    static String targetRoleForSlice(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice) {
         if (parent.getSource() == WishlistSource.self_falsification) {
             // One falsification audit produces one consolidated wishlist. The compiler may split its
             // findings across several owner roles; provenance remains BARCAN-TAG-09 on the parent, while
@@ -3287,21 +3355,21 @@ public class ProjectFlowService {
         return normalizeRoleTag(slice.roleTag(), slice);
     }
 
-    private String normalizeRoleTag(String value, MLPredictionServiceClient.TaskSliceMetadata slice) {
+    static String normalizeRoleTag(String value, MLPredictionServiceClient.TaskSliceMetadata slice) {
         if (value != null && value.matches("BARCAN-TAG-(0[0-9]|1[0-2])")) {
             return value;
         }
         return inferRoleTag(slice);
     }
 
-    private String inferRoleTag(MLPredictionServiceClient.TaskSliceMetadata slice) {
+    static String inferRoleTag(MLPredictionServiceClient.TaskSliceMetadata slice) {
         String source = ((slice.title() != null ? slice.title() : "") + " "
                 + (slice.jtbd() != null ? slice.jtbd() : "") + " "
                 + (slice.acceptanceCriteria() != null ? slice.acceptanceCriteria() : ""));
         return inferRoleTag(source, slice.hasUi());
     }
 
-    private String inferRoleTag(String sourceText, boolean hasUi) {
+    static String inferRoleTag(String sourceText, boolean hasUi) {
         String source = sourceText == null ? "" : sourceText.toLowerCase(Locale.ROOT);
         if (source.contains("merge") || source.contains("integration") || source.contains("repository hygiene")
                 || source.contains("generated artifact") || source.contains("pr diff")) {

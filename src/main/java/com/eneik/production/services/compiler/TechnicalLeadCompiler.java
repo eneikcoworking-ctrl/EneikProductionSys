@@ -1180,7 +1180,7 @@ public class TechnicalLeadCompiler {
         projectGenerationStateRepository.save(state);
     }
 
-    private java.util.List<String> validateDefinitionOfReady(WishlistEntity w) {
+    public static java.util.List<String> validateDefinitionOfReady(WishlistEntity w) {
         java.util.List<String> errors = new java.util.ArrayList<>();
 
         // Step 1 - Bottleneck Check (TOC)
@@ -1189,8 +1189,8 @@ public class TechnicalLeadCompiler {
         }
 
         // Step 2 - Lean Classification
-        if (w.getLeanValue() == null) {
-            errors.add("Step 2 failed: lean_value is missing");
+        if (w.getLeanValue() == null || w.getLeanValue() == LeanValue.undetermined) {
+            errors.add("Step 2 failed: lean_value is missing or undetermined");
         } else if (w.getLeanValue() == LeanValue.waste) {
             errors.add("Step 2 failed: lean_value cannot be 'waste'");
         }
@@ -1556,6 +1556,9 @@ public class TechnicalLeadCompiler {
         }
         if (wishlist.getLeanValue() == LeanValue.waste) {
             return "Reverse/Waste";
+        }
+        if (wishlist.getLeanValue() == LeanValue.undetermined) {
+            return "Undetermined";
         }
         return "Must-Be";
     }

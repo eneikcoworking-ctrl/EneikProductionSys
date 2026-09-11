@@ -182,8 +182,39 @@
      - `MethodArgumentTypeMismatchException` -> 400 Bad Request.
      - `HttpMessageNotReadableException` -> 400 Bad Request.
   3. Полная регрессия фабрики: 62 теста green (`CompilerTaskIdentityTest`, `ProjectEventLogRetentionServiceTest`, `SixSigmaAuditServiceTest`, `QualityGateControllerTest`, `TaskCarrierBackfillServiceTest`, `ApiAuthorizationInterceptorTest`, `GoogleAiResourceControllerTest`, `InternalGeminiObserverControllerTest`, `GlobalExceptionHandlerTest`).
-- **Что берётся следующим:** Такт 10 — Пункт 9 очереди (`LeanValue`: неизвестное становится утверждением ценности в трёх местах, раздел 42).
-
+### 2026-09-11 Antigravity: Такт 10 — Четырёхзначная логика ценности LeanValue и устранение подмены неизвестного (пункт 9 очереди, раздел 42; доработка пунктов 7 и 8)
+- **Что сделано:**
+  1. **Явный статус неизвестного в LeanValue (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012 Policy contradiction):**
+     - Добавлено значение `undetermined` в перечисление `LeanValue` (`essential, valuable, waste, undetermined`). Длина 12 символов укладывается в колонку `VARCHAR(16)` (миграция V12).
+     - Метод `JulesDispatchService.parseLeanValue` обновлен: `null`, пустая строка, пробелы и нераспознанные значения парсятся как `LeanValue.undetermined`, а не как `LeanValue.valuable`.
+     - Метод `JulesDispatchService.parseCompilerPlan`: разбор поля `leanValue` переведён на `parseLeanValue`, исключив дефолтный `essential` при отсутствии или ошибке.
+     - `BaseQualityGate.BusinessValueGate`: заслон пропускает только `essential` и `valuable`, отклоняя `waste`, `undetermined` и нераспознанные строки с понятными причинами отказа.
+     - `TechnicalLeadCompiler.validateDefinitionOfReady`: Шаг 2 (`Step 2`) проверки Definition of Ready требует явного значения ценности и отклоняет `null` и `undetermined` («Step 2 failed: lean_value is missing or undetermined»), предотвращая запуск непроверенной работы в поток разработки.
+     - `TechnicalLeadCompiler.inferEpicKanoClass`: при `LeanValue.undetermined` возвращает класс `"Undetermined"`.
+  2. **Отображение, хранение и детерминированное разрешение (`displayed, stored, and resolved`):**
+     - В `ProjectFlowService.emsGraphSlices` ликвидирован подлог, при котором `undetermined` срезы выбрасывались из графа этапов вместе с `waste`. Теперь срезы с `undetermined` сохраняются в графе!
+     - Введены методы детерминированного разрешения неизвестной ценности:
+       - `ProjectFlowService.resolveSliceLeanValue`: выводит ценность из контекста эпика Kano (`Must-Be` -> `essential`, `Performance`/`Attractive` -> `valuable`, `Reverse/Waste` -> `waste`) или роли ядра архитектуры (`BARCAN-TAG-00/02/12` -> `essential`).
+       - `ProjectFlowService.resolveWishlistLeanValue`: аналогично разрешает ценность для пожелания по роли и ключевым словам JTBD.
+       - Если контекст полностью отсутствует, срез сохраняется в базе (`wishlistRepository.save`) со статусом `pending` и логированием предупреждения для триажа оператором, не обрывая создание графа остальных срезов.
+  3. **Снятие адресно-шаблонного исключения в `ApiAuthorizationInterceptor` (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):**
+     - Ликвидирован категориальный сбой: форма адреса (`*.1` в приватных сетях `10.*`, `192.168.*`, `172.16-31.*`) больше не приравнивается к полномочиям. Внутренние эндпоинты (`/internal/**`) разрешены только истинному loopback (`127.0.0.1`, `::1`, `localhost`) либо требуют валидный `X-API-Key`.
+  4. **Устранение `findAll()` в `InternalGeminiObserverController.persistentWorkers` (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+     - При отсутствии единственного активного проекта эндпоинт `/persistent-workers` возвращает честный `UNDETERMINED_PROJECT` (HTTP 200), аналогично соседнему `dispatch-capacity-probe`, полностью исключив подъём всех сессий воркеров.
+- **Чем проверено:**
+  1. `LeanValueTest` (6/6 green):
+     - `parseLeanValue`: истинностная таблица для null, empty, garbage, essential, valuable, waste.
+     - `BusinessValueGate`: допуск essential/valuable, отказ на waste/undetermined/unrecognized.
+     - `validateDefinitionOfReady`: Step 2 отказ на undetermined/null/waste, пропуск essential/valuable.
+     - `emsGraphSlices`: сохранение undetermined срезов в графе и удаление waste.
+     - `resolveSliceLeanValue` и `resolveWishlistLeanValue`: корректное разрешение по Kano и ролям.
+  2. `ApiAuthorizationInterceptorTest` (9/9 green):
+     - Обращение к `/internal/tasks` с `172.18.0.1`, `10.0.0.1` без ключа -> 403 Forbidden.
+     - Обращение с теми же адресами и валидным `X-API-Key` -> 200 OK.
+  3. `InternalGeminiObserverControllerTest` (6/6 green):
+     - `persistentWorkers` без активного проекта возвращает `UNDETERMINED_PROJECT`, `findAll()` никогда не вызывается.
+  4. Полная регрессия фабрики: 68 тестов green (`LeanValueTest`, `ApiAuthorizationInterceptorTest`, `InternalGeminiObserverControllerTest`, `GoogleAiResourceControllerTest`, `GlobalExceptionHandlerTest`, `CompilerTaskIdentityTest`, `ProjectEventLogRetentionServiceTest`, `SixSigmaAuditServiceTest`, `QualityGateControllerTest`, `TaskCarrierBackfillServiceTest`).
+- **Что берётся следующим:** Такт 11 — Пункт 10 очереди (`RepositoryStackAnalyzer`, раздел XXXI: трёхзначный тип обхода репозитория заказчика вместо `boolean`, предотвращение ложных находок при недоступности GitHub).
 
 
 

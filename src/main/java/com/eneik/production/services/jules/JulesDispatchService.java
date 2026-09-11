@@ -4403,7 +4403,10 @@ public class JulesDispatchService {
         }
 
         List<TriageEntry> actionable = entries.stream()
-                .filter(e -> !"waste".equalsIgnoreCase(e.leanValue()))
+                .filter(e -> {
+                    LeanValue lv = parseLeanValue(e.leanValue());
+                    return lv == LeanValue.essential || lv == LeanValue.valuable;
+                })
                 .toList();
         if (actionable.isEmpty()) {
             log.info("Design concern triage task {}: all {} concern(s) triaged as waste; nothing to action",
@@ -4489,11 +4492,14 @@ public class JulesDispatchService {
         }
     }
 
-    private static LeanValue parseLeanValue(String raw) {
+    static LeanValue parseLeanValue(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return LeanValue.undetermined;
+        }
         try {
-            return LeanValue.valueOf(raw == null ? "" : raw.toLowerCase(java.util.Locale.ROOT));
+            return LeanValue.valueOf(raw.trim().toLowerCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            return LeanValue.valuable;
+            return LeanValue.undetermined;
         }
     }
 
@@ -4544,13 +4550,8 @@ public class JulesDispatchService {
                 List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices = new java.util.ArrayList<>();
                 if (rawSlices.isArray()) {
                     for (JsonNode slice : rawSlices) {
-                        String leanValueRaw = slice.path("leanValue").asText("essential");
-                        com.eneik.production.models.persistence.LeanValue leanValue;
-                        try {
-                            leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw);
-                        } catch (Exception e) {
-                            leanValue = com.eneik.production.models.persistence.LeanValue.essential;
-                        }
+                        String leanValueRaw = slice.hasNonNull("leanValue") ? slice.path("leanValue").asText() : null;
+                        com.eneik.production.models.persistence.LeanValue leanValue = parseLeanValue(leanValueRaw);
                         slices.add(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
                                 slice.path("title").asText(""),
                                 slice.path("jtbd").asText(""),
