@@ -147,21 +147,59 @@ public class SystemStatusService {
         long decommissioned = summary.getOrDefault(AccountStatus.decommissioned.name(), 0L);
         long dailyLimited = summary.getOrDefault(AccountStatus.daily_limited.name(), 0L);
         long apiBlocked = summary.getOrDefault(AccountStatus.api_blocked.name(), 0L);
+        long offline = summary.getOrDefault(AccountStatus.offline.name(), 0L);
         long operational = accounts.size() - decommissioned;
-        long effectiveOperational = operational - dailyLimited - apiBlocked - summary.getOrDefault(AccountStatus.offline.name(), 0L);
+        long disabled = accounts.stream()
+                .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .filter(account -> !account.isEnabled())
+                .count();
+        long effectiveOperational = accounts.stream()
+                .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .filter(account -> account.isEnabled()
+                        && account.getStatus() != AccountStatus.daily_limited
+                        && account.getStatus() != AccountStatus.api_blocked
+                        && account.getStatus() != AccountStatus.offline)
+                .count();
+        long available = accounts.stream()
+                .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .filter(account -> account.isEnabled() && account.getStatus() == AccountStatus.idle)
+                .count();
         long apiKeyConfigured = accounts.stream()
                 .filter(account -> account.getStatus() != AccountStatus.decommissioned)
                 .filter(account -> account.getApiKey() != null && !account.getApiKey().isBlank())
                 .count();
 
+        String sectionStatus = "ok";
+        String unavailabilityReason = null;
+        if (operational > 0 && effectiveOperational == 0) {
+            sectionStatus = "blocked";
+            if (disabled == operational) {
+                unavailabilityReason = "all operational accounts are disabled (enabled == false)";
+            } else if (dailyLimited == operational) {
+                unavailabilityReason = "all operational accounts are daily_limited (status == daily_limited)";
+            } else if (apiBlocked == operational) {
+                unavailabilityReason = "all operational accounts are api_blocked (status == api_blocked)";
+            } else if (offline == operational) {
+                unavailabilityReason = "all operational accounts are offline (status == offline)";
+            } else {
+                unavailabilityReason = "no operational accounts are available (enabled or status constraints unsatisfied)";
+            }
+        }
+
         Map<String, Object> section = new LinkedHashMap<>();
+        section.put("status", sectionStatus);
+        if (unavailabilityReason != null) {
+            section.put("unavailabilityReason", unavailabilityReason);
+        }
         section.put("total", accounts.size());
         section.put("operational", operational);
         section.put("effectiveOperational", Math.max(0, effectiveOperational));
+        section.put("available", available);
+        section.put("disabled", disabled);
         section.put("apiKeyConfigured", apiKeyConfigured);
         section.put("idle", summary.getOrDefault(AccountStatus.idle.name(), 0L));
         section.put("busy", summary.getOrDefault(AccountStatus.busy.name(), 0L));
-        section.put("offline", summary.getOrDefault(AccountStatus.offline.name(), 0L));
+        section.put("offline", offline);
         section.put("dailyLimited", dailyLimited);
         section.put("apiBlocked", apiBlocked);
         section.put("decommissioned", decommissioned);
@@ -175,10 +213,26 @@ public class SystemStatusService {
             String raw = account.getApiKey();
             masked = raw.length() > 8 ? raw.substring(0, 4) + "..." + raw.substring(raw.length() - 4) : "****";
         }
+        boolean isAvailable = account.isEnabled() && account.getStatus() == AccountStatus.idle;
+        String unavailabilityReason = null;
+        if (account.getStatus() == AccountStatus.decommissioned) {
+            unavailabilityReason = "status == decommissioned";
+        } else if (!account.isEnabled() && account.getStatus() != AccountStatus.idle) {
+            unavailabilityReason = "enabled == false; status == " + account.getStatus().name();
+        } else if (!account.isEnabled()) {
+            unavailabilityReason = "enabled == false";
+        } else if (account.getStatus() != AccountStatus.idle) {
+            unavailabilityReason = "status == " + account.getStatus().name();
+        }
+
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", account.getId());
         item.put("name", account.getName());
         item.put("status", account.getStatus());
+        item.put("available", isAvailable);
+        if (unavailabilityReason != null) {
+            item.put("unavailabilityReason", unavailabilityReason);
+        }
         item.put("currentProjectId", account.getCurrentProjectId());
         item.put("capabilities", account.getCapabilities());
         item.put("lastHeartbeat", account.getLastHeartbeat());
@@ -396,8 +450,33 @@ public class SystemStatusService {
             }
         }
 
+        List<AccountEntity> accounts = projectId == null
+                ? accountRepository.findAllByOrderByNameAsc()
+                : accountRepository.findAvailableForProjectOrderByNameAsc(projectId);
+        List<AccountEntity> operationalAccounts = accounts.stream()
+                .filter(a -> a.getStatus() != AccountStatus.decommissioned)
+                .toList();
+        if (!operationalAccounts.isEmpty()) {
+            long enabledCount = operationalAccounts.stream().filter(AccountEntity::isEnabled).count();
+            if (enabledCount == 0) {
+                blockers.add(blocker("account_capacity", "blocked", "critical",
+                        "all operational accounts are disabled (enabled == false)"));
+            } else {
+                long effectiveCount = operationalAccounts.stream()
+                        .filter(a -> a.isEnabled()
+                                && a.getStatus() != AccountStatus.daily_limited
+                                && a.getStatus() != AccountStatus.api_blocked
+                                && a.getStatus() != AccountStatus.offline)
+                        .count();
+                if (effectiveCount == 0) {
+                    blockers.add(blocker("account_capacity", "blocked", "high",
+                            "no effective operational accounts available; accounts are daily_limited, api_blocked, or offline"));
+                }
+            }
+        }
+
         List<ProjectEntity> projects = projectId == null
-                ? projectRepository.findAll()
+                ? projectRepository.findAllByOrderByCreatedAtDesc()
                 : projectRepository.findById(projectId).map(List::of).orElse(List.of());
         for (ProjectEntity project : projects) {
             List<TaskEntity> projectTasks = (projectId != null && scopedTasks != null && project.getId().equals(projectId))
@@ -501,16 +580,29 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> tasks(UUID projectId, List<TaskEntity> scopedTasks) {
-        List<TaskEntity> allTasks = scopedTasks != null
-                ? scopedTasks
-                : (projectId != null
-                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
-                : taskRepository.findAll());
-        List<TaskEntity> realWorkTasks = allTasks.stream().filter(t -> !isSystemMetaTask(t)).toList();
+        if (scopedTasks != null) {
+            List<TaskEntity> realWorkTasks = scopedTasks.stream().filter(t -> !isSystemMetaTask(t)).toList();
+            Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
+            for (TaskStatus status : TaskStatus.values()) {
+                counts.put(status, realWorkTasks.stream().filter(t -> t.getStatus() == status).count());
+            }
+            Map<String, Object> section = new LinkedHashMap<>();
+            counts.forEach((status, count) -> section.put(status.name(), count));
+            return section;
+        }
+
+        List<Object[]> rows = projectId == null
+                ? taskRepository.countNonCarrierTasksByStatus()
+                : taskRepository.countNonCarrierTasksByProjectIdAndStatus(projectId);
 
         Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
         for (TaskStatus status : TaskStatus.values()) {
-            counts.put(status, realWorkTasks.stream().filter(t -> t.getStatus() == status).count());
+            counts.put(status, 0L);
+        }
+        for (Object[] row : rows) {
+            if (row != null && row.length >= 2 && row[0] instanceof TaskStatus status && row[1] instanceof Number count) {
+                counts.put(status, count.longValue());
+            }
         }
         Map<String, Object> section = new LinkedHashMap<>();
         counts.forEach((status, count) -> section.put(status.name(), count));
@@ -525,10 +617,10 @@ public class SystemStatusService {
         List<TaskEntity> tasks = scopedTasks != null
                 ? scopedTasks
                 : (projectId == null
-                ? taskRepository.findAll()
+                ? taskRepository.findAllByOrderByCreatedAtDesc()
                 : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId));
         var wishlist = projectId == null
-                ? wishlistRepository.findAll()
+                ? wishlistRepository.findAllByOrderByCreatedAtDesc()
                 : wishlistRepository.findByProjectId(projectId);
         return emsMetricsService.build(tasks, wishlist);
     }

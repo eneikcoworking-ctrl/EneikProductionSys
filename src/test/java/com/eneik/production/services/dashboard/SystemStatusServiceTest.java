@@ -150,7 +150,8 @@ class SystemStatusServiceTest {
     @Test
     void getStatusNullProjectDoesNotQueryByProjectId() {
         TaskRepository tasks = mock(TaskRepository.class);
-        when(tasks.findAll()).thenReturn(List.of());
+        when(tasks.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+        when(tasks.countNonCarrierTasksByStatus()).thenReturn(List.of());
         when(tasks.findByQualityGateReportIsNotNull()).thenReturn(List.of());
         AccountRepository accounts = mock(AccountRepository.class);
         when(accounts.findAllByOrderByNameAsc()).thenReturn(List.of());
@@ -178,6 +179,7 @@ class SystemStatusServiceTest {
 
         assertThat(result).isNotNull();
         verify(tasks, never()).findByProjectIdOrderByCreatedAtDesc(any());
+        verify(tasks, never()).findAll();
         verify(accounts).findAllByOrderByNameAsc();
         verify(accounts, never()).findAll();
     }
@@ -435,7 +437,7 @@ class SystemStatusServiceTest {
         when(github.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
                 "ok", true, null, null, null, null, null, null, "", "", Instant.now(), Map.of()));
         ProjectRepository projects = mock(ProjectRepository.class);
-        when(projects.findAll()).thenReturn(List.of(project));
+        when(projects.findAllByOrderByCreatedAtDesc()).thenReturn(List.of(project));
         TaskRepository tasks = mock(TaskRepository.class);
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(task));
         WishlistRepository wishlists = mock(WishlistRepository.class);
@@ -470,6 +472,8 @@ class SystemStatusServiceTest {
 
         assertThat(section).containsEntry("status", "blocked")
                 .containsEntry("count", 1);
+        verify(projects, never()).findAll();
+        verify(projects).findAllByOrderByCreatedAtDesc();
         verify(sessions, never()).findAll();
         verify(sessions).findByTaskIdIn(argThat(ids -> ids.size() == 1 && ids.contains(taskId)));
     }
@@ -577,5 +581,179 @@ class SystemStatusServiceTest {
                 mock(AiHealthTracker.class),
                 mock(Environment.class),
                 mock(SixSigmaAuditService.class));
+    }
+
+    @Test
+    void allAccountsDisabledWithIdleStatusCausesSummaryToReddenAndNameCondition() {
+        // ALFRED_TARSKIY_01_FALSIFICATION_HARNESS (D008) - Falsification of Sept 5 stall condition:
+        // accounts are idle, but all have enabled = false. The summary must not report "ok".
+        AccountEntity acc1 = account(AccountStatus.idle, null, "key1");
+        acc1.setEnabled(false);
+        AccountEntity acc2 = account(AccountStatus.idle, null, "key2");
+        acc2.setEnabled(false);
+
+        AccountRepository accounts = mock(AccountRepository.class);
+        when(accounts.findAllByOrderByNameAsc()).thenReturn(List.of(acc1, acc2));
+
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveValue("system_stall_status")).thenReturn("ok");
+
+        GitHubApiBudgetService github = mock(GitHubApiBudgetService.class);
+        when(github.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
+                "ok", true, null, null, null, null, null, null, "", "", Instant.now(), Map.of()));
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+        when(tasks.countNonCarrierTasksByStatus()).thenReturn(List.of());
+        when(tasks.findByQualityGateReportIsNotNull()).thenReturn(List.of());
+
+        ProjectRepository projects = mock(ProjectRepository.class);
+        when(projects.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+        SystemStatusService service = new SystemStatusService(
+                settings,
+                accounts,
+                tasks,
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                projects,
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                github,
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
+
+        Map<String, Object> result = service.getStatus(null);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> accountsWrapper = (Map<String, Object>) result.get("accounts");
+        assertThat(accountsWrapper).containsEntry("available", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> accountsSection = (Map<String, Object>) accountsWrapper.get("data");
+        assertThat(accountsSection).containsEntry("status", "blocked")
+                .containsEntry("total", 2)
+                .containsEntry("operational", 2L)
+                .containsEntry("effectiveOperational", 0L)
+                .containsEntry("available", 0L)
+                .containsEntry("disabled", 2L);
+        assertThat(accountsSection.get("unavailabilityReason").toString()).contains("enabled == false");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> accountItems = (List<Map<String, Object>>) accountsSection.get("items");
+        assertThat(accountItems).hasSize(2)
+                .allMatch(item -> Boolean.FALSE.equals(item.get("available"))
+                        && item.get("unavailabilityReason").toString().contains("enabled == false"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> blockersWrapper = (Map<String, Object>) result.get("operationalBlockers");
+        assertThat(blockersWrapper).containsEntry("available", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> blockersSection = (Map<String, Object>) blockersWrapper.get("data");
+        assertThat(blockersSection).containsEntry("status", "blocked");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> blockerItems = (List<Map<String, Object>>) blockersSection.get("items");
+        assertThat(blockerItems).anyMatch(b -> "account_capacity".equals(b.get("type"))
+                && b.get("evidence").toString().contains("enabled == false"));
+    }
+
+    @Test
+    void allAccountsEnabledWithIdleStatusReportsOk() {
+        AccountEntity acc1 = account(AccountStatus.idle, null, "key1");
+        AccountEntity acc2 = account(AccountStatus.idle, null, "key2");
+
+        AccountRepository accounts = mock(AccountRepository.class);
+        when(accounts.findAllByOrderByNameAsc()).thenReturn(List.of(acc1, acc2));
+
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveValue("system_stall_status")).thenReturn("ok");
+
+        GitHubApiBudgetService github = mock(GitHubApiBudgetService.class);
+        when(github.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
+                "ok", true, null, null, null, null, null, null, "", "", Instant.now(), Map.of()));
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+        when(tasks.countNonCarrierTasksByStatus()).thenReturn(List.of());
+        when(tasks.findByQualityGateReportIsNotNull()).thenReturn(List.of());
+
+        ProjectRepository projects = mock(ProjectRepository.class);
+        when(projects.findAllByOrderByCreatedAtDesc()).thenReturn(List.of());
+
+        SystemStatusService service = new SystemStatusService(
+                settings,
+                accounts,
+                tasks,
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                projects,
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                github,
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
+
+        Map<String, Object> result = service.getStatus(null);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> accountsWrapper = (Map<String, Object>) result.get("accounts");
+        assertThat(accountsWrapper).containsEntry("available", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> accountsSection = (Map<String, Object>) accountsWrapper.get("data");
+        assertThat(accountsSection).containsEntry("status", "ok")
+                .containsEntry("total", 2)
+                .containsEntry("operational", 2L)
+                .containsEntry("effectiveOperational", 2L)
+                .containsEntry("available", 2L)
+                .containsEntry("disabled", 0L);
+        assertThat(accountsSection).doesNotContainKey("unavailabilityReason");
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> accountItems = (List<Map<String, Object>>) accountsSection.get("items");
+        assertThat(accountItems).hasSize(2)
+                .allMatch(item -> Boolean.TRUE.equals(item.get("available"))
+                        && item.get("unavailabilityReason") == null);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> blockersWrapper = (Map<String, Object>) result.get("operationalBlockers");
+        assertThat(blockersWrapper).containsEntry("available", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> blockersSection = (Map<String, Object>) blockersWrapper.get("data");
+        assertThat(blockersSection).containsEntry("status", "ok");
+    }
+
+    @Test
+    void tasksNullProjectUsesRepositoryCountsAndNeverFindAll() throws Exception {
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.countNonCarrierTasksByStatus()).thenReturn(List.of(
+                new Object[]{TaskStatus.queued, 10L},
+                new Object[]{TaskStatus.in_progress, 4L},
+                new Object[]{TaskStatus.done, 25L}
+        ));
+
+        SystemStatusService service = newService(tasks, mock(SixSigmaAuditService.class));
+        Method method = SystemStatusService.class.getDeclaredMethod("tasks", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> section = (Map<String, Object>) method.invoke(service, (UUID) null);
+
+        assertThat(section).containsEntry("queued", 10L)
+                .containsEntry("in_progress", 4L)
+                .containsEntry("done", 25L)
+                .containsEntry("failed", 0L);
+        verify(tasks, never()).findAll();
+        verify(tasks).countNonCarrierTasksByStatus();
     }
 }

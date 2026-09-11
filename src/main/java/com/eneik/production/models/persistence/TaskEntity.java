@@ -43,6 +43,13 @@ public class TaskEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     private JsonNode payload;
 
+    /**
+     * Materialized carrier marker (V138, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010).
+     * Mirrored from payload.taskType to enable O(1) repository-level grouping and counting.
+     */
+    @Column(name = "carrier", nullable = false)
+    private boolean carrier = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TaskStatus status = TaskStatus.queued;
@@ -126,7 +133,10 @@ public class TaskEntity {
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
     public JsonNode getPayload() { return payload; }
-    public void setPayload(JsonNode payload) { this.payload = payload; }
+    public void setPayload(JsonNode payload) {
+        this.payload = payload;
+        this.carrier = computeIsCarrier();
+    }
 
     // The statement this task's completion can be refuted against. It has always been written into
     // payload.acceptance_criteria by TechnicalLeadCompiler, but only ever read back to build the agent's
@@ -230,12 +240,29 @@ public class TaskEntity {
     public static final String CARRIER_PAYLOAD_KEY = "taskType";
     public static final String WISHLIST_COMPILER_TASK_TYPE = "wishlist_compiler";
 
+    @PrePersist
+    public void prePersist() {
+        this.carrier = computeIsCarrier();
+    }
+
+    private boolean computeIsCarrier() {
+        return payload != null && payload.hasNonNull(CARRIER_PAYLOAD_KEY);
+    }
+
     /**
      * A task the factory created to carry its own process (model §II, carrier(τ) ⟺ payload(τ).taskType ≠ ∅).
      * Single point of implementation (Law 1, |impl(I)| = 1).
      */
     public boolean isCarrier() {
-        return payload != null && payload.hasNonNull(CARRIER_PAYLOAD_KEY);
+        return carrier || computeIsCarrier();
+    }
+
+    public boolean getCarrier() {
+        return carrier;
+    }
+
+    public void setCarrier(boolean carrier) {
+        this.carrier = carrier;
     }
 
     /** The type of carrier this task is, or null if it is not a factory carrier. */
@@ -403,5 +430,6 @@ public class TaskEntity {
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = Instant.now();
+        this.carrier = computeIsCarrier();
     }
 }

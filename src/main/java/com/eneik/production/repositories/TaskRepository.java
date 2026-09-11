@@ -270,4 +270,15 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     // uses. Terminal statuses are excluded - a done/failed row duplicating an older one is history, not an
     // active problem worth blocking on.
     long countByProjectIdAndDescriptionAndStatusNotIn(UUID projectId, String description, List<TaskStatus> excludedStatuses);
+
+    List<TaskEntity> findAllByOrderByCreatedAtDesc();
+
+    @Query("SELECT t.status, COUNT(t) FROM TaskEntity t WHERE t.carrier = false GROUP BY t.status")
+    List<Object[]> countNonCarrierTasksByStatus();
+
+    @Query("SELECT t.status, COUNT(t) FROM TaskEntity t WHERE t.project.id = :projectId AND t.carrier = false GROUP BY t.status")
+    List<Object[]> countNonCarrierTasksByProjectIdAndStatus(@Param("projectId") UUID projectId);
+
+    @Query("SELECT t FROM TaskEntity t WHERE t.carrier = false AND t.payload IS NOT NULL")
+    List<TaskEntity> findCarrierBackfillCandidates();
 }

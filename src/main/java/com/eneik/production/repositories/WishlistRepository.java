@@ -73,4 +73,6 @@ public interface WishlistRepository extends JpaRepository<WishlistEntity, UUID> 
             java.util.UUID projectId,
             com.eneik.production.models.persistence.WishlistSource source,
             java.util.UUID sourceTaskId);
+
+    List<WishlistEntity> findAllByOrderByCreatedAtDesc();
 }

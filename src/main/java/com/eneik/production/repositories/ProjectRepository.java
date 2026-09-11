@@ -29,4 +29,6 @@ public interface ProjectRepository extends JpaRepository<ProjectEntity, UUID> {
     // queue, so the second caller should wait briefly for the correct answer rather than skip past it.
     @Query(value = "SELECT * FROM projects WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<ProjectEntity> lockProjectForUpdate(@Param("id") UUID id);
+
+    List<ProjectEntity> findAllByOrderByCreatedAtDesc();
 }

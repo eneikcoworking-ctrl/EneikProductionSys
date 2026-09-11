@@ -39,6 +39,32 @@
   5. `SystemStatusServiceTest` (11/11 green): полная регрессионная целостность статусного свода.
 - **Что берётся следующим:** Такт 4 — `SystemStatusService` целиком по директиве из `docs/reports/AGY_NEXT.md` (четыре `findAll()` на пути без проекта, столбец признака носителя, недоступность аккаунта по `status` и `enabled` с фиксацией сработавшего условия, падающий тест на краснеющую сводку при выключенных аккаунтах).
 
+### 2026-09-11 Antigravity: Такт 4 — SystemStatusService целиком (пункт 1 очереди, Раздел XXXVI)
+- **Что сделано:** Механизм `SystemStatusService` доведён до идеала целиком:
+  1. **Ликвидация full-table reads (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010):**
+     - Введена миграция Flyway `V138__add_carrier_column_to_tasks.sql`: столбец `carrier BOOLEAN DEFAULT FALSE NOT NULL` с индексом `idx_tasks_carrier` в таблице `tasks`.
+     - `TaskEntity.java`: поле `carrier` синхронизируется через `@PrePersist` и `@PreUpdate` из `payload.taskType`.
+     - Создан `TaskCarrierBackfillService` (`@EventListener(ApplicationReadyEvent.class)`): однократный Java-парсинг legacy-задач через Jackson, исключающий несовместимости диалектов SQL в H2 и PostgreSQL.
+     - `TaskRepository.java`: добавлены хранилищные агрегаты `countNonCarrierTasksByStatus()` и `countNonCarrierTasksByProjectIdAndStatus(projectId)`.
+     - `tasks(null)`: статусы считаются в хранилище без вычитки сущностей в память JVM.
+     - `operationalBlockers` и `emsMetrics`: переведены на детерминированные упорядоченные методы `findAllByOrderByCreatedAtDesc()`.
+     - Замер по `SystemStatusService.java`: ровно **0** вызовов `.findAll()`.
+  2. **Снятие категориальной ошибки доступности аккаунтов (инцидент 5 сентября, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+     - Доступность аккаунта строго формализована как конъюнкция: `account.isEnabled() && account.getStatus() == AccountStatus.idle`.
+     - В `accounts(projectId)` добавлены метрики `available` и `disabled`. Расчёт `effectiveOperational` теперь строго отсекает выключенные аккаунты (`!enabled`).
+     - При `effectiveOperational == 0` секция `accounts` принимает `status = "blocked"` и явно возвращает `unavailabilityReason` с названием сработавшего условия (например, `"all operational accounts are disabled (enabled == false)"` или `"all operational accounts are daily_limited (status == daily_limited)"`).
+     - В каждом элементе `accountItem` возвращаются поля `available: boolean` и `unavailabilityReason: String` (например, `"enabled == false"`).
+     - В `operationalBlockers` добавлен блокер `account_capacity` (критическая серьезность), запрещающий статус `"ok"`, если все операционные аккаунты выключены (`enabled == false`).
+  3. **Фальсифицирующий заслон (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008):**
+     - В `SystemStatusServiceTest` добавлен тест `allAccountsDisabledWithIdleStatusCausesSummaryToReddenAndNameCondition`, воссоздающий точные условия инцидента 5 сентября: 2 аккаунта `idle`, но `enabled = false`. Тест подтверждает, что сводка краснеет (`status = "blocked"` в `accounts` и `operationalBlockers`), а отказ явно называет условие `"enabled == false"`.
+     - Добавлен парный тест `allAccountsEnabledWithIdleStatusReportsOk`, подтверждающий переход в `status = "ok"` при включенных аккаунтах.
+     - Добавлен тест `tasksNullProjectUsesRepositoryCountsAndNeverFindAll`, подтверждающий хранилищный подсчёт и заслон `never().findAll()`.
+     - Создан юнит-тест `TaskCarrierBackfillServiceTest` (2/2 green).
+- **Чем проверено:**
+  1. `grep -n "\.findAll()" src/main/java/com/eneik/production/services/dashboard/SystemStatusService.java` -> 0 совпадений.
+  2. Прогон в контейнере Maven: `SystemStatusServiceTest` (14/14), `TaskCarrierBackfillServiceTest` (2/2), `SystemStatusControllerIntegrationTest` (4/4), `TocSentinelServiceTest` (15/15) — все 35 тестов пройдены успешно (BUILD SUCCESS).
+- **Что берётся следующим:** Такт 5 — `SixSigmaAuditService` целиком по директиве оператора: только status `active`, без `orchestrated`, без запасного «любой проект»; если активного проекта нет — статус не определён. Устранение категориальной путаницы между качеством проекта, качеством поставки (`calculateProjectSixSigmaAudit`) и фабрики.
+
 
 
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
