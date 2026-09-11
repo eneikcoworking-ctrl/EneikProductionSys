@@ -34,17 +34,18 @@
    - **Темп порождения дубликатов (`checkDuplicateGenerationVelocity`):**
      - Скользящее 2-часовое временное окно (`createdAt >= windowStart`, ритм Кайдзен).
      - Порог темпа: строго `count > COMPILE_ATTEMPT_BUDGET` (> 3; 1 базовая попытка + 2 законных ремонта). Законная глубина ремонта не считается дефектом.
-     - Единица процесса: для компиляции (где V137 оживляет одну строку по `contentKey`) темп измеряется через число сессий Jules в окне и `wishlist.compileAttempts`; для срезовых задач — по числу созданных строк в окне через `TaskRepository.findByProjectIdAndCreatedAtAfter`.
+     - Единица процесса и цена запросов: для задач компиляции (где V137 оживляет одну строку по `contentKey`) темп измеряется исключительно реальными сессиями Jules в 2-часовом окне через пакетный запрос `julesSessionRepository.findByTaskIdIn` по `taskRepository.findByProjectIdAndContentKeyStartingWith`. Ветка заявок удалена (устранено смешение счётчика попыток за всё время жизни с темпом за окно, устранены ложные срабатывания на поднятых потолках `effectiveCompileCeiling()` и дублирование записей). Для срезовых задач темп измеряется по числу созданных строк в окне через `TaskRepository.findByProjectIdAndCreatedAtAfter`.
      - Запись в `DefectJournalService.recordDefect` (`rootCausePatternId = null` — не засоряет граф когерентности Таггарда неотсортированным паттерном; `category = "WASTE_REDUCTION"`, `defectType = "DUPLICATE_GENERATION_VELOCITY"`).
      - Ровно **одна запись на ключ за окно** (проверка существующих дефектов через `DefectJournalRepository.findByProjectIdAndCreatedAtAfter`).
      - Защита от fail-open: `DefectJournalService` и `DefectJournalRepository` обязательны в конструкторе `@Autowired` и сеттерах с выбросом `IllegalArgumentException` на `null`.
      - Темп порождения **не блокирует фабрику**: не входит в `duplicateContentDetected`, не переводит проект в `BLOCKED_BY_DUPLICATE_CONTENT` и не ставит `content_defect`.
    - **Заслоны:**
      - `TaskDuplicateDetectorTest`: проверка приоритета `contentKey` поверх случайных UUID в описании; исключение терминальных задач и ремонтов из застрявших; порог строго `> 3` (3 попытки зелёные, 4-я даёт темп); работа метода `evaluateVelocity` (5/5 green).
-     - `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityRecordsDefectWithoutBlockingSystem`: оживлённая строка компиляции с 4 сессиями Jules в окне порождает ровно 1 запись дефекта в `defect_journal` с `rootCausePatternId = null`, не блокируя систему и не дублируя запись при повторном такте (13/13 green).
+     - `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityRecordsDefectWithoutBlockingSystem`: оживлённая строка компиляции с 4 сессиями Jules в окне порождает ровно 1 запись дефекта в `defect_journal` с `rootCausePatternId = null`, не блокируя систему и не дублируя запись при повторном такте.
      - `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityAllowsLawfulRecoveryDepthAndThrowsOnNullBeans`: законная глубина ремонта (3 задачи) не порождает дефект, а `null` в сеттерах выбрасывает `IllegalArgumentException`.
+     - `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityIgnoresLifetimeAttemptsAndOlderSessions`: 4 попытки за всё время жизни заявки при 1 сессии в окне не порождают дефект темпа (14/14 green).
      - `FlowSpineServiceTest.compilerTasksWithSharedContentKeyWhenTerminalDoNotBlockFlowSpine`: терминальные задачи компиляции не переводят систему в `BLOCKED_BY_DUPLICATE_CONTENT` (26/26 green).
-     - `GitHubPullRequestServiceTest`: отказ на отсутствие классификатора в 4 точках записи (12/12 green). Все 56/56 green в контейнере Maven.
+     - `GitHubPullRequestServiceTest`: отказ на отсутствие классификатора в 4 точках записи (12/12 green). Все 57/57 green в контейнере Maven.
 
 **2026-09-11 20:35 UTC — Antigravity (L2): Предписание 18 закрыто (`TRUTH_STATUS_TABLE` / D012), ответ по 17+34**
 

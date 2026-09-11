@@ -324,10 +324,10 @@ class ContinuousOrchestrationServiceTest {
         List<JulesSessionEntity> sessions = List.of(s1, s2, s3, s4);
 
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(compilerTask));
+        when(taskRepository.findByProjectIdAndContentKeyStartingWith(project.getId(), "compile:")).thenReturn(List.of(compilerTask));
         when(taskRepository.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(project.getId()), org.mockito.ArgumentMatchers.any(java.time.Instant.class)))
                 .thenReturn(List.of());
-        when(julesSessionRepository.findByTaskId(compilerTask.getId())).thenReturn(sessions);
-        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+        when(julesSessionRepository.findByTaskIdIn(List.of(compilerTask.getId()))).thenReturn(sessions);
         when(defectJournalRepository.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(project.getId()), org.mockito.ArgumentMatchers.any(java.time.Instant.class)))
                 .thenReturn(List.of());
 
@@ -424,6 +424,65 @@ class ContinuousOrchestrationServiceTest {
 
         // Lawful budget (3 attempts) does NOT trigger defect
         service.checkDuplicateGenerationVelocity(project);
+        verify(defectJournalService, never()).recordDefect(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    void duplicateGenerationVelocityIgnoresLifetimeAttemptsAndOlderSessions() {
+        ProjectEntity project = project(UUID.randomUUID(), "test-forty-fourth", ProjectStatus.active);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        var julesSessionRepository = mock(JulesSessionRepository.class);
+        var defectJournalService = mock(com.eneik.production.kaizen.service.DefectJournalService.class);
+        var defectJournalRepository = mock(com.eneik.production.kaizen.repository.DefectJournalRepository.class);
+        var wishlistRepository = mock(WishlistRepository.class);
+
+        String sharedContentKey = "compile:" + project.getId() + ":sha256xyz";
+        TaskEntity compilerTask = task(project, TaskStatus.done);
+        compilerTask.setContentKey(sharedContentKey);
+
+        // 4 sessions in lifetime, but 3 occurred outside the 2-hour window (only 1 inside window)
+        Instant now = Instant.now();
+        JulesSessionEntity s1 = new JulesSessionEntity(); s1.setTaskId(compilerTask.getId()); s1.setCreatedAt(now.minusSeconds(15000));
+        JulesSessionEntity s2 = new JulesSessionEntity(); s2.setTaskId(compilerTask.getId()); s2.setCreatedAt(now.minusSeconds(12000));
+        JulesSessionEntity s3 = new JulesSessionEntity(); s3.setTaskId(compilerTask.getId()); s3.setCreatedAt(now.minusSeconds(9000));
+        JulesSessionEntity s4 = new JulesSessionEntity(); s4.setTaskId(compilerTask.getId()); s4.setCreatedAt(now.minusSeconds(600)); // only 1 in window
+        List<JulesSessionEntity> sessions = List.of(s1, s2, s3, s4);
+
+        // Wishlist with 4 lifetime attempts on a raised ceiling of 5
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setCompileAttempts(4);
+        wishlist.setCompileAttemptCeiling(5); // ceiling = 5
+
+        when(taskRepository.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(project.getId()), org.mockito.ArgumentMatchers.any(java.time.Instant.class)))
+                .thenReturn(List.of());
+        when(taskRepository.findByProjectIdAndContentKeyStartingWith(project.getId(), "compile:"))
+                .thenReturn(List.of(compilerTask));
+        when(julesSessionRepository.findByTaskIdIn(List.of(compilerTask.getId()))).thenReturn(sessions);
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of(wishlist));
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                mock(ProjectRepository.class), mock(ProjectFlowService.class), mock(AccountRepository.class),
+                julesSessionRepository, mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                wishlistRepository, mock(TechnicalLeadCompiler.class), mock(MLPredictionServiceClient.class),
+                taskRepository, new SystemProgressTracker(), mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class), mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class));
+
+        service.setDefectJournalService(defectJournalService);
+        service.setDefectJournalRepository(defectJournalRepository);
+
+        service.checkDuplicateGenerationVelocity(project);
+
+        // No defect recorded: 1 session in window <= budget 3, and lifetime attempts are not falsely reported as 2-hour rate
         verify(defectJournalService, never()).recordDefect(
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),

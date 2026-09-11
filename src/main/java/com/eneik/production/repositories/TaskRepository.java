@@ -34,6 +34,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     long countByProjectIdAndStatus(UUID projectId, TaskStatus status);
     List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
     List<TaskEntity> findByProjectIdAndCreatedAtAfter(UUID projectId, java.time.Instant createdAfter);
+    List<TaskEntity> findByProjectIdAndContentKeyStartingWith(UUID projectId, String prefix);
     Optional<TaskEntity> findByProjectIdAndDescription(UUID projectId, String description);
 
     /** V137: the row that already does this work, if one exists - newest first, terminal or not. */

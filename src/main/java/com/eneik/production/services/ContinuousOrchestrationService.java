@@ -27,6 +27,7 @@ import com.eneik.production.services.task.TaskDuplicateDetector;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class ContinuousOrchestrationService {
@@ -492,29 +493,24 @@ public class ContinuousOrchestrationService {
                     tasksInWindow, windowStart, now, threshold));
 
             // 2. Check compiler tasks (V137 revives the single TaskEntity row by contentKey;
-            // process unit is Jules sessions across the window)
-            List<TaskEntity> allProjectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
-            for (TaskEntity task : allProjectTasks) {
-                String contentKey = task.getContentKey();
-                if (contentKey != null && contentKey.startsWith("compile:")) {
-                    List<com.eneik.production.models.persistence.JulesSessionEntity> sessions =
-                            julesSessionRepository.findByTaskId(task.getId());
-                    long sessionsInWindow = sessions.stream()
-                            .filter(s -> s.getCreatedAt() != null && !s.getCreatedAt().isBefore(windowStart))
-                            .count();
-                    TaskDuplicateDetector.evaluateVelocity(contentKey, sessionsInWindow, window, windowStart, now, threshold)
-                            .ifPresent(velocities::add);
+            // process unit is Jules sessions across the window, fetched in batch via findByTaskIdIn)
+            List<TaskEntity> compilerTasks = taskRepository.findByProjectIdAndContentKeyStartingWith(project.getId(), "compile:");
+            java.util.Map<UUID, String> taskToContentKey = new java.util.HashMap<>();
+            for (TaskEntity ct : compilerTasks) {
+                if (ct.getId() != null && ct.getContentKey() != null) {
+                    taskToContentKey.put(ct.getId(), ct.getContentKey());
                 }
             }
 
-            // 3. Check wishlists compileAttempts directly (if dispatched in window and compileAttempts > budget)
-            List<WishlistEntity> wishlists = wishlistRepository.findByProjectId(project.getId());
-            for (WishlistEntity w : wishlists) {
-                if (w.getCompileAttempts() > threshold
-                        && w.getLastCompileDispatchedAt() != null
-                        && !w.getLastCompileDispatchedAt().isBefore(windowStart)) {
-                    String wishlistKey = "compile:" + project.getId() + ":wishlist:" + w.getId();
-                    TaskDuplicateDetector.evaluateVelocity(wishlistKey, (long) w.getCompileAttempts(), window, windowStart, now, threshold)
+            if (!taskToContentKey.isEmpty()) {
+                List<com.eneik.production.models.persistence.JulesSessionEntity> sessions =
+                        julesSessionRepository.findByTaskIdIn(new java.util.ArrayList<>(taskToContentKey.keySet()));
+                java.util.Map<String, Long> sessionsPerKey = sessions.stream()
+                        .filter(s -> s.getCreatedAt() != null && !s.getCreatedAt().isBefore(windowStart))
+                        .filter(s -> s.getTaskId() != null && taskToContentKey.containsKey(s.getTaskId()))
+                        .collect(java.util.stream.Collectors.groupingBy(s -> taskToContentKey.get(s.getTaskId()), java.util.stream.Collectors.counting()));
+                for (java.util.Map.Entry<String, Long> entry : sessionsPerKey.entrySet()) {
+                    TaskDuplicateDetector.evaluateVelocity(entry.getKey(), entry.getValue(), window, windowStart, now, threshold)
                             .ifPresent(velocities::add);
                 }
             }
