@@ -4,6 +4,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.flyway.FlywayMigrationStrategy;
@@ -27,9 +28,13 @@ public class EneikProductionApplication {
     }
 
     @Bean
-    public FlywayMigrationStrategy flywayMigrationStrategy() {
+    public FlywayMigrationStrategy flywayMigrationStrategy(
+            @Value("${spring.flyway.repair-on-startup:false}") boolean repairOnStartup) {
         return flyway -> {
-            flyway.repair();
+            if (repairOnStartup) {
+                log.warn("Flyway automatic repair requested via spring.flyway.repair-on-startup=true; repairing schema history table");
+                flyway.repair();
+            }
             flyway.migrate();
         };
     }
