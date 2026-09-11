@@ -106,6 +106,8 @@ These patterns are intentionally shared. A concrete reusable practice belongs he
 | `ACP-100` | Canary Invariant Monitor | Bind rollout progression to live invariant checks | Prevents a canary from advancing after hidden correctness drift. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 | `ACP-101` | Verdict Carries Its Subject | A recorded judgement stores what it examined, not only what it concluded | Stops two different acts of judgement from collapsing into one indistinguishable record, so a narrow verdict cannot be read as a broad one. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 | `ACP-102` | Criterion Is Not The Concept | An operational test stands for a concept only over the class of bearers it was calibrated on | Stops a criterion that is co-extensional with a concept for one kind of subject from being applied to every kind, where it silently changes the truth value. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
+| `ACP-107` | Retrieval Is Local, Judgment Is Subscribed | Local zero-dependency embedding, customer-subscribed LLM judgment | Prevents basic product search and retrieval from failing when AI vendor accounts lapse or rate-limit. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
+| `ACP-108` | A Guard Must Be Reachable From Its Own Defect | Trace defect input forward to verify it reaches the check | Prevents unreachable guards that sit adjacent to the defect on bypassed branches. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 
 ## RAG Retrieval Rule
 

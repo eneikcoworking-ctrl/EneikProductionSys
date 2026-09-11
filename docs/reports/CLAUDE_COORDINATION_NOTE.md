@@ -168,7 +168,31 @@
       - В `TocSentinelServiceTest` добавлены фальсифицирующий тест `singleInstrumentedStageDoesNotClaimSystemFlowOptimal` и подтверждающий `multiStageFlowWithinCapacityReportsSystemFlowOptimal`.
     - **Анализ топологии шагов конвейера в `AGY_ASKS.md`:** Зафиксирован вопрос и архитектурный анализ разметки шагов потока (разметка Intake/Dispatch/Compile/Review/Merge, где верёвка должна придерживать раздачу входных задач, а не блокировать сливающее звено на выходе).
 
-13. **Что берётся следующим:** Такт 21 — Пункт 20 очереди (`generate_philosopher_patterns.py` · раздел XXIV: две половины корпуса образцов не сверяются; список порождается скриптом, формы написаны рукой; сверять при сборке и ронять её при расхождении).
+13. **Такт 21 закрыт (`scripts/generate_philosopher_patterns.py`, пункт 20 очереди, раздел XXIV `FACTORY_MECHANISMS.md`, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014 Storage lineage loss, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008 False green):**
+    - **Сверка трёх источников корпуса образцов:**
+      - Источник 1 (генератор `scripts/generate_philosopher_patterns.py`): порождает `00_COMMON`, `01`, `02`, `PHILOSOPHER_INDEX`, `philosopher_patterns_index.json`, `QA_REPORT`, `README` и 86 файлов `philosophers/` (1720 образцов).
+      - Источник 2 (ручной `03_PATTERN_STRENGTH.md`): 53 канонических семейства образцов.
+      - Источник 3 (ручной `04_FACTORY_DERIVED_PATTERNS.md`): 4 образца, выведенных из фабрики.
+      - 53 семейства из `03_PATTERN_STRENGTH.md` строго и поимённо согласованы 1:1 со слотами пула `PERSONAL_SLOT_POOL` и индексом `philosopher_patterns_index.json` (53 == 53, 0 расхождений).
+      - 4 фабрично-выведенных образца из `04_FACTORY_DERIVED_PATTERNS.md` не пересекаются с 1720 публикационными образцами индекса (0 коллизий) и несут номер $\ge 21$.
+      - Все 104 общих аналитических паттерна (ACP-001..100, 101, 102, 107, 108) внесены в `COMMON_PATTERNS` генератора и согласованы с `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
+    - **Безопасная генерация и защита от разрушения ручных находок:**
+      - В `scripts/generate_philosopher_patterns.py` устранено предварительное удаление каталога `philosophers/` (`shutil.rmtree`). Генерация выполняется безопасно, а устаревшие `.md` файлы в `PEOPLE_DIR` подчищаются только после 100% успешной генерации.
+      - Внедрены `EXTENDED_COMMON_SECTIONS`: генератор сохраняет подробные описания правил, обоснований и реальных инцидентов для ACP-101, 102, 107, 108, исключая стирание ручных правок при регенерации.
+      - Реализована функция `verify_corpus()`, валидирующая непротиворечивость всех 3 источников перед началом записи файлов.
+      - Добавлен CLI-флаг `--check` / `--verify` для сухой валидации без записи на диск.
+    - **Заслоняющий JUnit-тест и честная граница сборки:**
+      - Создан `PhilosopherPatternCorpusConsistencyTest.java` (6/6 green):
+        - `all53FamiliesInPatternStrengthMatchPhilosopherIndexJsonExactly`: проверка 53 == 53.
+        - `factoryDerivedPatternsDoNotCollideWithGeneratedIndexAndHaveOrdinal21OrHigher`: проверка 0 коллизий и ordinals >= 21.
+        - `allAcpPatternsInCommonMarkdownMatchGeneratorScriptExactly`: проверка 104 == 104 ACP.
+        - `falsificationHarness_renamedFamilyInIndexCausesCheckToFail`: фальсифицирующий заслон на переименование семейств.
+        - `falsificationHarness_missingAcpInGeneratorCausesCheckToFail`: фальсифицирующий заслон на пропуск ACP.
+        - `falsificationHarness_collidingDerivedPatternCausesCheckToFail`: фальсифицирующий заслон на коллизию идентификаторов.
+      - **Честное указание границы:** в javadoc теста и документации зафиксировано, что `Dockerfile.backend` упаковывает приложение через `mvn -q package -DskipTests`. Тест JUnit роняет проверку на фазе `mvn test` (локально и в CI), но не блокирует `docker build` при пропуске тестов.
+    - **Прогон тестов:** `PhilosopherPatternCorpusConsistencyTest` (6/6 green) в Docker-контейнере Maven с лимитом `-m 1200m`.
+
+14. **Первые 20 пунктов очереди закрыты целиком.** Следующий шаг согласуется с оператором и Клодом (переход к предписаниям раздела XVI `FACTORY_MECHANISMS.md`).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

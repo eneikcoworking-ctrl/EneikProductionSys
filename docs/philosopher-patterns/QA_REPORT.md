@@ -12,7 +12,7 @@
 | Duplicate personal pattern IDs | 0 |
 | Duplicate personal pattern names | 0 |
 | Files below 20 patterns | 0 |
-| Common analytic patterns | 100 |
+| Common analytic patterns | 104 |
 | Conflict prevention rules | 12 |
 | Defect taxonomy classes | 15 |
 | Common threshold philosophers | > 5 |

@@ -4,6 +4,7 @@ import json
 import hashlib
 import re
 import shutil
+import sys
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -120,6 +121,10 @@ COMMON_PATTERNS = [
     ("ACP-098", "Kill Switch", "Every risky external effect has a fast disable path", "Prevents prolonged damage from a bad deployment or dependency change."),
     ("ACP-099", "Shadow Traffic Verification", "Run new behavior beside old behavior before user-visible cutover", "Finds semantic differences without exposing clients."),
     ("ACP-100", "Canary Invariant Monitor", "Bind rollout progression to live invariant checks", "Prevents a canary from advancing after hidden correctness drift."),
+    ("ACP-101", "Verdict Carries Its Subject", "A recorded judgement stores what it examined, not only what it concluded", "Stops two different acts of judgement from collapsing into one indistinguishable record, so a narrow verdict cannot be read as a broad one."),
+    ("ACP-102", "Criterion Is Not The Concept", "An operational test stands for a concept only over the class of bearers it was calibrated on", "Stops a criterion that is co-extensional with a concept for one kind of subject from being applied to every kind, where it silently changes the truth value."),
+    ("ACP-107", "Retrieval Is Local, Judgment Is Subscribed", "Local zero-dependency embedding, customer-subscribed LLM judgment", "Prevents basic product search and retrieval from failing when AI vendor accounts lapse or rate-limit."),
+    ("ACP-108", "A Guard Must Be Reachable From Its Own Defect", "Trace defect input forward to verify it reaches the check", "Prevents unreachable guards that sit adjacent to the defect on bypassed branches."),
 ]
 
 
@@ -941,10 +946,240 @@ def make_personal_patterns(row: dict[str, object]) -> list[dict[str, str]]:
     return patterns
 
 
+EXTENDED_COMMON_SECTIONS = """## ACP-101 — Verdict Carries Its Subject
+
+**Publication anchor:** J. L. Austin, *How to Do Things with Words* — felicity conditions of a
+performative. **Added 2026-08-18** from a live incident in this system, recorded in
+`docs/reports/WORKPLAN_2026-08-15_repair.md`.
+
+### The rule
+
+When code records a judgement — passed, approved, verified, accepted, reviewed — the record must state
+**what was examined**, not only what was concluded. A verdict without its subject is not a weaker
+verdict; it is a different kind of thing, because two acts of judgement over different subjects become
+one indistinguishable row.
+
+**Proof obligation:** point to the field, column or report key that names the scope of the judgement,
+and show that two judgements made in different circumstances produce distinguishable records.
+
+### Why it is not `ACP-015`, `ACP-016` or `PERFORMATIVE_COMMIT`
+
+`DZHON_OSTIN_10_PERFORMATIVE_COMMIT` already requires that *a declaration have its operational
+consequence*: declare a status, and the transition, event or gate it performs must exist. That runs
+**forwards**, from the declaration to the world.
+
+This pattern is its converse. The declaration exists, the consequence exists, each write is correct —
+and the record still misleads, because it does not say **which declaration it was**. Austin's own
+distinction covers it: an utterance's force depends on the circumstances of its utterance, so "I
+verify this" spoken at two different moments about two different things is **two acts**, and a record
+that keeps only the words has lost the act.
+
+### The incident that produced it
+
+`GateOrchestrator` has two public entry points writing one boolean into one field:
+
+```
+runTaskSpecGate(task)   called at task CREATION     -> "this task is well specified"
+runQualityGate(task)    called at implementer FINISH -> "the work passed every applicable check"
+```
+
+Six readers consume that field as the second meaning. A task can therefore be recorded as verified
+having delivered nothing — measured live: `f163e834`, status `done`, `qualityGatePassed = true`, no
+claim, no session, no PR, zero mentions in the log. Its flag was written two seconds after creation and
+never revisited. Across the whole project the gap between a task's creation and its gate log is 2–5
+seconds, which is that same creation-time gating.
+
+**Both writes were true.** That is the difficulty this pattern exists for: the defect cannot be found
+by asking whether a value is correct, only by asking what it is about. No test of truth would have
+caught it.
+
+### How it was discharged
+
+The report gained the stages the verdict covers. One line; the boolean untouched; no reader's behaviour
+changed. What changed is that *verified* can now be asked of a specific question, and a task whose only
+gate log carries `[TASK_SPEC]` has never been verified for delivery — a readable fact instead of an
+inference from timestamps.
+
+### Where to apply it
+
+Any field whose name is a past participle of judgement — `passed`, `approved`, `validated`, `checked`,
+`reviewed`, `accepted` — and which is written from more than one call site, or at more than one moment
+in an object's life. If the writes cannot be told apart afterwards, the record is incomplete even when
+every write was correct.
+
+---
+
+## ACP-102 — Criterion Is Not The Concept
+
+**Publication anchor:** Gottlob Frege, *Über Sinn und Bedeutung* — sense, reference and the failure of
+substitutivity outside a shared context. **Role grounding:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+Готлоб Фреге, «Принцип разграничения смысла и значения»; anchored on
+`GOTLOB_FREGE_01_SUBSTITUTION_ORACLE` (D009 substitution failure) and
+`GOTLOB_FREGE_09_SENSE_REFERENCE_SPLIT`. **Added 2026-08-19** from a live measurement in this system.
+
+### The rule
+
+A concept the system reasons with — *delivered*, *done*, *healthy*, *complete*, *reviewed* — is normally
+operationalised by a concrete test: the PR contains code, the endpoint returned 200, the file exists. The
+test and the concept agree **only over the class of bearers the test was calibrated on**. Outside that
+class they come apart, and because the test keeps returning a clean boolean, nothing announces that it is
+now answering a different question.
+
+So: a criterion may be substituted for its concept only where the class of bearers is declared and the
+bearer belongs to it. Where bearers differ in kind, the criterion must be **relative to the bearer's
+declared kind**, not global.
+
+**Proof obligation:** name the class of bearers over which the criterion and the concept are
+co-extensional, and show what the criterion returns for a bearer outside that class. If that answer is
+wrong, the criterion is not the concept and must be indexed by kind.
+
+### Why it is not `ACP-101`, and not `GOTLOB_FREGE_06`
+
+`ACP-101` (Verdict Carries Its Subject) is about a **record** losing which act produced it. Here every
+record is complete and honest; the defect is upstream, in the **predicate** — it was never true of the
+whole domain it is applied to.
+
+`GOTLOB_FREGE_06_LEVEL_OF_ABSTRACTION_LOCK` forbids mixing claims from different abstraction levels. That
+is the special case where bearers differ **by level**. This pattern is the general case: bearers can
+differ by kind at the same level — a content role and an implementation role sit at the same level of the
+same flow and still have different delivery artifacts.
+
+### The incident that produced it
+
+`ClientDeliverableReadinessService.requiresCodeForDelivery` operationalises *delivered* as *the merged PR
+contains code*, exempting one role tag and the spec stages. `CodeChangeClassifier` decides "contains code"
+by a deny-list: `.md`, `README`, `design/draft|approved/`, `.eneik/` and generated artifacts are not code;
+everything else is.
+
+Both are correct for an implementation role. For a role whose delivery artifact is prose — copy, content,
+a written specification shipped as markdown — the same test reports *nothing delivered* about work that
+was fully delivered. Measured on the active project: of 99 tasks recorded `done`, 54 had no merged PR
+containing code; 47 of those are the DECISION stage, which is `specOnly` and therefore correct, and 5 are
+genuine phantom deliveries. The criterion happened to be right for 94 of 99 — which is exactly why it
+survived: a criterion that is nearly always co-extensional is the hardest kind to catch.
+
+The danger is not the miscount. It is that a repair built on that criterion — retire the attempt and put
+the requirement back in the flow — would have destroyed real content work as though nothing had arrived,
+repeatedly, until its retry bound was spent.
+
+### The general form for products
+
+Each role declares the artifact that constitutes **its** delivery: code, content, specification, build
+configuration, verification evidence. One predicate still owns the question (one point of application),
+but it asks the bearer what counts before it answers. There are then no roles "exempt from delivery" —
+only roles delivering different kinds of thing, which is the honest description of what was always true.
+
+## ACP-107 — Retrieval Is Local, Judgment Is Subscribed
+
+### The rule
+
+A product that reasons over its own corpus - market data, competitors, demand, customer records, its own
+documents - splits that work in two and never lets the halves share a dependency.
+
+**Retrieval runs locally, always, for free.** Embeddings come from a small ONNX model shipped inside the
+product. No account, no key, no quota, no network. Search, ranking, clustering and "find me things like
+this" work on day one, offline, for every user, forever.
+
+**Judgment is subscribed, and the subscription is the customer's.** Anything that forms an opinion - reads
+the retrieved material and rules on it - runs against a model the user connects in the admin panel with
+their own subscription. The product ships with no vendor key and meters nothing.
+
+### Why the two must not share a dependency
+
+They are different kinds of act and only one of them can be false.
+
+Retrieval answers *what is relevant*, and its output is a ranked list that the next step can check.
+Judgment answers *what follows*, and its output is a claim. Routing retrieval through a judgment model
+looks like an upgrade and is a category error: it makes every search a paid, slow, rate-limited opinion,
+and it makes the product stop working entirely when the account behind it lapses.
+
+Measured, 2026-08-20 to 2026-08-23, in the factory that produced this pattern. Retrieval over a 140-file
+corpus embedded the QUERY through a metered API on every call and returned an empty list when that call
+failed:
+
+    float[] queryVector = mlPredictionServiceClient.embed(query);
+    if (queryVector == null) {
+        return List.of();
+    }
+
+The account ran out of credit. For three days every prompt in the system went out with no corpus behind it
+at all - no pattern, no role definition, none of the method the system exists to apply. Nothing raised an
+alarm, because an empty list is also what "nothing relevant was found" looks like. **A failure state that
+is indistinguishable from a healthy one cannot be refuted, and therefore cannot be noticed.**
+
+### What it buys the product
+
+The product is fully useful with no AI account attached: it searches, it groups, it measures, it compares.
+Then the customer connects their own subscription in the admin panel and the same product starts forming
+opinions on top of what it already retrieves. Nothing about the base product degrades if they never do, and
+nothing about it stops if they cancel.
+
+For the vendor this removes per-user metering entirely - the expensive half is paid for by whoever uses it.
+For the customer it removes the question of what the vendor does with their key.
+
+### Choosing the local model
+
+By measured size against measured need, never by name. In the reference implementation fastembed offered
+three multilingual models: 384 dimensions at 0.22 GB, 768 at 1.0 GB, and 1024 at 2.24 GB. The smallest was
+chosen because the host had already lost a container to memory pressure - the ranking quality difference
+did not outweigh a fivefold difference in footprint. ONNX rather than torch for the same reason: about
+200 MB against roughly 1.5 GB.
+
+Multilingual is not optional where the corpus or the customer is not English. An English-only model does
+not refuse a Russian query - it ranks it badly and silently, which is this same pattern's own failure one
+level down.
+
+### The invariant that comes with it
+
+Vectors from two different models cannot be compared, and the comparison **does not fail**: cosine
+similarity over mismatched dimensions returns 0.0, which reads as "not similar". Any product using this
+pattern must store the embedding model's identity and dimension alongside every vector, refuse comparison
+across a mismatch loudly rather than scoring it zero, and reindex when the model changes rather than
+waiting to be told.
+
+### Where to apply it
+
+Every Eneik product that measures a market, ranks competitors, groups customer feedback, or searches its
+own documents. The admin panel exposes one screen: connect your model subscription. Everything below that
+screen already works.
+
+## ACP-108 — A Guard Must Be Reachable From Its Own Defect
+
+### The rule
+
+A check placed on a path the defect does not take is not a check. Before a guard is called finished, state
+the exact input it exists to refuse, and trace whether that input reaches it. If an earlier branch returns
+first, the guard is decoration.
+
+This is not carelessness. It is a specific and recurring shape, because guards are naturally written where
+the surrounding code is already looking - and the defect is, by definition, somewhere the code was not.
+
+### Three instances in one day
+
+Measured 2026-08-23, all three in the same system, all three found only by watching the repair fail:
+
+- A producer filed missing work inside the branch for a *newly recorded* finding. The task it was written
+  for had been recorded the previous day, so the fix ran for every case except its own. Eleven and a half
+  hours with the repair deployed and unreachable.
+- `rejectIfMalformed` began with `if (value == null || value.isBlank()) return;` and was then extended to
+  refuse a blank flag value. Blank was the one input it was added for, and blank left first.
+- `reportValuelessBooleanFlags` looked for flags whose source was `none`. The flags that were actually
+  valueless had a database row holding an empty string - a source, and no content - so the reporter built
+  for exactly this defect had never once seen it.
+
+### The check
+
+For every guard, write the sentence: *"this refuses X."* Then find X in the caller and follow it forward. If
+it returns, throws, or `continue`s before reaching the guard, the guard is not installed - it is adjacent to
+the problem.
+
+The strongest form does not need the trace at all: make the defective state unrepresentable rather than
+refused (see poka-yoke, and `ACP-002`). Where a runtime guard is genuinely required, its reachability from
+its own defect is part of the guard, not a detail of where it happens to sit."""
+
+
 def clean_output() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    if PEOPLE_DIR.exists():
-        shutil.rmtree(PEOPLE_DIR)
     PEOPLE_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -971,6 +1206,10 @@ def write_common_patterns() -> None:
             f"3. If a new concrete personal pattern starts fitting more than {COMMON_THRESHOLD_PHILOSOPHERS} philosophers, move it here and replace it in those philosopher files.",
             "4. For mathematical assignment and QA rules, retrieve `02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md`.",
             "5. For parallel development tasks, also retrieve `01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`.",
+            "",
+            "---",
+            "",
+            EXTENDED_COMMON_SECTIONS.strip(),
             "",
         ]
     )
@@ -1077,7 +1316,7 @@ def write_rag_assignment_model() -> None:
     (OUT / "02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
+def build_philosopher_entry(row: dict[str, object]) -> dict[str, object]:
     tag = str(row["tag"])
     role_name, tag_focus = TAG_TITLES[tag]
     name = str(row["name_ru"])
@@ -1146,15 +1385,36 @@ def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
             "",
         ]
     )
-    target = PEOPLE_DIR / file_name
-    target.write_text("\n".join(lines), encoding="utf-8")
     return {
         **row,
         "philosopher_id": philosopher_id,
         "file": f"philosophers/{file_name}",
+        "file_name": file_name,
         "publication_anchor": anchor,
         "patterns": patterns,
+        "content": "\n".join(lines),
     }
+
+
+def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
+    entry = build_philosopher_entry(row)
+    PEOPLE_DIR.mkdir(parents=True, exist_ok=True)
+    target = PEOPLE_DIR / str(entry["file_name"])
+    target.write_text(str(entry["content"]), encoding="utf-8")
+    return entry
+
+
+def write_philosopher_files(entries: list[dict[str, object]]) -> None:
+    PEOPLE_DIR.mkdir(parents=True, exist_ok=True)
+    expected_files = set()
+    for entry in entries:
+        file_name = str(entry["file_name"])
+        expected_files.add(file_name)
+        target = PEOPLE_DIR / file_name
+        target.write_text(str(entry["content"]), encoding="utf-8")
+    for existing in PEOPLE_DIR.glob("*.md"):
+        if existing.name not in expected_files:
+            existing.unlink()
 
 
 def write_readme(entries: list[dict[str, object]]) -> None:
@@ -1307,8 +1567,11 @@ def write_qa(rows: list[dict[str, object]], entries: list[dict[str, object]], pa
     (OUT / "QA_REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def main() -> None:
-    rows = extract_rows()
+def verify_corpus(
+    rows: list[dict[str, object]],
+    entries: list[dict[str, object]],
+    pattern_rows: list[dict[str, str]],
+) -> dict[str, object]:
     if len(rows) != EXPECTED_PHILOSOPHERS:
         raise SystemExit(f"Expected {EXPECTED_PHILOSOPHERS} philosopher rows, found {len(rows)}")
     barcan_file_count = len(list(ROOT.glob("BARCAN-TAG-*.md")))
@@ -1321,12 +1584,89 @@ def main() -> None:
     if missing_anchors:
         raise SystemExit(f"Missing PUBLICATION_ANCHORS entries: {missing_anchors}")
 
+    # 1. 03_PATTERN_STRENGTH.md (53 families)
+    p03_path = OUT / "03_PATTERN_STRENGTH.md"
+    if not p03_path.exists():
+        raise SystemExit(f"Missing required hand-maintained file: {p03_path}")
+    text_03 = p03_path.read_text(encoding="utf-8")
+    families_03 = set(re.findall(r"### `([A-Z0-9_]+)`", text_03))
+    script_families = {slot["key"].upper().replace("-", "_") for slot in PERSONAL_SLOT_POOL}
+    if families_03 != script_families:
+        diff_03 = sorted(families_03 - script_families)
+        diff_script = sorted(script_families - families_03)
+        raise SystemExit(
+            f"03_PATTERN_STRENGTH.md and generator PERSONAL_SLOT_POOL diverge: "
+            f"in 03 only: {diff_03}; in generator only: {diff_script}"
+        )
+
+    # 2. 04_FACTORY_DERIVED_PATTERNS.md (4 patterns)
+    p04_path = OUT / "04_FACTORY_DERIVED_PATTERNS.md"
+    if not p04_path.exists():
+        raise SystemExit(f"Missing required hand-maintained file: {p04_path}")
+    text_04 = p04_path.read_text(encoding="utf-8")
+    derived_patterns_04 = set(re.findall(r"## `([A-Z0-9_]+)`", text_04))
+    if len(derived_patterns_04) != 4:
+        raise SystemExit(
+            f"Expected 4 factory-derived patterns in 04, found {len(derived_patterns_04)}: {derived_patterns_04}"
+        )
+    generated_pattern_ids = {pattern["id"] for pattern in pattern_rows}
+    collisions = derived_patterns_04 & generated_pattern_ids
+    if collisions:
+        raise SystemExit(f"Collision between 04 factory-derived patterns and generated patterns: {collisions}")
+    for dp in derived_patterns_04:
+        parts = dp.split("_")
+        nums = [int(p) for p in parts if p.isdigit()]
+        if not nums or any(n < 21 for n in nums):
+            raise SystemExit(f"Derived pattern {dp} must have ordinal >= 21")
+
+    # 3. 00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md
+    p00_path = OUT / "00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md"
+    if p00_path.exists():
+        text_00 = p00_path.read_text(encoding="utf-8")
+        file_acps = set(re.findall(r"\| `(ACP-\d+)` \|", text_00))
+        script_acps = {pid for pid, _, _, _ in COMMON_PATTERNS}
+        if file_acps != script_acps:
+            diff_file = sorted(file_acps - script_acps)
+            diff_script = sorted(script_acps - file_acps)
+            raise SystemExit(
+                f"00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md and generator COMMON_PATTERNS diverge: "
+                f"in file only: {diff_file}; in generator only: {diff_script}"
+            )
+
+    return {
+        "status": "VERIFIED",
+        "barcan_files": barcan_file_count,
+        "philosophers": len(rows),
+        "patterns": len(pattern_rows),
+        "unique_families": len(families_03),
+        "derived_patterns_04": len(derived_patterns_04),
+        "common_acp_patterns": len(COMMON_PATTERNS),
+        "checks_passed": [
+            "barcan_files_count == 13",
+            "philosophers_count == 86",
+            "slot_pool_families == 03_families (53 == 53)",
+            "derived_patterns_04 disjoint from generated (0 collisions, ordinals >= 21)",
+            "00_common_acp == generator_acp (104 == 104)",
+        ],
+    }
+
+
+def main() -> None:
+    rows = extract_rows()
+    entries = [build_philosopher_entry(row) for row in rows]
+    pattern_rows = [pattern for entry in entries for pattern in entry["patterns"]]
+
+    verification = verify_corpus(rows, entries, pattern_rows)
+
+    if "--check" in sys.argv or "--verify" in sys.argv:
+        print(json.dumps(verification, ensure_ascii=False, indent=2))
+        return
+
     clean_output()
     write_common_patterns()
     write_conflict_prevention_charter()
     write_rag_assignment_model()
-    entries = [write_philosopher_file(row) for row in rows]
-    pattern_rows = [pattern for entry in entries for pattern in entry["patterns"]]
+    write_philosopher_files(entries)
     write_readme(entries)
     write_index(entries)
     write_json(entries, pattern_rows)
@@ -1336,7 +1676,7 @@ def main() -> None:
         json.dumps(
             {
                 "out": str(OUT),
-                "barcan_files": barcan_file_count,
+                "barcan_files": verification["barcan_files"],
                 "philosophers": len(entries),
                 "philosopher_files": len(list(PEOPLE_DIR.glob("*.md"))),
                 "personal_patterns": len(pattern_rows),
@@ -1346,6 +1686,7 @@ def main() -> None:
                 "common_patterns": len(COMMON_PATTERNS),
                 "conflict_prevention_rules": len(CONFLICT_PREVENTION_RULES),
                 "defect_taxonomy_classes": len(DEFECT_TAXONOMY),
+                "corpus_verification": verification["status"],
             },
             ensure_ascii=False,
             indent=2,
