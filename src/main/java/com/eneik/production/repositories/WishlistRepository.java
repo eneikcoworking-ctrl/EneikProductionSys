@@ -27,14 +27,26 @@ public interface WishlistRepository extends JpaRepository<WishlistEntity, UUID> 
     // and may proceed; every later concurrent caller gets 0 and must skip that wishlist, no matter how far
     // along its own in-memory admission decision already was.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE WishlistEntity w SET w.status = :newStatus WHERE w.id = :id AND w.status = :expectedStatus")
+    @Query("UPDATE WishlistEntity w SET w.status = :newStatus, w.finalizingSince = null WHERE w.id = :id AND w.status = :expectedStatus")
     int compareAndSetStatus(@Param("id") UUID id, @Param("expectedStatus") WishlistStatus expectedStatus,
             @Param("newStatus") WishlistStatus newStatus);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE WishlistEntity w SET w.status = :newStatus, w.lastCompileDispatchedAt = :now WHERE w.id = :id AND w.status = :expectedStatus")
+    @Query("UPDATE WishlistEntity w SET w.status = :newStatus, w.finalizingSince = :now WHERE w.id = :id AND w.status = :expectedStatus")
     int compareAndSetStatusWithTimestamp(@Param("id") UUID id, @Param("expectedStatus") WishlistStatus expectedStatus,
             @Param("newStatus") WishlistStatus newStatus, @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE WishlistEntity w SET w.finalizingSince = :now WHERE w.id IN :ids AND w.status = :status")
+    int renewFinalizingLeases(@Param("ids") java.util.Collection<UUID> ids,
+                              @Param("status") WishlistStatus status,
+                              @Param("now") Instant now);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE WishlistEntity w SET w.finalizingSince = :now WHERE w.id = :id AND w.status = :status")
+    int renewFinalizingLease(@Param("id") UUID id,
+                             @Param("status") WishlistStatus status,
+                             @Param("now") Instant now);
 
     List<WishlistEntity> findByProjectId(UUID projectId);
     List<WishlistEntity> findByProjectIdAndStatus(UUID projectId, WishlistStatus status);

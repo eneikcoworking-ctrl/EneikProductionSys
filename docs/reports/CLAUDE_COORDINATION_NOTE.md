@@ -746,6 +746,36 @@
   - `ContinuousOrchestrationServiceTest` (11/11): ночной сброс суточных лимитов триггерит возобновление задач через `projectFlowService.requeueUntestedTasksOnRestoredCapacity()`.
   - `AccountHealthServiceLaw14Test` (7/7) и `ProjectFlowServiceTest` (39/39).
 
+**Закрыто (Такт 36):** Предписания 17 и 34 закрыты как **ЕДИНЫЙ механизм** (`StrandedFinalizingSweepService` / `JulesDispatchService` / `WishlistRepository` / `ProjectFlowService` — аренда чистильщика finalizing, `BELIEF_UPDATE_LEDGER` / D007, `CAUSAL_PROCESS_TRACE` / D013, `PRINCIPLED_INTEGRITY` / D012):
+- **Собственная метка `finalizing_since` (`CAUSAL_PROCESS_TRACE` / D013, `ELVIN_GOLDMAN_06`):**
+  1. Создана миграция `V139__wishlist_finalizing_since.sql` с добавлением столбца `finalizing_since TIMESTAMP WITH TIME ZONE NULL` и индекса `idx_wishlist_finalizing_since` в таблицу `wishlist`.
+  2. В `WishlistEntity` добавлено поле `finalizingSince`.
+  3. В `WishlistRepository` методы `compareAndSetStatusWithTimestamp` фиксируют точный момент входа в `finalizing` (`finalizingSince = :now`), а `compareAndSetStatus` очищает поле (`finalizingSince = null`) при выходе. `ProjectFlowService` также очищает метку при конвертации в задачу или отклонении.
+  4. Ликвидирована категориальная ошибка замера от соседних меток (`lastCompileDispatchedAt` / `createdAt`): в инциденте п. 34 65-минутный возраст отправки приводил к мгновенному сбросу свежего `finalizing`. Теперь возраст меряется строго от `finalizingSince`.
+  5. Для исторических строк без метки чистильщик инициализирует `finalizingSince = Instant.now()`, предоставляя свежий квант аренды вместо преждевременного сброса.
+- **Активное продление аренды (`PRINCIPLED_INTEGRITY` / D012):**
+  1. В `WishlistRepository` добавлены методы пакетного и единичного обновления `renewFinalizingLeases` / `renewFinalizingLease`.
+  2. В `JulesDispatchService` реализован метод `renewFinalizingLeases(Collection<UUID> claimedIds)` с аннотацией `@Transactional(propagation = Propagation.REQUIRES_NEW)`.
+  3. В `completeWishlistCompilation` на этапах ожидания PR в GitHub и парсинга плана компилятора живой исполнитель активно продлевает аренду (`self.renewFinalizingLeases(...)`). Живой работник никогда не лишается своего захвата.
+  4. Исправлен перевёрнутый комментарий: старая точка отсчёта увеличивала возраст и приводила к преждевременному сбросу, а не "never releases too early".
+  5. Сообщение в логе чистильщика точно называет предмет замера: время в `finalizing` с точной отметки против динамического предела аренды из наблюдений.
+- **Динамический расчет предела аренды (`BELIEF_UPDATE_LEDGER` / D007):**
+  1. При успешной компиляции `JulesDispatchService` фиксирует длительность `finalizing` в `DefectJournalEntity` (`sourceComponent = "WishlistCompiler"`, `defectType = "FINALIZING_DURATION"`, категория `INSTITUTIONAL_AUDIT`).
+  2. `StrandedFinalizingSweepService.calculateEffectiveLeaseDuration()` выводит предел аренды как медиану последних $\le 50$ наблюдений $\times 10$ (коэффициент безопасности), с нижним порогом 30 секунд. При нехватке наблюдений ($< 5$) используется базовое значение `maxAgeMinutes` (3 мин).
+- **Очистка от `findAll()` (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010):**
+  1. В `StrandedFinalizingSweepService.sweep()` подъём всех проектов с фильтрацией в памяти заменён на прямой репозиторный запрос `projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`.
+- **Заслоняющие тесты (148/148 green в изолированном Docker-контейнере Maven с `-m 1500m --cpus=2`):**
+  - `StrandedFinalizingSweepServiceTest` (8/8):
+    - `wishlistWithOldDispatchTime_butFreshFinalizingSince_isNotSwept` (фальсифицирующий заслон п. 34).
+    - `liveWorkerWithRenewedLease_isNotSweptEvenIfWorkExceedsBaseLease` (фальсифицирующий заслон п. 17).
+    - `historicalWishlistWithoutFinalizingSince_isInitializedToNowAndNotSweptImmediately` (инициализация исторических строк).
+    - `calculateEffectiveLeaseDuration_usesObservedDurationsWhenAvailable` (вывод аренды из истории).
+    - `calculateEffectiveLeaseDuration_fallsBackToDefaultWhenInsufficientSamples` (откат при нехватке выборки).
+    - `sweepIteratesAllActiveProjects` (проверка `findByStatusOrderByCreatedAtDesc(ProjectStatus.active)` и `never().findAll()`).
+  - `JulesDispatchServiceTest` (101/101, включая `renewFinalizingLeases_updatesFinalizingSinceTimestampForClaimedWishlists`).
+  - `ProjectFlowServiceTest` (39/39).
+
 **В работе дальше:**
-- Следующий пункт по разделу XVI `docs/FACTORY_MECHANISMS.md`: Предписание 17 («Аренда чистильщика назначена, а не выведена · `BELIEF_UPDATE_LEDGER` (D007)»).
+- Синхронизация с Клодом по приёмке Предписаний 17 и 34.
+- Следующий пункт по разделу XVI: Предписание 18 («Раздача задач не видит монополию аккаунта · `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` (D010)»).
 

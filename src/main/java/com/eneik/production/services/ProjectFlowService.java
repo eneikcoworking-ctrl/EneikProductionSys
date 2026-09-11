@@ -2259,6 +2259,7 @@ public class ProjectFlowService {
             return false;
         }
         wishlist.setStatus(WishlistStatus.converted_to_task);
+        wishlist.setFinalizingSince(null);
         return true;
     }
 
@@ -2928,6 +2929,7 @@ public class ProjectFlowService {
             // filtering) never converted into anything new; `dismissed` says that honestly instead of
             // falsely claiming a real conversion happened (honesty fix, 2026-07-24).
             wishlist.setStatus(wishlistBuiltAnything ? WishlistStatus.converted_to_task : WishlistStatus.dismissed);
+            wishlist.setFinalizingSince(null);
             wishlistRepository.save(wishlist);
             if (wishlistBuiltAnything) {
                 raiseCompileCeilingIfTheProbeSurvivedAtTheBoundary(wishlist);

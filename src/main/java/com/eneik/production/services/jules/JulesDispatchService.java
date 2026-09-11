@@ -40,6 +40,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -130,6 +131,13 @@ public class JulesDispatchService {
     private final com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository;
     private final com.eneik.production.services.stitch.StitchClient stitchClient;
     private final String sourcePrefix;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.kaizen.repository.DefectJournalRepository defectJournalRepository;
+
+    public void setDefectJournalRepository(com.eneik.production.kaizen.repository.DefectJournalRepository defectJournalRepository) {
+        this.defectJournalRepository = defectJournalRepository;
+    }
 
     private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
 
@@ -2483,6 +2491,20 @@ public class JulesDispatchService {
     }
 
     /**
+     * Active lease renewal for finalizing wishlists (Prescription 17: PRINCIPLED_INTEGRITY / D012).
+     * Runs in REQUIRES_NEW so that lease renewals during slow PR discovery or plan parsing are immediately
+     * visible to concurrent sweep threads, preventing premature claim reclamation while a live worker is active.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void renewFinalizingLeases(Collection<UUID> claimedIds) {
+        if (claimedIds == null || claimedIds.isEmpty()) {
+            return;
+        }
+        Instant now = Instant.now();
+        wishlistRepository.renewFinalizingLeases(claimedIds, WishlistStatus.finalizing, now);
+    }
+
+    /**
      * A wishlist-compiler session reached pr_opened: its PR should carry exactly one JSON plan file
      * (see ProjectFlowService.wishlistCompilerPrompt), never product code. Parses and validates that
      * plan, feeds it into the same graph-building logic Gemini's slices used to drive, then discards
@@ -2554,6 +2576,7 @@ public class JulesDispatchService {
                 })
                 .toList();
 
+        Instant finalizingStart = Instant.now();
         String planPath = projectFlowService.compilerPlanPath(compilerTask);
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
                 gitHubPullRequestService.findOpenPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
@@ -2564,9 +2587,15 @@ public class JulesDispatchService {
             // (main), which already contains it, instead of the possibly-gone head ref.
             prOpt = gitHubPullRequestService.findMergedPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
         }
+        // Active renewal of finalizing lease (Prescription 17: PRINCIPLED_INTEGRITY / D012):
+        // live worker executing slow PR discovery / network calls renews the lease so a sweeper never robs its claim
+        self.renewFinalizingLeases(admission.claimedIds());
+
         List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics = prOpt
                 .map(pr -> parseCompilerPlan(compilerTask.getProject(), pr.merged() ? pr.baseRef() : pr.headRef(), planPath))
                 .orElseGet(List::of);
+        // Active renewal of finalizing lease before task graph construction
+        self.renewFinalizingLeases(admission.claimedIds());
 
         // Validated against the FULL original batch size (wishlists.size()), not just the still-open subset
         // - sourceIndex values in Jules's response reference the numbering the prompt actually sent, which
@@ -2576,6 +2605,8 @@ public class JulesDispatchService {
         if (rejection.isEmpty()) {
             try {
                 projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlistsForGraphBuild, epics);
+                recordFinalizingDuration(compilerTask.getProject() != null ? compilerTask.getProject().getId() : null,
+                        Duration.between(finalizingStart, Instant.now()).toMillis());
             } catch (RuntimeException e) {
                 // Claimed wishlists that never reached a real converted_to_task/dismissed write must not be
                 // stranded in `finalizing` forever - release them so a later retry can claim them again.
@@ -2664,6 +2695,26 @@ public class JulesDispatchService {
                 + compilerRetryCeiling(compilerTask) + "): " + rejection);
         log.warn("Wishlist compiler plan rejected for {} wishlist(s) (attempt {}/{}) - {}; asked Jules to retry",
                 wishlists.size(), attempts + 1, compilerRetryCeiling(compilerTask), rejection);
+    }
+
+    private void recordFinalizingDuration(UUID projectId, long durationMillis) {
+        if (defectJournalRepository != null) {
+            try {
+                com.eneik.production.kaizen.model.DefectJournalEntity entry =
+                        new com.eneik.production.kaizen.model.DefectJournalEntity(
+                                projectId,
+                                "INFO",
+                                "INSTITUTIONAL_AUDIT",
+                                "WishlistCompiler",
+                                "FINALIZING_DURATION",
+                                "Observed wishlist finalizing duration: " + durationMillis + " ms",
+                                (double) durationMillis
+                        );
+                defectJournalRepository.save(entry);
+            } catch (Exception e) {
+                log.warn("Failed to record finalizing duration sample: {}", e.getMessage());
+            }
+        }
     }
 
     /** How many correction rounds this project's compiler gets: the revised belief, else the conjecture. */

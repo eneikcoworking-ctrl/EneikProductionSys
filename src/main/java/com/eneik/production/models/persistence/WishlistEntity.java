@@ -115,6 +115,13 @@ public class WishlistEntity {
     @Column(name = "last_compile_dispatched_at")
     private Instant lastCompileDispatchedAt;
 
+    /**
+     * When this wishlist entered the transient `finalizing` status (Prescriptions 17 & 34: CAUSAL_PROCESS_TRACE / D013).
+     * Dedicated, authoritative reference for finalizing lease duration. Null when the wishlist is in any other status.
+     */
+    @Column(name = "finalizing_since")
+    private Instant finalizingSince;
+
     public UUID getId() {
         return id;
     }
@@ -411,5 +418,13 @@ public class WishlistEntity {
 
     public void setLastCompileDispatchedAt(Instant lastCompileDispatchedAt) {
         this.lastCompileDispatchedAt = lastCompileDispatchedAt;
+    }
+
+    public Instant getFinalizingSince() {
+        return finalizingSince;
+    }
+
+    public void setFinalizingSince(Instant finalizingSince) {
+        this.finalizingSince = finalizingSince;
     }
 }

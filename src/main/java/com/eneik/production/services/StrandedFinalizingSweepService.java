@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 
 /**
  * Releases a wishlist claim stranded in the transient {@code finalizing} state.
@@ -86,7 +87,16 @@ public class StrandedFinalizingSweepService {
      * waiting 30 minutes was a project frozen in DECOMPOSING whenever a compiler node got stranded.
      */
     @Value("${stranded-finalizing.max-age-minutes:3}")
-    private long maxAgeMinutes;
+    private long maxAgeMinutes = 3;
+
+    @Value("${stranded-finalizing.min-samples-for-data-driven:5}")
+    private int minSamplesForDataDriven = 5;
+
+    @Value("${stranded-finalizing.safety-multiplier:10.0}")
+    private double safetyMultiplier = 10.0;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.kaizen.repository.DefectJournalRepository defectJournalRepository;
 
     public StrandedFinalizingSweepService(ProjectRepository projectRepository,
                                            WishlistRepository wishlistRepository,
@@ -96,11 +106,57 @@ public class StrandedFinalizingSweepService {
         this.self = self;
     }
 
+    public void setDefectJournalRepository(com.eneik.production.kaizen.repository.DefectJournalRepository defectJournalRepository) {
+        this.defectJournalRepository = defectJournalRepository;
+    }
+
+    public void setMaxAgeMinutes(long maxAgeMinutes) {
+        this.maxAgeMinutes = maxAgeMinutes;
+    }
+
+    public void setMinSamplesForDataDriven(int minSamplesForDataDriven) {
+        this.minSamplesForDataDriven = minSamplesForDataDriven;
+    }
+
+    public void setSafetyMultiplier(double safetyMultiplier) {
+        this.safetyMultiplier = safetyMultiplier;
+    }
+
+    /**
+     * Derives the effective finalizing lease duration (Prescription 17 & 34: BELIEF_UPDATE_LEDGER / D007).
+     * If empirical observations of finalizing duration exist in the DefectJournal ("FINALIZING_DURATION"),
+     * computes the median and applies a safety multiplier (10x), clamped to a safe floor (30 seconds).
+     * Falls back to maxAgeMinutes when fewer than minSamplesForDataDriven observations are available.
+     */
+    public Duration calculateEffectiveLeaseDuration() {
+        if (defectJournalRepository != null) {
+            List<com.eneik.production.kaizen.model.DefectJournalEntity> entries = defectJournalRepository
+                    .findByDefectTypeOrderByCreatedAtDesc("FINALIZING_DURATION");
+            List<Double> durations = entries.stream()
+                    .map(com.eneik.production.kaizen.model.DefectJournalEntity::getMetricValue)
+                    .filter(v -> v != null && v > 0)
+                    .limit(50)
+                    .sorted()
+                    .toList();
+            if (durations.size() >= minSamplesForDataDriven) {
+                double medianMillis;
+                int size = durations.size();
+                if (size % 2 == 1) {
+                    medianMillis = durations.get(size / 2);
+                } else {
+                    medianMillis = (durations.get(size / 2 - 1) + durations.get(size / 2)) / 2.0;
+                }
+                long effectiveMillis = Math.round(medianMillis * safetyMultiplier);
+                long clampedMillis = Math.max(30_000L, effectiveMillis);
+                return Duration.ofMillis(clampedMillis);
+            }
+        }
+        return Duration.ofMinutes(maxAgeMinutes);
+    }
+
     @Scheduled(cron = "${stranded-finalizing.cron:0 * * * * ?}")
     public void sweep() {
-        for (ProjectEntity project : projectRepository.findAll().stream()
-                .filter(p -> p.getStatus() == ProjectStatus.active)
-                .toList()) {
+        for (ProjectEntity project : projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)) {
             LogScope.project(project.getId());
             try {
                 self.sweepProject(project);
@@ -115,23 +171,35 @@ public class StrandedFinalizingSweepService {
 
     @org.springframework.transaction.annotation.Transactional
     public void sweepProject(ProjectEntity project) {
-        Instant cutoff = Instant.now().minus(Duration.ofMinutes(maxAgeMinutes));
+        Duration leaseDuration = calculateEffectiveLeaseDuration();
+        Instant now = Instant.now();
+        Instant cutoff = now.minus(leaseDuration);
         for (WishlistEntity w : wishlistRepository.findByProjectIdAndStatus(project.getId(), WishlistStatus.finalizing)) {
-            // lastCompileDispatchedAt is the closest available referent for "when this claim was taken" -
-            // the dispatch that leads to finalizing. createdAt is the fallback for a row that predates the
-            // column being populated; it can only ever be older, so it never releases something too early.
-            Instant since = w.getLastCompileDispatchedAt() != null ? w.getLastCompileDispatchedAt() : w.getCreatedAt();
-            if (since == null || since.isAfter(cutoff)) {
+            // CAUSAL_PROCESS_TRACE (D013, ELVIN_GOLDMAN_06) & PRINCIPLED_INTEGRITY (D012):
+            // Measuring age from adjacent timestamps (lastCompileDispatchedAt or createdAt) was a causal category error.
+            // Older timestamps produced larger elapsed durations, causing premature release while compiler was still active.
+            // Age is measured strictly from `finalizingSince`, which is set on transition into `finalizing` and
+            // actively renewed by live compiler workers during GitHub retrieval and plan parsing.
+            Instant since = w.getFinalizingSince();
+            if (since == null) {
+                // Historical row lacking finalizing_since: initialize to now to provide a fresh bounded lease
+                w.setFinalizingSince(now);
+                wishlistRepository.save(w);
+                log.info("StrandedFinalizingSweepService: initialized missing finalizingSince for wishlist {} in project {}",
+                        w.getId(), project.getName());
                 continue;
             }
-            long ageMinutes = Duration.between(since, Instant.now()).toMinutes();
+            if (since.isAfter(cutoff)) {
+                continue;
+            }
+            Duration age = Duration.between(since, now);
             int released = wishlistRepository.compareAndSetStatus(
                     w.getId(), WishlistStatus.finalizing, WishlistStatus.pending);
             if (released == 1) {
-                log.warn("StrandedFinalizingSweepService: released wishlist {} from finalizing after {} minutes "
-                                + "- the transient guard outlived any work it could cover, so whatever set it is gone. "
+                log.warn("StrandedFinalizingSweepService: released wishlist {} from finalizing after {} ms "
+                                + "(time in finalizing since {} exceeded effective lease duration {} ms derived from observed work). "
                                 + "Returned to pending for ordinary re-admission (project {})",
-                        w.getId(), ageMinutes, project.getName());
+                        w.getId(), age.toMillis(), since, leaseDuration.toMillis(), project.getName());
             } else {
                 // The CAS lost, which means a live holder moved it on between the read and the write. That is
                 // the mechanism working, not a failure.

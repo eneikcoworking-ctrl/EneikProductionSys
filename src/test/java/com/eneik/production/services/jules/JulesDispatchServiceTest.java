@@ -2846,6 +2846,15 @@ class JulesDispatchServiceTest {
     }
 
     @Test
+    void renewFinalizingLeases_updatesFinalizingSinceTimestampForClaimedWishlists() {
+        UUID w1 = UUID.randomUUID();
+        UUID w2 = UUID.randomUUID();
+        julesDispatchService.renewFinalizingLeases(List.of(w1, w2));
+        verify(wishlistRepository).renewFinalizingLeases(eq(List.of(w1, w2)),
+                eq(com.eneik.production.models.persistence.WishlistStatus.finalizing), any(Instant.class));
+    }
+
+    @Test
     void admitWishlistCompilationCompletionClaimsPendingWishlistsWhenCompilingWasReset() {
         UUID projectId = UUID.randomUUID();
         UUID wishlistId = UUID.randomUUID();
