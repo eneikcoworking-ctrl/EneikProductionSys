@@ -17,7 +17,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Screen for constructive proof of repository URL
- * (NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT / D007 Constructive proof omission,
+ * (NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT / D007 Evidence gap,
  *  DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT / D009 Substitution failure).
  *
  * Proof obligations:

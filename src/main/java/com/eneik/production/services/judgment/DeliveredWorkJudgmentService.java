@@ -3,6 +3,7 @@ package com.eneik.production.services.judgment;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.TargetContext;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
@@ -504,6 +505,8 @@ public class DeliveredWorkJudgmentService {
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(task.getTargetContext() != null && task.getTargetContext() != TargetContext.UNDETERMINED
+                ? task.getTargetContext() : TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.delivery_refuted);
         // 2026-08-23. A finding inherits the epic of the task it is about. Without this the wishlist it
         // produces compiles into a task with no feature, and a feature closes when ITS tasks close - so the

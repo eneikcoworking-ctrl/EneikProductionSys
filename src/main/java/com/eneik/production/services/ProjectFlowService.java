@@ -312,6 +312,7 @@ public class ProjectFlowService {
         // 3. Persist initial client wishlist in local database
         WishlistEntity firstWishlist = new WishlistEntity();
         firstWishlist.setProjectId(saved.getId());
+        firstWishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         firstWishlist.setContent(initialWishlist.trim());
         firstWishlist.setSource(WishlistSource.client);
         firstWishlist.setStatus(WishlistStatus.pending);
@@ -676,6 +677,7 @@ public class ProjectFlowService {
 
         WishlistEntity freshWishlist = new WishlistEntity();
         freshWishlist.setProjectId(saved.getId());
+        freshWishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         freshWishlist.setContent(freshWishlistContent.trim());
         freshWishlist.setSource(WishlistSource.client);
         freshWishlist.setStatus(WishlistStatus.pending);
@@ -881,6 +883,7 @@ public class ProjectFlowService {
                 .orElseGet(() -> {
                     WishlistEntity item = new WishlistEntity();
                     item.setProjectId(project.getId());
+                    item.setTargetContext(TargetContext.PRODUCT_CODEBASE);
                     item.setSource(WishlistSource.role);
                     item.setSourceRoleTag("BARCAN-TAG-01");
                     item.setStatus(WishlistStatus.pending);
@@ -1697,6 +1700,8 @@ public class ProjectFlowService {
 
         WishlistEntity followUp = new WishlistEntity();
         followUp.setProjectId(project.getId());
+        followUp.setTargetContext(task.getTargetContext() != null && task.getTargetContext() != TargetContext.UNDETERMINED
+                ? task.getTargetContext() : TargetContext.PRODUCT_CODEBASE);
         followUp.setSource(WishlistSource.role_mismatch_followup);
         followUp.setSourceRoleTag(roleTag);
         followUp.setStatus(WishlistStatus.pending);
@@ -2766,6 +2771,7 @@ public class ProjectFlowService {
 
         TaskEntity carrierTask = new TaskEntity();
         carrierTask.setProject(project);
+        carrierTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         carrierTask.setRole(compilerRole);
         // V137: the second of the two sites that mint a wishlist-compiler task. This one is deliberately
         // one per (project, purpose) - a long-lived worker, not a one-shot compilation - so its identity is
@@ -3054,6 +3060,7 @@ public class ProjectFlowService {
             for (MLPredictionServiceClient.TaskSliceMetadata slice : stageSlices) {
                 WishlistEntity sliceWishlist = new WishlistEntity();
                 sliceWishlist.setProjectId(project.getId());
+                sliceWishlist.setTargetContext(wishlist.getTargetContext());
                 sliceWishlist.setSource(wishlist.getSource());
                 String ownerRole = targetRoleForSlice(wishlist, slice);
                 sliceWishlist.setSourceRoleTag(ownerRole);
@@ -3586,6 +3593,7 @@ public class ProjectFlowService {
         if (!revived) {
             compilerTask = new TaskEntity();
             compilerTask.setProject(project);
+            compilerTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
             compilerTask.setRole(compilerRole);
             compilerTask.setContentKey(contentKey);
         }
@@ -4634,6 +4642,7 @@ public class ProjectFlowService {
 
         TaskEntity auditTask = new TaskEntity();
         auditTask.setProject(project);
+        auditTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         auditTask.setRole(compilerRole);
         // Suffixed with a short timestamp fragment for the same reason as the compiler task title above -
         // avoid tripping the duplicate-task-title false positive across separate legitimate audit runs.
@@ -4722,6 +4731,7 @@ public class ProjectFlowService {
 
         TaskEntity auditTask = new TaskEntity();
         auditTask.setProject(project);
+        auditTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         auditTask.setRole(compilerRole);
         auditTask.setTitle("Philosophical falsification: product critique (" + shortId(UUID.randomUUID()) + ")");
         auditTask.setDescription(prompt);
@@ -4880,6 +4890,7 @@ public class ProjectFlowService {
 
         TaskEntity carrierTask = new TaskEntity();
         carrierTask.setProject(project);
+        carrierTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         carrierTask.setRole(compilerRole);
         carrierTask.setTitle("Persistent philosophical audit worker (" + shortId(project.getId()) + ")");
         carrierTask.setDescription(prompt);
@@ -5280,6 +5291,7 @@ public class ProjectFlowService {
 
         TaskEntity auditTask = new TaskEntity();
         auditTask.setProject(project);
+        auditTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         auditTask.setRole(compilerRole);
         auditTask.setTitle("Coverage audit: brief vs shipped code (" + shortId(originalWishlist.getId()) + ")");
         auditTask.setDescription(prompt);
@@ -5438,6 +5450,8 @@ public class ProjectFlowService {
 
         TaskEntity reviewTask = new TaskEntity();
         reviewTask.setProject(originalTasks.get(0).getProject());
+        reviewTask.setTargetContext(originalTasks.get(0).getTargetContext() != null && originalTasks.get(0).getTargetContext() != TargetContext.UNDETERMINED
+                ? originalTasks.get(0).getTargetContext() : TargetContext.PRODUCT_CODEBASE);
         reviewTask.setRole(compilerRole);
         if (isPersistentCarrier) {
             reviewTask.setTitle("Persistent PR review fallback worker (" + shortId(originalTasks.get(0).getProject().getId()) + ")");
@@ -5610,6 +5624,7 @@ public class ProjectFlowService {
 
         TaskEntity reviewTask = new TaskEntity();
         reviewTask.setProject(project);
+        reviewTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         reviewTask.setRole(compilerRole);
         reviewTask.setTitle("Design review (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
         reviewTask.setDescription(designReviewPrompt(draftPath, brief, charter, verdictPath));
@@ -5663,6 +5678,7 @@ public class ProjectFlowService {
         // Direct TaskEntity instantiation without compilation/epic bypassed the value circuit.
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.design_review_concern_pattern);
         wishlist.setSourceRoleTag(DESIGN_IMPLEMENTATION_ROLE);
         wishlist.setStatus(WishlistStatus.pending);
@@ -5703,6 +5719,7 @@ public class ProjectFlowService {
 
         TaskEntity triageTask = new TaskEntity();
         triageTask.setProject(project);
+        triageTask.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         triageTask.setRole(triageRole);
         triageTask.setTitle("Design concern triage (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
         triageTask.setDescription(designConcernTriagePrompt(mockupPath, rawConcernsText, charter, recordPath));
@@ -5942,7 +5959,12 @@ public class ProjectFlowService {
                 .toList();
 
         for (TaskEntity task : queuedTasks) {
-
+            if (task.getTargetContext() == null || task.getTargetContext() == TargetContext.UNDETERMINED) {
+                log.warn("Task {} has undetermined targetContext; skipping dispatch until target context is resolved", task.getId());
+                task.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
+                taskRepository.save(task);
+                continue;
+            }
 
             Optional<JulesSessionEntity> existingSession = findActiveJulesSession(task.getId());
             if (existingSession.isPresent() && existingSession.get().getAccountId() != null) {

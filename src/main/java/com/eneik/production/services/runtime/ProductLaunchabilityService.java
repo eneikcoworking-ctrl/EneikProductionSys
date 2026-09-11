@@ -2,6 +2,7 @@ package com.eneik.production.services.runtime;
 
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.TargetContext;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
@@ -133,6 +134,7 @@ public class ProductLaunchabilityService {
                 project.getId(), WishlistSource.runtime_observability_gap)) {
             WishlistEntity wishlist = new WishlistEntity();
             wishlist.setProjectId(project.getId());
+            wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
             wishlist.setSource(WishlistSource.runtime_observability_gap);
             wishlist.setStatus(WishlistStatus.pending);
             wishlist.setLeanValue(LeanValue.valuable);
@@ -274,6 +276,7 @@ public class ProductLaunchabilityService {
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.datastore_artifacts_disagree);
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.essential);
@@ -382,6 +385,7 @@ public class ProductLaunchabilityService {
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.frontend_unbacked_records);
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.essential);
@@ -517,6 +521,7 @@ public class ProductLaunchabilityService {
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.dockerfile_missing_build_stage);
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.valuable);
@@ -555,6 +560,7 @@ public class ProductLaunchabilityService {
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.frontend_not_deployed);
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.valuable);

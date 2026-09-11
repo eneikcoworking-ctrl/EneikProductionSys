@@ -1060,6 +1060,7 @@ public class FalsificationCycleService {
 
             WishlistEntity wishlist = new WishlistEntity();
             wishlist.setProjectId(project.getId());
+            wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
             wishlist.setSource(WishlistSource.philosophical_falsification);
             wishlist.setSourceRoleTag(distinctRoles);
             wishlist.setStatus(WishlistStatus.pending);
@@ -1407,6 +1408,7 @@ public class FalsificationCycleService {
 
             WishlistEntity wishlist = new WishlistEntity();
             wishlist.setProjectId(project.getId());
+            wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
             wishlist.setSource(WishlistSource.self_falsification);
             wishlist.setSourceRoleTag("BARCAN-TAG-09");
             wishlist.setStatus(WishlistStatus.pending);

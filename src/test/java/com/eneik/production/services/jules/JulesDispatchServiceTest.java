@@ -6,6 +6,7 @@ import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.RoleEntity;
+import com.eneik.production.models.persistence.TargetContext;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
@@ -911,6 +912,7 @@ class JulesDispatchServiceTest {
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
         task.setProject(project);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         task.setRole(role);
         task.setTitle("UI Slice");
         task.setDescription("Implement one dashboard UI slice.");
@@ -954,6 +956,7 @@ class JulesDispatchServiceTest {
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
         task.setProject(project);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         task.setRole(role);
         task.setTitle("Compile Wishlist");
         task.setDescription("Compile the client wishlist into atomic work.");
@@ -993,6 +996,7 @@ class JulesDispatchServiceTest {
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
         task.setProject(project);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         task.setRole(role);
         task.setTitle("API Slice");
         task.setDescription("Implement the smallest backend change for this slice.");
@@ -1079,6 +1083,7 @@ class JulesDispatchServiceTest {
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
         task.setProject(project);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         task.setRole(role);
         task.setTitle("API Slice");
         task.setDescription("Implement contract-first account ingestion without merge conflicts.");
@@ -1091,9 +1096,7 @@ class JulesDispatchServiceTest {
         // Tarski demarcation L0 / L_factory (2026-08-27): a task whose targetContext is PRODUCT_CODEBASE is
         // a product worker, and its retrieval must go through buildProductWorkerContextBlock, which filters
         // the factory's own metalanguage out of the corpus before the agent ever sees it. Only
-        // factory-scoped tasks take the unfiltered buildContextBlock path. This task sets no targetContext,
-        // which JulesDispatchService.appendRetrievedSystemKnowledge treats as PRODUCT_CODEBASE - so the
-        // product-worker overload is the one under test here.
+        // factory-scoped tasks take the unfiltered buildContextBlock path.
         when(geminiContextService.buildProductWorkerContextBlock(any(RoleEntity.class), anyString())).thenReturn("""
                 RELEVANT SYSTEM KNOWLEDGE (retrieved from the indexed knowledge base):
                 - [01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md] Single Writer Ownership and Contract-First Parallelism.
@@ -1138,6 +1141,7 @@ class JulesDispatchServiceTest {
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
         task.setProject(project);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         task.setRole(role);
         task.setTitle("API Slice");
         task.setDescription("Implement feature B's endpoint.");
@@ -1194,6 +1198,7 @@ class JulesDispatchServiceTest {
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
         task.setProject(project);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         task.setRole(frontendRole);
         task.setTitle("UI Slice");
         task.setDescription("Wire the frontend to the endpoint backend just shipped.");

@@ -106,7 +106,7 @@ public class TaskEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "target_context")
-    private TargetContext targetContext = TargetContext.PRODUCT_CODEBASE;
+    private TargetContext targetContext = TargetContext.UNDETERMINED;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
@@ -449,7 +449,7 @@ public class TaskEntity {
     public void setFeatureId(UUID featureId) { this.featureId = featureId; }
     public UUID getOriginFeatureId() { return originFeatureId; }
     public void setOriginFeatureId(UUID originFeatureId) { this.originFeatureId = originFeatureId; }
-    public TargetContext getTargetContext() { return targetContext == null ? TargetContext.PRODUCT_CODEBASE : targetContext; }
+    public TargetContext getTargetContext() { return targetContext == null ? TargetContext.UNDETERMINED : targetContext; }
     public void setTargetContext(TargetContext targetContext) { this.targetContext = targetContext; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

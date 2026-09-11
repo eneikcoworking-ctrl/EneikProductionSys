@@ -2,6 +2,7 @@ package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.models.persistence.TargetContext;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.LeanValue;
@@ -398,6 +399,7 @@ public class OpsAuditorService {
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.auditor_unresolved);
         // 2026-08-23. Inherit the epic of whatever the auditor could not resolve, so the work this filing
         // produces belongs to the same feature as the thing it is unblocking. A feature closes when ITS
@@ -519,6 +521,8 @@ public class OpsAuditorService {
 
         TaskEntity recovery = new TaskEntity();
         recovery.setProject(project);
+        recovery.setTargetContext(failedTask.getTargetContext() != null && failedTask.getTargetContext() != TargetContext.UNDETERMINED
+                ? failedTask.getTargetContext() : TargetContext.PRODUCT_CODEBASE);
         recovery.setRole(failedTask.getRole());
         recovery.setFeatureId(failedTask.getFeatureId());
         recovery.setTitle("Recovery: " + failedTask.getTitle());

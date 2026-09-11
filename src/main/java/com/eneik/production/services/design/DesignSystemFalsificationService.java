@@ -2,6 +2,7 @@ package com.eneik.production.services.design;
 
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.models.persistence.TargetContext;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
@@ -152,6 +153,7 @@ public class DesignSystemFalsificationService {
             StitchClient.DesignSystemResult created, StitchClient.ApplyDesignSystemResult applied) {
         WishlistEntity record = new WishlistEntity();
         record.setProjectId(projectId);
+        record.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         record.setFeatureId(epic.featureId());
         record.setSource(WishlistSource.design_system_falsification);
         record.setStatus(WishlistStatus.dismissed);

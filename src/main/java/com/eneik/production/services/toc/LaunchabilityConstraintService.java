@@ -2,6 +2,7 @@ package com.eneik.production.services.toc;
 
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.TargetContext;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
@@ -100,6 +101,7 @@ public class LaunchabilityConstraintService {
         }
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.product_not_launchable);
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.essential);

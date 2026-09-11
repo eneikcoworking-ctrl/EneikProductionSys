@@ -11,6 +11,7 @@ import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.models.persistence.LeanValue;
+import com.eneik.production.models.persistence.TargetContext;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.ProjectStatus;
@@ -855,6 +856,7 @@ public class AutoMergeService {
     private void recordCloseoutAbandonmentWishlist(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
         var wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.closeout_abandoned);
         wishlist.setFeatureId(thread.getFeatureId());
         wishlist.setOriginFeatureId(thread.getFeatureId());

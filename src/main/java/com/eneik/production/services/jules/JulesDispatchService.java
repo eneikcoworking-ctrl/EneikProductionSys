@@ -580,6 +580,16 @@ public class JulesDispatchService {
     }
 
     private JulesSessionEntity dispatchInternal(TaskEntity task, UUID accountId, String mode) {
+        if (task.getTargetContext() == null || task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.UNDETERMINED) {
+            log.warn("Task {} dispatch rejected: targetContext is undetermined (cannot determine target repository without violating Carrier isolation Law 2)", task.getId());
+            JulesSessionEntity session = new JulesSessionEntity();
+            session.setTaskId(task.getId());
+            session.setAccountId(accountId);
+            session.setStatus("failed");
+            session.setClosureReason("Dispatch rejected: target context is undetermined");
+            return julesSessionRepository.save(session);
+        }
+
         if (accountId != null) {
             if ("REVIEWER".equalsIgnoreCase(mode)) {
                 claimService.claimReviewer(task.getId(), accountId);
@@ -595,15 +605,23 @@ public class JulesDispatchService {
         ProjectEntity project = task.getProject();
         if (project == null) {
             session.setStatus("failed");
+            session.setClosureReason("No project found for task");
             return julesSessionRepository.save(session);
         }
 
-        String repoName = (task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM)
-                ? systemOrchestratorRepositoryName()
-                : project.getRepositoryName();
-        String repoUrl = (task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM)
-                ? sourcePrefix + repoName
-                : julesSourceForProject(project, repoName);
+        String repoName;
+        String repoUrl;
+        if (task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM) {
+            repoName = systemOrchestratorRepositoryName();
+            repoUrl = sourcePrefix + repoName;
+        } else if (task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE) {
+            repoName = project.getRepositoryName();
+            repoUrl = julesSourceForProject(project, repoName);
+        } else {
+            session.setStatus("failed");
+            session.setClosureReason("Dispatch rejected: target context is undetermined");
+            return julesSessionRepository.save(session);
+        }
         String sessionTitle = TaskTitleBuilder.displayTitle(task);
         String description = withTaskPromptTitle(sessionTitle, task.getDescription());
         var conflictOpt = taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending");
@@ -865,10 +883,12 @@ public class JulesDispatchService {
     private void appendRetrievedSystemKnowledge(StringBuilder roleContextBuilder, TaskEntity task, String mode, boolean buildPhase) {
         try {
             String context;
-            if (task != null && (task.getTargetContext() == null || task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE)) {
+            if (task != null && task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE) {
                 context = geminiContextService.buildProductWorkerContextBlock(task.getRole(), julesRetrievalQuery(task, mode, buildPhase));
-            } else {
+            } else if (task != null && task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM) {
                 context = geminiContextService.buildContextBlock(julesRetrievalQuery(task, mode, buildPhase));
+            } else {
+                return;
             }
             if (context == null || context.isBlank()) {
                 return;
@@ -2529,6 +2549,7 @@ public class JulesDispatchService {
                     WishlistEntity notMine = new WishlistEntity();
                     notMine.setId(w.getId());
                     notMine.setStatus(WishlistStatus.dismissed);
+                    notMine.setTargetContext(w.getTargetContext());
                     return notMine;
                 })
                 .toList();
@@ -4475,6 +4496,7 @@ public class JulesDispatchService {
         for (TriageEntry entry : actionable) {
             WishlistEntity wishlist = new WishlistEntity();
             wishlist.setProjectId(project.getId());
+            wishlist.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
             wishlist.setSource(WishlistSource.design_review_concern_pattern);
             wishlist.setStatus(WishlistStatus.pending);
             wishlist.setLeanValue(parseLeanValue(entry.leanValue()));

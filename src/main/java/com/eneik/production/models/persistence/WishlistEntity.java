@@ -66,7 +66,7 @@ public class WishlistEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "target_context")
-    private TargetContext targetContext = TargetContext.PRODUCT_CODEBASE;
+    private TargetContext targetContext = TargetContext.UNDETERMINED;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
@@ -398,7 +398,7 @@ public class WishlistEntity {
     }
 
     public TargetContext getTargetContext() {
-        return targetContext == null ? TargetContext.PRODUCT_CODEBASE : targetContext;
+        return targetContext == null ? TargetContext.UNDETERMINED : targetContext;
     }
 
     public void setTargetContext(TargetContext targetContext) {

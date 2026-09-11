@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Tests verifying truth status handling for LeanValue
- * (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012 Policy contradiction / Truth status confusion).
+ * (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012 Policy contradiction).
  *
  * Proof obligations:
  * 1. Unrecognized or missing model response resolves to LeanValue.undetermined, never valuable or essential.

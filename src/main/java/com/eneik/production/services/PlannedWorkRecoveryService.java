@@ -528,8 +528,13 @@ public class PlannedWorkRecoveryService {
 
     private boolean isMetaTask(TaskEntity t) {
         if (t == null) return false;
+        if (t.isCarrier() || t.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM) {
+            return true;
+        }
+        if (t.getTargetContext() == com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE) {
+            return false;
+        }
         String text = ((t.getTitle() == null ? "" : t.getTitle()) + " " + (t.getDescription() == null ? "" : t.getDescription())).toLowerCase();
-        return text.contains("stagnation") || text.contains("pr review fallback") || text.contains("compile 1 wishlist") ||
-               t.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM;
+        return text.contains("stagnation") || text.contains("pr review fallback") || text.contains("compile 1 wishlist");
     }
 }
