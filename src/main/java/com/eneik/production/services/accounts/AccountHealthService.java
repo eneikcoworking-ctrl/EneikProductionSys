@@ -17,6 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,6 +67,7 @@ public class AccountHealthService {
         PRECONDITION_UNSPECIFIED, UNCLASSIFIED }
 
     private static final String RECOVERY_DURATION_DEFECT_TYPE = "ACCOUNT_RECOVERY_DURATION";
+    public static final String BUDGET_RECOVERY_DEFECT_TYPE = "ACCOUNT_BUDGET_RECOVERY";
     private static final String PRECONDITION_DEFECT_TYPE = "API_PRECONDITION_BLOCKED";
     private static final String UNNAMED_REFUSAL_DEFECT_TYPE = "API_REFUSAL_WITHOUT_NAMED_CONDITION";
     private static final String DAILY_LIMIT_DEFECT_TYPE = "DAILY_LIMIT";
@@ -93,6 +97,9 @@ public class AccountHealthService {
 
     @Value("${jules.account-recovery-z-factor:1.0}")
     private double zFactor;
+
+    @Value("${jules.account-replenishment-default-period-hours:24}")
+    private int defaultReplenishmentPeriodHours = 24;
 
     // 2026-08-05, fix for the live incident where one malformed request (a single oversized prompt) blocked
     // an entire 15-slot-capacity account: PRECONDITION_BLOCKED used to set the whole account to api_blocked
@@ -240,14 +247,23 @@ public class AccountHealthService {
         switch (outcome) {
             case SUCCESS -> {
                 boolean wasBlocked = account.getStatus() == AccountStatus.api_blocked;
+                boolean wasDailyLimited = account.getStatus() == AccountStatus.daily_limited;
                 Instant blockedSince = account.getStatusChangedAt();
-                if (wasBlocked && blockedSince != null) {
+                if ((wasBlocked || wasDailyLimited) && blockedSince != null) {
                     long durationMinutes = Duration.between(blockedSince, Instant.now()).toMinutes();
                     defectJournalRepository.save(new DefectJournalEntity(
                             projectId, null, null, "LOW", HEALTH_CATEGORY, account.getName(),
                             RECOVERY_DURATION_DEFECT_TYPE,
-                            taskPrefix + "Account '" + account.getName() + "' recovered from api_blocked after " + durationMinutes + " minute(s)",
+                            taskPrefix + "Account '" + account.getName() + "' recovered from "
+                                    + (wasDailyLimited ? "daily_limited" : "api_blocked") + " after " + durationMinutes + " minute(s)",
                             (double) durationMinutes));
+                    if (wasDailyLimited || isExternalBudgetExhaustion(account)) {
+                        defectJournalRepository.save(new DefectJournalEntity(
+                                projectId, null, null, "LOW", HEALTH_CATEGORY, account.getName(),
+                                BUDGET_RECOVERY_DEFECT_TYPE,
+                                taskPrefix + "Account '" + account.getName() + "' recovered from external budget exhaustion after " + durationMinutes + " minute(s)",
+                                (double) durationMinutes));
+                    }
                 }
                 int newDailyCount = account.getSessionsDispatchedToday() + 1;
                 account.setSessionsDispatchedToday(newDailyCount);
@@ -295,6 +311,7 @@ public class AccountHealthService {
                 int revisedCeiling = Math.max(1, (int) Math.round(observedFailurePoint * dailyCapacityBackoffFactor));
                 Integer priorEstimate = account.getEstimatedDailyCapacity();
                 account.setEstimatedDailyCapacity(revisedCeiling);
+                account.setConsecutiveApiBlockCount(account.getConsecutiveApiBlockCount() + 1);
                 log.warn("[ACCOUNT-CAPACITY] Account '{}' real daily-limit rejection from Jules at count={} - "
                                 + "revised estimate from {} down to {}.",
                         account.getName(), observedFailurePoint,
@@ -391,18 +408,24 @@ public class AccountHealthService {
 
     /**
      * Periodic recovery sweep - replaces the fixed-cooldown logic that used to live in
-     * ContinuousOrchestrationService. Each account's own cooldown is computed independently.
+     * ContinuousOrchestrationService. Each account's own cooldown is computed independently,
+     * bounded by the replenishment period for external budget refusals (Law 9 / D010).
      */
     @Transactional
     public int recoverEligibleAccounts() {
+        return recoverEligibleAccounts(Instant.now());
+    }
+
+    @Transactional
+    public int recoverEligibleAccounts(Instant now) {
+        Instant current = now != null ? now : Instant.now();
         // ACTUAL_OBJECT_REGISTER (D002) / INSTITUTIONAL_FACT_REGISTER (D007):
         // Resolve contradictory state via entity lifecycle with audit record per transition.
-        Instant now = Instant.now();
         List<AccountEntity> contradictory = accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned);
         if (!contradictory.isEmpty()) {
             for (AccountEntity acc : contradictory) {
                 acc.setEnabled(false);
-                acc.setStatusChangedAt(now);
+                acc.setStatusChangedAt(current);
                 accountRepository.save(acc);
                 String desc = String.format("Account '%s' normalized: decommissioned account forced to enabled=false to resolve contradictory state (D002/D012). Rule: ACCOUNT_LIFECYCLE_NORMALIZATION_RULE", acc.getName());
                 defectJournalRepository.save(new DefectJournalEntity(
@@ -420,14 +443,36 @@ public class AccountHealthService {
                 // Anti-Zeno: if statusChangedAt is null, fall back to lastHeartbeat / createdAt
                 // or a safe upper bound so the account is not permanently stuck.
                 changedAt = account.getLastHeartbeat() != null ? account.getLastHeartbeat()
-                        : (account.getCreatedAt() != null ? account.getCreatedAt() : now.minus(Duration.ofMinutes(maxCooldownMinutes)));
+                        : (account.getCreatedAt() != null ? account.getCreatedAt() : current.minus(Duration.ofMinutes(maxCooldownMinutes)));
             }
-            long cooldownMinutes = computeCooldownMinutes(account);
-            if (changedAt.isBefore(now.minus(Duration.ofMinutes(cooldownMinutes)))) {
+            Instant nextProbe = computeNextProbeInstant(account, current);
+            if (!current.isBefore(nextProbe)) {
                 if (accountRepository.resetSingleAccountFromApiBlocked(account.getId()) > 0) {
                     recovered++;
+                    long effectiveCooldown = Duration.between(changedAt, current).toMinutes();
                     log.info("AccountHealthService: reset account '{}' from api_blocked to idle after a {}-minute cooldown (consecutive block count was {})",
-                            account.getName(), cooldownMinutes, account.getConsecutiveApiBlockCount());
+                            account.getName(), effectiveCooldown, account.getConsecutiveApiBlockCount());
+                }
+            }
+        }
+
+        // Law 9 / Prescription 14 (RELIABILITY_CHAIN / D010):
+        // daily_limited accounts are recovered when the next replenishment period begins or cooldown elapses,
+        // rather than remaining trapped until an arbitrary midnight cron.
+        List<AccountEntity> dailyLimited = accountRepository.findByStatusAndEnabledTrue(AccountStatus.daily_limited);
+        for (AccountEntity account : dailyLimited) {
+            Instant changedAt = account.getStatusChangedAt();
+            if (changedAt == null) {
+                changedAt = account.getLastHeartbeat() != null ? account.getLastHeartbeat()
+                        : (account.getCreatedAt() != null ? account.getCreatedAt() : current.minus(Duration.ofMinutes(maxCooldownMinutes)));
+            }
+            Instant nextProbe = computeNextProbeInstant(account, current);
+            if (!current.isBefore(nextProbe)) {
+                if (accountRepository.resetSingleAccountFromDailyLimited(account.getId(), current) > 0) {
+                    recovered++;
+                    long effectiveCooldown = Duration.between(changedAt, current).toMinutes();
+                    log.info("AccountHealthService: reset account '{}' from daily_limited to idle after a {}-minute cooldown (consecutive block count was {})",
+                            account.getName(), effectiveCooldown, account.getConsecutiveApiBlockCount());
                 }
             }
         }
@@ -436,12 +481,12 @@ public class AccountHealthService {
         List<AccountEntity> offline = accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline);
         for (AccountEntity account : offline) {
             Instant heartbeat = account.getLastHeartbeat();
-            if (heartbeat != null && Duration.between(heartbeat, now).toMinutes() < offlineRelaxationMinutes) {
+            if (heartbeat != null && Duration.between(heartbeat, current).toMinutes() < offlineRelaxationMinutes) {
                 account.setStatus(AccountStatus.idle);
                 accountRepository.save(account);
                 recovered++;
                 log.info("AccountHealthService: auto-relaxed account '{}' from offline to idle (recent heartbeat {}m ago)",
-                        account.getName(), Duration.between(heartbeat, now).toMinutes());
+                        account.getName(), Duration.between(heartbeat, current).toMinutes());
             }
         }
 
@@ -450,7 +495,7 @@ public class AccountHealthService {
         // When recovery candidates are zero, report disabled operational accounts.
         List<AccountEntity> disabledOperational = accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
         if (!disabledOperational.isEmpty()) {
-            if (blocked.isEmpty() && offline.isEmpty()) {
+            if (blocked.isEmpty() && dailyLimited.isEmpty() && offline.isEmpty()) {
                 log.info("AccountHealthService: zero recovery candidates in pool; {} operational account(s) are currently disabled (enabled=false)",
                         disabledOperational.size());
             }
@@ -458,16 +503,16 @@ public class AccountHealthService {
                 Instant disabledSince = account.getStatusChangedAt() != null
                         ? account.getStatusChangedAt()
                         : account.getLastHeartbeat();
-                if (disabledSince != null && Duration.between(disabledSince, now).toHours() >= disabledReviewThresholdHours) {
+                if (disabledSince != null && Duration.between(disabledSince, current).toHours() >= disabledReviewThresholdHours) {
                     log.warn("AccountHealthService: account '{}' has been disabled for {}h (since {}); предлагается к возврату в пул оператором",
-                            account.getName(), Duration.between(disabledSince, now).toHours(), disabledSince);
+                            account.getName(), Duration.between(disabledSince, current).toHours(), disabledSince);
                 }
             }
         }
 
         // ALONZO_CHERCH_21_DERIVED_CUTOFF (D010):
         // Inspect single-account monopoly over rolling window against derived cutoff.
-        checkAccountMonopoly(now);
+        checkAccountMonopoly(current);
 
         return recovered;
     }
@@ -572,7 +617,7 @@ public class AccountHealthService {
         return account.getMaxConcurrentSessions() != null ? account.getMaxConcurrentSessions() : 3;
     }
 
-    private long computeCooldownMinutes(AccountEntity account) {
+    long computeCooldownMinutes(AccountEntity account) {
         long targetCooldown;
         List<Double> samples = observedDurations(
                 defectJournalRepository.findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), RECOVERY_DURATION_DEFECT_TYPE));
@@ -602,6 +647,183 @@ public class AccountHealthService {
         long range = targetCooldown - baseCooldownMinutes + 1;
         long jitter = range > 0 ? (Math.abs(random.nextLong()) % range) : 0;
         return baseCooldownMinutes + jitter;
+    }
+
+    /**
+     * Law 9 / Prescription 14 (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010):
+     * Determines whether an account's current restriction was caused by an external budget exhaustion
+     * (daily limit, quota, rate limit 429).
+     */
+    public boolean isExternalBudgetExhaustion(AccountEntity account) {
+        if (account == null) return false;
+        if (account.getStatus() == AccountStatus.daily_limited) {
+            return true;
+        }
+        if (account.getName() != null) {
+            List<DefectJournalEntity> dailyLimits = defectJournalRepository
+                    .findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), DAILY_LIMIT_DEFECT_TYPE);
+            if (!dailyLimits.isEmpty()) {
+                DefectJournalEntity latestDailyLimit = dailyLimits.get(0);
+                Instant changedAt = account.getStatusChangedAt();
+                if (changedAt != null && latestDailyLimit.getCreatedAt() != null) {
+                    if (!latestDailyLimit.getCreatedAt().isBefore(changedAt.minusSeconds(120))) {
+                        return true;
+                    }
+                }
+            }
+            List<DefectJournalEntity> allDefects = defectJournalRepository
+                    .findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), PRECONDITION_DEFECT_TYPE);
+            if (!allDefects.isEmpty()) {
+                DefectJournalEntity latestPrecondition = allDefects.get(0);
+                Instant changedAt = account.getStatusChangedAt();
+                if (changedAt != null && latestPrecondition.getCreatedAt() != null
+                        && !latestPrecondition.getCreatedAt().isBefore(changedAt.minusSeconds(120))) {
+                    String desc = latestPrecondition.getDescription();
+                    if (desc != null) {
+                        String lower = desc.toLowerCase();
+                        if (lower.contains("quota") || lower.contains("rate limit") || lower.contains("429")
+                                || lower.contains("daily_limit") || lower.contains("daily limit") || lower.contains("resource_exhausted")) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Estimates replenishment period from observed recovery history (analogue of BetaPosterior).
+     * If enough recovery duration samples exist, the period is derived from the median interval between
+     * consecutive recoveries. Otherwise, falls back to the uninformative prior (defaultReplenishmentPeriodHours, 24h).
+     */
+    public Duration estimateReplenishmentPeriod(AccountEntity account) {
+        if (account != null && account.getName() != null) {
+            List<DefectJournalEntity> entries = defectJournalRepository
+                    .findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), BUDGET_RECOVERY_DEFECT_TYPE);
+            if (entries.size() < minSamplesForDataDriven) {
+                entries = defectJournalRepository.findByDefectTypeOrderByCreatedAtDesc(BUDGET_RECOVERY_DEFECT_TYPE)
+                        .stream().limit(POOLED_SAMPLE_LIMIT).toList();
+            }
+            if (entries.size() >= minSamplesForDataDriven) {
+                List<Instant> timestamps = entries.stream()
+                        .map(DefectJournalEntity::getCreatedAt)
+                        .filter(Objects::nonNull)
+                        .sorted()
+                        .toList();
+                if (timestamps.size() >= 2) {
+                    List<Double> intervalMinutes = new ArrayList<>();
+                    for (int i = 1; i < timestamps.size(); i++) {
+                        long minutes = Duration.between(timestamps.get(i - 1), timestamps.get(i)).toMinutes();
+                        if (minutes > 0) {
+                            intervalMinutes.add((double) minutes);
+                        }
+                    }
+                    if (!intervalMinutes.isEmpty()) {
+                        double medMinutes = median(intervalMinutes);
+                        if (medMinutes >= 30.0) {
+                            return Duration.ofMinutes(Math.round(medMinutes));
+                        }
+                    }
+                }
+            }
+        }
+        return Duration.ofHours(defaultReplenishmentPeriodHours);
+    }
+
+    /**
+     * Calculates the timestamp when the next replenishment period starts after fromInstant.
+     */
+    public Instant nextReplenishmentPeriodStart(AccountEntity account, Instant fromInstant) {
+        Instant current = fromInstant != null ? fromInstant : Instant.now();
+        Duration period = estimateReplenishmentPeriod(account);
+        Instant anchor = null;
+
+        if (account != null && account.getName() != null) {
+            List<DefectJournalEntity> entries = defectJournalRepository
+                    .findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), BUDGET_RECOVERY_DEFECT_TYPE);
+            if (entries.size() < minSamplesForDataDriven) {
+                entries = defectJournalRepository.findByDefectTypeOrderByCreatedAtDesc(BUDGET_RECOVERY_DEFECT_TYPE)
+                        .stream().limit(POOLED_SAMPLE_LIMIT).toList();
+            }
+            if (entries.size() >= minSamplesForDataDriven) {
+                anchor = entries.get(0).getCreatedAt();
+            }
+        }
+
+        if (anchor == null) {
+            anchor = current.atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant();
+        }
+
+        return calculateNextPeriodBoundary(anchor, current, period);
+    }
+
+    /**
+     * Pure function: calculates the next periodic boundary strictly after fromInstant given anchor and period.
+     */
+    public static Instant calculateNextPeriodBoundary(Instant anchor, Instant fromInstant, Duration period) {
+        if (period == null || period.isZero() || period.isNegative()) {
+            period = Duration.ofHours(24);
+        }
+        if (anchor == null) {
+            anchor = fromInstant != null
+                    ? fromInstant.atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant()
+                    : Instant.now().atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant();
+        }
+        if (fromInstant == null) {
+            fromInstant = Instant.now();
+        }
+
+        if (fromInstant.isBefore(anchor)) {
+            long periodMillis = period.toMillis();
+            if (periodMillis <= 0) periodMillis = 86_400_000L;
+            long diffMillis = Duration.between(fromInstant, anchor).toMillis();
+            long periodsBefore = diffMillis / periodMillis;
+            Instant boundary = anchor.minusMillis(periodsBefore * periodMillis);
+            if (!boundary.isAfter(fromInstant)) {
+                boundary = boundary.plus(period);
+            }
+            return boundary;
+        }
+
+        long periodMillis = period.toMillis();
+        if (periodMillis <= 0) {
+            periodMillis = 86_400_000L;
+        }
+        long diffMillis = Duration.between(anchor, fromInstant).toMillis();
+        long periodsElapsed = diffMillis / periodMillis;
+        Instant currentPeriodStart = anchor.plusMillis(periodsElapsed * periodMillis);
+        return currentPeriodStart.plus(period);
+    }
+
+    /**
+     * Law 9 / Prescription 14:
+     * Next probe instant is scheduled at the EARLIER of own backoff and next replenishment period start.
+     * Guard: after an external budget exhaustion, the next probe is scheduled no later than the start of the new period.
+     */
+    public Instant computeNextProbeInstant(AccountEntity account) {
+        return computeNextProbeInstant(account, Instant.now());
+    }
+
+    public Instant computeNextProbeInstant(AccountEntity account, Instant now) {
+        if (account == null) {
+            return now != null ? now : Instant.now();
+        }
+        Instant current = now != null ? now : Instant.now();
+        Instant changedAt = account.getStatusChangedAt();
+        if (changedAt == null) {
+            changedAt = account.getLastHeartbeat() != null ? account.getLastHeartbeat()
+                    : (account.getCreatedAt() != null ? account.getCreatedAt() : current.minus(Duration.ofMinutes(maxCooldownMinutes)));
+        }
+        long cooldownMinutes = computeCooldownMinutes(account);
+        Instant ownBackoff = changedAt.plus(Duration.ofMinutes(cooldownMinutes));
+
+        if (!isExternalBudgetExhaustion(account)) {
+            return ownBackoff;
+        }
+
+        Instant periodStart = nextReplenishmentPeriodStart(account, changedAt);
+        return ownBackoff.isBefore(periodStart) ? ownBackoff : periodStart;
     }
 
     /** Thin wrapper so every scheduled account-status mutation goes through this one service, not the repository directly. */

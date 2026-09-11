@@ -83,6 +83,12 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Modifying
     @Transactional
+    @Query("UPDATE AccountEntity a SET a.status = com.eneik.production.models.persistence.AccountStatus.idle, a.statusChangedAt = :now, a.sessionsDispatchedToday = 0 " +
+            "WHERE a.id = :id AND a.status = com.eneik.production.models.persistence.AccountStatus.daily_limited")
+    int resetSingleAccountFromDailyLimited(@Param("id") UUID id, @Param("now") Instant now);
+
+    @Modifying
+    @Transactional
     @Query("UPDATE AccountEntity a SET a.sessionsDispatchedToday = 0")
     int resetDailySessionCounts();
 

@@ -672,9 +672,33 @@
   - `VerdictGateTest` (14/14): строгая проверка типизированного `reasonCode`.
   - Регрессионный прогон: `AutoMergeServiceTest` (23/23), `FlowSpineServiceTest` (25/25), `OperationalTruthServiceTest` (17/17).
 
+**Закрыто (Такт 33):** Фиксация архитектурных границ Предписаний 11 и 12, полная реализация Предписания 14 (`AccountHealthService` / `AccountRepository` — откат не знает периода пополнения, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, закон 9):
+- **Фиксация архитектурной границы Предписания 11 (`openRecoveryPullRequest` :5628):**
+  - Граница названа в явном виде: метод `openRecoveryPullRequest` открывается самой фабрикой из оставленной ветки исполнителя. Засчитывается как реальный прогресс (`recordProgress()`), поскольку ветка содержит фактический внешний код и коммиты Jules, которые иначе терялись бы в подвешенном состоянии.
+- **Фиксация архитектурной границы Предписания 12 (`BottleneckAwarePriorityService`, закон 11):**
+  - В соответствии с указанием раздела XVI §12 граница зафиксирована без изменения кода: `BottleneckAwarePriorityService` строго **ранжирует** очередь работ (вычисляет приоритет задач по фазам и ролям), в то время как решение о подчинении или простаивании принимает исключительно `TocSubordinationLever`.
+  - Опровержение не выполняется: в классе нет ни одного решения `idle`, `deny` или `skip` (0 вхождений).
+- **Реализация Предписания 14 (`AccountHealthService` / `AccountRepository` — откат и период пополнения, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, закон 9):
+  - **Замер:** экспоненциальный откат аккаунтов (30 -> 60 -> 120 -> 240 -> 480 минут) удваивал паузу вслепую к внешним границам пополнения квот (например, суточному сбросу в 00:00 UTC). В результате после обнуления внешнего лимита аккаунт простаивал лишние часы, ожидая истечения собственного удвоенного таймера.
+  - **Делать:**
+    - Следующая проба назначается по **раннему** из двух: собственный откат аккаунта (`ownBackoff`) и начало нового периода пополнения (`nextReplenishmentPeriodStart`).
+    - Период пополнения выводится из наблюдений по аналогии с `BetaPosterior` (`estimateReplenishmentPeriod`): рассчитывается медианный интервал между последовательными событиями восстановления `BUDGET_RECOVERY_DEFECT_TYPE` при наличии $\ge 5$ наблюдений; при нехватке выборки используется неинформативное априорное распределение (24 часа, якорь — полночь UTC).
+    - В `AccountHealthService`: добавлены методы `isExternalBudgetExhaustion(account)` (распознаёт статус `daily_limited` и отказы 429/quota/rate limit), `estimateReplenishmentPeriod(account)`, `nextReplenishmentPeriodStart(account, fromInstant)`, `calculateNextPeriodBoundary(anchor, fromInstant, period)` и `computeNextProbeInstant(account, now)`.
+    - В `AccountRepository`: добавлен атомарный метод `resetSingleAccountFromDailyLimited(UUID id, Instant now)` (сброс в `idle`, обнуление `sessionsDispatchedToday`, обновление `statusChangedAt = now`).
+    - В `recoverEligibleAccounts`: кандидаты из `daily_limited` и `api_blocked` проверяются против `computeNextProbeInstant(account, current)` и восстанавливаются сразу по наступлению границы периода пополнения без ожидания удвоения.
+  - **Заслон:** после отказа, классифицированного как исчерпание внешнего бюджета, следующая проба назначена не позже начала нового периода пополнения.
+  - **Опровержение:** сдвиг времени за границу периода (`now = 00:01 UTC`) восстанавливает аккаунт немедленно, не дожидаясь 8-часового удвоения (проверено тестом `refutation_timeShiftPastPeriodBoundary_recoversWithoutWaitingForDoubling`).
+  - **Контроль:** отказ, не являющийся исчерпанием бюджета (`PRECONDITION_BLOCKED`), не восстанавливается на границе периода и честно выдерживает полный собственный кулдаун (проверено тестом `control_nonBudgetRefusal_waitsForFullCooldown`).
+- **Заслоняющие тесты (62/62 green в изолированном контейнере Maven):**
+  - `AccountHealthServiceTest` (30/30):
+    - `calculateNextPeriodBoundary_pureMath`: проверка граничных вычислений периодов (24h, 12h, фазирование относительно якоря).
+    - `computeNextProbeInstant_externalBudgetExhaustion_scheduledNoLaterThanPeriodStart`: следующая проба назначена строго не позже начала периода.
+    - `refutation_timeShiftPastPeriodBoundary_recoversWithoutWaitingForDoubling`: фальсифицирующее опровержение — восстановление за границей периода без ожидания удвоения.
+    - `control_nonBudgetRefusal_waitsForFullCooldown`: контрольная группа — отказ инфраструктуры ждет полный откат.
+    - `estimateReplenishmentPeriod_dataDriven_derivesFromObservedHistory`: эмпирический вывод периода 12ч из $\ge 5$ наблюдений и 24ч из априорного распределения.
+  - `AccountHealthServiceLaw14Test` (7/7): сохранение инвариантов Popper/Gärdenfors по динамическому расчету емкости.
+  - Регрессионный прогон: `ContinuousOrchestrationServiceTest` (10/10), `WatermarkMonotonicityLaw10Test` (6/6), `DispatchRefusalObservabilityLaw8Law12Test` (4/4), `AccountSelectionFairnessTest` (5/5).
+
 **В работе дальше:**
-- Синхронизация с Клодом по приёмке Предписания 11 и выбор следующего предписания (Предписание 24 — `OperationalPolicyService` / детерминированные пороги или Предписание 12).
-
-
-
-
+- Синхронизация с Клодом по приёмке Предписания 14.
+- Следующий пункт по разделу XVI `docs/FACTORY_MECHANISMS.md`: Предписание 15 («Исчерпание попыток становится вердиктом о требовании · `INSTITUTIONAL_FACT_REGISTER` (D007), закон 12»).

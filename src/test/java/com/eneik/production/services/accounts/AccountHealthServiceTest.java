@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -560,5 +561,129 @@ class AccountHealthServiceTest {
         service.recoverEligibleAccounts();
         verify(accountRepository, never()).save(any());
         verify(defectJournalRepository, never()).save(any());
+    }
+
+    @Test
+    void calculateNextPeriodBoundary_pureMath() {
+        Instant anchor = Instant.parse("2026-09-15T00:00:00Z");
+        Duration period24h = Duration.ofHours(24);
+
+        // Same as anchor -> returns anchor + period
+        assertEquals(Instant.parse("2026-09-16T00:00:00Z"),
+                AccountHealthService.calculateNextPeriodBoundary(anchor, anchor, period24h));
+
+        // In the middle of period -> returns end of current period
+        Instant mid = Instant.parse("2026-09-15T15:30:00Z");
+        assertEquals(Instant.parse("2026-09-16T00:00:00Z"),
+                AccountHealthService.calculateNextPeriodBoundary(anchor, mid, period24h));
+
+        // Multiple periods later
+        Instant twoDaysLater = Instant.parse("2026-09-17T08:00:00Z");
+        assertEquals(Instant.parse("2026-09-18T00:00:00Z"),
+                AccountHealthService.calculateNextPeriodBoundary(anchor, twoDaysLater, period24h));
+
+        // Custom 12h period
+        Duration period12h = Duration.ofHours(12);
+        assertEquals(Instant.parse("2026-09-15T12:00:00Z"),
+                AccountHealthService.calculateNextPeriodBoundary(anchor, Instant.parse("2026-09-15T03:00:00Z"), period12h));
+        assertEquals(Instant.parse("2026-09-16T00:00:00Z"),
+                AccountHealthService.calculateNextPeriodBoundary(anchor, Instant.parse("2026-09-15T14:00:00Z"), period12h));
+    }
+
+    @Test
+    void computeNextProbeInstant_externalBudgetExhaustion_scheduledNoLaterThanPeriodStart() {
+        // Law 9 / Prescription 14 (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010):
+        // Account blocked at 20:00 UTC with consecutive block count = 5 (cooldown = 480 min = 8h).
+        // Without replenishment awareness, probe would be scheduled at 04:00 UTC next day.
+        // With replenishment awareness, period start is 00:00 UTC next day, so probe is scheduled at 00:00 UTC.
+        Instant blockedAt = Instant.parse("2026-09-15T20:00:00Z");
+        AccountEntity account = account("acc-daily-limit", AccountStatus.daily_limited, 5, blockedAt);
+
+        Instant nextProbe = service.computeNextProbeInstant(account, blockedAt);
+        Instant expectedPeriodStart = Instant.parse("2026-09-16T00:00:00Z");
+
+        // Guard: probe is scheduled no later than period start (00:00 UTC)
+        assertFalse(nextProbe.isAfter(expectedPeriodStart),
+                "Next probe must not be scheduled after replenishment period start");
+        assertEquals(expectedPeriodStart, nextProbe);
+    }
+
+    @Test
+    void refutation_timeShiftPastPeriodBoundary_recoversWithoutWaitingForDoubling() {
+        // Refutation: shift time past period boundary and verify account recovers without waiting for doubling.
+        Instant blockedAt = Instant.parse("2026-09-15T20:00:00Z");
+        AccountEntity account = account("acc-refutation", AccountStatus.daily_limited, 5, blockedAt);
+        account.setEnabled(true);
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.daily_limited)).thenReturn(List.of(account));
+        when(accountRepository.resetSingleAccountFromDailyLimited(eq(account.getId()), any())).thenReturn(1);
+
+        // T1: 23:59:00 (before period boundary 00:00:00) -> not eligible yet
+        Instant beforeBoundary = Instant.parse("2026-09-15T23:59:00Z");
+        int recoveredBefore = service.recoverEligibleAccounts(beforeBoundary);
+        assertEquals(0, recoveredBefore);
+        verify(accountRepository, never()).resetSingleAccountFromDailyLimited(eq(account.getId()), any());
+
+        // T2: 00:01:00 (shifted past period boundary, but hours before 8-hour backoff at 04:00) -> recovers!
+        Instant afterBoundary = Instant.parse("2026-09-16T00:01:00Z");
+        int recoveredAfter = service.recoverEligibleAccounts(afterBoundary);
+        assertEquals(1, recoveredAfter);
+        verify(accountRepository, times(1)).resetSingleAccountFromDailyLimited(account.getId(), afterBoundary);
+    }
+
+    @Test
+    void control_nonBudgetRefusal_waitsForFullCooldown() {
+        // Control: non-budget refusal (api_blocked with PRECONDITION_BLOCKED, no daily limit / quota)
+        // must NOT be relieved by replenishment period; must wait for full cooldown.
+        Instant blockedAt = Instant.parse("2026-09-15T20:00:00Z");
+        AccountEntity account = account("acc-precondition", AccountStatus.api_blocked, 5, blockedAt);
+        account.setEnabled(true);
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.daily_limited)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(List.of(account));
+        when(accountRepository.resetSingleAccountFromApiBlocked(eq(account.getId()))).thenReturn(1);
+
+        // T1: 00:01:00 (past midnight, but cooldown = 480 min = 8h -> 04:00) -> does NOT recover!
+        Instant afterBoundary = Instant.parse("2026-09-16T00:01:00Z");
+        int recoveredAtMidnight = service.recoverEligibleAccounts(afterBoundary);
+        assertEquals(0, recoveredAtMidnight);
+        verify(accountRepository, never()).resetSingleAccountFromApiBlocked(account.getId());
+
+        // T2: 04:01:00 (past full 8h cooldown) -> recovers!
+        Instant afterCooldown = Instant.parse("2026-09-16T04:01:00Z");
+        int recoveredAfterCooldown = service.recoverEligibleAccounts(afterCooldown);
+        assertEquals(1, recoveredAfterCooldown);
+        verify(accountRepository, times(1)).resetSingleAccountFromApiBlocked(account.getId());
+    }
+
+    @Test
+    void estimateReplenishmentPeriod_dataDriven_derivesFromObservedHistory() {
+        AccountEntity account = account("acc-empirical", AccountStatus.daily_limited, 1, Instant.now());
+
+        // Without enough samples (< 5), falls back to prior 24 hours
+        assertEquals(Duration.ofHours(24), service.estimateReplenishmentPeriod(account));
+
+        // With >= 5 samples spaced by 12 hours (720 min), derives 12 hours
+        Instant base = Instant.parse("2026-09-10T00:00:00Z");
+        List<DefectJournalEntity> entries = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            DefectJournalEntity e = new DefectJournalEntity(
+                    UUID.randomUUID(), null, null, "LOW", "ACCOUNT_HEALTH", account.getName(),
+                    AccountHealthService.BUDGET_RECOVERY_DEFECT_TYPE, "recovery", 720.0);
+            e.setCreatedAt(base.plus(Duration.ofHours(12 * i)));
+            entries.add(e);
+        }
+        when(defectJournalRepository.findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(
+                account.getName(), AccountHealthService.BUDGET_RECOVERY_DEFECT_TYPE))
+                .thenReturn(entries);
+
+        assertEquals(Duration.ofHours(12), service.estimateReplenishmentPeriod(account));
     }
 }
