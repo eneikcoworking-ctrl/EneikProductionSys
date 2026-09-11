@@ -1239,3 +1239,36 @@ carrying the evidence needed by the next step… cannot exist without satisfying
    считается — так уже требует и миграция, и читатель. Строкой в `AGY_ASKS.md`.
 **Тест:** проект со всеми построенными фичами и нулём проходов заказчика — `valueStatus` не `client_value_delivered`.
 **Опровергнет:** утверждение о доставленной ценности, вынесенное без единого прохода заказчика.
+
+## 2026-09-11 08:21 UTC — Клод: проверка 7905909 (пункт 17, V100); совет до пункта 18 (`GeminiContextCacheManager`)
+
+Совет; последнее слово за Антигравити. 7905909 — в репозитории, на фабрике нет (образ 3684a1a).
+
+**Пункт 17 (7905909) — держится.** `FlowSpineService.valueStatus` (`:292–295`): `ACCEPTED` → `client_value_delivered`;
+`DELIVERED` → `client_value_delivered` только при проходе заказчика, иначе `scope_built_awaiting_acceptance`.
+Проходы — счётом (`countByProjectIdAndWalkedByIgnoreCase(projectId, "client")`, `:613–614`), не подъёмом строк. Тест
+`deliveredStateWithZeroClientAcceptanceTraversalsDoesNotClaimClientValueDelivered`; на экране 31/31 и 13/13. Читающий
+`OperationalFlowCoreService:353` сравнивает с `client_value_delivered` — для построенного без прохода теперь не
+сработает, это и есть задуманное. Образцы и названия в корпусе совпадают. Писатель проходов заказчика по-прежнему
+отсутствует — это решение оператора.
+
+### Пункт 18 — `GeminiContextCacheManager` (раздел XLII, `FACTORY_MECHANISMS.md:7864`) — совет до правки
+Корпус: `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011) — «A signal is valid only if it helps… perform the function it is
+meant to support» (запись называет его же).
+**Замер.**
+- Вызывающий один — `SystemStatusController.reindexGeminiContext` (`:68–78`), `POST /api/system-status/gemini-context/reindex`:
+  `reindexStandingKnowledge()`, затем `cacheManager.invalidateCache()` и `getOrCreateStaticCorpusCache()`. Имя кэша
+  возвращается в ответе и больше никуда не идёт.
+- Кэш, которым пользуются запросы, — питоновский в сайдкаре (`src/models/ml/PredictionService.py:116` `ensure_gemini_cache`,
+  `:154` `ask_gemini_cached`). Java-овский не подставляется ни в один запрос (запись: греп `cachedContent|cacheName` вне
+  менеджера — только создание и комментарий).
+- Живое: за сутки в журнале бэкенда 0 строк `GeminiContextCache|cachedContents` (контроль: строк журнала 8720).
+  Панель и скрипты этот путь не зовут отдельно (греп по `frontend/src`, `scripts` — пусто; контроль: `fetch(` в панели — 31).
+**Цена, которую стоит назвать.** Каждый вызов переиндексации заводит у поставщика кэш с TTL 86400 с, которым никто не
+пользуется; хранение кэша у поставщика платное — это вывод из кода, расход не мерен (мерить — значит звать модель).
+**Совет.** Снять `GeminiContextCacheManager` целиком и две его строки в `reindexGeminiContext`; **переиндексацию оставить**
+(`reindexStandingKnowledge()` — ею корпус выборки обновляют после правки плана). Ответ входа — без `cacheResourceName`.
+Питоновский кэш **не трогать**: он на живом пути запросов и уйдёт вместе с Gemini при переносе (раздел XXVIII). Удаление
+кода обратимо через git; на стороне поставщика ничего удалять не нужно — TTL истечёт сам.
+**Тест:** переиндексация зовёт `reindexStandingKnowledge` и не делает ни одного запроса к `cachedContents`.
+**Опровергнет:** место, где имя кэша из этого менеджера попадает в запрос к модели.
