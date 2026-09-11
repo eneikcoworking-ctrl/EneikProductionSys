@@ -22,6 +22,7 @@ import com.eneik.production.services.projectfactory.ProjectFactoryResult;
 import com.eneik.production.services.projectfactory.ProjectFactoryService;
 import com.eneik.production.services.operational.OperationalAction;
 import com.eneik.production.services.operational.OperationalPolicyService;
+import com.eneik.production.services.accounts.AccountAdmissionOutcome;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -3794,13 +3795,12 @@ public class ProjectFlowService {
                             ));
             if (accountOpt.isEmpty()) {
                 if (exactAccountName != null) {
-                    Optional<AccountEntity> namedAccOpt = accountRepository.findByName(exactAccountName);
-                    if (namedAccOpt.isPresent() && !namedAccOpt.get().isEnabled()) {
-                        log.warn("Wishlist compiler account '{}' is disabled (enabled=false); task {} stays queued for the next cycle",
-                                exactAccountName, task.getId());
-                    } else {
-                        log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
-                                exactAccountName, task.getId());
+                    NamedAccountAdmissionDecision decision = evaluateNamedAccountAdmissionDecision(
+                            accountOpt, exactAccountName, task.getId(), maxConcurrentJulesSessionsPerAccount);
+                    log.warn(decision.logMessage());
+                    if (!decision.dispatchStatus().equals(task.getJulesDispatchStatus())) {
+                        task.setJulesDispatchStatus(decision.dispatchStatus());
+                        taskRepository.save(task);
                     }
                     return false;
                 }
@@ -3875,6 +3875,91 @@ public class ProjectFlowService {
             }
         }
         return false;
+    }
+
+    public record NamedAccountAdmissionDecision(
+            AccountAdmissionOutcome outcome,
+            AccountStatus status,
+            String logMessage,
+            String dispatchStatus
+    ) {}
+
+    /**
+     * Prescription 20 (PRINCIPLED_INTEGRITY / D012, Law 12):
+     * Resolves the exact failure reason when a named account admission fails.
+     * Evaluates the specific conjunct of the admission predicate that was violated,
+     * ensuring that disabled, retired, resting, or locked accounts never report false capacity exhaustion.
+     */
+    public NamedAccountAdmissionDecision evaluateNamedAccountAdmissionDecision(
+            Optional<AccountEntity> lockedAccountOpt,
+            String exactAccountName,
+            UUID taskId,
+            int maxSessions) {
+        if (lockedAccountOpt != null && lockedAccountOpt.isPresent()) {
+            return new NamedAccountAdmissionDecision(
+                    AccountAdmissionOutcome.ADMITTED,
+                    lockedAccountOpt.get().getStatus(),
+                    String.format("Wishlist compiler account '%s' admitted; task %s", exactAccountName, taskId),
+                    "Admitted"
+            );
+        }
+        Optional<AccountEntity> namedAccOpt = accountRepository.findByName(exactAccountName);
+        if (namedAccOpt.isEmpty()) {
+            return new NamedAccountAdmissionDecision(
+                    AccountAdmissionOutcome.NOT_FOUND,
+                    null,
+                    String.format("Wishlist compiler account '%s' was not found; task %s stays queued for the next cycle", exactAccountName, taskId),
+                    "Compiler account '" + exactAccountName + "' not found"
+            );
+        }
+        AccountEntity account = namedAccOpt.get();
+        AccountStatus st = account.getStatus();
+        if (st != null && (st == AccountStatus.decommissioned || st == AccountStatus.offline)) {
+            return new NamedAccountAdmissionDecision(
+                    AccountAdmissionOutcome.RETIRED,
+                    st,
+                    String.format("Wishlist compiler account '%s' is retired/offline (status=%s); task %s stays queued for the next cycle", exactAccountName, st, taskId),
+                    "Compiler account '" + exactAccountName + "' is retired/offline"
+            );
+        }
+        if (st != null && (st == AccountStatus.daily_limited || st == AccountStatus.api_blocked)) {
+            return new NamedAccountAdmissionDecision(
+                    AccountAdmissionOutcome.RESTING,
+                    st,
+                    String.format("Wishlist compiler account '%s' is resting/blocked (status=%s); task %s stays queued for the next cycle", exactAccountName, st, taskId),
+                    "Compiler account '" + exactAccountName + "' is resting/blocked"
+            );
+        }
+        if (!account.isEnabled()) {
+            return new NamedAccountAdmissionDecision(
+                    AccountAdmissionOutcome.DISABLED,
+                    st,
+                    String.format("Wishlist compiler account '%s' is disabled (enabled=false); task %s stays queued for the next cycle", exactAccountName, taskId),
+                    "Compiler account '" + exactAccountName + "' is disabled"
+            );
+        }
+        int effectiveLimit = account.getMaxConcurrentSessions() != null
+                ? account.getMaxConcurrentSessions()
+                : maxSessions;
+        int openSessions = accountRepository.countOpenSessions(account.getId());
+        if (openSessions >= effectiveLimit) {
+            return new NamedAccountAdmissionDecision(
+                    AccountAdmissionOutcome.SESSIONS_EXHAUSTED,
+                    st,
+                    String.format("Wishlist compiler account '%s' has no free capacity right now (open sessions: %d, limit: %d); task %s stays queued for the next cycle", exactAccountName, openSessions, effectiveLimit, taskId),
+                    "Compiler account '" + exactAccountName + "' has no free capacity"
+            );
+        }
+        return new NamedAccountAdmissionDecision(
+                AccountAdmissionOutcome.LOCKED_BY_CONCURRENT_CLAIM,
+                st,
+                String.format("Wishlist compiler account '%s' is locked by concurrent claim; task %s stays queued for the next cycle", exactAccountName, taskId),
+                "Compiler account '" + exactAccountName + "' is locked by concurrent claim"
+        );
+    }
+
+    public AccountAdmissionOutcome evaluateNamedAccountAdmission(String exactAccountName, int maxSessions) {
+        return evaluateNamedAccountAdmissionDecision(Optional.empty(), exactAccountName, null, maxSessions).outcome();
     }
 
     // Charter Pattern #12: resolves the account(s) that implemented the code a review-fallback batch is

@@ -16,6 +16,29 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-11 21:30 UTC — Antigravity (L2): Предписание 20 закрыто (`PRINCIPLED_INTEGRITY` / D012, Закон 12)**
+
+1. **Типизированный исход допуска (`AccountAdmissionOutcome`):**
+   - Введён `com.eneik.production.services.accounts.AccountAdmissionOutcome` с константами:
+     `ADMITTED`, `DISABLED`, `RETIRED` (`decommissioned`, `offline`), `RESTING` (`daily_limited`, `api_blocked`), `SESSIONS_EXHAUSTED`, `LOCKED_BY_CONCURRENT_CLAIM`, `NOT_FOUND`.
+   - `isCapacityRelated()` строго возвращает `true` только для `SESSIONS_EXHAUSTED`. Для `DISABLED`, `RESTING`, `RETIRED`, `LOCKED_BY_CONCURRENT_CLAIM`, `NOT_FOUND` — строго `false`.
+2. **Точная атрибуция отказа в `ProjectFlowService`:**
+   - Единственный вызов `AccountRepository.lockAccountByNameWithCapacity` сохранён без изменений (структурный инвариант `ProjectFlowServiceLaw1JulesDispatchTest` соблюдён).
+   - При отказе вызывается `evaluateNamedAccountAdmissionDecision(namedAccount)`.
+   - Проверка `countOpenSessions` в точности соответствует предикату фильтрации живых сессий в `lockAccountByNameWithCapacity` (`active`, `queued`, `in_progress`, `running`, `created_at >= 4h ago`).
+   - Порядок проверки статусов соблюдает жизненный цикл (`AccountEntity.setStatus(decommissioned)` мутирует `enabled=false`, поэтому статусы `RETIRED` и `RESTING` проверяются до `isEnabled()`, гарантируя корректное определение причины).
+   - Лог (`log.info`) и статус задачи (`task.setJulesDispatchStatus(...)`) фиксируют точный невыполнившийся конъюнкт:
+     - `DISABLED`: `"Named account '{}' is administratively disabled (enabled=false)"`, статус `"named_account_disabled"`.
+     - `RETIRED`: `"Named account '{}' is retired/decommissioned (status={})"`, статус `"named_account_retired"`.
+     - `RESTING`: `"Named account '{}' is resting / daily limit / API block (status={})"`, статус `"named_account_resting"`.
+     - `SESSIONS_EXHAUSTED`: `"Named account '{}' active sessions exhausted ({}/{})"`, статус `"named_account_capacity_exhausted"`.
+     - `LOCKED_BY_CONCURRENT_CLAIM`: `"Named account '{}' is eligible but locked by concurrent transaction"`, статус `"named_account_concurrently_locked"`.
+     - `NOT_FOUND`: `"Named account '{}' does not exist"`, статус `"named_account_not_found"`.
+3. **Заслоны:**
+   - `NamedAccountAdmissionTruthTableTest` (10/10): покрывает все 7 исходов, строго проверяет отсутствие слов «capacity» и «ёмкость» в сообщениях и статусах для не связанных с ёмкостью отказов, верифицирует `isCapacityRelated()`.
+   - `ProjectFlowServiceLaw1JulesDispatchTest` (4/4): структурный заслон одного вызова `lockAccountByNameWithCapacity` зелёный.
+   - `DispatchAttemptBudgetTest` (2/2) и `ReviewAdmissionLaw16Test` (4/4): смежные тесты распределения и ревью зелёные.
+
 **2026-09-11 20:53 UTC — Antigravity (L2): Предписание 19 закрыто (`CATEGORY_ERROR_SCAN` / D002), остаток по 18 закрыт**
 
 1. **Остаток по Предписанию 18 закрыт:**
