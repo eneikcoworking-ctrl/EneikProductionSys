@@ -67,11 +67,16 @@ public class ProjectEventLogRetentionService {
     }
 
     /**
-     * Daily, off the hour. Not @Transactional at this level: each project's delete runs in its own short
-     * transaction, so one failure cannot roll back the others and no single transaction holds a connection
-     * across the whole sweep - the same discipline applied to the other scheduled sweeps on 2026-08-14.
+     * Continuous retention sweep aligned with observed growth rate (~2500 entries/hr) rather than daily run.
+     * ALONZO_CHERCH_21_DERIVED_CUTOFF (D010): Frequency derived from live growth rate.
+     * A cheap countByProjectId check every 60s keeps table within ~40 entries of the ceiling at all times,
+     * preventing 36k-entry accumulation between daily sweeps.
+     * Not @Transactional at this level: each project's delete runs in its own short transaction.
      */
-    @Scheduled(cron = "${project-event-log.retention-cron:0 17 3 * * ?}")
+    @Scheduled(
+            fixedDelayString = "${project-event-log.retention-fixed-delay-ms:60000}",
+            initialDelayString = "${project-event-log.retention-initial-delay-ms:30000}"
+    )
     public void enforceRetention() {
         int removedFromAccepted = 0;
         int removedByCeiling = 0;
@@ -118,14 +123,14 @@ public class ProjectEventLogRetentionService {
             return 0;
         }
         int excess = (int) (count - ceiling);
-        // Reads only the excess rows to find the cutoff timestamp, then deletes by that timestamp in one
-        // statement - never loads the whole log into memory, which on the live table would mean 162k rows.
-        List<ProjectEventLogEntity> oldest =
-                repository.findByProjectIdOrderByCreatedAtAsc(projectId, PageRequest.of(0, excess));
-        if (oldest.isEmpty()) {
+        // ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010: Request exactly 1 boundary row at offset (excess - 1)
+        // with pageSize=1. Never load all excess entities (up to 36k rows) into JVM heap memory.
+        List<ProjectEventLogEntity> boundary =
+                repository.findByProjectIdOrderByCreatedAtAsc(projectId, PageRequest.of(excess - 1, 1));
+        if (boundary.isEmpty()) {
             return 0;
         }
-        Instant cutoff = oldest.get(oldest.size() - 1).getCreatedAt();
+        Instant cutoff = boundary.get(0).getCreatedAt();
         return repository.deleteByProjectIdAndCreatedAtBefore(projectId, cutoff);
     }
 }

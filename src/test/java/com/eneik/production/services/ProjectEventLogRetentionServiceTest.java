@@ -7,9 +7,12 @@ import com.eneik.production.repositories.ProjectEventLogRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.lang.reflect.Method;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
@@ -145,5 +148,64 @@ class ProjectEventLogRetentionServiceTest {
         service.enforceRetention();
 
         verify(repository).deleteByProjectIdAndCreatedAtBefore(eq(healthy.getId()), any());
+    }
+
+    @Test
+    void trimToCeilingRequestsSingleRowPageEvenWithLargeExcess() {
+        UUID projectId = UUID.randomUUID();
+        Instant cutoff = Instant.now().minus(5, ChronoUnit.DAYS);
+        ProjectEventLogEntity boundary = new ProjectEventLogEntity();
+        boundary.setCreatedAt(cutoff);
+
+        // Simulated large excess matching live measurement: 56,382 total rows, ceiling 20,000 -> excess = 36,382
+        when(repository.countByProjectId(projectId)).thenReturn(56_382L);
+        when(repository.findByProjectIdOrderByCreatedAtAsc(eq(projectId), any(Pageable.class)))
+                .thenReturn(List.of(boundary));
+        when(repository.deleteByProjectIdAndCreatedAtBefore(eq(projectId), eq(cutoff))).thenReturn(36_382);
+
+        int removed = service.trimToCeiling(projectId, 20_000);
+
+        org.assertj.core.api.Assertions.assertThat(removed).isEqualTo(36_382);
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findByProjectIdOrderByCreatedAtAsc(eq(projectId), pageableCaptor.capture());
+
+        // ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010: Page size must NEVER scale with excess (always 1)
+        org.assertj.core.api.Assertions.assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(36_381);
+    }
+
+    @Test
+    void retentionIsConfiguredWithFrequentFixedDelayNotDailyCron() throws Exception {
+        Method method = ProjectEventLogRetentionService.class.getDeclaredMethod("enforceRetention");
+        Scheduled scheduled = method.getAnnotation(Scheduled.class);
+
+        // ALONZO_CHERCH_21_DERIVED_CUTOFF / D010: Frequency derived from growth rate (~2500/hr)
+        // Must use frequent fixed-delay, not a once-a-day cron that lets rows double
+        org.assertj.core.api.Assertions.assertThat(scheduled).isNotNull();
+        org.assertj.core.api.Assertions.assertThat(scheduled.fixedDelayString())
+                .contains("project-event-log.retention-fixed-delay-ms");
+        org.assertj.core.api.Assertions.assertThat(scheduled.cron()).isEmpty();
+    }
+
+    @Test
+    void enforceRetentionTrimsExcessInSingleCycleWhenCountExceedsCeiling() {
+        ProjectEntity active = project(ProjectStatus.active, null);
+        Instant cutoff = Instant.now().minus(2, ChronoUnit.HOURS);
+        ProjectEventLogEntity boundary = new ProjectEventLogEntity();
+        boundary.setCreatedAt(cutoff);
+
+        when(projectRepository.findAll()).thenReturn(List.of(active));
+        when(repository.countByProjectId(active.getId())).thenReturn(20_042L);
+        when(repository.findByProjectIdOrderByCreatedAtAsc(eq(active.getId()), any(Pageable.class)))
+                .thenReturn(List.of(boundary));
+        when(repository.deleteByProjectIdAndCreatedAtBefore(eq(active.getId()), eq(cutoff))).thenReturn(42);
+
+        service.enforceRetention();
+
+        verify(repository).deleteByProjectIdAndCreatedAtBefore(eq(active.getId()), eq(cutoff));
+        ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+        verify(repository).findByProjectIdOrderByCreatedAtAsc(eq(active.getId()), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getPageSize()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().getPageNumber()).isEqualTo(41);
     }
 }

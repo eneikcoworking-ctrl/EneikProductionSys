@@ -87,7 +87,29 @@
      - `SystemStatusServiceTest`: 16/16 green (включая проверку, что emsMetrics при null projectId запрашивает только активный проект, а при отсутствии активного проекта возвращает секцию undetermined с причиной и не вызывает findAll/build).
      - `TaskCarrierBackfillServiceTest`: 3/3 green (включая проверку пропуска сканирования задач при наличии маркера в system_settings).
      - `SystemStatusControllerIntegrationTest`: 4/4 green (полный подъем Spring Boot Web, H2, Flyway V138).
-- **Что берётся следующим:** Такт 6 — `ProjectEventLogRetentionService` (пункт 5 очереди, Раздел XLIV: очистка журнала отстаёт от роста; суточный запуск в 03:17 при ~17.5k записей/сутки приводит к удвоению таблицы между чистками; `GeminiContextService` пропущен согласно пометке в очереди «НЕ брать» и отказу от Gemini). Ждём актуальный замер роста журнала на фабрике от Клода перед кодом.
+### 2026-09-11 Antigravity: Такт 6 — ProjectEventLogRetentionService целиком (пункт 5 очереди, Раздел XLIV)
+- **Что сделано:** Механизм `ProjectEventLogRetentionService` доведён до идеала целиком по замерам Клода (скорость роста ~2566 строк/час):
+  1. **Частота очистки приведена в соответствие со скоростью роста (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):**
+     - Устранён суточный cron `0 17 3 * * ?` (число, выбранное однажды), из-за которого за сутки набегало 36 382 излишних записей и таблица удваивалась в памяти.
+     - Внедрён непрерывный цикл проверки: `@Scheduled(fixedDelayString = "${project-event-log.retention-fixed-delay-ms:60000}", initialDelayString = "${project-event-log.retention-initial-delay-ms:30000}")`.
+     - Каждую минуту служба выполняет быстрый `countByProjectId(projectId)` (запрос `COUNT(*)`, 0 строк в памяти). При превышении потолка 20 000 записей излишек срезается немедленно, так что превышение потолка составляет не более ~40 строк (0.2% вместо 180% при 36к строках).
+  2. **Ликвидация подъёма излишка в память JVM (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010):**
+     - В `trimToCeiling` ликвидирован `PageRequest.of(0, excess)`, загружавший в кучу JVM весь массив излишних сущностей (до 36 382 объектов) ради одной временной метки.
+     - Запрос переведён на точечный срез граничной строки: `PageRequest.of(excess - 1, 1)`. Размер страницы инвариантен и строго равен 1 независимо от величины излишка.
+  3. **Сохранены сильные свойства:** непринятый проект не чистится по возрасту («полный журнал от начала до приёмки»); принятый проект хранится 30 дней; короткие изолированные транзакции по каждому проекту; вызов через self-прокси; сохранение новейших записей.
+- **Чем проверено:**
+  1. `ProjectEventLogRetentionServiceTest`: 10/10 green:
+     - `trimToCeilingRequestsSingleRowPageEvenWithLargeExcess`: проверка `pageSize == 1` и `pageNumber == 36381` при `excess = 36382`.
+     - `retentionIsConfiguredWithFrequentFixedDelayNotDailyCron`: рефлексивная фальсификация суточного cron и проверка `fixedDelayString`.
+     - `enforceRetentionTrimsExcessInSingleCycleWhenCountExceedsCeiling`: проверка подрезки излишка за один цикл с `pageSize == 1`.
+  2. Полный регрессионный прогон Maven в Docker (`BUILD SUCCESS`):
+     - `ProjectEventLogRetentionServiceTest`: 10/10 green.
+     - `QualityGateControllerTest`: 2/2 green.
+     - `TaskCarrierBackfillServiceTest`: 3/3 green.
+     - `SystemStatusServiceTest`: 16/16 green.
+     - `SixSigmaAuditServiceTest`: 25/25 green.
+     Итого: 56 тестов зелёные.
+- **Что берётся следующим:** Такт 7 — `ProjectFlowService.compilerContentKey` (ограничение длины ключа задачи компилятора хешем отсортированного множества пожеланий для устранения ошибки `Value too long for column CONTENT_KEY VARCHAR(255)`).
 
 
 
