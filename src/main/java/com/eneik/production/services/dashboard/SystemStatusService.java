@@ -27,6 +27,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -418,12 +419,18 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> systemHealth() {
-        long minutesSinceProgress = java.time.Duration.between(
-                systemProgressTracker.lastProgressAt(), java.time.Instant.now()).toMinutes();
+        Instant lastProgress = systemProgressTracker.lastProgressAt();
+        Long minutesSinceProgress = lastProgress != null
+                ? java.time.Duration.between(lastProgress, java.time.Instant.now()).toMinutes()
+                : null;
         Map<String, Object> section = new LinkedHashMap<>();
-        section.put("lastProgressAt", systemProgressTracker.lastProgressAt());
+        section.put("lastProgressAt", lastProgress);
         section.put("minutesSinceProgress", minutesSinceProgress);
-        section.put("status", settingsService.effectiveValue("system_stall_status"));
+        String status = settingsService.effectiveValue("system_stall_status");
+        if (lastProgress == null && (status == null || status.isBlank() || "ok".equalsIgnoreCase(status))) {
+            status = "undetermined";
+        }
+        section.put("status", status);
         return section;
     }
 
@@ -435,7 +442,7 @@ public class SystemStatusService {
         List<Map<String, Object>> blockers = new ArrayList<>();
         String stallStatus = settingsService.effectiveValue("system_stall_status");
         if (stallStatus != null && !stallStatus.isBlank()
-                && !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work", "content_defect")
+                && !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work", "content_defect", "undetermined")
                 .contains(stallStatus.toLowerCase(java.util.Locale.ROOT))) {
             blockers.add(blocker("system_status", stallStatus, "high",
                     "system_stall_status=" + stallStatus));

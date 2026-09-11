@@ -194,8 +194,7 @@ public class VerdictGate {
                 // (ORCHESTRATE / EXPAND_FEATURE) and regular task dispatch, BUT EXPLICITLY EXEMPT recovery work
                 // so that the failure can be repaired and the prohibition lifted (preventing self-locking).
                 boolean isUnrecoveredDoctrineFailure = "doctrine".equalsIgnoreCase(j.layer())
-                        && ("UNRECOVERED_FAILED_WORK".equals(j.reasonCode())
-                                || (j.reason() != null && j.reason().contains("unrecovered failed work")));
+                        && "UNRECOVERED_FAILED_WORK".equals(j.reasonCode());
                 if (isUnrecoveredDoctrineFailure
                         && ("DISPATCH_QUEUED_TASKS".equalsIgnoreCase(action)
                                 || "EXPAND_FEATURE".equalsIgnoreCase(action)

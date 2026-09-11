@@ -381,7 +381,7 @@ public class FlowSpineService {
         if (status == null || status.isBlank()) {
             return false;
         }
-        return !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work")
+        return !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work", "undetermined")
                 .contains(normalize(status));
     }
 

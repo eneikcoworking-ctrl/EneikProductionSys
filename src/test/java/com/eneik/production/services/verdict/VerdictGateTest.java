@@ -213,6 +213,7 @@ class VerdictGateTest {
         // Violation: doctrine layer refuses due to unrecovered failed work
         Judgement doctrineRefusal = Judgement.withhold("doctrine",
                 "doctrine BARCAN-TAG-00 accepts the current project state",
+                "UNRECOVERED_FAILED_WORK",
                 "Owner-role execution has unrecovered failed work; recover through a fresh atomic wishlist item before claiming doctrine satisfaction.",
                 "stance=refuses");
         latticeSays(Verdict.WITHHOLD, doctrineRefusal);
@@ -274,9 +275,17 @@ class VerdictGateTest {
                 "stance=objects");
         latticeSays(Verdict.WITHHOLD, doctrineBlocked);
 
-        VerdictGate.ActionProhibition blockedProhibition = gate.evaluateActionProhibition(
+        // When reason text mentions unrecovered failed work but reasonCode is missing, prohibition is NOT triggered
+        Judgement substringOnlyWithoutCode = Judgement.withhold("doctrine",
+                "doctrine BARCAN-TAG-00 accepts the current project state",
+                "Owner-role execution has unrecovered failed work",
+                "stance=refuses");
+        latticeSays(Verdict.WITHHOLD, substringOnlyWithoutCode);
+        VerdictGate.ActionProhibition substringProhibition = gate.evaluateActionProhibition(
                 project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS");
-        assertThat(blockedProhibition.prohibited()).isFalse();
+        assertThat(substringProhibition.prohibited())
+                .as("Prohibition must not trigger on prose substring alone without typed reasonCode")
+                .isFalse();
     }
 
     @Test

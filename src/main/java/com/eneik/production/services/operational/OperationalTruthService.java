@@ -223,7 +223,7 @@ public class OperationalTruthService {
             return false;
         }
         String normalized = status.toLowerCase(Locale.ROOT);
-        return !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work").contains(normalized);
+        return !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work", "undetermined").contains(normalized);
     }
 
     static double clamp(double value) {

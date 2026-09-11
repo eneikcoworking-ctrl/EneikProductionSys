@@ -3,6 +3,7 @@ package com.eneik.production.services.jules;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.AccountEntity;
+import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.RoleEntity;
@@ -58,11 +59,13 @@ class JulesDispatchServiceTest {
     private com.eneik.production.repositories.RoleRepository roleRepository;
     private com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService;
     private com.eneik.production.services.FalsificationCycleService falsificationCycleService;
+    private com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
+        systemProgressTracker = mock(com.eneik.production.services.monitor.SystemProgressTracker.class);
         julesApiClient = mock(JulesApiClient.class);
         julesSessionRepository = mock(JulesSessionRepository.class);
         julesActivityResponseRepository = mock(com.eneik.production.repositories.JulesActivityResponseRepository.class);
@@ -87,7 +90,7 @@ class JulesDispatchServiceTest {
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
-            mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+            systemProgressTracker,
             projectFlowService,
             falsificationCycleService,
             featureThreadRepository, readinessService,
@@ -3647,5 +3650,94 @@ class JulesDispatchServiceTest {
         );
 
         verify(projectFlowService).dispatchReviewFallbackTask(carrierTaskId);
+    }
+
+    // ANTI_MIRROR_TELEMETRY (D013, LYUDVIG_VITGENSHTEYN_14) / Prescription 11:
+    // systemProgressTracker must ONLY record progress on real external deliverables
+    // (dispatch to Jules, PR opened by implementer), NOT on internal audits, compilations, or reviewer completions.
+
+    @Test
+    void progressTrackerRecordsProgressOnSuccessfulDispatch() {
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setName("test-project");
+        project.setRepositoryName("repo");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
+        task.setStatus(TaskStatus.queued);
+        task.setTitle("UI Slice");
+        task.setDescription("Implement one dashboard UI slice.");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-11");
+        task.setRole(role);
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
+        when(julesApiClient.createSessionDetailed(anyString(), anyString(), anyString(), any(), anyString(), anyString()))
+                .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(roleCapabilityLoader.loadRawCharter("BARCAN-TAG-11")).thenReturn("charter");
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task);
+
+        assertTrue(result.dispatched());
+        verify(systemProgressTracker, times(1)).recordProgress();
+    }
+
+    @Test
+    void progressTrackerRecordsProgressWhenImplementerOpensPr() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.claimed);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("owner/repo");
+        task.setProject(project);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sess-imp-1");
+        session.setPrUrl("https://github.com/owner/repo/pull/42");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+        when(julesSessionRepository.claimPrOpenedWorkflow(any(), any(), any())).thenReturn(1);
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        verify(systemProgressTracker, times(1)).recordProgress();
+    }
+
+    @Test
+    void progressTrackerDoesNotRecordProgressOnReviewerCompletion() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.review);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("owner/repo");
+        task.setProject(project);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sess-rev-1");
+        session.setPrUrl("https://github.com/owner/repo/pull/42");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+        when(julesSessionRepository.claimPrOpenedWorkflow(any(), any(), any())).thenReturn(1);
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        verify(systemProgressTracker, never()).recordProgress();
     }
 }

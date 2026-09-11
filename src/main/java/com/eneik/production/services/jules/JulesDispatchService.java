@@ -188,7 +188,6 @@ public class JulesDispatchService {
 
     private void markSessionProgress(JulesSessionEntity session) {
         session.setLastProgressAt(Instant.now());
-        systemProgressTracker.recordProgress();
     }
 
     /**
@@ -1368,6 +1367,7 @@ public class JulesDispatchService {
             session.setPrUrl(detectedPr.get().url());
             session.setStatus("pr_opened");
             markSessionProgress(session);
+            systemProgressTracker.recordProgress();
             julesSessionRepository.save(session);
             log.info("Session {} for task {} had a real PR after all (found via GitHub, not the activities/status APIs) at terminal-activity reconciliation",
                     session.getExternalSessionId(), task.getId());
@@ -2164,6 +2164,7 @@ public class JulesDispatchService {
             }
             if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed) {
                 log.info("Jules session {} transitioned to pr_opened. Completing implementer phase for task {}.", session.getId(), taskId);
+                systemProgressTracker.recordProgress();
                 if (claimService.hasActiveClaim(task.getId())) {
                     claimService.complete(task.getId());
                 } else {
@@ -2199,7 +2200,6 @@ public class JulesDispatchService {
                 log.info("Jules reviewer session {} transitioned to pr_opened. Completing reviewer phase for task {}.", session.getId(), taskId);
                 if (claimService.hasActiveClaim(task.getId())) {
                     claimService.complete(task.getId());
-                    systemProgressTracker.recordProgress();
                     log.info("Task {} marked as review completed", taskId);
                 } else {
                     log.info("No active reviewer claim for task {}; leaving task status unchanged", task.getId());
@@ -2592,7 +2592,6 @@ public class JulesDispatchService {
                 claimService.complete(compilerTask.getId());
                 markSystemTaskDone(compilerTask);
             }
-            systemProgressTracker.recordProgress();
             raiseCompilerRetryCeilingIfTheProbeSurvivedAtTheBoundary(compilerTask);
             log.info("{} wishlist(s) compiled by Jules session {} into {} epic(s), {} task slice(s) total",
                     wishlists.size(), session.getExternalSessionId(), epics.size(),
@@ -2925,7 +2924,6 @@ public class JulesDispatchService {
         String cycleRejection = compilerPlanRejection(epics, wishlists.size());
         if (cycleRejection.isEmpty()) {
             projectFlowService.buildTaskGraphFromSlices(carrierTask.getProject(), wishlists, epics);
-            systemProgressTracker.recordProgress();
             log.info("Persistent compiler worker (carrier task {}): {} wishlist(s) compiled into {} epic(s), {} task slice(s) this cycle",
                     carrierTask.getId(), wishlists.size(), epics.size(),
                     epics.stream().mapToInt(e -> e.slices().size()).sum());
@@ -3063,7 +3061,6 @@ public class JulesDispatchService {
         }
         claimService.complete(carrierTask.getId());
         markSystemTaskDone(carrierTask);
-        systemProgressTracker.recordProgress();
         log.info("Persistent philosophical-audit discussion for project {} completed (carrier task {}): {} critique(s) from {} role(s)",
                 carrierTask.getProject().getId(), carrierTask.getId(), critiques.size(), activeRoleTags.size());
     }
@@ -3111,7 +3108,6 @@ public class JulesDispatchService {
         }
         claimService.complete(auditTask.getId());
         markSystemTaskDone(auditTask);
-        systemProgressTracker.recordProgress();
         log.info("Falsification audit for project {} completed by Jules session {}: {} violation(s) reported",
                 auditTask.getProject().getId(), session.getExternalSessionId(), violations.size());
     }
@@ -3151,7 +3147,6 @@ public class JulesDispatchService {
         }
         claimService.complete(auditTask.getId());
         markSystemTaskDone(auditTask);
-        systemProgressTracker.recordProgress();
         log.info("Philosophical falsification audit for project {} completed by Jules session {}: {} critique(s) reported",
                 auditTask.getProject().getId(), session.getExternalSessionId(), critiques.size());
     }
@@ -4036,7 +4031,6 @@ public class JulesDispatchService {
         }
         projectFlowService.clearReviewFallbackNullVerdictRetries(originalTask);
         taskRepository.save(originalTask);
-        systemProgressTracker.recordProgress();
         log.info("PR review fallback: task {} (PR {}) approved by Jules reviewer with {} concern(s)", originalTaskId, prUrl, verdict.concerns().size());
 
         for (ConcernEntry concern : verdict.concerns()) {
@@ -5586,6 +5580,7 @@ public class JulesDispatchService {
                     session.setPrUrl(evidence.mergedPr().url());
                     session.setStatus("pr_opened");
                     markSessionProgress(session);
+                    systemProgressTracker.recordProgress();
                     session.setForcedUnblockAttempts(0);
                     session.setBlindCycleCount(0);
                     julesSessionRepository.save(session);
@@ -5630,6 +5625,7 @@ public class JulesDispatchService {
         Optional<GitHubPullRequestService.GitHubPullRequest> opened =
                 gitHubPullRequestService.createPullRequest(task.getProject(), branch, "main", title, body);
         if (opened.isPresent()) {
+            systemProgressTracker.recordProgress();
             log.info("Task {}: auto-opened recovery PR #{} from branch {} (session {} had real evidence but never opened a PR itself)",
                     task.getId(), opened.get().number(), branch, externalSessionId);
         } else {

@@ -57,6 +57,7 @@ class OperationalTruthServiceTest {
         assertFalse(OperationalTruthService.isTrustBlockingSystemStatus("ok"));
         assertFalse(OperationalTruthService.isTrustBlockingSystemStatus("idle_no_actionable_work"));
         assertFalse(OperationalTruthService.isTrustBlockingSystemStatus("busy_with_actionable_work"));
+        assertFalse(OperationalTruthService.isTrustBlockingSystemStatus("undetermined"));
         assertTrue(OperationalTruthService.isTrustBlockingSystemStatus("content_defect"));
         assertTrue(OperationalTruthService.isTrustBlockingSystemStatus("stalled"));
     }

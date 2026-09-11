@@ -24,9 +24,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.UUID;
 
+import com.eneik.production.models.persistence.AccountEntity;
+import com.eneik.production.models.persistence.AccountStatus;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -331,6 +335,148 @@ class ContinuousOrchestrationServiceTest {
         service.continuousOrchestrate();
 
         verify(verdictObserver, times(1)).observe(activeProject.getId());
+    }
+
+    // ANTI_MIRROR_TELEMETRY (D013, LYUDVIG_VITGENSHTEYN_14) / Prescription 11:
+    // Factory self-reports must rely on genuine external deliverables (dispatch, merge),
+    // never on internal stories, polls, audits or boot timestamps.
+
+    @Test
+    void startupWithoutDeliverablesDoesNotReportOk() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectEntity activeProject = project(UUID.randomUUID(), "active-test", ProjectStatus.active);
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active))
+                .thenReturn(List.of(activeProject));
+
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        TaskEntity queuedTask = task(activeProject, TaskStatus.queued);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(activeProject.getId()))
+                .thenReturn(List.of(queuedTask));
+
+        AccountRepository accountRepository = mock(AccountRepository.class);
+        AccountEntity idleAccount = new AccountEntity();
+        idleAccount.setEnabled(true);
+        idleAccount.setStatus(AccountStatus.idle);
+        when(accountRepository.findAll()).thenReturn(List.of(idleAccount));
+
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+        SystemProgressTracker freshTracker = new SystemProgressTracker(); // startedAt=now, lastProgressAt=null
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository,
+                mock(ProjectFlowService.class),
+                accountRepository,
+                mock(JulesSessionRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class),
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                taskRepository,
+                freshTracker,
+                settingsService,
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class),
+                mock(com.eneik.production.services.verdict.AutonomousVerdictObservationService.class)
+        );
+
+        ReflectionTestUtils.invokeMethod(service, "checkForSystemStall");
+
+        verify(settingsService, times(1)).save("system_stall_status", "undetermined");
+        verify(settingsService, never()).save("system_stall_status", "ok");
+    }
+
+    @Test
+    void windowElapsedWithoutDeliverableReportsStalledEvenIfAuditsRan() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectEntity activeProject = project(UUID.randomUUID(), "active-test", ProjectStatus.active);
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active))
+                .thenReturn(List.of(activeProject));
+
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        TaskEntity queuedTask = task(activeProject, TaskStatus.queued);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(activeProject.getId()))
+                .thenReturn(List.of(queuedTask));
+
+        AccountRepository accountRepository = mock(AccountRepository.class);
+        AccountEntity idleAccount = new AccountEntity();
+        idleAccount.setEnabled(true);
+        idleAccount.setStatus(AccountStatus.idle);
+        when(accountRepository.findAll()).thenReturn(List.of(idleAccount));
+
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+        // Tracker started 60 minutes ago, no external progress recorded (internal audits/compilations don't call recordProgress)
+        SystemProgressTracker staleTracker = new SystemProgressTracker(java.time.Instant.now().minus(java.time.Duration.ofMinutes(60)));
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository,
+                mock(ProjectFlowService.class),
+                accountRepository,
+                mock(JulesSessionRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class),
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                taskRepository,
+                staleTracker,
+                settingsService,
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class),
+                mock(com.eneik.production.services.verdict.AutonomousVerdictObservationService.class)
+        );
+
+        ReflectionTestUtils.invokeMethod(service, "checkForSystemStall");
+
+        verify(settingsService, times(1)).save("system_stall_status", "stalled");
+        verify(settingsService, never()).save("system_stall_status", "ok");
+    }
+
+    @Test
+    void genuineDeliverableReportsOkWithinWindow() {
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+        SystemProgressTracker tracker = new SystemProgressTracker();
+        tracker.recordProgress(java.time.Instant.now().minus(java.time.Duration.ofMinutes(5)));
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                mock(ProjectRepository.class),
+                mock(ProjectFlowService.class),
+                mock(AccountRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class),
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                mock(TaskRepository.class),
+                tracker,
+                settingsService,
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class),
+                mock(com.eneik.production.services.verdict.AutonomousVerdictObservationService.class)
+        );
+
+        ReflectionTestUtils.invokeMethod(service, "checkForSystemStall");
+
+        verify(settingsService, times(1)).save("system_stall_status", "ok");
     }
 
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {

@@ -20,17 +20,39 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 @Service
 public class SystemProgressTracker {
-    private final AtomicReference<Instant> lastProgressAt = new AtomicReference<>(Instant.now());
+    private final Instant startedAt;
+    private final AtomicReference<Instant> lastProgressAt = new AtomicReference<>(null);
+
+    public SystemProgressTracker() {
+        this(Instant.now());
+    }
+
+    public SystemProgressTracker(Instant startedAt) {
+        this.startedAt = startedAt != null ? startedAt : Instant.now();
+    }
 
     public void recordProgress() {
         lastProgressAt.set(Instant.now());
+    }
+
+    public void recordProgress(Instant instant) {
+        lastProgressAt.set(instant);
+    }
+
+    public boolean hasProgress() {
+        return lastProgressAt.get() != null;
     }
 
     public Instant lastProgressAt() {
         return lastProgressAt.get();
     }
 
-    public Duration sinceLastProgress() {
-        return Duration.between(lastProgressAt.get(), Instant.now());
+    public Instant startedAt() {
+        return startedAt;
+    }
+
+    public java.util.Optional<Duration> sinceLastProgress() {
+        Instant at = lastProgressAt.get();
+        return at == null ? java.util.Optional.empty() : java.util.Optional.of(Duration.between(at, Instant.now()));
     }
 }

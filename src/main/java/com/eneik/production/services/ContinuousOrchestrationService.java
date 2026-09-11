@@ -41,7 +41,7 @@ public class ContinuousOrchestrationService {
     private final OperationalPolicyService operationalPolicyService;
 
     @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
-    private int stallThresholdMinutes;
+    private int stallThresholdMinutes = 45;
 
     private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
@@ -460,11 +460,14 @@ public class ContinuousOrchestrationService {
      */
     private void checkForSystemStall() {
         try {
-            long minutesSinceProgress = java.time.Duration.between(
-                    systemProgressTracker.lastProgressAt(), java.time.Instant.now()).toMinutes();
-            if (minutesSinceProgress < stallThresholdMinutes) {
-                setSystemStatus("ok");
-                return;
+            Instant lastProgress = systemProgressTracker.lastProgressAt();
+            if (lastProgress != null) {
+                long minutesSinceProgress = java.time.Duration.between(
+                        lastProgress, java.time.Instant.now()).toMinutes();
+                if (minutesSinceProgress < stallThresholdMinutes) {
+                    setSystemStatus("ok");
+                    return;
+                }
             }
 
             SystemWorkSnapshot work = systemWorkSnapshot();
@@ -477,34 +480,43 @@ public class ContinuousOrchestrationService {
                     .anyMatch(a -> a.isEnabled() && a.getStatus() == com.eneik.production.models.persistence.AccountStatus.idle);
 
             if (idleCapacityExists) {
-                log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes with actionable work present: {}.", minutesSinceProgress, work.describe());
-                setSystemStatus("stalled");
+                boolean isStalled = lastProgress != null
+                        || systemProgressTracker.startedAt().plus(java.time.Duration.ofMinutes(stallThresholdMinutes)).isBefore(java.time.Instant.now());
+                if (isStalled) {
+                    long minutesSinceProgress = lastProgress != null
+                            ? java.time.Duration.between(lastProgress, java.time.Instant.now()).toMinutes()
+                            : java.time.Duration.between(systemProgressTracker.startedAt(), java.time.Instant.now()).toMinutes();
+                    log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes with actionable work present: {}.", minutesSinceProgress, work.describe());
+                    setSystemStatus("stalled");
 
-                if (branchGarbageCollectorService != null && work.reviewTasksWithPr() > 0) {
-                    List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
-                    for (ProjectEntity project : activeProjects) {
-                        List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
-                        for (TaskEntity t : reviewTasks) {
-                            var prOpt = julesSessionRepository.findByTaskId(t.getId()).stream()
-                                    .filter(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank())
-                                    .findFirst();
-                            if (prOpt.isPresent()) {
-                                String prUrl = prOpt.get().getPrUrl();
-                                String prNumStr = prUrl.substring(prUrl.lastIndexOf("/") + 1);
-                                try {
-                                    int prNum = Integer.parseInt(prNumStr);
-                                    String branch = gitHubPullRequestService.fetchPullRequestByNumber(project, prNum)
-                                            .map(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::headRef)
-                                            .orElse(null);
-                                    branchGarbageCollectorService.retireAbandonedBranchAndPR(project, t, branch, prNum, "System Stall auto-recovery (> " + minutesSinceProgress + "m idle)");
-                                } catch (Exception ex) {
-                                    log.warn("Continuous Orchestration: Failed to parse/retire PR #{} for task {}: {}", prNumStr, t.getId(), ex.getMessage());
+                    if (branchGarbageCollectorService != null && work.reviewTasksWithPr() > 0) {
+                        List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+                        for (ProjectEntity project : activeProjects) {
+                            List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
+                            for (TaskEntity t : reviewTasks) {
+                                var prOpt = julesSessionRepository.findByTaskId(t.getId()).stream()
+                                        .filter(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank())
+                                        .findFirst();
+                                if (prOpt.isPresent()) {
+                                    String prUrl = prOpt.get().getPrUrl();
+                                    String prNumStr = prUrl.substring(prUrl.lastIndexOf("/") + 1);
+                                    try {
+                                        int prNum = Integer.parseInt(prNumStr);
+                                        String branch = gitHubPullRequestService.fetchPullRequestByNumber(project, prNum)
+                                                .map(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::headRef)
+                                                .orElse(null);
+                                        branchGarbageCollectorService.retireAbandonedBranchAndPR(project, t, branch, prNum, "System Stall auto-recovery (> " + minutesSinceProgress + "m idle)");
+                                    } catch (Exception ex) {
+                                        log.warn("Continuous Orchestration: Failed to parse/retire PR #{} for task {}: {}", prNumStr, t.getId(), ex.getMessage());
+                                    }
                                 }
                             }
                         }
+                    } else {
+                        log.warn("SYSTEM STALLED: Branch Garbage Collector not triggered because no review task with a PR URL is actionable.");
                     }
                 } else {
-                    log.warn("SYSTEM STALLED: Branch Garbage Collector not triggered because no review task with a PR URL is actionable.");
+                    setSystemStatus("undetermined");
                 }
             } else {
                 List<com.eneik.production.models.persistence.AccountEntity> operational = accountRepository.findAll().stream()
@@ -516,7 +528,7 @@ public class ContinuousOrchestrationService {
                             disabledCount, work.describe());
                     setSystemStatus("stalled");
                 } else {
-                    setSystemStatus("busy_with_actionable_work");
+                    setSystemStatus(lastProgress == null ? "undetermined" : "busy_with_actionable_work");
                 }
             }
         } catch (Exception e) {

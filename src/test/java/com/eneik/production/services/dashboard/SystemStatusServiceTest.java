@@ -841,4 +841,103 @@ class SystemStatusServiceTest {
         verify(wishlists, never()).findAll();
         verify(wishlists, never()).findAllByOrderByCreatedAtDesc();
     }
+
+    // ANTI_MIRROR_TELEMETRY (D013, LYUDVIG_VITGENSHTEYN_14) / Prescription 11:
+    // systemHealth must never report ok at boot time or when lastProgressAt is null,
+    // and undetermined must not count as an operational blocker.
+
+    @Test
+    void systemHealthReportsUndeterminedWhenNoProgressRecordedEvenIfSettingsSayOk() throws Exception {
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveValue("system_stall_status")).thenReturn("ok");
+        SystemProgressTracker tracker = new SystemProgressTracker(); // null lastProgressAt
+
+        SystemStatusService service = newServiceWithProgress(settings, tracker);
+        Method method = SystemStatusService.class.getDeclaredMethod("systemHealth");
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> health = (Map<String, Object>) method.invoke(service);
+
+        assertThat(health).containsEntry("status", "undetermined");
+        assertThat(health.get("lastProgressAt")).isNull();
+        assertThat(health.get("minutesSinceProgress")).isNull();
+    }
+
+    @Test
+    void systemHealthReportsOkWhenGenuineProgressRecorded() throws Exception {
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveValue("system_stall_status")).thenReturn("ok");
+        SystemProgressTracker tracker = new SystemProgressTracker();
+        tracker.recordProgress(Instant.now().minus(java.time.Duration.ofMinutes(3)));
+
+        SystemStatusService service = newServiceWithProgress(settings, tracker);
+        Method method = SystemStatusService.class.getDeclaredMethod("systemHealth");
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> health = (Map<String, Object>) method.invoke(service);
+
+        assertThat(health).containsEntry("status", "ok");
+        assertThat(health.get("lastProgressAt")).isNotNull();
+        assertThat(health.get("minutesSinceProgress")).isEqualTo(3L);
+    }
+
+    @Test
+    void operationalBlockersDoesNotTreatUndeterminedAsBlocker() throws Exception {
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveValue("system_stall_status")).thenReturn("undetermined");
+        GitHubApiBudgetService github = mock(GitHubApiBudgetService.class);
+        when(github.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
+                "ok", true, null, null, null, null, null, null, "", "", Instant.now(), Map.of()));
+
+        SystemStatusService service = new SystemStatusService(
+                settings,
+                mock(AccountRepository.class),
+                mock(TaskRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                mock(ProjectRepository.class),
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                github,
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
+
+        Method method = SystemStatusService.class.getDeclaredMethod("operationalBlockers", UUID.class);
+        method.setAccessible(true);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> blockers = (Map<String, Object>) method.invoke(service, (UUID) null);
+
+        assertThat(blockers).containsEntry("status", "ok");
+        assertThat(blockers).containsEntry("count", 0);
+    }
+
+    private SystemStatusService newServiceWithProgress(SystemSettingsService settings, SystemProgressTracker progressTracker) {
+        return new SystemStatusService(
+                settings,
+                mock(AccountRepository.class),
+                mock(TaskRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                mock(ProjectRepository.class),
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                mock(GitHubApiBudgetService.class),
+                progressTracker,
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                mock(SixSigmaAuditService.class));
+    }
 }

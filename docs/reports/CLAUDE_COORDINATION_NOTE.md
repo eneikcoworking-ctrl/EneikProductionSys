@@ -630,8 +630,51 @@
   - `ProjectFlowServiceTest` (19/19): подтверждение корректной раздачи и фильтрации задач.
   - Регрессия: `EmsMetricsServiceTest` (6/6), `DoctrineVerdictLayerTest` (7/7), `InfrastructureVerdictLayerTest` (8/8), `AccountHealthServiceTest` (25/25), `AutonomousVerdictObservationServiceTest` (6/6).
 
+**Закрыто (Такт 32):** Снятие остаточного строкового условия в Предписании 9 и полная реализация Предписания 11 (`SystemStatusService` / `SystemProgressTracker` — `ANTI_MIRROR_TELEMETRY` / D013, `LYUDVIG_VITGENSHTEYN_14`):
+- **Снятие строкового остатка в `VerdictGate.java` (Предписание 9 finish, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):**
+  - Удалено запасное условие `|| (j.reason() != null && j.reason().contains("unrecovered failed work"))`.
+  - Запрет `DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION` теперь срабатывает строго и исключительно по типизированному коду `"UNRECOVERED_FAILED_WORK".equals(j.reasonCode())`.
+  - В `VerdictGateTest` добавлен заслон `doctrineRefusalUsesReasonCodeNotSubstring`: совпадение подстроки в тексте отказа без `reasonCode` явно не активирует запрет.
+- **Фиксация статуса `T1_TOC_SUBORDINATION` на сервере (Предписание 10 follow-up):**
+  - Подтверждено живым логом: в 15:45:36 T1 был поднят `soft_gate -> hard_gate` на старом коде (на тех же 702 наблюдениях).
+  - При следующей сборке на Hetzner рекомендуется единовременный откат T1 до `warn_only` (`UPDATE lever_states SET state='warn_only', promoted_at=NOW() WHERE lever_id='T1_TOC_SUBORDINATION'`), чтобы он набрал честные 3 ступени на независимых свежих пакетах по $\ge 20$ наблюдений, как того требует закон `ELVIN_GOLDMAN_21`.
+- **Ликвидация ложного прогресса от служебного саморазговора (`ANTI_MIRROR_TELEMETRY` / D013, `LYUDVIG_VITGENSHTEYN_14`, Предписание 11):**
+  - **Дефект 1 (фабричный рассказ о себе как прогресс потока):**
+    - `markSessionProgress(session)` отвязан от `systemProgressTracker.recordProgress()`. Он обновляет только локальный `session.setLastProgressAt(Instant.now())` для защиты от тайм-аута сеанса.
+    - Вызовы `recordProgress()` вычищены из всех внутренних служебных циклов фабрики: компиляция вишлистов (`completeWishlistCompilation`, `completePersistentCompilerCycle`), философские и фальсификационные аудиты (`completePersistentPhilosophicalAuditCycle`, `completeFalsificationAudit`, `completePhilosophicalAudit`), закрытие ретраев ревьюера (`clearReviewFallbackNullVerdictRetries`), опросы активности и повторные сообщения Jules.
+    - Прогресс теперь продвигается **исключительно внешними проверяемыми результатами**:
+      1. Успешная внешняя раздача задачи исполнителю Jules (`JulesDispatchService.dispatch`).
+      2. Открытие PR исполнителем (`handlePrOpenedWorkflowClaimed` для `TaskStatus.claimed`).
+      3. Обнаружение реального PR на GitHub при терминальной сверке (`handleTerminalActivityWithoutDeliverable`).
+      4. Обнаружение смерженного PR на GitHub при аварийной сверке (`hasNewProgressOnGitHub`).
+      5. Автоматическое открытие аварийного PR на GitHub из оставленной ветки (`openRecoveryPullRequest`).
+      6. Успешное слияние PR на GitHub (`AutoMergeService.recordSuccessfulMerge`).
+      7. Переход сессии в статус `pr_opened` по факту появления PR на GitHub (`AutoMergeService.trackPullRequests`).
+  - **Дефект 2 (ложный «ок» из небытия при старте JVM):**
+    - В `SystemProgressTracker` `lastProgressAt` теперь инициализируется строго `null` (не подменяется моментом старта JVM). Добавлены методы `hasProgress()`, `startedAt()`, `Optional<Duration> sinceLastProgress()`.
+    - В `ContinuousOrchestrationService.checkForSystemStall` при `lastProgressAt == null`: статус устанавливается в `"undetermined"` (а при истечении окна `stallThresholdMinutes` от `startedAt` при наличии незанятых мощностей и открытых задач — честный `"stalled"`, а не ложный `"ok"`).
+    - В `SystemStatusService.systemHealth`: безопасная обработка `null` без NPE (`lastProgressAt: null`, `minutesSinceProgress: null`), статус при отсутствии реального выхода — `"undetermined"`.
+    - Статус `"undetermined"` зарегистрирован как безопасный (non-blocking) в `SystemStatusService.operationalBlockers`, `FlowSpineService.isTrustBlockingSystemStatus` и `OperationalTruthService.isTrustBlockingSystemStatus`, что предотвращает циклическую самоблокировку диспетчера на холодном старте.
+- **Заслоняющие тесты (211/211 green в изолированном контейнере Maven):**
+  - `SystemProgressTrackerTest` (3/3): холодный старт без прогресса, запись прогресса меткой времени, фиксация окна.
+  - `ContinuousOrchestrationServiceTest` (6/6):
+    - `startupWithoutDeliverablesDoesNotReportOk`: холодный старт с задачами и свободными мощностями сохраняет статус `undetermined`, не допуская `ok`.
+    - `windowElapsedWithoutDeliverableReportsStalledEvenIfAuditsRan`: истечение окна без внешних результатов (даже при активных аудитах) выставляет `stalled`, не допуская `ok`.
+    - `genuineDeliverableReportsOkWithinWindow`: только реальный внешний результат переводит статус в `ok`.
+  - `SystemStatusServiceTest` (19/19):
+    - `systemHealthReportsUndeterminedWhenNoProgressRecordedEvenIfSettingsSayOk`: отсутствие реального выхода переопределяет остаточный `ok` в настройках в `undetermined`.
+    - `systemHealthReportsOkWhenGenuineProgressRecorded`: реальный прогресс возвращает `ok`.
+    - `operationalBlockersDoesNotTreatUndeterminedAsBlocker`: статус `undetermined` не парализует поток блокировщиками.
+  - `JulesDispatchServiceTest` (100/100):
+    - `progressTrackerRecordsProgressOnSuccessfulDispatch`: успешная раздача продвигает трекер.
+    - `progressTrackerRecordsProgressWhenImplementerOpensPr`: открытие PR исполнителем продвигает трекер.
+    - `progressTrackerDoesNotRecordProgressOnReviewerCompletion`: завершение ревьюера не продвигает трекер.
+  - `VerdictGateTest` (14/14): строгая проверка типизированного `reasonCode`.
+  - Регрессионный прогон: `AutoMergeServiceTest` (23/23), `FlowSpineServiceTest` (25/25), `OperationalTruthServiceTest` (17/17).
+
 **В работе дальше:**
-- Синхронизация с Клодом по верификации Предписания 10 и выбор следующего предписания очереди `FACTORY_MECHANISMS.md` (Ступень 2: пункты 11, 24).
+- Синхронизация с Клодом по приёмке Предписания 11 и выбор следующего предписания (Предписание 24 — `OperationalPolicyService` / детерминированные пороги или Предписание 12).
+
 
 
 
