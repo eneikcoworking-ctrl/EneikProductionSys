@@ -124,6 +124,43 @@ class LeverPromotionServiceTest {
         assertEquals(LeverStage.WARN_ONLY.wireValue(), captor.getValue().getCurrentStage());
     }
 
+    // ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS (D010) / Prescription 10:
+    // Trust/authority requires accumulated fresh evidence since the last promotion.
+    // Two evaluations in a row without new observations must NOT promote twice.
+    @Test
+    void twoEvaluationsInARowWithoutNewObservationsDoNotPromoteTwice() {
+        LeverPromotionStateEntity state = new LeverPromotionStateEntity();
+        state.setLeverKey("STABLE_LEVER");
+        state.setCurrentStage(LeverStage.OBSERVE_ONLY.wireValue());
+        when(stateRepository.findAll()).thenReturn(List.of(state));
+
+        Instant baseTime = Instant.now().minusSeconds(300);
+        List<LeverObservation> initialObservations = observationsWithAgreement(25, "TRUE");
+        for (LeverObservation o : initialObservations) {
+            o.setObservedAt(baseTime);
+        }
+
+        when(observationRepository.findByLeverKeyAndObservedAtAfterOrderByObservedAtAsc(eqLeverKey("STABLE_LEVER"), any()))
+                .thenAnswer(inv -> {
+                    Instant since = inv.getArgument(1);
+                    return initialObservations.stream()
+                            .filter(o -> o.getObservedAt().isAfter(since))
+                            .toList();
+                });
+
+        // First evaluation: promotes observe_only -> warn_only because 25 samples > 20 threshold
+        service.evaluatePromotions();
+        assertEquals(LeverStage.WARN_ONLY.wireValue(), state.getCurrentStage());
+        Instant firstPromotionTime = state.getPromotedAt();
+        org.junit.jupiter.api.Assertions.assertNotNull(firstPromotionTime);
+
+        // Second evaluation: no new observations occurred after firstPromotionTime.
+        // Must NOT promote to soft_gate on the same old 25 observations!
+        service.evaluatePromotions();
+        assertEquals(LeverStage.WARN_ONLY.wireValue(), state.getCurrentStage(),
+                "Must NOT promote to next stage without fresh evidence gathered after last promotion (ELVIN_GOLDMAN_21)");
+    }
+
     private static String eqLeverKey(String key) {
         return org.mockito.ArgumentMatchers.eq(key);
     }

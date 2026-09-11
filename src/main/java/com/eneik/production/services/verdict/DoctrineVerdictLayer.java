@@ -86,6 +86,7 @@ public class DoctrineVerdictLayer implements VerdictLayer {
                 // outstanding objection is a withheld permission, not a note.
                 case "refuses", "objects" ->
                         judgements.add(Judgement.withhold(layerName(), proposition,
+                                role.objectionCode(),
                                 objection.isBlank() ? stance : objection, evidence));
                 default ->
                         judgements.add(Judgement.abstain(layerName(), proposition,

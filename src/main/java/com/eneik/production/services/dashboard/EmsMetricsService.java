@@ -285,6 +285,7 @@ public class EmsMetricsService {
         double confidence = confidence(ownerTotal, ownerDone, gatePassed, sourceTotal, hasEvidence);
         String kanoPressure = kanoPressure(profile, stance);
         String topObjection = topObjection(stance, sourcePending, ownerOpen, ownerOpenBlocked, ownerUnrecoveredFailed, openDefectWork);
+        String objectionCode = topObjectionCode(stance, sourcePending, ownerOpen, ownerOpenBlocked, ownerUnrecoveredFailed, openDefectWork);
 
         return new EmsDashboardMetricsDto.RoleDoctrineVerdict(
                 profile.roleTag(),
@@ -296,6 +297,7 @@ public class EmsMetricsService {
                 kanoPressure,
                 profile.cynefinBias(),
                 topObjection,
+                objectionCode,
                 sourcePending,
                 sourceTotal,
                 ownerTotal,
@@ -777,6 +779,28 @@ public class EmsMetricsService {
             return "Execution work is still open; role is close but not fully satisfied.";
         }
         return "No open doctrine objection is visible in the current project evidence.";
+    }
+
+    private String topObjectionCode(String stance, long sourcePending, long ownerOpen, long ownerBlocked, long ownerUnrecoveredFailed, long openDefectWork) {
+        if ("unknown".equals(stance)) {
+            return "NO_EVIDENCE";
+        }
+        if (ownerUnrecoveredFailed > 0) {
+            return "UNRECOVERED_FAILED_WORK";
+        }
+        if (sourcePending > 0) {
+            return "PENDING_SOURCE_OBJECTIONS";
+        }
+        if (ownerBlocked > 0) {
+            return "BLOCKED_WORK";
+        }
+        if (openDefectWork > 0) {
+            return "OPEN_DEFECT_WORK";
+        }
+        if (ownerOpen > 0) {
+            return "OPEN_EXECUTION_WORK";
+        }
+        return "NONE";
     }
 
     private boolean isSameTask(TaskEntity a, TaskEntity b) {

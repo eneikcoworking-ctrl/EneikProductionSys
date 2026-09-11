@@ -267,6 +267,13 @@ public class ProjectFlowService {
         this.self = self;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.verdict.VerdictGate verdictGate;
+
+    public void setVerdictGate(com.eneik.production.services.verdict.VerdictGate verdictGate) {
+        this.verdictGate = verdictGate;
+    }
+
     /**
      * Law 25a (Clean Project Admission Law):
      * dom(admit) = { w : content(w) != empty }
@@ -5976,6 +5983,16 @@ public class ProjectFlowService {
                 .toList();
 
         for (TaskEntity task : queuedTasks) {
+            if (verdictGate != null) {
+                com.eneik.production.services.verdict.VerdictGate.ActionProhibition p =
+                        verdictGate.evaluateTaskProhibition(project, task);
+                if (p.prohibited()) {
+                    log.info("VerdictGate: skipping dispatch of regular task {} under rule {}: {}",
+                            task.getId(), p.ruleName(), p.explanation());
+                    continue;
+                }
+            }
+
             if (task.getTargetContext() == null || task.getTargetContext() == TargetContext.UNDETERMINED) {
                 log.warn("Task {} has undetermined targetContext; skipping dispatch until target context is resolved", task.getId());
                 task.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");

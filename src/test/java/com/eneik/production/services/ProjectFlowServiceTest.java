@@ -508,6 +508,7 @@ class ProjectFlowServiceTest {
         dependent.setId(UUID.randomUUID());
         dependent.setProject(project);
         dependent.setStatus(TaskStatus.queued);
+        dependent.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
         dependent.setDependsOn(dependency);
         when(taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued))
                 .thenReturn(java.util.List.of(dependent));

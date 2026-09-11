@@ -53,6 +53,7 @@ public record EmsDashboardMetricsDto(
             String kanoPressure,
             String cynefinBias,
             String topObjection,
+            String objectionCode,
             long sourceWishlistPending,
             long sourceWishlistTotal,
             long ownerTasksTotal,
@@ -61,7 +62,37 @@ public record EmsDashboardMetricsDto(
             long ownerTasksDone,
             long defectWork,
             List<String> evidence
-    ) {}
+    ) {
+        public RoleDoctrineVerdict(
+                String roleTag,
+                String doctrineName,
+                String doctrineFocus,
+                String stance,
+                double satisfactionScore,
+                double confidence,
+                String kanoPressure,
+                String cynefinBias,
+                String topObjection,
+                long sourceWishlistPending,
+                long sourceWishlistTotal,
+                long ownerTasksTotal,
+                long ownerTasksOpen,
+                long ownerTasksBlocked,
+                long ownerTasksDone,
+                long defectWork,
+                List<String> evidence
+        ) {
+            this(roleTag, doctrineName, doctrineFocus, stance, satisfactionScore, confidence,
+                    kanoPressure, cynefinBias, topObjection, "", sourceWishlistPending,
+                    sourceWishlistTotal, ownerTasksTotal, ownerTasksOpen, ownerTasksBlocked,
+                    ownerTasksDone, defectWork, evidence);
+        }
+
+        @Override
+        public String objectionCode() {
+            return objectionCode != null ? objectionCode : "";
+        }
+    }
 
     public record RoleKpi(
             String roleTag,

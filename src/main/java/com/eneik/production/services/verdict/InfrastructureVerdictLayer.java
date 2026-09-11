@@ -115,6 +115,7 @@ public class InfrastructureVerdictLayer implements VerdictLayer {
             // is not answering, and that fact is what makes any downstream verdict a claim about the
             // factory instead of about the product.
             return Judgement.withhold(layerName(), proposition,
+                    "INFRASTRUCTURE_PROBE_FAILED",
                     "not answering (" + e.getMessage() + "), so " + consequence + " and any verdict formed "
                             + "now would describe the factory rather than the product",
                     probe);
@@ -128,7 +129,7 @@ public class InfrastructureVerdictLayer implements VerdictLayer {
                     + "B, bloat " + health.bloatRatio();
             return health.healthy()
                     ? Judgement.permit(layerName(), PROPOSITION_DATABASE, evidence)
-                    : Judgement.withhold(layerName(), PROPOSITION_DATABASE, health.assessment(), evidence);
+                    : Judgement.withhold(layerName(), PROPOSITION_DATABASE, "DATABASE_UNHEALTHY", health.assessment(), evidence);
         } catch (RuntimeException e) {
             // Being unable to assess health is not the same as finding it bad.
             return Judgement.abstain(layerName(), PROPOSITION_DATABASE,

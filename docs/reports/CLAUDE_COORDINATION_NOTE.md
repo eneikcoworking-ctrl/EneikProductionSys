@@ -604,7 +604,34 @@
     - `closedDefectWorkDoesNotTriggerDefectWorkObjection`: закрытая дефектная работа не препятствует удовлетворению.
   - `AccountHealthServiceTest` (25/25): верификация расчёта порога монополии и жизненного цикла.
 
+**Закрыто (Такт 31):** Доводка Предписания 9 (устранение самоблокировки через исключение восстановительной работы, машиночитаемые коды причин) и реализация Предписания 10 (`FACTORY_MECHANISMS.md`, раздел XVI §10 — пакетное продвижение ступеней рычагов TOC strictly по свежим наблюдениям):
+- **Устранение самоблокировки запрета восстановления (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006):**
+  - Ранее правило `DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION` блокировало `DISPATCH_QUEUED_TASKS`. Но восстановительные задачи (`ems_defect_work`, `retryCount > 0`, `is_recovery`) раздаются через этот же поток `DISPATCH_QUEUED_TASKS`, что запирало их раздачу и делало запрет самоблокирующимся.
+  - В `ActionProhibition` введен флаг `exemptsRecoveryWork` и фабричный метод `deniedWithRecoveryExemption`.
+  - Метод `allowsTask(boolean isRecoveryTask)`: если запрет имеет `exemptsRecoveryWork == true`, восстановительные задачи разрешаются к раздаче, в то время как обычные продуктовые задачи и расширение фич блокируются.
+  - В `VerdictGate` добавлен метод `evaluateTaskProhibition(ProjectEntity, TaskEntity)` с детекцией `isRecoveryTask(task)` по `retryCount > 0`, `ems_defect_work` или payload-атрибутам `is_recovery`.
+  - В `OperationalPolicyService.authorize`: если запрет имеет `exemptsRecoveryWork == true`, действие `DISPATCH_QUEUED_TASKS` на уровне проекта пропускается к выполнению раздаточного цикла, а селективная фильтрация задач осуществляется в `ProjectFlowService.dispatchQueuedTasks` через `verdictGate.evaluateTaskProhibition`.
+- **Ликвидация классификации по подстрокам текста (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):**
+  - Введена строгая машиночитаемая типизация причин отказов (`reasonCode` в `Judgement`, `objectionCode` в `RoleDoctrineVerdict` и детерминированный `topObjectionCode` в `EmsMetricsService`: `UNRECOVERED_FAILED_WORK`, `BLOCKED_WORK`, `OPEN_DEFECT_WORK` и др.).
+  - Запрет `DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION` в `VerdictGate` теперь сопоставляется строго по коду `"UNRECOVERED_FAILED_WORK".equals(j.reasonCode())`, а не по хрупкому совпадению подстрок `contains("unrecovered failed work")`.
+- **Пакетное продвижение ступеней рычагов по накопленным свидетельствам (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010, Предписание 10):**
+  - Диагностика: на живой фабрике `T1_TOC_SUBORDINATION` был поднят в 11:45 (`observe_only -> warn_only`) и в 13:45 (`warn_only -> soft_gate`) на тех же самых 702 наблюдениях и 80.05% согласия, потому что `evaluateOne` раз в 2 часа брал окно 14 дней без учёта момента прошлого подъёма (`promotedAt` сохранялся, но не читался).
+  - В `LeverPromotionService.evaluateOne`: окно анализа ограничено снизу `evidenceSince = (state.getPromotedAt() != null && state.getPromotedAt().isAfter(since)) ? state.getPromotedAt() : since`.
+  - Каждая последующая ступень лестницы доверия требует отдельного свежего пакета из $\ge 20$ наблюдений, накопленных строго *после* предыдущего перехода.
+  - Сохранено свойство асимметричности доверия: немедленное понижение при первом же расхождении (`agreementRate < threshold`).
+- **Заслоняющие тесты (114/114 green в изолированном контейнере Maven):**
+  - `VerdictGateTest` (14/14):
+    - `doctrineRefusalUsesReasonCodeNotSubstring`: фальсифицирует матчинг запрета строго по `reasonCode`; произвольный текст без валидного кода отвергается.
+    - `doctrineUnrecoveredFailureProhibitionExemptsRecoveryWorkAndPermitsItsDispatch`: запрет блокирует `DISPATCH_QUEUED_TASKS` для обычных задач, но восстановительная задача (`retryCount > 0`, payload `ems_defect_work`) разрешена к раздаче.
+  - `OperationalPolicyServiceTest` (17/17):
+    - `verdictGateProhibitionWithRecoveryExemptionAllowsDispatchCycle`: проектная политика разрешает шаг раздачи для запуска цикла при наличии льготы на восстановление.
+  - `LeverPromotionServiceTest` (13/13):
+    - `twoEvaluationsInARowWithoutNewObservationsDoNotPromoteTwice`: две последовательные оценки без новых наблюдений дают ровно 1 подъём, второй подъём отвергается из-за отсутствия свежих свидетельств после `promotedAt`.
+  - `ProjectFlowServiceTest` (19/19): подтверждение корректной раздачи и фильтрации задач.
+  - Регрессия: `EmsMetricsServiceTest` (6/6), `DoctrineVerdictLayerTest` (7/7), `InfrastructureVerdictLayerTest` (8/8), `AccountHealthServiceTest` (25/25), `AutonomousVerdictObservationServiceTest` (6/6).
+
 **В работе дальше:**
-- Синхронизация с Клодом по результатам применения Предписания 9 и дальнейшим пунктам очереди `FACTORY_MECHANISMS.md` (Ступень 2: пункты 10, 11, 24).
+- Синхронизация с Клодом по верификации Предписания 10 и выбор следующего предписания очереди `FACTORY_MECHANISMS.md` (Ступень 2: пункты 11, 24).
+
 
 

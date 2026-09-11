@@ -306,4 +306,26 @@ class OperationalPolicyServiceTest {
         OperationalPolicyService.OperationalDecision allowedDecision = policyService.authorize(core, OperationalAction.DISPATCH_QUEUED_TASKS);
         assertTrue(allowedDecision.allowed());
     }
+
+    @Test
+    void verdictGateProhibitionWithRecoveryExemptionAllowsDispatchCycle() {
+        com.eneik.production.services.verdict.VerdictGate verdictGate = mock(com.eneik.production.services.verdict.VerdictGate.class);
+        OperationalPolicyService policyService = new OperationalPolicyService(
+                mock(OperationalFlowCoreService.class), verdictGate);
+
+        FlowCoreDto core = core("QUEUED", "active", 2, 0, 0, 1, 0);
+
+        // When gate prohibits with recovery exemption (DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION)
+        when(verdictGate.evaluateActionProhibition(any(), eq("DISPATCH_QUEUED_TASKS")))
+                .thenReturn(com.eneik.production.services.verdict.VerdictGate.ActionProhibition.deniedWithRecoveryExemption(
+                        "doctrine",
+                        "doctrine BARCAN-TAG-00 accepts the current project state",
+                        "DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION",
+                        "Owner-role execution has unrecovered failed work"
+                ));
+
+        // OperationalPolicyService allows DISPATCH_QUEUED_TASKS through so recovery tasks can be dispatched
+        OperationalPolicyService.OperationalDecision decision = policyService.authorize(core, OperationalAction.DISPATCH_QUEUED_TASKS);
+        assertTrue(decision.allowed(), "DISPATCH_QUEUED_TASKS must not be blocked globally when prohibition exempts recovery work");
+    }
 }

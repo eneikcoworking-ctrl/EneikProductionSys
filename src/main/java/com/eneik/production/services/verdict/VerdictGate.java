@@ -1,6 +1,7 @@
 package com.eneik.production.services.verdict;
 
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -119,15 +120,32 @@ public class VerdictGate {
             String layer,
             String proposition,
             String ruleName,
-            String explanation
+            String explanation,
+            boolean exemptsRecoveryWork
     ) {
+        public ActionProhibition(boolean prohibited, String layer, String proposition, String ruleName, String explanation) {
+            this(prohibited, layer, proposition, ruleName, explanation, false);
+        }
+
         public static ActionProhibition permitted() {
-            return new ActionProhibition(false, "", "", "", "Action is permitted by verdict gate");
+            return new ActionProhibition(false, "", "", "", "Action is permitted by verdict gate", false);
         }
 
         public static ActionProhibition denied(String layer, String proposition, String ruleName, String reason) {
             return new ActionProhibition(true, layer, proposition, ruleName,
-                    "Action denied by " + layer + " layer [" + ruleName + "]: " + proposition + " - " + reason);
+                    "Action denied by " + layer + " layer [" + ruleName + "]: " + proposition + " - " + reason, false);
+        }
+
+        public static ActionProhibition deniedWithRecoveryExemption(String layer, String proposition, String ruleName, String reason) {
+            return new ActionProhibition(true, layer, proposition, ruleName,
+                    "Action denied by " + layer + " layer [" + ruleName + "]: " + proposition + " - " + reason, true);
+        }
+
+        public boolean allowsTask(boolean isRecoveryTask) {
+            if (!prohibited) {
+                return true;
+            }
+            return exemptsRecoveryWork && isRecoveryTask;
         }
     }
 
@@ -135,10 +153,18 @@ public class VerdictGate {
      * Evaluates actionable prohibitions per proposition rule with verified inputs rather than a blanket advance block.
      *
      * @param project the project under evaluation
-     * @param action the operational action to evaluate (e.g. DISPATCH_QUEUED_TASKS, EXPAND_FEATURE)
+     * @param action the operational action to evaluate (e.g. DISPATCH_QUEUED_TASKS, EXPAND_FEATURE, ORCHESTRATE)
      * @return ActionProhibition indicating whether the action is forbidden, with rule name and explainable reason
      */
     public ActionProhibition evaluateActionProhibition(ProjectEntity project, String action) {
+        return evaluateActionProhibition(project, action, false);
+    }
+
+    /**
+     * Evaluates actionable prohibitions, allowing explicit exemption for recovery work so that prohibitions do
+     * not lock their own recovery path (D006 / PROHIBITION_AS_CODE).
+     */
+    public ActionProhibition evaluateActionProhibition(ProjectEntity project, String action, boolean isRecoveryWork) {
         if (project == null || !activeFor(project)) {
             return ActionProhibition.permitted();
         }
@@ -164,11 +190,22 @@ public class VerdictGate {
                     );
                 }
                 // Rule 2: Doctrine unrecovered failure prohibition (DZHOZEF_RAZ_01_PROHIBITION_AS_CODE):
-                // If doctrine layer refuses because of active unrecovered failed work, deny feature expansion or dispatch.
-                if ("doctrine".equalsIgnoreCase(j.layer())
-                        && ("DISPATCH_QUEUED_TASKS".equalsIgnoreCase(action) || "EXPAND_FEATURE".equalsIgnoreCase(action))
-                        && j.reason() != null && j.reason().contains("unrecovered failed work")) {
-                    return ActionProhibition.denied(
+                // If doctrine layer refuses because of active unrecovered failed work, deny feature expansion
+                // (ORCHESTRATE / EXPAND_FEATURE) and regular task dispatch, BUT EXPLICITLY EXEMPT recovery work
+                // so that the failure can be repaired and the prohibition lifted (preventing self-locking).
+                boolean isUnrecoveredDoctrineFailure = "doctrine".equalsIgnoreCase(j.layer())
+                        && ("UNRECOVERED_FAILED_WORK".equals(j.reasonCode())
+                                || (j.reason() != null && j.reason().contains("unrecovered failed work")));
+                if (isUnrecoveredDoctrineFailure
+                        && ("DISPATCH_QUEUED_TASKS".equalsIgnoreCase(action)
+                                || "EXPAND_FEATURE".equalsIgnoreCase(action)
+                                || "ORCHESTRATE".equalsIgnoreCase(action))) {
+                    if (isRecoveryWork && "DISPATCH_QUEUED_TASKS".equalsIgnoreCase(action)) {
+                        // Recovery work is explicitly exempted from prohibition: recovery tasks must be dispatched
+                        // to resolve the failure.
+                        continue;
+                    }
+                    return ActionProhibition.deniedWithRecoveryExemption(
                             j.layer(),
                             j.proposition(),
                             "DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION",
@@ -182,6 +219,34 @@ public class VerdictGate {
                     project.getId(), e.getMessage());
             return ActionProhibition.permitted();
         }
+    }
+
+    /**
+     * Evaluates task-specific prohibition: recovery tasks are explicitly allowed to dispatch even when
+     * DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION is active on the project.
+     */
+    public ActionProhibition evaluateTaskProhibition(ProjectEntity project, TaskEntity task) {
+        boolean isRecovery = isRecoveryTask(task);
+        return evaluateActionProhibition(project, "DISPATCH_QUEUED_TASKS", isRecovery);
+    }
+
+    public boolean isRecoveryTask(TaskEntity task) {
+        if (task == null) {
+            return false;
+        }
+        if (task.getRetryCount() > 0) {
+            return true;
+        }
+        com.fasterxml.jackson.databind.JsonNode payload = task.getPayload();
+        if (payload != null) {
+            if (payload.has("ems_defect_work") && payload.get("ems_defect_work").asBoolean(false)) {
+                return true;
+            }
+            if (payload.has("is_recovery") && payload.get("is_recovery").asBoolean(false)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

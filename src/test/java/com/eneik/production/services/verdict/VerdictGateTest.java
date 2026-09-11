@@ -1,6 +1,7 @@
 package com.eneik.production.services.verdict;
 
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.junit.jupiter.api.Test;
 
@@ -246,5 +247,72 @@ class VerdictGateTest {
         // Scoped to another project: stands aside
         gatingOn("different-project");
         assertThat(gate.evaluateActionProhibition(project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS").prohibited()).isFalse();
+    }
+
+    @Test
+    void doctrineRefusalUsesReasonCodeNotSubstring() {
+        gatingOn("test-forty-seventh");
+
+        // Violation: doctrine layer refuses with structured reasonCode UNRECOVERED_FAILED_WORK
+        Judgement doctrineRefusalWithCode = Judgement.withhold("doctrine",
+                "doctrine BARCAN-TAG-00 accepts the current project state",
+                "UNRECOVERED_FAILED_WORK",
+                "Custom prose without the old magic substring",
+                "stance=refuses");
+        latticeSays(Verdict.WITHHOLD, doctrineRefusalWithCode);
+
+        VerdictGate.ActionProhibition prohibition = gate.evaluateActionProhibition(
+                project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS");
+        assertThat(prohibition.prohibited()).isTrue();
+        assertThat(prohibition.ruleName()).isEqualTo("DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION");
+
+        // When reasonCode is different (e.g. BLOCKED_WORK), DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION is not triggered
+        Judgement doctrineBlocked = Judgement.withhold("doctrine",
+                "doctrine BARCAN-TAG-00 accepts the current project state",
+                "BLOCKED_WORK",
+                "Work is blocked",
+                "stance=objects");
+        latticeSays(Verdict.WITHHOLD, doctrineBlocked);
+
+        VerdictGate.ActionProhibition blockedProhibition = gate.evaluateActionProhibition(
+                project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS");
+        assertThat(blockedProhibition.prohibited()).isFalse();
+    }
+
+    @Test
+    void doctrineUnrecoveredFailureProhibitionExemptsRecoveryWorkAndPermitsItsDispatch() {
+        gatingOn("test-forty-seventh");
+
+        Judgement doctrineRefusal = Judgement.withhold("doctrine",
+                "doctrine BARCAN-TAG-00 accepts the current project state",
+                "UNRECOVERED_FAILED_WORK",
+                "Owner-role execution has unrecovered failed work",
+                "stance=refuses");
+        latticeSays(Verdict.WITHHOLD, doctrineRefusal);
+
+        ProjectEntity proj = project("test-forty-seventh");
+
+        // Prohibition stands against regular dispatch
+        VerdictGate.ActionProhibition regularDispatch = gate.evaluateActionProhibition(proj, "DISPATCH_QUEUED_TASKS", false);
+        assertThat(regularDispatch.prohibited())
+                .as("Prohibition must stand on the project against regular feature dispatch")
+                .isTrue();
+
+        // Recovery dispatch is explicitly exempted so the self-repair loop is not locked (D006)
+        VerdictGate.ActionProhibition recoveryDispatch = gate.evaluateActionProhibition(proj, "DISPATCH_QUEUED_TASKS", true);
+        assertThat(recoveryDispatch.prohibited())
+                .as("Recovery work dispatch must be explicitly exempted from prohibition so the failure can be repaired")
+                .isFalse();
+
+        // Task-level evaluation: regular task is prohibited, recovery task is permitted
+        TaskEntity regularTask = new TaskEntity();
+        regularTask.setRetryCount(0);
+        assertThat(gate.evaluateTaskProhibition(proj, regularTask).prohibited()).isTrue();
+
+        TaskEntity recoveryTask = new TaskEntity();
+        recoveryTask.setRetryCount(1); // defect recovery task
+        assertThat(gate.evaluateTaskProhibition(proj, recoveryTask).prohibited())
+                .as("A recovery task must be permitted to dispatch while the prohibition stands")
+                .isFalse();
     }
 }

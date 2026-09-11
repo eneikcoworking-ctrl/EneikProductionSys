@@ -19,15 +19,24 @@ public record Judgement(
         String proposition,
         Verdict verdict,
         String reason,
-        String evidence
+        String evidence,
+        String reasonCode
 ) {
 
+    public Judgement(String layer, String proposition, Verdict verdict, String reason, String evidence) {
+        this(layer, proposition, verdict, reason, evidence, "");
+    }
+
     public static Judgement permit(String layer, String proposition, String evidence) {
-        return new Judgement(layer, proposition, Verdict.PERMIT, "", evidence);
+        return new Judgement(layer, proposition, Verdict.PERMIT, "", evidence, "");
     }
 
     public static Judgement withhold(String layer, String proposition, String reason, String evidence) {
-        return new Judgement(layer, proposition, Verdict.WITHHOLD, reason, evidence);
+        return new Judgement(layer, proposition, Verdict.WITHHOLD, reason, evidence, "");
+    }
+
+    public static Judgement withhold(String layer, String proposition, String reasonCode, String reason, String evidence) {
+        return new Judgement(layer, proposition, Verdict.WITHHOLD, reason, evidence, reasonCode == null ? "" : reasonCode);
     }
 
     /**
@@ -36,6 +45,15 @@ public record Judgement(
      *               declared-proposition rule exists to remove.
      */
     public static Judgement abstain(String layer, String proposition, String reason) {
-        return new Judgement(layer, proposition, Verdict.ABSTAIN, reason, "");
+        return new Judgement(layer, proposition, Verdict.ABSTAIN, reason, "", "");
+    }
+
+    public static Judgement abstain(String layer, String proposition, String reasonCode, String reason) {
+        return new Judgement(layer, proposition, Verdict.ABSTAIN, reason, "", reasonCode == null ? "" : reasonCode);
+    }
+
+    @Override
+    public String reasonCode() {
+        return reasonCode == null ? "" : reasonCode;
     }
 }

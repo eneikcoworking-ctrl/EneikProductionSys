@@ -117,8 +117,16 @@ public class LeverPromotionService {
             return;
         }
 
+        // ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS (D010):
+        // Each promotion stage requires its own package of evidence gathered after the previous promotion.
+        // A single historical sample packet must not repeatedly promote the lever on subsequent evaluation cycles.
+        Instant evidenceSince = since;
+        if (state.getPromotedAt() != null && state.getPromotedAt().isAfter(since)) {
+            evidenceSince = state.getPromotedAt();
+        }
+
         List<LeverObservation> recent = observationRepository
-                .findByLeverKeyAndObservedAtAfterOrderByObservedAtAsc(state.getLeverKey(), since);
+                .findByLeverKeyAndObservedAtAfterOrderByObservedAtAsc(state.getLeverKey(), evidenceSince);
         long resolved = recent.stream()
                 .filter(o -> "TRUE".equals(o.getAgreement()) || "FALSE".equals(o.getAgreement()))
                 .count();

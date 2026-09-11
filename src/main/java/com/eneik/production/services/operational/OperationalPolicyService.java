@@ -229,7 +229,13 @@ public class OperationalPolicyService {
             p.setSlug(core.project().name());
             prohibition = verdictGate.evaluateActionProhibition(p, action.name());
             if (prohibition.prohibited()) {
-                allowed = false;
+                if (action == OperationalAction.DISPATCH_QUEUED_TASKS && prohibition.exemptsRecoveryWork()) {
+                    // Do not block DISPATCH_QUEUED_TASKS globally when recovery work is exempted:
+                    // dispatchQueuedTasks will dispatch recovery tasks while filtering non-recovery tasks via evaluateTaskProhibition.
+                    prohibition = com.eneik.production.services.verdict.VerdictGate.ActionProhibition.permitted();
+                } else {
+                    allowed = false;
+                }
             }
         }
 
