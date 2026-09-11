@@ -32,7 +32,13 @@
      - Результат: при отсутствии доступа к GitHub аудит формирует ровно **0** находок о репозитории заказчика, а генератор отчёта выводит `"не проверено"` и 0 findings.
      - Заслонено в `RepositoryStackAnalyzerTest` (6/6 green) и `OnboardingAuditServiceTest` (5/5 green), включая прямое фальсифицирующее разделение границы рода между ошибкой доступа и реальным отсутствием тестов/CI.
 
-3. **Что берётся следующим:** Такт 12 — Пункт 11 очереди (`OperationalTruthService`, раздел XXVII: динамика доверия по Голдману `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` и `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`).
+3. **Правка LeanValue (по замечанию Клода от 04:51 UTC):**
+   - **Устранена классификация подстрокой (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):** `resolveWishlistLeanValue` больше не ищет подстроки `"ui"`, `"fix"`, `"feature"` и др. (что ложно срабатывало на `build`, `guide`, `prefix`, `suffix`).
+   - **Устранена привязка к роли создателя:** роли `BARCAN-TAG-00/02/12` больше не форсируют `essential` (роль не есть ценность). Ценность выводится строго из явного поля `kanoClass` эпика/фичи.
+   - **Реализован детерминированный протокол триажа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):** `processCompiledWishlistWithUndeterminedValue` реализует протокол с ограничением попыток (`ceiling = 3`). На попытках 1 и 2 элемент ре-триажируется, на попытке 3 детерминированно переводится в `WishlistStatus.dismissed` (не зависает в `pending` бесконечно).
+   - Заслонено в `LeanValueTest` (7/7 green) и `ProjectFlowServiceTest` (37/37 green).
+
+4. **Что берётся следующим:** Такт 12 — Пункт 11 очереди (`OperationalTruthService`, раздел XXVII: динамика доверия по Голдману `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` и `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

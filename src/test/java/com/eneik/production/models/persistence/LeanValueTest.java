@@ -175,7 +175,7 @@ class LeanValueTest {
     }
 
     @Test
-    @DisplayName("Resolution path: resolveSliceLeanValue deterministically resolves undetermined from Kano or role")
+    @DisplayName("Resolution path: resolveSliceLeanValue deterministically resolves from Kano, never role")
     void resolveSliceLeanValueResolutionPath() {
         MLPredictionServiceClient.TaskSliceMetadata slice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Feature slice", "JTBD", "AC", "BARCAN-TAG-04", LeanValue.undetermined, "clear", "TOC-1", "Metric", false, List.of()
@@ -193,36 +193,104 @@ class LeanValueTest {
         LeanValue v3 = ProjectFlowService.resolveSliceLeanValue(slice, "Reverse/Waste", "BARCAN-TAG-04");
         assertThat(v3).isEqualTo(LeanValue.waste);
 
-        // 4. Core role (BARCAN-TAG-00 / 02 / 12) resolves to essential even without Kano class
+        // 4. Role does NOT resolve to essential (role is not value, category error scan D002)
         LeanValue v4 = ProjectFlowService.resolveSliceLeanValue(slice, null, "BARCAN-TAG-02");
-        assertThat(v4).isEqualTo(LeanValue.essential);
+        assertThat(v4).isEqualTo(LeanValue.undetermined);
 
-        // 5. Unknown context remains undetermined for human triage
+        // 5. Unknown context remains undetermined
         LeanValue v5 = ProjectFlowService.resolveSliceLeanValue(slice, null, "BARCAN-TAG-04");
         assertThat(v5).isEqualTo(LeanValue.undetermined);
     }
 
     @Test
-    @DisplayName("Resolution path: resolveWishlistLeanValue resolves from role and JTBD keywords")
+    @DisplayName("Resolution path: resolveWishlistLeanValue resolves from parent epic Kano, never substring in JTBD or role")
     void resolveWishlistLeanValueResolutionPath() {
+        // 1. Kano derivation
+        WishlistEntity wishlist = new WishlistEntity();
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(wishlist, "Must-Be")).isEqualTo(LeanValue.essential);
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(wishlist, "Performance")).isEqualTo(LeanValue.valuable);
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(wishlist, "Attractive")).isEqualTo(LeanValue.valuable);
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(wishlist, "Reverse/Waste")).isEqualTo(LeanValue.waste);
+
+        // 2. Substring matching is forbidden (GILBERT_RAYL_03_CATEGORY_ERROR_SCAN, D002)
+        // Words like "build", "require", "guide", "quick", "suite" contain "ui", but are NOT valuable
+        WishlistEntity buildWishlist = new WishlistEntity();
+        buildWishlist.setSourceRoleTag("BARCAN-TAG-11");
+        buildWishlist.setJtbd("Build new payment gateway integration");
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(buildWishlist)).isEqualTo(LeanValue.undetermined);
+
+        WishlistEntity guideWishlist = new WishlistEntity();
+        guideWishlist.setJtbd("Guide quick onboarding suite");
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(guideWishlist)).isEqualTo(LeanValue.undetermined);
+
+        // Words like "prefix", "suffix" contain "fix", but are NOT essential
+        WishlistEntity prefixWishlist = new WishlistEntity();
+        prefixWishlist.setSourceRoleTag("BARCAN-TAG-04");
+        prefixWishlist.setJtbd("Format table with prefix and suffix");
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(prefixWishlist)).isEqualTo(LeanValue.undetermined);
+
+        // Roles BARCAN-TAG-00 / 02 / 12 do not force essential without Kano class
         WishlistEntity coreWishlist = new WishlistEntity();
         coreWishlist.setSourceRoleTag("BARCAN-TAG-02");
-        assertThat(ProjectFlowService.resolveWishlistLeanValue(coreWishlist)).isEqualTo(LeanValue.essential);
+        coreWishlist.setJtbd("Clean up orphaned records");
+        assertThat(ProjectFlowService.resolveWishlistLeanValue(coreWishlist)).isEqualTo(LeanValue.undetermined);
+    }
 
-        WishlistEntity fixWishlist = new WishlistEntity();
-        fixWishlist.setSourceRoleTag("BARCAN-TAG-04");
-        fixWishlist.setJtbd("Fix security vulnerability in authentication token validation");
-        assertThat(ProjectFlowService.resolveWishlistLeanValue(fixWishlist)).isEqualTo(LeanValue.essential);
+    @Test
+    @DisplayName("Bounded resolution: processCompiledWishlistWithUndeterminedValue resolves via Kano or bounded triage")
+    void processCompiledWishlistWithUndeterminedValueResolution() throws Exception {
+        ProjectFlowService service = org.mockito.Mockito.mock(ProjectFlowService.class, org.mockito.Mockito.CALLS_REAL_METHODS);
 
-        WishlistEntity uiWishlist = new WishlistEntity();
-        uiWishlist.setSourceRoleTag("BARCAN-TAG-11");
-        uiWishlist.setJtbd("Add new feature screen for user preferences");
-        assertThat(ProjectFlowService.resolveWishlistLeanValue(uiWishlist)).isEqualTo(LeanValue.valuable);
+        com.eneik.production.repositories.FeatureRepository featureRepository = org.mockito.Mockito.mock(com.eneik.production.repositories.FeatureRepository.class);
+        com.eneik.production.repositories.WishlistRepository wishlistRepository = org.mockito.Mockito.mock(com.eneik.production.repositories.WishlistRepository.class);
+        TechnicalLeadCompiler technicalLeadCompiler = org.mockito.Mockito.mock(TechnicalLeadCompiler.class);
 
-        WishlistEntity unknownWishlist = new WishlistEntity();
-        unknownWishlist.setSourceRoleTag("BARCAN-TAG-04");
-        unknownWishlist.setJtbd("Evaluate generic request");
-        assertThat(ProjectFlowService.resolveWishlistLeanValue(unknownWishlist)).isEqualTo(LeanValue.undetermined);
+        setField(service, "featureRepository", featureRepository);
+        setField(service, "wishlistRepository", wishlistRepository);
+        setField(service, "technicalLeadCompiler", technicalLeadCompiler);
+
+        UUID featureId = UUID.randomUUID();
+        FeatureEntity mustBeFeature = new FeatureEntity();
+        mustBeFeature.setKanoClass("Must-Be");
+        org.mockito.Mockito.when(featureRepository.findById(featureId)).thenReturn(java.util.Optional.of(mustBeFeature));
+
+        // 1. Must-Be parent resolves to essential and creates task
+        WishlistEntity w1 = new WishlistEntity();
+        w1.setFeatureId(featureId);
+        w1.setLeanValue(LeanValue.undetermined);
+        boolean r1 = service.processCompiledWishlistWithUndeterminedValue(w1);
+        assertThat(r1).isTrue();
+        assertThat(w1.getLeanValue()).isEqualTo(LeanValue.essential);
+        org.mockito.Mockito.verify(technicalLeadCompiler).createTaskFromWishlist(w1.getId());
+
+        // 2. Unresolved without Kano executes bounded triage protocol (NUEL_BELNAP_03_TRUTH_STATUS_TABLE)
+        WishlistEntity w2 = new WishlistEntity();
+        w2.setLeanValue(LeanValue.undetermined);
+        w2.setCompileAttempts(0);
+
+        // Attempt 1: re-queued, stays pending
+        boolean a1 = service.processCompiledWishlistWithUndeterminedValue(w2);
+        assertThat(a1).isFalse();
+        assertThat(w2.getCompileAttempts()).isEqualTo(1);
+        assertThat(w2.getStatus()).isEqualTo(WishlistStatus.pending);
+
+        // Attempt 2: re-queued, stays pending
+        boolean a2 = service.processCompiledWishlistWithUndeterminedValue(w2);
+        assertThat(a2).isFalse();
+        assertThat(w2.getCompileAttempts()).isEqualTo(2);
+        assertThat(w2.getStatus()).isEqualTo(WishlistStatus.pending);
+
+        // Attempt 3: ceiling reached (3), transitions to dismissed with clear audit trail (never hangs forever)
+        boolean a3 = service.processCompiledWishlistWithUndeterminedValue(w2);
+        assertThat(a3).isFalse();
+        assertThat(w2.getCompileAttempts()).isEqualTo(3);
+        assertThat(w2.getStatus()).isEqualTo(WishlistStatus.dismissed);
+    }
+
+    private static void setField(Object target, String fieldName, Object value) throws Exception {
+        java.lang.reflect.Field field = ProjectFlowService.class.getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     private TaskEntity createTaskWithLeanValue(String leanValue) {

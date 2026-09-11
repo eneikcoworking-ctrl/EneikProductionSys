@@ -2149,16 +2149,7 @@ public class ProjectFlowService {
                 return false;
             }
             if (wishlist.getLeanValue() == LeanValue.undetermined) {
-                LeanValue resolved = resolveWishlistLeanValue(wishlist);
-                if (resolved == LeanValue.essential || resolved == LeanValue.valuable) {
-                    wishlist.setLeanValue(resolved);
-                    wishlistRepository.save(wishlist);
-                    log.info("ProjectFlowService: resolved undetermined lean_value to {} for wishlist {}", resolved, wishlist.getId());
-                    technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
-                    return true;
-                }
-                log.warn("ProjectFlowService: wishlist {} held in pending: lean_value is undetermined and requires triage", wishlist.getId());
-                return false;
+                return processCompiledWishlistWithUndeterminedValue(wishlist);
             }
             return false;
         }
@@ -3274,7 +3265,7 @@ public class ProjectFlowService {
 
         LeanValue sliceValue = slice.leanValue() != null ? slice.leanValue() : LeanValue.undetermined;
         if (sliceValue == LeanValue.undetermined) {
-            sliceValue = resolveSliceLeanValue(slice, epicKanoClass, ownerRole);
+            sliceValue = resolveSliceLeanValue(slice, epicKanoClass);
         }
 
         technicalLeadCompiler.compile(
@@ -3289,7 +3280,48 @@ public class ProjectFlowService {
         );
     }
 
-    public static LeanValue resolveSliceLeanValue(MLPredictionServiceClient.TaskSliceMetadata slice, String epicKanoClass, String ownerRole) {
+    public boolean processCompiledWishlistWithUndeterminedValue(WishlistEntity wishlist) {
+        String epicKano = null;
+        UUID featureId = wishlist.getFeatureId() != null ? wishlist.getFeatureId() : wishlist.getOriginFeatureId();
+        if (featureId != null) {
+            epicKano = featureRepository.findById(featureId).map(FeatureEntity::getKanoClass).orElse(null);
+        }
+        LeanValue resolved = resolveWishlistLeanValue(wishlist, epicKano);
+        if (resolved == LeanValue.essential || resolved == LeanValue.valuable) {
+            wishlist.setLeanValue(resolved);
+            wishlistRepository.save(wishlist);
+            log.info("ProjectFlowService: resolved undetermined lean_value to {} from epic Kano ({}) for wishlist {}",
+                    resolved, epicKano, wishlist.getId());
+            technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+            return true;
+        }
+        if (resolved == LeanValue.waste) {
+            wishlist.setStatus(WishlistStatus.dismissed);
+            wishlist.setLeanValue(LeanValue.waste);
+            wishlistRepository.save(wishlist);
+            log.info("ProjectFlowService: wishlist {} resolved as waste from epic Kano ({}) and dismissed",
+                    wishlist.getId(), epicKano);
+            return false;
+        }
+        int attempts = wishlist.getCompileAttempts();
+        int ceiling = wishlist.effectiveCompileCeiling();
+        if (attempts + 1 >= ceiling) {
+            wishlist.setStatus(WishlistStatus.dismissed);
+            wishlist.setCompileAttempts(attempts + 1);
+            wishlistRepository.save(wishlist);
+            log.warn("ProjectFlowService: wishlist {} dismissed: lean_value remained undetermined after {} triage attempts",
+                    wishlist.getId(), attempts + 1);
+            return false;
+        } else {
+            wishlist.setCompileAttempts(attempts + 1);
+            wishlistRepository.save(wishlist);
+            log.info("ProjectFlowService: wishlist {} re-queued for lean_value triage (attempt {}/{})",
+                    wishlist.getId(), attempts + 1, ceiling);
+            return false;
+        }
+    }
+
+    public static LeanValue resolveSliceLeanValue(MLPredictionServiceClient.TaskSliceMetadata slice, String epicKanoClass) {
         if ("Must-Be".equalsIgnoreCase(epicKanoClass)) {
             return LeanValue.essential;
         }
@@ -3299,26 +3331,29 @@ public class ProjectFlowService {
         if ("Reverse/Waste".equalsIgnoreCase(epicKanoClass)) {
             return LeanValue.waste;
         }
-        if ("BARCAN-TAG-00".equals(ownerRole) || "BARCAN-TAG-02".equals(ownerRole) || "BARCAN-TAG-12".equals(ownerRole)) {
-            return LeanValue.essential;
-        }
         return LeanValue.undetermined;
     }
 
+    public static LeanValue resolveSliceLeanValue(MLPredictionServiceClient.TaskSliceMetadata slice, String epicKanoClass, String ownerRole) {
+        return resolveSliceLeanValue(slice, epicKanoClass);
+    }
+
     public static LeanValue resolveWishlistLeanValue(WishlistEntity wishlist) {
+        return resolveWishlistLeanValue(wishlist, null);
+    }
+
+    public static LeanValue resolveWishlistLeanValue(WishlistEntity wishlist, String epicKanoClass) {
         if (wishlist == null) {
             return LeanValue.undetermined;
         }
-        String jtbd = wishlist.getJtbd() != null ? wishlist.getJtbd().toLowerCase(java.util.Locale.ROOT) : "";
-        String role = wishlist.getSourceRoleTag();
-        if ("BARCAN-TAG-00".equals(role) || "BARCAN-TAG-02".equals(role) || "BARCAN-TAG-12".equals(role)) {
+        if ("Must-Be".equalsIgnoreCase(epicKanoClass)) {
             return LeanValue.essential;
         }
-        if (jtbd.contains("fix") || jtbd.contains("security") || jtbd.contains("critical") || jtbd.contains("migration")) {
-            return LeanValue.essential;
-        }
-        if (jtbd.contains("feature") || jtbd.contains("ui") || jtbd.contains("screen") || jtbd.contains("dashboard")) {
+        if ("Performance".equalsIgnoreCase(epicKanoClass) || "Attractive".equalsIgnoreCase(epicKanoClass)) {
             return LeanValue.valuable;
+        }
+        if ("Reverse/Waste".equalsIgnoreCase(epicKanoClass)) {
+            return LeanValue.waste;
         }
         return LeanValue.undetermined;
     }

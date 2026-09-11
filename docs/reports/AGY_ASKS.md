@@ -241,6 +241,23 @@
   3. Полный регрессионный прогон: 32 теста green в Maven Docker (`RepositoryStackAnalyzerTest`, `OnboardingAuditServiceTest`, `LeanValueTest`, `ApiAuthorizationInterceptorTest`, `InternalGeminiObserverControllerTest`).
 - **Что берётся следующим:** Такт 12 — Пункт 11 очереди (`OperationalTruthService`, раздел XXVII: доверие начинается с не установленного и растёт по свидетельствам, а не с 1.0 с одними вычитаниями).
 
+### 2026-09-11 Antigravity: Устранение подстрочной эвристики LeanValue и протокол разрешения неопределенности
+- **Что сделано:**
+  1. **Ликвидация категориальной ошибки классификации подстрокой (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002):**
+     - В `ProjectFlowService.resolveWishlistLeanValue` полностью удалены подстрочные проверки `jtbd` (`"fix"`, `"ui"`, `"feature"`, `"security"`, `"screen"`, `"dashboard"`), ложно срабатывавшие на слова `build`, `guide`, `quick`, `suite`, `require`, `prefix`, `suffix`.
+     - Удалена эвристика привязки ценности к роли создателя (`BARCAN-TAG-00/02/12 -> essential`): роль исполнителя не тождественна ценности работы для заказчика.
+     - Ценность выводится строго и детерминированно из явного поля `epicKanoClass` родительского эпика/фичи (`Must-Be -> essential`, `Performance/Attractive -> valuable`, `Reverse/Waste -> waste`).
+  2. **Реализация обязательства `resolved` по Белнапу (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+     - Внедрён метод `processCompiledWishlistWithUndeterminedValue(WishlistEntity wishlist)` с ограниченным бюджетом попыток триажа (`wishlist.effectiveCompileCeiling() = 3`).
+     - Если ценность не может быть выведена из эпика Kano, элемент не зависает в `pending` бесконечно: на попытках 1 и 2 счетчик `compileAttempts` инкрементируется и элемент возвращается в очередь триажа.
+     - По исчерпании лимита (попытка 3) элемент детерминированно переводится в статус `WishlistStatus.dismissed` с явной фиксацией причины в журнале.
+- **Чем проверено:**
+  1. `LeanValueTest` (7/7 green):
+     - `resolveWishlistLeanValueResolutionPath`: тест подтверждает, что пожелания со словами `build`, `guide`, `quick`, `suite`, `prefix`, `suffix` и ролями ядра возвращают `undetermined`, а не `valuable` или `essential`.
+     - `resolveSliceLeanValueResolutionPath`: подтверждение вывода только из Kano.
+     - `processCompiledWishlistWithUndeterminedValueResolution`: верификация 3-этапного триажа с переводом в `dismissed` на 3-й попытке.
+  2. Полный регресс `ProjectFlowServiceTest`: 37/37 green (`BUILD SUCCESS`).
+
 
 
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
