@@ -8189,7 +8189,7 @@ and Its Undoing / Enterprise of Knowledge — doxastic commitment*. Сильна
 *Живое, 11 сентября 2026, Antigravity (L2): такт 5 — SixSigmaAuditService целиком и оптимизация carrier-досыпки.*
 1. **Устранение категориальной путаницы слоёв качества (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010):**
    - Слой 1 (Фабрика): `calculateFullSixSigmaAudit()` — межпроектный агрегат качества фабрики с интеграцией TOC-аномалий.
-   - Слой 2 (Поставка): канонический метод `calculateDeliverySixSigmaAudit(UUID projectId)` — качество поставки конкретного проекта; `calculateProjectSixSigmaAudit` сохранён как делегирующий алиас для обратной совместимости.
+   - Слой 2 (Поставка): канонический метод `calculateDeliverySixSigmaAudit(UUID projectId)` — качество поставки конкретного проекта; `calculateProjectSixSigmaAudit` сохранён как делегирующий алиас для обратной совместимости. Если активного проекта нет (`projectId == null` и `getActiveProjectId() == null`), возвращается явный отчет с `projectName = "NO_ACTIVE_PROJECT"`, `qualityTier = "UNDETERMINED"`, `sigmaLevel = 0.0`, не подменяя поставку фабричными агрегатами.
    - Слой 3 (Продукт): `calculateProductLayerSixSigmaAudit(UUID projectId)` — качество продукта только активного проекта. При отсутствии активного проекта возвращает явный отчет с `projectName = "NO_ACTIVE_PROJECT"`, `qualityTier = "UNDETERMINED"`, `sigmaLevel = 0.0`.
 2. **Строгий резолвер активного проекта (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
    - Метод `getActiveProjectId()` переведён на `projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`.
@@ -8202,12 +8202,12 @@ and Its Undoing / Enterprise of Knowledge — doxastic commitment*. Сильна
 4. **Оптимизация досыпки носителя (`TaskCarrierBackfillService`) и scoped emsMetrics (`SystemStatusService`):**
    - В `TaskCarrierBackfillService` добавлен персистентный маркер `carrier_backfill_completed` в `system_settings` через `JdbcTemplate`. При повторных стартах сканирование таблицы задач полностью пропускается (0 строк).
    - В `TaskEntity` признак `carrier` синхронизируется на лету (`@PrePersist` / `@PreUpdate`), а геттер `isCarrier()` напрямую возвращает поле `carrier`.
-   - В `SystemStatusService.emsMetrics(projectId, scopedTasks)`: при `projectId == null` сервис обращается к `sixSigmaAuditService.getActiveProjectId()` и вычитывает задачи и пожелания только активного проекта, предотвращая чтение всех строк всей базы.
+   - В `SystemStatusService.emsMetrics(projectId, scopedTasks)`: при `projectId == null` сервис обращается к `sixSigmaAuditService.getActiveProjectId()`. Если активного проекта нет — возвращается секция с `status: "undetermined"` и причиной `"no active project found to compute ems flow metrics"`, не генерируя фиктивные нули как свершившийся факт. При наличии активного проекта вычитывает задачи и пожелания только этого проекта, исключая чтение всей базы.
 5. **Заслоняющие тесты:**
-   - `SixSigmaAuditServiceTest` расширен до 24 тестов (все зелёные), включая заслоны `never().findAll()`, многопроектную неопределённость и инварианты слоёв.
+   - `SixSigmaAuditServiceTest` расширен до 25 тестов (все зелёные), включая заслоны `never().findAll()`, многопроектную неопределённость, слои абстракции, lineage и возврат UNDETERMINED при отсутствии активного проекта.
    - `TaskCarrierBackfillServiceTest` расширен тестом пропуска сканирования на повторном старте (3/3 green).
-   - `SystemStatusServiceTest` дополнен тестом `emsMetricsNullProjectScopesToActiveProjectAndNeverCallsFindAllOrScansAllRows` (15/15 green).
-   - Все 48 тестов пройдены успешно (`BUILD SUCCESS`).
+   - `SystemStatusServiceTest` дополнен тестами `emsMetricsNullProjectScopesToActiveProjectAndNeverCallsFindAllOrScansAllRows` и `emsMetricsNullProjectAndNoActiveProjectReturnsUndeterminedSectionWithReason` (16/16 green).
+   - Все 50 тестов пройдены успешно (`BUILD SUCCESS`).
 
 
 

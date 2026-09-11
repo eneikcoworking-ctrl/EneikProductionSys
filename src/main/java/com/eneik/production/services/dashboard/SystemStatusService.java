@@ -616,6 +616,12 @@ public class SystemStatusService {
 
     private Object emsMetrics(UUID projectId, List<TaskEntity> scopedTasks) {
         UUID effectiveProjectId = projectId != null ? projectId : sixSigmaAuditService.getActiveProjectId();
+        if (effectiveProjectId == null && (scopedTasks == null || scopedTasks.isEmpty())) {
+            Map<String, Object> section = new LinkedHashMap<>();
+            section.put("status", "undetermined");
+            section.put("unavailabilityReason", "no active project found to compute ems flow metrics");
+            return section;
+        }
         List<TaskEntity> tasks = scopedTasks != null
                 ? scopedTasks
                 : (effectiveProjectId != null

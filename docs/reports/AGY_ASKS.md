@@ -70,24 +70,24 @@
   1. **Ликвидация 6 точек `findAll()` и изоляция слоёв (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010):**
      - В `SixSigmaAuditService.java` ликвидированы все 6 вызовов `.findAll()` (`grep` даёт ровно 0).
      - `getActiveProjectId()`: строгий предикат `projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`. Несуществующий статус `orchestrated` удалён. Ликвидирован произвольный fallback на первый попавшийся проект: при отсутствии активного проекта возвращается `null` (статус не определён, «неизвестное не становится ответом», `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012). Зафиксирован инвариант «Завод за 1 раз делает 1 проект»: при обнаружении >1 активных проектов логируется предупреждение и возвращается `null`.
-     - Разделены три слоя абстракции качества по Голдману (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`):
-       - Слой 1 (Фабрика): `calculateFullSixSigmaAudit()` — межпроектный аудит factory-wide с интеграцией рантайм-аномалий TOC.
-       - Слой 2 (Поставка): канонический метод `calculateDeliverySixSigmaAudit(UUID projectId)` устраняет категориальное смешение; `calculateProjectSixSigmaAudit` сохранён как делегирующий алиас для обратной совместимости.
-       - Слой 3 (Продукт): `calculateProductLayerSixSigmaAudit(UUID projectId)` резолвит активный проект; если активного проекта нет — возвращает явный отчёт с `projectName = "NO_ACTIVE_PROJECT"`, `qualityTier = "UNDETERMINED"`, `sigmaLevel = 0.0`.
-     - Категория C (находки онбординга): `onboardingAuditFindingRepository.findAll()` заменён на `countByProjectId(targetProjectId)` и `count()`.
-     - Подсчёт конфликтов и мержей: ликвидирован `findAll()` по `prReviewRepository` и `taskConflictRepository`. Глобальный расчёт переведён на `countByMergedTrue()` и `count()`. Проектный/фичевый расчёт строго изолирован через `findByFeatureId` / `findByProjectIdOrderByCreatedAtDesc` -> `julesSessionRepository.findByTaskIdIn` -> `prReviewRepository.findByJulesSessionIdInAndMergedTrue` -> `taskConflictRepository.findByTaskIdIn`.
+      - Разделены три слоя абстракции качества по Голдману (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`):
+        - Слой 1 (Фабрика): `calculateFullSixSigmaAudit()` — межпроектный аудит factory-wide с интеграцией рантайм-аномалий TOC.
+        - Слой 2 (Поставка): канонический метод `calculateDeliverySixSigmaAudit(UUID projectId)` устраняет категориальное смешение. При отсутствии активного проекта (`projectId == null` и `getActiveProjectId() == null`) возвращает явный отчет с `projectName = "NO_ACTIVE_PROJECT"`, `qualityTier = "UNDETERMINED"`, `sigmaLevel = 0.0`, не подменяя качество поставки фабричными числами (`calculateProjectSixSigmaAudit` сохранён как делегирующий алиас).
+        - Слой 3 (Продукт): `calculateProductLayerSixSigmaAudit(UUID projectId)` резолвит активный проект; если активного проекта нет — возвращает явный отчёт с `projectName = "NO_ACTIVE_PROJECT"`, `qualityTier = "UNDETERMINED"`, `sigmaLevel = 0.0`.
+      - Категория C (находки онбординга): `onboardingAuditFindingRepository.findAll()` заменён на `countByProjectId(targetProjectId)` и `count()`.
+      - Подсчёт конфликтов и мержей: ликвидирован `findAll()` по `prReviewRepository` и `taskConflictRepository`. Глобальный расчёт переведён на `countByMergedTrue()` и `count()`. Проектный/фичевый расчёт строго изолирован через `findByFeatureId` / `findByProjectIdOrderByCreatedAtDesc` -> `julesSessionRepository.findByTaskIdIn` -> `prReviewRepository.findByJulesSessionIdInAndMergedTrue` -> `taskConflictRepository.findByTaskIdIn`.
   2. **Оптимизация досыпки carrier и `SystemStatusService` по совету Клода:**
      - `TaskCarrierBackfillService`: внедрён персистентный маркер завершения `carrier_backfill_completed` в `system_settings` через `JdbcTemplate`. При повторных стартах сервис делает ровно один быстрый запрос по первичному ключу и выходит (0 прочитанных задач, 0 обновлений). В `TaskEntity` признак `carrier` синхронизируется на лету (`@PrePersist` / `@PreUpdate`), а `isCarrier()` напрямую возвращает поле `carrier`.
-     - `SystemStatusService.emsMetrics`: при `projectId == null` сервис резолвит `getActiveProjectId()` и вычитывает задачи и пожелания только активного проекта вместо чтения всех строк всей базы.
+     - `SystemStatusService.emsMetrics`: при `projectId == null` сервис резолвит `getActiveProjectId()`. Если активного проекта нет — возвращает секцию с `status: "undetermined"` и причиной `"no active project found to compute ems flow metrics"`, не генерируя фиктивные нули как свершившийся факт. При наличии активного проекта вычитывает задачи и пожелания только этого проекта, исключая чтение всей базы.
 - **Чем проверено:**
   1. `grep -n "\.findAll()" src/main/java/com/eneik/production/services/audit/SixSigmaAuditService.java` -> ровно 0 совпадений.
   2. Прогон Maven в Docker (`BUILD SUCCESS`):
-     - `SixSigmaAuditServiceTest`: 24/24 green (расширено с 16 до 24 тестов, включая заслоны `never().findAll()`, многопроектную неопределенность, слои абстракции и lineage).
+     - `SixSigmaAuditServiceTest`: 25/25 green (расширено до 25 тестов, включая заслоны `never().findAll()`, многопроектную неопределенность, слои абстракции, lineage и возврат UNDETERMINED при отсутствии активного проекта с проверкой отличия от фабрики).
      - `QualityGateControllerTest`: 2/2 green.
-     - `SystemStatusServiceTest`: 15/15 green (включая проверку, что emsMetrics при null projectId запрашивает только активный проект и никогда не вызывает findAll).
+     - `SystemStatusServiceTest`: 16/16 green (включая проверку, что emsMetrics при null projectId запрашивает только активный проект, а при отсутствии активного проекта возвращает секцию undetermined с причиной и не вызывает findAll/build).
      - `TaskCarrierBackfillServiceTest`: 3/3 green (включая проверку пропуска сканирования задач при наличии маркера в system_settings).
      - `SystemStatusControllerIntegrationTest`: 4/4 green (полный подъем Spring Boot Web, H2, Flyway V138).
-     Итого: 48 тестов зелёные.
+     Итого: 50 тестов зелёные.
 - **Что берётся следующим:** Такт 6 — `GeminiContextService` (пункт 2 очереди, Раздел XXVI: выборка знаний поднимает весь корпус на каждый запрос).
 
 

@@ -624,4 +624,20 @@ public class SixSigmaAuditServiceTest {
         verify(prReviewRepository, never()).findAll();
         verify(taskConflictRepository, never()).findAll();
     }
+
+    @Test
+    void calculateDeliverySixSigmaAuditReturnsUndeterminedAndNotFactoryWhenNoActiveProject() {
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active))
+                .thenReturn(Collections.emptyList());
+
+        var deliveryReport = auditService.calculateDeliverySixSigmaAudit(null);
+        var factoryReport = auditService.calculateFullSixSigmaAudit();
+
+        assertThat(deliveryReport.projectId()).isNull();
+        assertThat(deliveryReport.projectName()).isEqualTo("NO_ACTIVE_PROJECT");
+        assertThat(deliveryReport.qualityTier()).isEqualTo("UNDETERMINED");
+        assertThat(deliveryReport.totalOpportunities()).isEqualTo(0L);
+        assertThat(factoryReport.projectName()).isEqualTo("FACTORY_WIDE_ALL_PROJECTS");
+        assertThat(deliveryReport.projectName()).isNotEqualTo(factoryReport.projectName());
+    }
 }

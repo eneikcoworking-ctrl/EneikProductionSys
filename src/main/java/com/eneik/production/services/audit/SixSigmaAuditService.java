@@ -143,6 +143,21 @@ public class SixSigmaAuditService {
         if (projectId == null) {
             projectId = getActiveProjectId();
         }
+        if (projectId == null) {
+            return new SixSigmaAuditReport(
+                    null,
+                    "NO_ACTIVE_PROJECT",
+                    0L,
+                    0L,
+                    0.0,
+                    0.0,
+                    0.0,
+                    "UNDETERMINED",
+                    Map.of("status", "undetermined", "reason", "No active project exists to evaluate delivery quality"),
+                    Map.of("deliveryEvaluation", "undetermined"),
+                    Instant.now()
+            );
+        }
         return calculateSixSigmaAuditInternal(projectId);
     }
 
