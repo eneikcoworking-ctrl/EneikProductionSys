@@ -1832,6 +1832,10 @@ public class ProjectFlowService {
         projectGenerationStateRepository.saveAndFlush(state);
     }
 
+    public int requeueUntestedTasksOnRestoredCapacity() {
+        return claimService.requeueUntestedTasksOnRestoredCapacity();
+    }
+
     @Transactional
     public int recoverBlockedWork(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);

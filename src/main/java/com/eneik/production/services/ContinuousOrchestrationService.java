@@ -607,6 +607,16 @@ public class ContinuousOrchestrationService {
             log.info("Continuous Orchestration: Reset {} Jules account(s) from daily_limited to idle", reset);
         }
         accountRepository.resetDailySessionCounts();
+        if (reset > 0 && projectFlowService != null) {
+            try {
+                int requeued = projectFlowService.requeueUntestedTasksOnRestoredCapacity();
+                if (requeued > 0) {
+                    log.info("Continuous Orchestration: Requeued {} untested task(s) on daily limit reset", requeued);
+                }
+            } catch (Exception e) {
+                log.warn("Continuous Orchestration: failed to requeue untested tasks on daily limit reset: {}", e.getMessage());
+            }
+        }
     }
 
     // api_blocked accounts otherwise stay blocked indefinitely once nothing left references them (e.g. the

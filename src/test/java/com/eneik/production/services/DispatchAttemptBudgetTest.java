@@ -182,7 +182,7 @@ class DispatchAttemptBudgetTest {
 
         when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1, s2));
 
-        claimService.releaseClaimToQueue(taskId, "jules_precondition_unspecified: Jules cited a precondition");
+        claimService.releaseClaimToQueue(taskId, "jules_daily_limit: provider quota exhausted");
 
         // Status is set to blocked (non-terminal, renewable)
         verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
@@ -191,8 +191,9 @@ class DispatchAttemptBudgetTest {
         // Jules dispatch status reflects composition and UNTESTED_WITHIN_CAPACITY
         assertTrue(task.getJulesDispatchStatus().startsWith("UNTESTED_WITHIN_CAPACITY"));
         assertTrue(task.getJulesDispatchStatus().contains("14/14 attempts"));
-        assertTrue(task.getJulesDispatchStatus().contains("14 external, 0 non-external"));
+        assertTrue(task.getJulesDispatchStatus().contains("14 external, 0 non-external, 0 unattributed"));
         assertTrue(ClaimService.isUntestedWithinCapacity(task));
+        assertEquals(com.eneik.production.models.persistence.TaskDispatchVerdict.UNTESTED_WITHIN_CAPACITY, task.getDispatchVerdict());
 
         // Audit registered
         verify(defectJournalRepository).save(any(DefectJournalEntity.class));
@@ -217,7 +218,7 @@ class DispatchAttemptBudgetTest {
 
         when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1));
 
-        claimService.releaseClaimToQueue(taskId, "jules_precondition_unspecified");
+        claimService.releaseClaimToQueue(taskId, "jules_daily_limit: rate limit");
 
         // Status is blocked
         verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
@@ -225,8 +226,43 @@ class DispatchAttemptBudgetTest {
 
         // Jules dispatch status reflects non-external refusal present
         assertTrue(task.getJulesDispatchStatus().startsWith("DISPATCH_BUDGET_EXHAUSTED"));
-        assertTrue(task.getJulesDispatchStatus().contains("13 external, 1 non-external"));
+        assertTrue(task.getJulesDispatchStatus().contains("13 external, 1 non-external, 0 unattributed"));
         assertFalse(ClaimService.isUntestedWithinCapacity(task));
+        assertEquals(com.eneik.production.models.persistence.TaskDispatchVerdict.DISPATCH_BUDGET_EXHAUSTED, task.getDispatchVerdict());
+    }
+
+    /**
+     * Prescription 15 / NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012):
+     * Refusals where cause is unnamed/unattributed (e.g. jules_precondition_unspecified, null/blank)
+     * are NOT treated as proven external capacity. An exhaustion of purely unattributed refusals produces
+     * DISPATCH_BUDGET_EXHAUSTED naming 0 external, 0 non-external, 14 unattributed, and is NOT marked
+     * UNTESTED_WITHIN_CAPACITY.
+     */
+    @Test
+    void exhaustionWithUnattributedRefusals_isNotMarkedUntestedWithinCapacity() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = claimedTask(taskId);
+        wire(taskId, task, 7L, 14L);
+        when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.blocked))).thenReturn(1);
+
+        JulesSessionEntity s1 = new JulesSessionEntity();
+        s1.setTaskId(taskId);
+        s1.setStatus("failed");
+        s1.setClosureReason("jules_precondition_unspecified: Jules cited an unspecified precondition");
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1));
+
+        claimService.releaseClaimToQueue(taskId, "jules_precondition_unspecified: unspecified failure");
+
+        // Status is blocked
+        verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.failed);
+
+        // Jules dispatch status reflects pure unattributed refusals
+        assertTrue(task.getJulesDispatchStatus().startsWith("DISPATCH_BUDGET_EXHAUSTED"));
+        assertTrue(task.getJulesDispatchStatus().contains("0 external, 0 non-external, 14 unattributed"));
+        assertFalse(ClaimService.isUntestedWithinCapacity(task));
+        assertEquals(com.eneik.production.models.persistence.TaskDispatchVerdict.DISPATCH_BUDGET_EXHAUSTED, task.getDispatchVerdict());
     }
 
     /**
@@ -238,5 +274,65 @@ class DispatchAttemptBudgetTest {
         UUID taskId = UUID.randomUUID();
         when(julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatus(taskId, "failed")).thenReturn(14L);
         assertEquals(14L, claimService.refusedSessionCreations(taskId));
+    }
+
+    /**
+     * Prescription 15 (NUEL_BELNAP_03 / D012):
+     * Resolution path: when capacity recovers, tasks in UNTESTED_WITHIN_CAPACITY are unblocked,
+     * returned to `queued`, receive a fresh budget from reset timestamp, and log an audit fact.
+     */
+    @Test
+    void requeueUntestedTasksOnRestoredCapacity_returnsTasksToQueuedWithFreshBudgetAndAuditFact() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.blocked);
+        task.setDispatchVerdict(com.eneik.production.models.persistence.TaskDispatchVerdict.UNTESTED_WITHIN_CAPACITY);
+        task.setJulesDispatchStatus("UNTESTED_WITHIN_CAPACITY: dispatch budget exhausted (14/14 attempts)");
+
+        when(accountRepository.countLiveAccounts()).thenReturn(7L);
+        when(taskRepository.findByStatus(TaskStatus.blocked)).thenReturn(List.of(task));
+
+        java.time.Instant now = java.time.Instant.now();
+        int requeued = claimService.requeueUntestedTasksOnRestoredCapacity(now);
+
+        assertEquals(1, requeued);
+        assertEquals(TaskStatus.queued, task.getStatus());
+        assertEquals(com.eneik.production.models.persistence.TaskDispatchVerdict.NONE, task.getDispatchVerdict());
+        assertEquals(now, task.getLastBudgetResetAt());
+        assertTrue(task.getJulesDispatchStatus().startsWith("REQUEUED_ON_CAPACITY_RECOVERY"));
+
+        verify(taskRepository).save(task);
+
+        // Institutional audit fact recorded in DefectJournal
+        org.mockito.ArgumentCaptor<DefectJournalEntity> captor = org.mockito.ArgumentCaptor.forClass(DefectJournalEntity.class);
+        verify(defectJournalRepository).save(captor.capture());
+        assertEquals("TASK_CAPACITY_RECOVERY_RESUMED", captor.getValue().getDefectType());
+
+        // Subsequent budget query consults sessions created AFTER reset timestamp
+        when(julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatusAndCreatedAtAfter(taskId, "failed", now))
+                .thenReturn(0L);
+        assertEquals(0L, claimService.refusedSessionCreations(taskId));
+    }
+
+    /**
+     * Prescription 15: Typed refusal category separates external capacity limits from request rejections.
+     */
+    @Test
+    void typedDispatchRefusalCategory_separatesExternalCapacityFromRequestRejections() {
+        assertTrue(com.eneik.production.models.persistence.DispatchRefusalCategory
+                .fromClosureReason("jules_concurrent_capacity_exhausted: account limit").isExternal());
+        assertTrue(com.eneik.production.models.persistence.DispatchRefusalCategory
+                .fromClosureReason("jules_daily_limit: rate limit").isExternal());
+        assertFalse(com.eneik.production.models.persistence.DispatchRefusalCategory
+                .fromClosureReason("jules_request_rejected: malformed").isExternal());
+        assertTrue(com.eneik.production.models.persistence.DispatchRefusalCategory
+                .fromClosureReason("jules_request_rejected: malformed").isNonExternal());
+        assertTrue(com.eneik.production.models.persistence.DispatchRefusalCategory
+                .fromClosureReason("jules_precondition_unspecified").isUnattributed());
+        assertTrue(com.eneik.production.models.persistence.DispatchRefusalCategory
+                .fromClosureReason(null).isUnattributed());
+        assertTrue(com.eneik.production.models.persistence.DispatchRefusalCategory
+                .fromClosureReason("").isUnattributed());
     }
 }

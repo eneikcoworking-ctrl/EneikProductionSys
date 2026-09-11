@@ -84,6 +84,13 @@ public class AccountHealthService {
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final Map<UUID, Double> activeMonopolies = new ConcurrentHashMap<>();
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.ClaimService claimService;
+
+    public void setClaimService(com.eneik.production.services.ClaimService claimService) {
+        this.claimService = claimService;
+    }
+
     public static final String F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY = "F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY";
 
     @Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
@@ -514,6 +521,19 @@ public class AccountHealthService {
         // Inspect single-account monopoly over rolling window against derived cutoff.
         checkAccountMonopoly(current);
 
+        // Prescription 15 / NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012):
+        // When accounts are recovered, return tasks blocked with UNTESTED_WITHIN_CAPACITY to the queue.
+        if (recovered > 0 && claimService != null) {
+            try {
+                int requeued = claimService.requeueUntestedTasksOnRestoredCapacity(current);
+                if (requeued > 0) {
+                    log.info("AccountHealthService: requeued {} task(s) from UNTESTED_WITHIN_CAPACITY after account capacity recovery", requeued);
+                }
+            } catch (Exception e) {
+                log.warn("AccountHealthService: failed to requeue untested tasks after capacity recovery: {}", e.getMessage());
+            }
+        }
+
         return recovered;
     }
 
@@ -827,7 +847,19 @@ public class AccountHealthService {
     /** Thin wrapper so every scheduled account-status mutation goes through this one service, not the repository directly. */
     @Transactional
     public int resetDailyLimitedAccounts() {
-        return accountRepository.resetDailyLimitedAccounts(Instant.now());
+        Instant now = Instant.now();
+        int reset = accountRepository.resetDailyLimitedAccounts(now);
+        if (reset > 0 && claimService != null) {
+            try {
+                int requeued = claimService.requeueUntestedTasksOnRestoredCapacity(now);
+                if (requeued > 0) {
+                    log.info("AccountHealthService: requeued {} task(s) from UNTESTED_WITHIN_CAPACITY after daily limit reset", requeued);
+                }
+            } catch (Exception e) {
+                log.warn("AccountHealthService: failed to requeue untested tasks after daily limit reset: {}", e.getMessage());
+            }
+        }
+        return reset;
     }
 
     /** Thin wrapper - see resetDailyLimitedAccounts(). */

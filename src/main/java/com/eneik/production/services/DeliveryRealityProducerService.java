@@ -81,6 +81,7 @@ public class DeliveryRealityProducerService {
     public static final String CARRIER_CHANNEL_CATEGORY = "CARRIER_CHANNEL";
     public static final String CARRIER_DELIVERY_MISSING = "CARRIER_DELIVERY_MISSING";
     public static final String DELIVERY_EXHAUSTED_CATEGORY = "DELIVERY_EXHAUSTED";
+    public static final String REPEATED_DELIVERY_FAILURE = "REPEATED_DELIVERY_FAILURE";
 
     public static final int DEFAULT_MAX_REPAIR_DEPTH = 2;
     public static final String MAX_REPAIR_DEPTH_KEY = "max_repair_depth";
@@ -134,7 +135,8 @@ public class DeliveryRealityProducerService {
 
     public int getMaxRepairDepth() {
         if (systemSettingsService != null) {
-            return systemSettingsService.effectiveInt(MAX_REPAIR_DEPTH_KEY, DEFAULT_MAX_REPAIR_DEPTH);
+            int val = systemSettingsService.effectiveInt(MAX_REPAIR_DEPTH_KEY, DEFAULT_MAX_REPAIR_DEPTH);
+            return val > 0 ? val : DEFAULT_MAX_REPAIR_DEPTH;
         }
         return DEFAULT_MAX_REPAIR_DEPTH;
     }
@@ -201,17 +203,31 @@ public class DeliveryRealityProducerService {
             return;
         }
 
-        // Law 8 (Variant Function): repair depth strictly decreases the remaining repair budget.
-        // v = maxRepairDepth - repairDepthForTask(task). If exhausted, stop creating work and record terminal state.
+        // Law 3 (Austin / Category Error D002) & Law 8 (Variant Function / Absorbing Condition):
+        // An observation that delivery failed for an already ordered requirement is a delivery defect fact,
+        // NOT a new customer requirement (DZHON_OSTIN_02_CATEGORY_ERROR_SCAN).
+        // Repeated failure of delivery of an already ordered requirement creates NO new wishlist
+        // (prevents the self-ordering loop of 196 delivery_never_reached_main briefs).
         int currentDepth = repairDepthForTask(task);
         int maxRepairDepth = getMaxRepairDepth();
-        if (currentDepth > maxRepairDepth) {
-            log.warn("DeliveryRealityProducerService: repair budget exhausted for task {} (order {} > max {}) - "
-                            + "recording terminal absorbing failure in DefectJournal under Law 8",
-                    task.getId(), currentDepth, maxRepairDepth);
-            recordTerminalFinding(project, task, epic, "REPAIR_BUDGET_EXHAUSTED",
-                    "Task " + task.getId() + " reached max repair depth (" + currentDepth + "/" + maxRepairDepth
-                            + "). Repair budget exhausted under Law 8.");
+        boolean budgetExhausted = currentDepth > maxRepairDepth;
+        boolean alreadyOrdered = isRequirementAlreadyOrdered(project.getId(), epic, task);
+        boolean repeatedFailure = budgetExhausted || alreadyOrdered;
+
+        if (repeatedFailure) {
+            String defectType = budgetExhausted ? "REPAIR_BUDGET_EXHAUSTED" : REPEATED_DELIVERY_FAILURE;
+            String description = budgetExhausted
+                    ? "Task " + task.getId() + " reached max repair depth (" + currentDepth + "/" + maxRepairDepth
+                            + "). Repair budget exhausted under Law 8."
+                    : "Task " + task.getId() + " failed to deliver already ordered requirement (epic " + epic
+                            + ") at repair depth " + currentDepth
+                            + ". Repeated delivery failure recorded in defect journal under Law 3 (DZHON_OSTIN_02_CATEGORY_ERROR_SCAN); new scope is not created.";
+            log.warn("DeliveryRealityProducerService: repeated delivery failure for already ordered requirement "
+                            + "(epic {}, task {}, depth {}) - recording delivery defect in DefectJournal under Law 3 / D002; "
+                            + "no new scope is created",
+                    epic, task.getId(), currentDepth);
+            recordTerminalFinding(project, task, epic, "CRITICAL", DELIVERY_EXHAUSTED_CATEGORY,
+                    defectType, description);
             return;
         }
         wishlist.setFeatureId(epic);
@@ -806,6 +822,47 @@ public class DeliveryRealityProducerService {
             return 1;
         }
         return repairDepthOfWishlist(source) + 1;
+    }
+
+    /**
+     * Law 3 (Austin / Category Error D002): check whether this requirement is already ordered and not cancelled,
+     * or if this task is already a repair attempt for it.
+     */
+    boolean isRequirementAlreadyOrdered(UUID projectId, UUID epic, TaskEntity task) {
+        if (projectId == null) {
+            return false;
+        }
+        if (task != null && task.getSourceWishlistId() != null) {
+            com.eneik.production.models.persistence.WishlistEntity source =
+                    wishlistRepository.findById(task.getSourceWishlistId()).orElse(null);
+            if (source != null && source.getStatus() != com.eneik.production.models.persistence.WishlistStatus.dismissed) {
+                return true;
+            }
+            if (source != null && source.getOriginWishlistId() != null) {
+                com.eneik.production.models.persistence.WishlistEntity origin =
+                        wishlistRepository.findById(source.getOriginWishlistId()).orElse(null);
+                if (origin != null && origin.getStatus() != com.eneik.production.models.persistence.WishlistStatus.dismissed) {
+                    return true;
+                }
+            }
+        }
+        if (epic != null) {
+            if (wishlistRepository.existsByProjectIdAndFeatureIdAndStatusNot(
+                    projectId, epic, com.eneik.production.models.persistence.WishlistStatus.dismissed)) {
+                return true;
+            }
+            if (wishlistRepository.existsByProjectIdAndFeatureIdAndSource(
+                    projectId, epic, com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main)) {
+                return true;
+            }
+        }
+        if (task != null && task.getFeatureId() != null && !task.getFeatureId().equals(epic)) {
+            if (wishlistRepository.existsByProjectIdAndFeatureIdAndStatusNot(
+                    projectId, task.getFeatureId(), com.eneik.production.models.persistence.WishlistStatus.dismissed)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public int repairDepthOfWishlist(com.eneik.production.models.persistence.WishlistEntity repair) {

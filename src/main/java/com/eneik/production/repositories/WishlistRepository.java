@@ -74,5 +74,15 @@ public interface WishlistRepository extends JpaRepository<WishlistEntity, UUID> 
             com.eneik.production.models.persistence.WishlistSource source,
             java.util.UUID sourceTaskId);
 
+    // Law 3 (Austin / Category Error D002): check whether a requirement already has a delivery repair brief
+    boolean existsByProjectIdAndFeatureIdAndSource(
+            UUID projectId, UUID featureId, WishlistSource source);
+
+    boolean existsByProjectIdAndFeatureIdAndSourceAndStatusNot(
+            UUID projectId, UUID featureId, WishlistSource source, WishlistStatus status);
+
+    boolean existsByProjectIdAndFeatureIdAndStatusNot(
+            UUID projectId, UUID featureId, WishlistStatus status);
+
     List<WishlistEntity> findAllByOrderByCreatedAtDesc();
 }

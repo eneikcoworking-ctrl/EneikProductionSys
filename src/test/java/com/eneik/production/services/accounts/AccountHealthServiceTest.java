@@ -686,4 +686,19 @@ class AccountHealthServiceTest {
 
         assertEquals(Duration.ofHours(12), service.estimateReplenishmentPeriod(account));
     }
+
+    @Test
+    void resetDailyLimitedAccounts_triggersUntestedTaskRequeue() {
+        com.eneik.production.services.ClaimService claimService =
+                mock(com.eneik.production.services.ClaimService.class);
+        service.setClaimService(claimService);
+
+        when(accountRepository.resetDailyLimitedAccounts(any())).thenReturn(3);
+
+        int reset = service.resetDailyLimitedAccounts();
+
+        assertEquals(3, reset);
+        verify(accountRepository).resetDailyLimitedAccounts(any());
+        verify(claimService).requeueUntestedTasksOnRestoredCapacity(any());
+    }
 }

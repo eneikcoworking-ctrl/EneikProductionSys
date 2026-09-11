@@ -726,3 +726,26 @@
 
 **В работе дальше:**
 - Следующий пункт по разделу XVI `docs/FACTORY_MECHANISMS.md`: Предписание 16 («Круг самозаказа · `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` (D002) · закон 3, ограничение области находки»).
+
+**Закрыто (Такт 35):** Полная реализация и доводка Предписания 15 (`ClaimService` / `ProjectFlowService` / `AccountHealthService` / `ContinuousOrchestrationService`, закон 12, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `INSTITUTIONAL_FACT_REGISTER` / D007) и Предписания 16 (`DeliveryRealityProducerService`, закон 3, `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` / D002):
+- **Предписание 15 (трёхзначная логика Белнапа и путь разрешения):**
+  1. **Трёхзначная логика отказов типом:** введён enum `DispatchRefusalCategory` (`EXTERNAL_CAPACITY`, `NON_EXTERNAL_REJECTION`, `UNATTRIBUTED_REFUSAL`). Пустые, null и неспецифицированные причины (`jules_precondition_unspecified` и др.) классифицируются строго как `UNATTRIBUTED_REFUSAL`, исключая ложную маскировку под квоты поставщика.
+  2. **Регистрация состава тремя числами:** `retireForExhaustedDispatchBudget` фиксирует число внешних, невнешних и неприписанных отказов. Статус `UNTESTED_WITHIN_CAPACITY` присваивается строго при 100% подтверждённых внешних отказах (`external > 0 && nonExternal == 0 && unattributed == 0`). При наличии неприписанных или смешанных отказов выставляется `DISPATCH_BUDGET_EXHAUSTED` (с перечислением всех трёх чисел), без пометки `UNTESTED_WITHIN_CAPACITY`.
+  3. **Хранение в полезном грузе без миграции БД:** введён enum `TaskDispatchVerdict` (`NONE`, `UNTESTED_WITHIN_CAPACITY`, `DISPATCH_BUDGET_EXHAUSTED`), сохраняемый в JSON-поле `payload` задачи (`dispatch_verdict`) с документированным переходным фоллбэком для исторических строк.
+  4. **Путь разрешения (resolution path):** `requeueUntestedTasksOnRestoredCapacity(Instant now)` возвращает задачи со статусом `blocked` и вердиктом `UNTESTED_WITHIN_CAPACITY` обратно в `queued`, сбрасывает метку `last_budget_reset_at`, сбрасывает вердикт в `NONE` и регистрирует институциональный факт `TASK_CAPACITY_RECOVERY_RESUMED` в `DefectJournalEntity`.
+  5. **Подключение к главному событию:** метод вызывается как при восстановлении остывших аккаунтов (`AccountHealthService.recoverEligibleAccounts`), так и при ночном сбросе суточных квот (`AccountHealthService.resetDailyLimitedAccounts` и `ContinuousOrchestrationService.resetDailyLimitedAccounts`).
+- **Предписание 16 (устранение круга самозаказа по Остину):**
+  1. **Переходник границы рода:** `isRequirementAlreadyOrdered` проверяет активность исходного клиентского требования (source wishlist или epic не в статусе `dismissed`).
+  2. **Замена заявки на факт о доставке:** повторный сбой доставки уже заказанного требования не создаёт новую заявку (0 новых вишлистов), а фиксирует факт дефекта доставки в `DefectJournalEntity` с типом `REPEATED_DELIVERY_FAILURE` (категория `DELIVERY_EXHAUSTED`, уровень `CRITICAL`).
+  3. **Глубина ремонта:** сохранена `DEFAULT_MAX_REPAIR_DEPTH = 2`.
+- **Заслоняющие тесты (110/110 green в Docker Maven с `-m 1500m --cpus=2`):**
+  - `DeliveryRealityLaw3CategoryErrorTest` (4/4): двукратный провал доставки клиентского требования создаёт 0 заявок и 2 записи дефекта `REPEATED_DELIVERY_FAILURE`.
+  - `DeliveryRealityLaw8SecondOrderRepairTest` (6/6): проверка инвариантов цепочек ремонта.
+  - `DispatchAttemptBudgetTest` (12/12): исчерпание одними внешними отказами -> `UNTESTED_WITHIN_CAPACITY`; исчерпание с отказом запроса -> `DISPATCH_BUDGET_EXHAUSTED` (13 external, 1 non-external, 0 unattributed); исчерпание чисто неприписанными отказами -> `DISPATCH_BUDGET_EXHAUSTED` (0 external, 0 non-external, 14 unattributed) и `isUntestedWithinCapacity == false`; возобновление задач по restored capacity; проверка трёхзначного `DispatchRefusalCategory`.
+  - `AccountHealthServiceTest` (31/31): ночной сброс суточных лимитов триггерит возобновление задач из `UNTESTED_WITHIN_CAPACITY`.
+  - `ContinuousOrchestrationServiceTest` (11/11): ночной сброс суточных лимитов триггерит возобновление задач через `projectFlowService.requeueUntestedTasksOnRestoredCapacity()`.
+  - `AccountHealthServiceLaw14Test` (7/7) и `ProjectFlowServiceTest` (39/39).
+
+**В работе дальше:**
+- Следующий пункт по разделу XVI `docs/FACTORY_MECHANISMS.md`: Предписание 17 («Аренда чистильщика назначена, а не выведена · `BELIEF_UPDATE_LEDGER` (D007)»).
+

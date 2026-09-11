@@ -479,6 +479,46 @@ class ContinuousOrchestrationServiceTest {
         verify(settingsService, times(1)).save("system_stall_status", "ok");
     }
 
+    @Test
+    void resetDailyLimitedAccounts_resetsAccountsAndRequeuesUntestedTasks() {
+        com.eneik.production.services.accounts.AccountHealthService accountHealthService =
+                mock(com.eneik.production.services.accounts.AccountHealthService.class);
+        ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
+        AccountRepository accountRepository = mock(AccountRepository.class);
+
+        when(accountHealthService.resetDailyLimitedAccounts()).thenReturn(2);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                mock(ProjectRepository.class),
+                projectFlowService,
+                accountRepository,
+                mock(JulesSessionRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class),
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                mock(TaskRepository.class),
+                new SystemProgressTracker(),
+                mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                accountHealthService,
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class),
+                mock(com.eneik.production.services.verdict.AutonomousVerdictObservationService.class)
+        );
+
+        service.resetDailyLimitedAccounts();
+
+        verify(accountHealthService).resetDailyLimitedAccounts();
+        verify(accountRepository).resetDailySessionCounts();
+        verify(projectFlowService).requeueUntestedTasksOnRestoredCapacity();
+    }
+
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {
         ProjectEntity project = new ProjectEntity();
         project.setId(id);

@@ -2088,7 +2088,7 @@ for title,n in c.most_common():
 
 *Опровержение:* исчерпать предел одними внешними отказами и посмотреть на итоговый статус требования.
 
-*Статус заслона (2026-09-11):* держится. Счёт `refusedSessionCreations` не тронут (закон 12 / D007). `retireForExhaustedDispatchBudget` фиксирует точный состав отказов (внешние vs невнешние) и регистрирует факт в `DefectJournalEntity` (`INSTITUTIONAL_AUDIT` / `DISPATCH_BUDGET_EXHAUSTION_COMPOSITION`). При одних внешних отказах требование переводится в возобновляемое состояние `UNTESTED_WITHIN_CAPACITY` в статусе `blocked`. `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks` заслонён предикатом `ClaimService.isUntestedWithinCapacity` и не переводит требование в поглощающий `failed`. Заслонено тестами в `DispatchAttemptBudgetTest` и `ProjectFlowServiceTest`.
+*Статус заслона (2026-09-11):* держится. Счёт `refusedSessionCreations` не тронут (закон 12 / D007). Трёхзначная логика отказов (`EXTERNAL_CAPACITY`, `NON_EXTERNAL_REJECTION`, `UNATTRIBUTED_REFUSAL`) оформлена типом `DispatchRefusalCategory` (D012 / `NUEL_BELNAP_03_TRUTH_STATUS_TABLE`). `retireForExhaustedDispatchBudget` фиксирует точный состав отказов тремя числами и регистрирует факт в `DefectJournalEntity` (`INSTITUTIONAL_AUDIT` / `DISPATCH_BUDGET_EXHAUSTION_COMPOSITION`). Вердикт хранится в полезном грузе задачи типом `TaskDispatchVerdict`. Требование помечается `UNTESTED_WITHIN_CAPACITY` строго при 100% подтверждённых внешних отказах (0 неприписанных). Путь разрешения (`requeueUntestedTasksOnRestoredCapacity`) подключён как к восстановлению аккаунтов (`AccountHealthService.recoverEligibleAccounts`), так и к ночному сбросу дневных квот (`AccountHealthService.resetDailyLimitedAccounts` и `ContinuousOrchestrationService.resetDailyLimitedAccounts`). `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks` заслонён предикатом `ClaimService.isUntestedWithinCapacity` и не переводит требование в поглощающий `failed`. Заслонено тестами в `DispatchAttemptBudgetTest`, `AccountHealthServiceTest`, `ContinuousOrchestrationServiceTest` и `ProjectFlowServiceTest`.
 
 ---
 
@@ -2116,6 +2116,8 @@ Things with Words*. Сильная форма дословно: «назван �
 *Заслон:* повторная неудача доставки уже заказанного требования новой заявки не создаёт.
 
 *Опровержение:* провалить доставку дважды и посчитать заявки.
+
+*Статус заслона (2026-09-11):* держится. В `DeliveryRealityProducerService` реализован переходник рода по Остину (D002): метод `isRequirementAlreadyOrdered` проверяет, существует ли и активно ли исходное требование клиента (source wishlist или epic не в статусе `dismissed`). Повторная неудача доставки уже заказанного требования регистрируется как факт в `DefectJournalEntity` с типом `REPEATED_DELIVERY_FAILURE` (категория `DELIVERY_EXHAUSTED`, уровень `CRITICAL`), а создание новой заявки блокируется (0 новых вишлистов). Предел глубины ремонта сохранён `DEFAULT_MAX_REPAIR_DEPTH = 2`. Заслонено тестами в `DeliveryRealityLaw3CategoryErrorTest` (4/4) и `DeliveryRealityLaw8SecondOrderRepairTest` (6/6).
 
 ---
 

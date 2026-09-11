@@ -202,6 +202,63 @@ public class TaskEntity {
     public void setJulesSessionName(String julesSessionName) { this.julesSessionName = julesSessionName; }
     public String getJulesDispatchStatus() { return julesDispatchStatus; }
     public void setJulesDispatchStatus(String julesDispatchStatus) { this.julesDispatchStatus = julesDispatchStatus; }
+
+    public TaskDispatchVerdict getDispatchVerdict() {
+        if (payload != null && payload.has("dispatch_verdict")) {
+            try {
+                return TaskDispatchVerdict.valueOf(payload.get("dispatch_verdict").asText());
+            } catch (Exception ignored) {}
+        }
+        // Transitional fallback for legacy rows prior to typed TaskDispatchVerdict persistence in payload;
+        // will be deprecated and removed once all historical rows transition.
+        if (julesDispatchStatus != null && julesDispatchStatus.contains("UNTESTED_WITHIN_CAPACITY")) {
+            return TaskDispatchVerdict.UNTESTED_WITHIN_CAPACITY;
+        }
+        return TaskDispatchVerdict.NONE;
+    }
+
+    public void setDispatchVerdict(TaskDispatchVerdict verdict) {
+        com.fasterxml.jackson.databind.node.ObjectNode node = (payload instanceof com.fasterxml.jackson.databind.node.ObjectNode existing)
+                ? existing
+                : new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        if (verdict != null && verdict != TaskDispatchVerdict.NONE) {
+            node.put("dispatch_verdict", verdict.name());
+        } else {
+            node.remove("dispatch_verdict");
+        }
+        setPayload(node);
+    }
+
+    public boolean isUntestedWithinCapacity() {
+        return getDispatchVerdict().isUntestedWithinCapacity();
+    }
+
+    public Instant getLastBudgetResetAt() {
+        if (payload == null) {
+            return null;
+        }
+        String ts = payload.path("last_budget_reset_at").asText(null);
+        if (ts == null || ts.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(ts);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public void setLastBudgetResetAt(Instant resetAt) {
+        com.fasterxml.jackson.databind.node.ObjectNode node = (payload instanceof com.fasterxml.jackson.databind.node.ObjectNode existing)
+                ? existing
+                : new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        if (resetAt != null) {
+            node.put("last_budget_reset_at", resetAt.toString());
+        } else {
+            node.remove("last_budget_reset_at");
+        }
+        setPayload(node);
+    }
     public boolean isQualityGatePassed() { return qualityGatePassed; }
     public void setQualityGatePassed(boolean qualityGatePassed) { this.qualityGatePassed = qualityGatePassed; }
     public int getRetryCount() { return retryCount; }

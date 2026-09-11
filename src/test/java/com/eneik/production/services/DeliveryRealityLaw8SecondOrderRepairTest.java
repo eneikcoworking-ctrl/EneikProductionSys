@@ -142,8 +142,8 @@ class DeliveryRealityLaw8SecondOrderRepairTest {
     }
 
     @Test
-    @DisplayName("Law 8: Second-order repair successfully inherits product epic and computes depth 2")
-    void secondOrderRepairInheritsProductEpicAndComputesDepthTwo() {
+    @DisplayName("Law 3 & 8: Second-order repair attempt is recognized as repeated delivery failure, recorded in DefectJournal and never orders second wishlist")
+    void secondOrderRepairAttemptRecordsDeliveryDefectAndNeverOrdersSecondWishlistUnderLaw3() {
         // Initial product task
         UUID initialTaskId = UUID.randomUUID();
         TaskEntity initialTask = new TaskEntity();
@@ -181,15 +181,21 @@ class DeliveryRealityLaw8SecondOrderRepairTest {
         int depth = service.repairDepthForTask(firstOrderRepairTask);
         assertEquals(2, depth, "Second-order repair depth must be 2");
 
-        // File scope for failed first-order repair task
+        // File scope for failed first-order repair task: under Law 3 & 8, repeated delivery failure does NOT create a second-order wishlist
         service.fileTheMissingWorkAsScope(project, firstOrderRepairTask);
 
-        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
-        verify(wishlistRepository).save(captor.capture());
+        // Wishlist must NOT be saved (halt circle of self-ordering under Law 3 / D002)
+        verify(wishlistRepository, never()).save(any());
 
-        WishlistEntity secondOrderWishlist = captor.getValue();
-        assertEquals(firstOrderRepairTaskId, secondOrderWishlist.getSourceTaskId());
-        assertEquals(productEpicId, secondOrderWishlist.getFeatureId(), "Second-order repair must inherit original product epic");
+        // Repeated delivery failure recorded in DefectJournal
+        ArgumentCaptor<DefectJournalEntity> captor = ArgumentCaptor.forClass(DefectJournalEntity.class);
+        verify(defectJournalRepository).save(captor.capture());
+
+        DefectJournalEntity defect = captor.getValue();
+        assertEquals(projectId, defect.getProjectId());
+        assertEquals(productEpicId, defect.getFeatureId());
+        assertEquals(DeliveryRealityProducerService.DELIVERY_EXHAUSTED_CATEGORY, defect.getCategory());
+        assertEquals(DeliveryRealityProducerService.REPEATED_DELIVERY_FAILURE, defect.getDefectType());
     }
 
     @Test

@@ -56,6 +56,7 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     // effect of the dispatch loop itself, which is what invariant 7 requires of a mark a loop is bounded
     // by. A count, not a read - the answer is one number and must not cost the table.
     long countByTaskIdAndExternalSessionIdIsNullAndStatus(UUID taskId, String status);
+    long countByTaskIdAndExternalSessionIdIsNullAndStatusAndCreatedAtAfter(UUID taskId, String status, Instant createdAt);
 
     // 2026-08-29, action plan 4.2: the last moment the channel demonstrably accepted a session for this
     // project. An external session id is written only when Jules actually created one, so this is the
