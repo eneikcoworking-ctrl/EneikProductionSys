@@ -89,11 +89,20 @@
      - Все 20 мест создания `WishlistEntity` в 9 сервисах (`AutoMergeService`, `FalsificationCycleService`, `OpsAuditorService`, `ProjectFlowService`, `DesignSystemFalsificationService`, `DeliveredWorkJudgmentService`, `ProductLaunchabilityService`, `LaunchabilityConstraintService`, `JulesDispatchService`) и 12 мест создания `TaskEntity` явно объявляют целевой контекст по смыслу.
      - `JulesDispatchService.dispatchInternal` и `ProjectFlowService.dispatchQueuedTasks` заслонены: задача с `null` или `UNDETERMINED` целевым контекстом отклоняется от внешней раздачи (`status = failed`, явный `closureReason = "Dispatch rejected: target context is undetermined"`, внешний Jules-сеанс не создаётся), защищая репозиторий заказчика от неконтролируемой мутации.
      - `PlannedWorkRecoveryService.isMetaTask` усилен: проверяет `isCarrier() || targetContext == ORCHESTRATOR_SYSTEM` и строго отвергает задачи с `targetContext == PRODUCT_CODEBASE`, сохраняя совместимость для ненаследованных/исторических задач.
-     - Исправлены названия дефектов в javadoc тестов (`LeanValueTest` -> D012 Policy contradiction, `GitHubProjectFactoryClientTest` -> D007 Evidence gap).
+     - Исправлены названия дефектов в javadoc тестов (`LeanValueTest` -> D012 Policy contradiction, `GitHubProjectFactoryClientTest` -> D007 Evidence gap, `TargetContextTest` -> D002 Invalid state).
+     - **Правка наследования (коммит `cb8abcf`):** устранена подмена неустановленного целевого контекста родителя (`null/UNDETERMINED -> PRODUCT_CODEBASE`) в 4 точках деривации (`OpsAuditorService:524`, `DeliveredWorkJudgmentService:508`, `ProjectFlowService:1703`, `ProjectFlowService:5453`). Дочерние задачи и пожелания наследуют `targetContext` родителя как есть.
      - Создан заслоняющий тестовый класс `TargetContextTest` (4/4 green).
      - Итоговый запуск: 133/133 тестов green в контейнере Maven (BUILD SUCCESS).
 
-8. **Что берётся следующим:** Такт 16 — Пункт 15 очереди (`EneikProductionApplication` / Flyway, пункт 49 `FACTORY_MECHANISMS.md`: сверка миграций отключена дважды — `repair()` перед каждой миграцией и `validate-on-migrate=false`).
+8. **Такт 16 закрыт (коммит `61d3361`, пуш в `main`):**
+   - **`EneikProductionApplication` / `Flyway` (пункт 15 очереди, запись № 49 `FACTORY_MECHANISMS.md`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008 False green, `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` / D010 Data lineage loss):**
+     - В `src/main/resources/application.properties` (а также тестовых профилях `application.properties` и `application-test.properties`) возвращена строгая сверка миграций: `spring.flyway.validate-on-migrate=true`.
+     - Добавлен защитный флаг `spring.flyway.repair-on-startup=false` по умолчанию.
+     - В `EneikProductionApplication.flywayMigrationStrategy` ликвидирован безусловный вызов `flyway.repair()` перед каждым `flyway.migrate()`, переписывавший контрольные суммы истории миграций. Восстановление (`repair`) оставлено строго как разовый аварийный выход, активируемый только при явном указании `spring.flyway.repair-on-startup=true`.
+     - Создан фальсифицирующий тестовый класс `FlywayMigrationValidationTest` (4/4 green): доказано, что модификация контрольной суммы применённой миграции роняет запуск с `FlywayValidateException`, а `repair()` запускается только по явному флагу.
+     - Итоговый запуск: 33/33 тестов green в контейнере Maven (BUILD SUCCESS).
+
+9. **Что берётся следующим:** Такт 17 — Пункт 16 очереди (`V80`, раздел XXIIе `FACTORY_MECHANISMS.md`: счёт связности считается и не читается — 9884 посчитанных исхода, ни одного читающего для решения).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов
