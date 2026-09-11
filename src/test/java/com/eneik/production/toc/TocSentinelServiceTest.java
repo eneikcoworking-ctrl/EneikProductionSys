@@ -239,23 +239,108 @@ public class TocSentinelServiceTest {
     }
 
     /**
-     * Flaw 3: Watchdog cadence is derived from shortest observed step duration (ALONZO_CHERCH_21_DERIVED_CUTOFF).
-     * Case 1: Without observations, watchdog relaxes to declared max-cadence bound to eliminate idle polling.
+     * (1) Node with past completions but zero active work in flight relaxes to max bound (idle watchdog).
+     * Prevents watchdog from spinning when the workflow has stopped.
      */
     @Test
-    void derivedCadenceWithoutObservationsRelaxesToMaxBound() {
-        assertThat(graph.getAllNodes().stream().mapToLong(TocNode::getCompletedCount).sum()).isEqualTo(0L);
+    void nodeWithCompletionsAndZeroWorkInFlightRelaxesToMaxBound() {
+        // Complete 5 passes on STEP_DONE to establish mean duration of 1000ms
+        TocNode node = graph.getOrCreateNode("STEP_DONE");
+        for (int i = 0; i < 5; i++) {
+            node.recordExecution(1_000_000_000L, true);
+        }
+        assertThat(node.getCompletedCount()).isEqualTo(5L);
+        assertThat(node.getMeanDurationMs()).isEqualTo(1000.0);
+
+        // All tokens finished: active token count is strictly zero
+        assertThat(sentinelService.getActiveTokenCount()).isEqualTo(0);
+
+        // When nothing is in flight, watchdog MUST relax to maxCadenceMs
         assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(sentinelService.getMaxCadenceMs());
         assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(10000L);
     }
 
     /**
-     * Flaw 3: Watchdog cadence adapts dynamically to actual observed step throughput.
+     * (2) Node in flight with observed mean duration of 1000ms derives cadence of 500ms (min(mean)/2).
+     */
+    @Test
+    void nodeInFlightWithMean1000msDerivesCadence500ms() {
+        // Establish observed mean of 1000ms on STEP_IN_FLIGHT
+        TocNode node = graph.getOrCreateNode("STEP_IN_FLIGHT");
+        node.recordExecution(1_000_000_000L, true);
+        assertThat(node.getMeanDurationMs()).isEqualTo(1000.0);
+
+        // Start active token in flight on this node
+        TocToken token = sentinelService.startExecution("ACTIVE_FLOW", 10);
+        sentinelService.enterStep(token, "STEP_IN_FLIGHT");
+        assertThat(sentinelService.getActiveTokenCount()).isEqualTo(1);
+        assertThat(node.getInFlightCount()).isEqualTo(1L);
+
+        // Derived cadence is 1000 / 2 = 500ms
+        assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(500L);
+    }
+
+    /**
+     * (3) Active work with mean 100ms clamps to lower bound (250ms); mean 60000ms clamps to upper bound (10000ms).
+     */
+    @Test
+    void activeWorkClampsToLowerAndUpperBounds() {
+        sentinelService.setCadenceBounds(250L, 10000L);
+
+        // Fast step: mean 100ms -> derived 50ms -> clamps to min (250ms)
+        TocNode fastNode = graph.getOrCreateNode("FAST_STEP");
+        fastNode.recordExecution(100_000_000L, true);
+        TocToken fastToken = sentinelService.startExecution("FAST_FLOW", 10);
+        sentinelService.enterStep(fastToken, "FAST_STEP");
+        assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(250L);
+
+        // Exit fast token
+        sentinelService.exitStep(fastToken, "FAST_STEP", true);
+        sentinelService.endExecution(fastToken, true);
+
+        // Slow step in isolated graph: mean 60000ms -> derived 30000ms -> clamps to max (10000ms)
+        TocExecutionGraph slowGraph = new TocExecutionGraph();
+        TocSentinelService slowSentinel = new TocSentinelService(slowGraph, new TocAnomalyDetector(slowGraph), new TocOptimizer(slowGraph));
+        slowSentinel.setCadenceBounds(250L, 10000L);
+
+        TocNode slowNode = slowGraph.getOrCreateNode("SLOW_STEP");
+        slowNode.recordExecution(60_000_000_000L, true);
+        TocToken slowToken = slowSentinel.startExecution("SLOW_FLOW", 10);
+        slowSentinel.enterStep(slowToken, "SLOW_STEP");
+        assertThat(slowSentinel.computeDerivedWatchdogCadenceMs()).isEqualTo(10000L);
+    }
+
+    /**
+     * (4) Step rejected as cycle does NOT increment node in-flight counter.
+     */
+    @Test
+    void rejectedCycleStepDoesNotIncrementInFlightCounter() {
+        TocToken token = sentinelService.startExecution("CYCLE_FLOW", 10);
+        sentinelService.enterStep(token, "NODE_1");
+        sentinelService.enterStep(token, "NODE_2");
+
+        TocNode node1 = sentinelService.getNode("NODE_1");
+        assertThat(node1.getInFlightCount()).isEqualTo(1L);
+
+        // Attempting to re-enter NODE_1 triggers cycle detection and rejection
+        boolean allowed = sentinelService.enterStep(token, "NODE_1");
+        assertThat(allowed).isFalse();
+        assertThat(token.getStatus()).isEqualTo(TocToken.TokenStatus.CYCLE_ABORTED);
+
+        // inFlightCount of NODE_1 must NOT be incremented
+        assertThat(node1.getInFlightCount()).isEqualTo(1L);
+    }
+
+    /**
+     * Watchdog cadence adapts dynamically to actual observed step throughput.
      * Refutation test: Cadence MUST change when observed step durations change.
      */
     @Test
     void derivedCadenceAdaptsDynamicallyToObservedStepDurations() {
         sentinelService.setCadenceBounds(100L, 10000L);
+
+        TocToken token = sentinelService.startExecution("ADAPT_FLOW", 10);
+        sentinelService.enterStep(token, "STEP_A");
 
         // Record execution of 1200ms on STEP_A -> half is 600ms
         TocNode nodeA = graph.getOrCreateNode("STEP_A");
@@ -276,26 +361,6 @@ public class TocSentinelServiceTest {
         long cadence2 = sentinelService.computeDerivedWatchdogCadenceMs();
         assertThat(cadence2).isEqualTo(250L);
         assertThat(cadence2).isNotEqualTo(cadence1); // Direct proof of dynamic adaptability
-    }
-
-    /**
-     * Flaw 3: Derived watchdog cadence is strictly clamped to declared min and max bounds.
-     */
-    @Test
-    void derivedCadenceClampsToDeclaredMinAndMaxBounds() {
-        sentinelService.setCadenceBounds(250L, 5000L);
-
-        // Sub-minimum case: ultra-fast step (80ms) -> half is 40ms, must clamp to minCadenceMs (250ms)
-        TocNode fastNode = graph.getOrCreateNode("FAST_STEP");
-        fastNode.recordExecution(80_000_000L, true);
-        assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(250L);
-
-        // Sub-maximum clamp case: configure high min/max, record very slow step (30s) -> half is 15s, must clamp to max (5000ms)
-        TocExecutionGraph slowGraph = new TocExecutionGraph();
-        TocSentinelService slowSentinel = new TocSentinelService(slowGraph, new TocAnomalyDetector(slowGraph), new TocOptimizer(slowGraph));
-        slowSentinel.setCadenceBounds(250L, 5000L);
-        slowGraph.getOrCreateNode("SLOW_STEP").recordExecution(30_000_000_000L, true);
-        assertThat(slowSentinel.computeDerivedWatchdogCadenceMs()).isEqualTo(5000L);
     }
 
     /**

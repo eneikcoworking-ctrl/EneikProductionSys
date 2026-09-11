@@ -217,32 +217,40 @@ public class TocSentinelService implements SchedulingConfigurer {
     }
 
     /**
-     * Computes the dynamic watchdog cadence derived from observed step durations in the execution graph
-     * (ALONZO_CHERCH_21_DERIVED_CUTOFF / D008).
+     * Computes the dynamic watchdog cadence derived from active execution flow (ALONZO_CHERCH_21_DERIVED_CUTOFF / D008).
      *
-     * In accordance with the Nyquist-Shannon sampling criterion, tracking bottleneck migrations and queue
-     * buildup reliably without aliasing requires an inspection cadence at least twice as fast as the
-     * shortest step cycle:
-     *     cadence = min(meanDurationMs) / 2
-     *
-     * When no step observations exist in the graph, the cadence relaxes to maxCadenceMs to eliminate
-     * idle polling waste. When step observations exist, the period scales dynamically with actual throughput
-     * and is strictly clamped between minCadenceMs and maxCadenceMs.
+     * Invariants:
+     * 1. When the pipeline is idle (no tokens in flight, getActiveTokenCount() == 0), there are no tokens in danger
+     *    of cycle locks, stall bottlenecks, or buffer overflows. The watchdog relaxes to maxCadenceMs (10,000 ms)
+     *    to eliminate idle CPU churn.
+     * 2. When work is in flight (getActiveTokenCount() > 0), the cadence is derived from the shortest mean step duration
+     *    of active/observed nodes using the Nyquist-Shannon sampling theorem (cadence = min(meanDurationMs) / 2)
+     *    to detect transitions and queue bottlenecks without sampling aliasing.
+     * 3. Lower bound (minCadenceMs = 250 ms): prevents scheduler thread starvation, spinning, and lock churn on
+     *    microsecond steps.
+     * 4. Upper bound (maxCadenceMs = 10,000 ms): governed by dynamic stall detection (TocAnomalyDetector default
+     *    floor of 5,000 ms). An upper bound of 10,000 ms guarantees that an in-flight stall is caught within at
+     *    most 2x the floor window without multi-minute lag.
      */
     public long computeDerivedWatchdogCadenceMs() {
+        if (getActiveTokenCount() == 0) {
+            // Idle pipeline: no work in flight, relax to upper bound
+            return maxCadenceMs;
+        }
+
         double shortestMeanMs = -1.0;
 
         for (TocNode node : graph.getAllNodes()) {
-            if (node.getCompletedCount() > 0) {
+            if (node.hasObservedDuration() && node.getMeanDurationMs() > 0) {
                 double mean = node.getMeanDurationMs();
-                if (mean > 0 && (shortestMeanMs < 0 || mean < shortestMeanMs)) {
+                if (shortestMeanMs < 0 || mean < shortestMeanMs) {
                     shortestMeanMs = mean;
                 }
             }
         }
 
         if (shortestMeanMs < 0) {
-            // No completed step observations in graph: relax to max bound
+            // Work is in flight, but no node has completed a pass yet to provide a measured mean: relax to upper bound
             return maxCadenceMs;
         }
 
