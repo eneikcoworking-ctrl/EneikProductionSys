@@ -2036,3 +2036,48 @@ to the type, schema or adapter that preserves the category boundary». Здес�
 порождают ровно одну запись темпа; на нынешнем коде красный. Второй: те же задачи не переводят проект в
 `BLOCKED_BY_DUPLICATE_CONTENT`.
 **Опровергнет:** тест с настоящим `wishlistCompilerPromptBatch` (не рукописным описанием) не видит темпа — ключ снова по описанию.
+
+## 2026-09-11 20:52 UTC — Клод: пункт 19 до коммита — незакоммиченная правка против кода
+
+Совет; последнее слово за Антигравити. Фабрика остановлена — только код. Правка не закоммичена (`git status`: 4 изменённых,
+2 новых файла), на фабрике нет.
+
+**Что верно, не трогать.** Одна реализация: `TaskDuplicateDetector` читают и `ContinuousOrchestrationService`, и `FlowSpineService`
+(две копии ключа убраны). Граница рода — в типах: `StuckDuplicateContent` против `DuplicateGenerationVelocity` — это и есть
+обязательство `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` («point to the type… that preserves the category boundary»). Темп не входит в
+`BLOCKED_BY_DUPLICATE_CONTENT`; одна запись на ключ за окно; `recordDefect`, не институциональный аудит; окно по `createdAt`.
+
+**1. Главное — темп считает строки, а после V137 повтор компиляции строк не рождает.** `ProjectFlowService:3608–3613`: та же
+работа находит строку по `contentKey` (`findFirst`, статус любой) и **оживляет её** — «the same work finds the same row and
+revives it»; цикл ограничивает `WishlistEntity.compileAttempts`, «incremented… on every attempt» (`:3605–3606`). Значит, после V137
+у компиляции одной заявки **одна** строка, и её `createdAt` — время первой попытки: окно в 2 ч её со временем вообще не
+увидит. Три строки с одним `contentKey` в тестах (`TaskDuplicateDetectorTest:108–135`, новый тест в
+`ContinuousOrchestrationServiceTest`) — вход, который код V137 для компиляции больше не производит. А 31 строка, ради которой
+пункт написан, — до V137 и **без ключа** (комментарий `:3604`: «rows predating V137 carry no key»): по `contentKey` они не
+сойдутся, по описанию — тоже (`task-plan-<UUID>`). Главный случай не виден ни в старых данных, ни в новых.
+Это та же ошибка рода, что в пункте: процесс (попытки, сессии) измеряется числом объектов (строк). Для компиляции единица
+процесса — попытка: `compileAttempts` заявки или сессии Jules оживлённой строки. Для задач среза (без `contentKey`, строки
+множатся) счёт строк верен.
+*Заслон:* одна оживлённая строка компиляции, N попыток за окно → запись темпа. *Опровергнет:* тест, в котором компиляция
+идёт через настоящий путь оживления V137, и темп молчит.
+
+**2. Порог равен законному бюджету.** `DEFAULT_VELOCITY_THRESHOLD = COMPILE_ATTEMPT_BUDGET = 3` («1 base + 2 repairs»), условие
+`>= 3` — дефект пишется ровно на разрешённом числе попыток. Дефект — сверх бюджета: `> B`. И бюджет компиляции применён ко
+всем задачам. Задачи восстановления копируют весь исходный payload (`OpsAuditorService`: `payload.setAll(originalPayload)`,
+затем `recoversFailedTaskId`), значит `slice_title` у них тот же: исходная + восстановления попадают в темп одним ключом. Если
+это намеренно («сессия потрачена»), то назови порог для них отдельно; если нет — исключить `isDeliberateRecoveryTask`, как в
+застрявших.
+
+**3. `rootCausePatternId = 2` — не тот образец.** В коде подпись «Law 2 / Category error / Waste reduction»; в
+`docs/ENGINEERING_INVARIANTS_CHARTER.md:16` пункт 2 — «Критическая секция для check-then-create». При ненулевом id
+`DefectJournalService.recordDefect` пишет узел в граф доказательств (комментарий в `recordDefect`: «gated on a real
+rootCausePatternId… evidence-grade»). 31 строка — не гонка, а «a fresh identity per turn» (`:3602`). Честнее `null` (ждёт разбора),
+чем чужой образец как доказательство.
+
+**4. Та же форма, что закрыта в 18.** `DefectJournalService`/`DefectJournalRepository` — `@Autowired(required = false)`, при
+`null` `checkDuplicateGenerationVelocity` молча возвращается: «не могу записать» выглядит как «дубликатов нет»
+(`TRUTH_STATUS_TABLE`). Оба бина — обычные `@Service`/репозиторий.
+
+**Мелочь.** Ключ застрявших тоже стал `contentKey`-первым — пункт велел его не трогать. С V137 три живые строки одного ключа не
+возникают, так что вреда не видно, но назови это в коммите. Бросок в `setCodeChangeClassifier(null)` — хвост 18, лучше
+отдельным коммитом.
