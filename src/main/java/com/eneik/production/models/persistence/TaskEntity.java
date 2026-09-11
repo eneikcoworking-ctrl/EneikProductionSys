@@ -242,7 +242,9 @@ public class TaskEntity {
 
     @PrePersist
     public void prePersist() {
-        this.carrier = computeIsCarrier();
+        if (!this.carrier) {
+            this.carrier = computeIsCarrier();
+        }
     }
 
     private boolean computeIsCarrier() {
@@ -252,9 +254,10 @@ public class TaskEntity {
     /**
      * A task the factory created to carry its own process (model §II, carrier(τ) ⟺ payload(τ).taskType ≠ ∅).
      * Single point of implementation (Law 1, |impl(I)| = 1).
+     * Reads directly from the materialized carrier column.
      */
     public boolean isCarrier() {
-        return carrier || computeIsCarrier();
+        return carrier;
     }
 
     public boolean getCarrier() {
@@ -430,6 +433,5 @@ public class TaskEntity {
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = Instant.now();
-        this.carrier = computeIsCarrier();
     }
 }

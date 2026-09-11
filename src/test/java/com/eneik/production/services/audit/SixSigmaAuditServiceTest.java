@@ -42,6 +42,8 @@ public class SixSigmaAuditServiceTest {
     private CodeIntegrityFindingRepository codeIntegrityFindingRepository;
     private FalsificationRunRepository falsificationRunRepository;
     private com.eneik.production.services.lever.LeverPromotionService leverPromotionService;
+    private ProjectRepository projectRepository;
+    private JulesSessionRepository julesSessionRepository;
 
     private SixSigmaAuditService auditService;
 
@@ -54,6 +56,8 @@ public class SixSigmaAuditServiceTest {
         featureRepository = mock(FeatureRepository.class);
         codeIntegrityFindingRepository = mock(CodeIntegrityFindingRepository.class);
         falsificationRunRepository = mock(FalsificationRunRepository.class);
+        projectRepository = mock(ProjectRepository.class);
+        julesSessionRepository = mock(JulesSessionRepository.class);
 
         TocExecutionGraph graph = new TocExecutionGraph();
         TocAnomalyDetector anomalyDetector = new TocAnomalyDetector(graph);
@@ -61,15 +65,24 @@ public class SixSigmaAuditServiceTest {
         tocSentinelService = new TocSentinelService(graph, anomalyDetector, optimizer);
 
         when(prReviewRepository.findAll()).thenReturn(Collections.emptyList());
+        when(prReviewRepository.countByMergedTrue()).thenReturn(0L);
+        when(prReviewRepository.findByJulesSessionIdInAndMergedTrue(any())).thenReturn(Collections.emptyList());
+
         when(taskConflictRepository.findAll()).thenReturn(Collections.emptyList());
+        when(taskConflictRepository.count()).thenReturn(0L);
+        when(taskConflictRepository.findByTaskIdIn(any())).thenReturn(Collections.emptyList());
+
         when(taskRepository.findAll()).thenReturn(Collections.emptyList());
+
         when(onboardingAuditFindingRepository.findAll()).thenReturn(Collections.emptyList());
+        when(onboardingAuditFindingRepository.count()).thenReturn(0L);
+        when(onboardingAuditFindingRepository.countByProjectId(any())).thenReturn(0L);
+
         when(codeIntegrityFindingRepository.findByProjectId(any())).thenReturn(Collections.emptyList());
         when(codeIntegrityFindingRepository.findByFeatureId(any())).thenReturn(Collections.emptyList());
         when(falsificationRunRepository.findAllById(any())).thenReturn(Collections.emptyList());
-
-        ProjectRepository projectRepository = mock(ProjectRepository.class);
-        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+        when(julesSessionRepository.findByTaskIdIn(any())).thenReturn(Collections.emptyList());
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(any())).thenReturn(Collections.emptyList());
 
         leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
         when(leverPromotionService.currentStage(any())).thenReturn(com.eneik.production.services.lever.LeverStage.OBSERVE_ONLY);
@@ -129,13 +142,20 @@ public class SixSigmaAuditServiceTest {
         com.eneik.production.models.persistence.TaskConflictEntity orphan =
                 new com.eneik.production.models.persistence.TaskConflictEntity();
         orphan.setTask(proxyOfDeletedTask);
-        when(taskConflictRepository.findAll()).thenReturn(List.of(inScope, orphan));
+        when(taskConflictRepository.findByTaskIdIn(List.of(liveTaskId))).thenReturn(List.of(inScope));
 
         SixSigmaAuditService.DefectOpportunityCount counts = auditService.computePrConflictCounts(projectId, null);
 
         // The conflict on the project's own task counts; the one whose task cannot be found belongs to no
         // project and so counts nowhere.
         assertThat(counts.defects()).isEqualTo(1);
+        verify(taskConflictRepository, never()).findAll();
+        verify(prReviewRepository, never()).findAll();
+
+        // 4-arg overload compatibility check: verifies proxy resistance when caller passes in-memory lists
+        SixSigmaAuditService.DefectOpportunityCount fourArgCounts =
+                auditService.computePrConflictCounts(projectId, null, List.of(), List.of(inScope, orphan));
+        assertThat(fourArgCounts.defects()).isEqualTo(1);
     }
 
     @Test
@@ -457,5 +477,151 @@ public class SixSigmaAuditServiceTest {
         double expectedDpmo = (1.0 / 3.0) * 1_000_000.0;
         assertThat((double) result.get("dpmo")).isCloseTo(expectedDpmo, org.assertj.core.data.Offset.offset(0.01));
         verify(taskRepository, never()).findAll();
+    }
+
+    // --- Invariants: getActiveProjectId & Storage Query Discipline (2026-09-11) ----------------------
+
+    @Test
+    void getActiveProjectIdReturnsSingleActiveProjectAndNeverCallsFindAll() {
+        UUID activeId = UUID.randomUUID();
+        com.eneik.production.models.persistence.ProjectEntity activeProject =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        activeProject.setId(activeId);
+        activeProject.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active))
+                .thenReturn(List.of(activeProject));
+
+        UUID resolved = auditService.getActiveProjectId();
+
+        assertThat(resolved).isEqualTo(activeId);
+        verify(projectRepository, never()).findAll();
+    }
+
+    @Test
+    void getActiveProjectIdReturnsNullWhenNoActiveProjectExistsWithoutArbitraryFallback() {
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active))
+                .thenReturn(Collections.emptyList());
+
+        UUID resolved = auditService.getActiveProjectId();
+
+        assertThat(resolved).isNull();
+        verify(projectRepository, never()).findAll();
+    }
+
+    @Test
+    void getActiveProjectIdReturnsNullWhenMultipleActiveProjectsExistEnforcingSingleProjectLaw() {
+        com.eneik.production.models.persistence.ProjectEntity project1 =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        project1.setId(UUID.randomUUID());
+        com.eneik.production.models.persistence.ProjectEntity project2 =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        project2.setId(UUID.randomUUID());
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active))
+                .thenReturn(List.of(project1, project2));
+
+        UUID resolved = auditService.getActiveProjectId();
+
+        // Factory invariant: "Завод за 1 раз делает 1 проект". Ambiguous state returns null (undetermined), not arbitrary choice.
+        assertThat(resolved).isNull();
+        verify(projectRepository, never()).findAll();
+    }
+
+    @Test
+    void calculateDeliverySixSigmaAuditResolvesActiveProjectWhenNull() {
+        UUID activeId = UUID.randomUUID();
+        com.eneik.production.models.persistence.ProjectEntity activeProject =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        activeProject.setId(activeId);
+        activeProject.setName("test-fiftieth");
+        activeProject.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active))
+                .thenReturn(List.of(activeProject));
+        when(projectRepository.findById(activeId)).thenReturn(java.util.Optional.of(activeProject));
+
+        var report = auditService.calculateDeliverySixSigmaAudit(null);
+
+        assertThat(report.projectId()).isEqualTo(activeId);
+        assertThat(report.projectName()).isEqualTo("test-fiftieth");
+        verify(projectRepository, never()).findAll();
+        verify(onboardingAuditFindingRepository, never()).findAll();
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
+    }
+
+    @Test
+    void calculateFullSixSigmaAuditNeverCallsFindAll() {
+        var report = auditService.calculateFullSixSigmaAudit();
+
+        assertThat(report).isNotNull();
+        verify(projectRepository, never()).findAll();
+        verify(onboardingAuditFindingRepository, never()).findAll();
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
+        verify(taskRepository, never()).findAll();
+    }
+
+    @Test
+    void calculateProductLayerSixSigmaAuditReturnsUndeterminedWhenNoActiveProject() {
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active))
+                .thenReturn(Collections.emptyList());
+
+        var report = auditService.calculateProductLayerSixSigmaAudit(null);
+
+        assertThat(report.projectId()).isNull();
+        assertThat(report.projectName()).isEqualTo("NO_ACTIVE_PROJECT");
+        assertThat(report.qualityTier()).isEqualTo("UNDETERMINED");
+        assertThat(report.sigmaLevel()).isEqualTo(0.0);
+    }
+
+    @Test
+    void computePrConflictCountsGlobalUsesCountsAndNeverFindAll() {
+        when(prReviewRepository.countByMergedTrue()).thenReturn(15L);
+        when(taskConflictRepository.count()).thenReturn(3L);
+
+        var counts = auditService.computePrConflictCounts(null, null);
+
+        assertThat(counts.defects()).isEqualTo(3L);
+        assertThat(counts.opportunities()).isEqualTo(18L);
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
+    }
+
+    @Test
+    void computePrConflictCountsProjectUsesScopedQueriesAndNeverFindAll() {
+        UUID projectId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+
+        com.eneik.production.models.persistence.TaskEntity task =
+                new com.eneik.production.models.persistence.TaskEntity();
+        task.setId(taskId);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(task));
+
+        com.eneik.production.models.persistence.JulesSessionEntity session =
+                new com.eneik.production.models.persistence.JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        when(julesSessionRepository.findByTaskIdIn(List.of(taskId))).thenReturn(List.of(session));
+
+        com.eneik.production.models.persistence.PrReviewEntity review =
+                new com.eneik.production.models.persistence.PrReviewEntity();
+        review.setJulesSessionId(sessionId);
+        review.setMerged(true);
+        when(prReviewRepository.findByJulesSessionIdInAndMergedTrue(List.of(sessionId))).thenReturn(List.of(review));
+
+        com.eneik.production.models.persistence.TaskConflictEntity conflict =
+                new com.eneik.production.models.persistence.TaskConflictEntity();
+        conflict.setTask(task);
+        when(taskConflictRepository.findByTaskIdIn(List.of(taskId))).thenReturn(List.of(conflict));
+
+        var counts = auditService.computePrConflictCounts(projectId, null);
+
+        assertThat(counts.defects()).isEqualTo(1L);
+        assertThat(counts.opportunities()).isEqualTo(2L); // 1 merged PR + 1 conflict defect
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
     }
 }

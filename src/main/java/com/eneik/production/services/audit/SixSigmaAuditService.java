@@ -100,31 +100,59 @@ public class SixSigmaAuditService {
         return calculateSixSigmaAuditInternal(null);
     }
 
+    /**
+     * Resolves the single active project ID for project-scoped quality audits.
+     *
+     * Invariants (Operator decision, 2026-09-11; NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012):
+     * 1. Status strictly ProjectStatus.active (remove non-existent 'orchestrated').
+     * 2. No fallback to arbitrary project in DB ("неизвестное не становится ответом"):
+     *    if no active project exists, returns null (undetermined).
+     * 3. Factory invariant: "Завод за 1 раз делает 1 проект" (ProcessControlService:131).
+     *    If multiple active projects exist, logs a warning and returns null (undetermined),
+     *    never picking an arbitrary project at random.
+     * 4. Scoped query (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010):
+     *    uses projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active),
+     *    never projectRepository.findAll().
+     */
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public UUID getActiveProjectId() {
-        return projectRepository.findAll().stream()
-                .filter(p -> "active".equalsIgnoreCase(String.valueOf(p.getStatus())) || "orchestrated".equalsIgnoreCase(String.valueOf(p.getStatus())))
-                .map(com.eneik.production.models.persistence.ProjectEntity::getId)
-                .findFirst()
-                .orElseGet(() -> projectRepository.findAll().stream()
-                        .map(com.eneik.production.models.persistence.ProjectEntity::getId)
-                        .findFirst()
-                        .orElse(null));
+        List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+        if (activeProjects == null || activeProjects.isEmpty()) {
+            log.info("[SIX-SIGMA-AUDIT] No active project found with status active; active project is undetermined.");
+            return null;
+        }
+        if (activeProjects.size() > 1) {
+            log.warn("[SIX-SIGMA-AUDIT] Ambiguous active project: expected at most 1 active project ('Завод за 1 раз делает 1 проект'), but found {}: {}. Active project is undetermined.",
+                    activeProjects.size(), activeProjects.stream().map(com.eneik.production.models.persistence.ProjectEntity::getId).toList());
+            return null;
+        }
+        return activeProjects.get(0).getId();
     }
 
     /**
-     * Layer 2 "Delivery" number: full history for ONE project (including dismissed/duplicate/failed work
-     * that ever went through PR review or a quality gate for it), including its default-active-project
-     * fallback for backward compatibility with every existing caller that passes null expecting "whichever
-     * project is active" rather than genuinely cross-project. For the real Layer 1 factory-wide number,
-     * use {@link #calculateFullSixSigmaAudit()} instead, which bypasses this fallback entirely.
+     * Layer 2 "Delivery" quality: full history for ONE project (including dismissed/duplicate/failed work
+     * that ever went through PR review or a quality gate for it), excluding runtime platform anomalies.
+     *
+     * Disambiguation (2026-09-11, operator directive; ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK / D010):
+     * Do not confuse Layer 2 Delivery Quality with Layer 1 Factory Quality (calculateFullSixSigmaAudit)
+     * or Layer 3 Product Quality (calculateProductLayerSixSigmaAudit).
      */
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
-    public SixSigmaAuditReport calculateProjectSixSigmaAudit(UUID projectId) {
+    public SixSigmaAuditReport calculateDeliverySixSigmaAudit(UUID projectId) {
         if (projectId == null) {
             projectId = getActiveProjectId();
         }
         return calculateSixSigmaAuditInternal(projectId);
+    }
+
+    /**
+     * Alias for {@link #calculateDeliverySixSigmaAudit(UUID)}.
+     * Kept for backward compatibility with existing callers.
+     */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public SixSigmaAuditReport calculateProjectSixSigmaAudit(UUID projectId) {
+        return calculateDeliverySixSigmaAudit(projectId);
     }
 
     /**
@@ -176,7 +204,21 @@ public class SixSigmaAuditService {
      */
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public SixSigmaAuditReport calculateProductLayerSixSigmaAudit(UUID projectId) {
-        var features = projectId != null ? featureRepository.findByProjectIdAndDismissedAtIsNull(projectId) : List.<com.eneik.production.models.persistence.FeatureEntity>of();
+        if (projectId == null) {
+            projectId = getActiveProjectId();
+        }
+        if (projectId == null) {
+            return new SixSigmaAuditReport(
+                    null,
+                    "NO_ACTIVE_PROJECT",
+                    0, 0, 0.0, 0.0, 0.0,
+                    "UNDETERMINED",
+                    Map.of("status", "undetermined", "reason", "No active project exists to evaluate product quality"),
+                    Map.of("shippedEpicCount", 0),
+                    Instant.now()
+            );
+        }
+        var features = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId);
         long totalOpportunities = 0;
         long totalDefects = 0;
         long prOpp = 0, prDef = 0, qgOpp = 0, qgDef = 0;
@@ -238,15 +280,11 @@ public class SixSigmaAuditService {
         long qgDefects = qgCounts.defects();
         long qgOpportunities = qgCounts.opportunities();
 
-        // 3. Category C: Onboarding Audit Findings
-        List<OnboardingAuditFindingEntity> onboardingFindings = onboardingAuditFindingRepository.findAll();
-        if (targetProjectId != null) {
-            onboardingFindings = onboardingFindings.stream()
-                    .filter(f -> f.getProject() != null && targetProjectId.equals(f.getProject().getId()))
-                    .toList();
-        }
-        long onboardingOpportunities = Math.max(onboardingFindings.size() * 5L, targetProjectId == null ? 20L : 5L);
-        long onboardingDefects = onboardingFindings.size();
+        // 3. Category C: Onboarding Audit Findings (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010)
+        long onboardingDefects = targetProjectId != null
+                ? onboardingAuditFindingRepository.countByProjectId(targetProjectId)
+                : onboardingAuditFindingRepository.count();
+        long onboardingOpportunities = Math.max(onboardingDefects * 5L, targetProjectId == null ? 20L : 5L);
 
         // 4. Category D: TOC Sentinel Runtime Execution Anomalies
         var tocAnomalies = tocSentinelService.getRecentAnomalies();
@@ -468,9 +506,33 @@ public class SixSigmaAuditService {
         return result;
     }
 
+    /**
+     * Computes PR merge and conflict counts with scoped repository queries (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010).
+     * Eliminates full-table scans of pr_reviews and task_conflicts.
+     */
     public DefectOpportunityCount computePrConflictCounts(UUID projectId, UUID featureId) {
-        return computePrConflictCounts(projectId, featureId,
-                prReviewRepository.findAll(), taskConflictRepository.findAll());
+        if (projectId == null && featureId == null) {
+            long mergedPrs = prReviewRepository.countByMergedTrue();
+            long conflictDefects = taskConflictRepository.count();
+            return new DefectOpportunityCount(conflictDefects, mergedPrs + conflictDefects);
+        }
+
+        List<TaskEntity> scopedTasks = featureId != null
+                ? taskRepository.findByFeatureId(featureId)
+                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+
+        if (scopedTasks.isEmpty()) {
+            return new DefectOpportunityCount(0, 0);
+        }
+
+        List<UUID> taskIds = scopedTasks.stream().map(TaskEntity::getId).toList();
+        List<com.eneik.production.models.persistence.JulesSessionEntity> sessions = julesSessionRepository.findByTaskIdIn(taskIds);
+        List<UUID> sessionIds = sessions.stream().map(com.eneik.production.models.persistence.JulesSessionEntity::getId).toList();
+
+        long mergedPrs = sessionIds.isEmpty() ? 0L : prReviewRepository.findByJulesSessionIdInAndMergedTrue(sessionIds).size();
+        long conflictDefects = taskConflictRepository.findByTaskIdIn(taskIds).size();
+
+        return new DefectOpportunityCount(conflictDefects, mergedPrs + conflictDefects);
     }
 
     /**
@@ -498,11 +560,11 @@ public class SixSigmaAuditService {
         if (featureId != null) {
             Set<UUID> scopedTaskIds = idsOf(taskRepository.findByFeatureId(featureId));
             reviews = reviews.stream().filter(r -> scopedTaskIds.contains(taskIdOfReview(r))).toList();
-            conflicts = conflicts.stream().filter(c -> scopedTaskIds.contains(c.getTask().getId())).toList();
+            conflicts = conflicts.stream().filter(c -> c.getTask() != null && scopedTaskIds.contains(c.getTask().getId())).toList();
         } else if (projectId != null) {
             Set<UUID> scopedTaskIds = idsOf(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId));
             reviews = reviews.stream().filter(r -> scopedTaskIds.contains(taskIdOfReview(r))).toList();
-            conflicts = conflicts.stream().filter(c -> scopedTaskIds.contains(c.getTask().getId())).toList();
+            conflicts = conflicts.stream().filter(c -> c.getTask() != null && scopedTaskIds.contains(c.getTask().getId())).toList();
         }
 
         long mergedPrs = reviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();

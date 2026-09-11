@@ -11,6 +11,7 @@ import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.TaskConflictEntity;
+import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
 import com.eneik.production.repositories.ProjectRepository;
@@ -614,14 +615,15 @@ public class SystemStatusService {
     }
 
     private Object emsMetrics(UUID projectId, List<TaskEntity> scopedTasks) {
+        UUID effectiveProjectId = projectId != null ? projectId : sixSigmaAuditService.getActiveProjectId();
         List<TaskEntity> tasks = scopedTasks != null
                 ? scopedTasks
-                : (projectId == null
-                ? taskRepository.findAllByOrderByCreatedAtDesc()
-                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId));
-        var wishlist = projectId == null
-                ? wishlistRepository.findAllByOrderByCreatedAtDesc()
-                : wishlistRepository.findByProjectId(projectId);
+                : (effectiveProjectId != null
+                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(effectiveProjectId)
+                : List.of());
+        List<WishlistEntity> wishlist = effectiveProjectId != null
+                ? wishlistRepository.findByProjectId(effectiveProjectId)
+                : List.of();
         return emsMetricsService.build(tasks, wishlist);
     }
 

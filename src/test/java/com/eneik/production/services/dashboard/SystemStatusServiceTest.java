@@ -756,4 +756,47 @@ class SystemStatusServiceTest {
         verify(tasks, never()).findAll();
         verify(tasks).countNonCarrierTasksByStatus();
     }
+
+    @Test
+    void emsMetricsNullProjectScopesToActiveProjectAndNeverCallsFindAllOrScansAllRows() throws Exception {
+        UUID activeProjectId = UUID.randomUUID();
+        TaskRepository tasks = mock(TaskRepository.class);
+        WishlistRepository wishlists = mock(WishlistRepository.class);
+        SixSigmaAuditService audit = mock(SixSigmaAuditService.class);
+        EmsMetricsService ems = mock(EmsMetricsService.class);
+
+        when(audit.getActiveProjectId()).thenReturn(activeProjectId);
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(activeProjectId)).thenReturn(List.of());
+        when(wishlists.findByProjectId(activeProjectId)).thenReturn(List.of());
+
+        SystemStatusService service = new SystemStatusService(
+                mock(SystemSettingsService.class),
+                mock(AccountRepository.class),
+                tasks,
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                wishlists,
+                mock(ProjectRepository.class),
+                ems,
+                mock(GoogleAiResourceService.class),
+                mock(GitHubApiBudgetService.class),
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                audit);
+
+        Method method = SystemStatusService.class.getDeclaredMethod("emsMetrics", UUID.class);
+        method.setAccessible(true);
+        method.invoke(service, (UUID) null);
+
+        verify(tasks).findByProjectIdOrderByCreatedAtDesc(activeProjectId);
+        verify(wishlists).findByProjectId(activeProjectId);
+        verify(tasks, never()).findAll();
+        verify(tasks, never()).findAllByOrderByCreatedAtDesc();
+        verify(wishlists, never()).findAll();
+        verify(wishlists, never()).findAllByOrderByCreatedAtDesc();
+    }
 }

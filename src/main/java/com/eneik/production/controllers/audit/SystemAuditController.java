@@ -47,7 +47,7 @@ public class SystemAuditController {
         return switch (layer.toLowerCase(java.util.Locale.ROOT)) {
             case "factory" -> ResponseEntity.ok(sixSigmaAuditService.calculateFullSixSigmaAudit());
             case "product" -> ResponseEntity.ok(sixSigmaAuditService.calculateProductLayerSixSigmaAudit(pId));
-            default -> ResponseEntity.ok(sixSigmaAuditService.calculateProjectSixSigmaAudit(pId));
+            default -> ResponseEntity.ok(sixSigmaAuditService.calculateDeliverySixSigmaAudit(pId));
         };
     }
 
@@ -55,7 +55,7 @@ public class SystemAuditController {
     public ResponseEntity<SixSigmaAuditService.SixSigmaAuditReport> getProjectSixSigmaAudit(
             @PathVariable String projectId) {
         UUID pId = (projectId != null && !projectId.isBlank()) ? UUID.fromString(projectId.trim()) : null;
-        return ResponseEntity.ok(sixSigmaAuditService.calculateProjectSixSigmaAudit(pId));
+        return ResponseEntity.ok(sixSigmaAuditService.calculateDeliverySixSigmaAudit(pId));
     }
 
     @GetMapping("/full")
