@@ -3559,13 +3559,37 @@ public class ProjectFlowService {
      * The identity of a compilation: which project, which wishlists, which role - and nothing about when it
      * was asked for. The wishlist ids are sorted so that the same set asked for in a different order is the
      * same work, not a second one.
+     *
+     * <p>Bounded representation (D010 Data lineage loss / DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT):
+     * A deterministic SHA-256 digest of the canonical sorted wishlist IDs bounds the content key length
+     * to 109 characters ("compile:<projectId>:<sha256Hex>"), strictly satisfying the tasks.content_key VARCHAR(255)
+     * constraint regardless of how many wishlists are batched together.
      */
     static String compilerContentKey(ProjectEntity project, java.util.List<WishlistEntity> wishlists) {
-        String ids = wishlists.stream()
-                .map(w -> w.getId().toString())
+        String ids = wishlists == null ? "" : wishlists.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(WishlistEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .map(UUID::toString)
                 .sorted()
                 .collect(java.util.stream.Collectors.joining(","));
-        return "compile:" + project.getId() + ":" + ids;
+        String hash = sha256Hex(ids);
+        UUID projectId = project != null ? project.getId() : null;
+        return "compile:" + projectId + ":" + hash;
+    }
+
+    private static String sha256Hex(String value) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 digest algorithm unavailable", e);
+        }
     }
 
     /** Falls back to the old shared constant for tasks dispatched before this fix. */

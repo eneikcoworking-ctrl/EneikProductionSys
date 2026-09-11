@@ -69,6 +69,40 @@ class CompilerTaskIdentityTest {
     }
 
     @Test
+    @DisplayName("V137 defect guard (D010): content key length is strictly bounded <= 255 chars even for large batches (20+ wishlists)")
+    void contentKeyLengthIsStrictlyBoundedRegardlessOfBatchSize() {
+        UUID projectId = UUID.randomUUID();
+        java.util.List<WishlistEntity> wishlists20 = java.util.stream.IntStream.range(0, 20)
+                .mapToObj(i -> wishlist(UUID.randomUUID()))
+                .toList();
+
+        String key20 = ProjectFlowService.compilerContentKey(project(projectId), wishlists20);
+        assertTrue(key20.length() <= 255,
+                "Content key must never exceed VARCHAR(255) column constraint (was " + key20.length() + ")");
+        assertEquals(109, key20.length(),
+                "Content key format 'compile:<uuid>:<sha256Hex>' must be exactly 109 characters (8 + 36 + 1 + 64)");
+        assertTrue(key20.startsWith("compile:" + projectId + ":"),
+                "Content key must preserve project isolation prefix");
+
+        // Permutations of large batch yield identical key
+        java.util.List<WishlistEntity> reversed = new java.util.ArrayList<>(wishlists20);
+        java.util.Collections.reverse(reversed);
+        String keyReversed = ProjectFlowService.compilerContentKey(project(projectId), reversed);
+        assertEquals(key20, keyReversed, "Permutations of the same wishlist batch must yield the exact same key");
+
+        // 50 wishlists also strictly bounded to 109 chars
+        java.util.List<WishlistEntity> wishlists50 = java.util.stream.IntStream.range(0, 50)
+                .mapToObj(i -> wishlist(UUID.randomUUID()))
+                .toList();
+        String key50 = ProjectFlowService.compilerContentKey(project(projectId), wishlists50);
+        assertTrue(key50.length() <= 255);
+        assertEquals(109, key50.length());
+
+        // Different batches yield distinct keys
+        assertNotEquals(key20, key50);
+    }
+
+    @Test
     @DisplayName("The set of sites that mint a wishlist-compiler task is pinned, and every one of them sets an identity")
     void everySiteThatMintsACompilerTaskGivesItAnIdentity() throws IOException {
         Path source = Path.of("src/main/java/com/eneik/production/services/ProjectFlowService.java");
