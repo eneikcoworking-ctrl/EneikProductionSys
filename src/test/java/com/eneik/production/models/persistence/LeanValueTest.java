@@ -263,28 +263,13 @@ class LeanValueTest {
         assertThat(w1.getLeanValue()).isEqualTo(LeanValue.essential);
         org.mockito.Mockito.verify(technicalLeadCompiler).createTaskFromWishlist(w1.getId());
 
-        // 2. Unresolved without Kano executes bounded triage protocol (NUEL_BELNAP_03_TRUTH_STATUS_TABLE)
+        // 2. Unresolved without Kano immediately transitions to dismissed with clear audit trail (never hangs forever, no artificial countdown on compileAttempts)
         WishlistEntity w2 = new WishlistEntity();
         w2.setLeanValue(LeanValue.undetermined);
-        w2.setCompileAttempts(0);
-
-        // Attempt 1: re-queued, stays pending
         boolean a1 = service.processCompiledWishlistWithUndeterminedValue(w2);
         assertThat(a1).isFalse();
-        assertThat(w2.getCompileAttempts()).isEqualTo(1);
-        assertThat(w2.getStatus()).isEqualTo(WishlistStatus.pending);
-
-        // Attempt 2: re-queued, stays pending
-        boolean a2 = service.processCompiledWishlistWithUndeterminedValue(w2);
-        assertThat(a2).isFalse();
-        assertThat(w2.getCompileAttempts()).isEqualTo(2);
-        assertThat(w2.getStatus()).isEqualTo(WishlistStatus.pending);
-
-        // Attempt 3: ceiling reached (3), transitions to dismissed with clear audit trail (never hangs forever)
-        boolean a3 = service.processCompiledWishlistWithUndeterminedValue(w2);
-        assertThat(a3).isFalse();
-        assertThat(w2.getCompileAttempts()).isEqualTo(3);
         assertThat(w2.getStatus()).isEqualTo(WishlistStatus.dismissed);
+        assertThat(w2.getLeanValue()).isEqualTo(LeanValue.undetermined);
     }
 
     private static void setField(Object target, String fieldName, Object value) throws Exception {

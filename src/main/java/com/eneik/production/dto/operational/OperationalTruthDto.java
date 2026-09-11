@@ -81,9 +81,16 @@ public record OperationalTruthDto(
             int failingReviews,
             int qualityGatePassed,
             int qualityGateFailed,
+            int qualityGateUnapplied,
             int screenshots,
             List<EvidenceSignal> strongestSignals
     ) {
+        public EvidenceSummary(int mergedReviews, int openReviews, int pendingReviews, int failingReviews,
+                               int qualityGatePassed, int qualityGateFailed, int screenshots,
+                               List<EvidenceSignal> strongestSignals) {
+            this(mergedReviews, openReviews, pendingReviews, failingReviews,
+                    qualityGatePassed, qualityGateFailed, 0, screenshots, strongestSignals);
+        }
     }
 
     public record EvidenceSignal(

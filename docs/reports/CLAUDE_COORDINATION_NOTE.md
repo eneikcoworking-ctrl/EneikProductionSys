@@ -44,9 +44,30 @@
    - При подтвержденных отказах/дефектах штрафы вычитаются немедленно, в тот же такт, снижая уровень до `watch`, `degraded` или `blocked`.
    - Живой проект с >20 свидетельствами и текущими 2 замечаниями сохраняет счет **0.70 ("watch")** без искажения исторических снимков `TrustSignalSnapshotEntity`.
    - Добавлен инвариант `trust_requires_positive_evidence` и регистрация в `sourceOfTruth()`.
-   - Заслонено в `OperationalTruthServiceTest` (15/15 green, включая ступенчатый рост, отсутствие свидетельств, асимметричное немедленное падение и перегрузку `trustLevel`) и `TrustSnapshotServiceTest` (8/8 green).
+   - Заслонено в `OperationalTruthServiceTest` (15/15 green) и `TrustSnapshotServiceTest` (8/8 green).
 
-5. **Что берётся следующим:** Такт 13 — Пункт 12 очереди (`QualityMetricsController`, раздел XXXIX: различие трёх исходов — прошли, провалились, не применялось; 388 против нуля).
+5. **Такт 13 закрыт (`QualityMetricsController`, раздел XXXIX; `TaskEntity`; `OperationalTruthService`; `LeanValue`):**
+   - **`QualityMetricsController` (пункт 12 очереди, раздел XXXIX, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009):**
+     - Устранён дефект «одно слово, два счёта: 388 против нуля». Различаются три исхода: прошли, провалились, не применялось.
+     - В `getDefectSummary` ликвидирован `taskRepository.findAll()` (подъём 753 задач в JVM) — заменён на `taskRepository.findByQualityGateReportIsNotNull()`. Заслоны дефектов считаются строго по проверкам с `passed == false`. 0 проваленных проверок дают строго 0 дефектов заслона качества.
+     - В `getConflictDpmo` глобальные агрегаты переведены на репозиторные count-запросы (`countByMergedTrue()`, `count()`, `countByMergedTrueAndCreatedAtAfter()`, `countByDetectedAtAfter()`) без чтения всей таблицы.
+     - Ликвидирован N+1 запрос `taskRepository.findById` на каждую сессию при группировке по проектам: переход на пакетную выборку `findAllById`.
+     - Заслонено в `QualityMetricsControllerTest` (3/3 green, включая строгий `never().findAll()`).
+   - **`TaskEntity` (раздел XXI, XXXIX, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+     - Метод `deliveryChecksApplied()` открыт (`public`).
+     - Добавлен предикат `isDeliveryVerificationFailed()` (`!isDeliveryVerificationAbsent() && !isVerifiedForDelivery()`) и подсчёт `qualityGateChecksFailed()`.
+     - Образован полный непересекающийся раздел истинностных статусов: `verified + failed + unapplied == tasks with report`.
+   - **`OperationalTruthService` (раздел XXVII, `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` / D006, `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):**
+     - `qualityGatePassed` считается строго через знаниевый предикат `TaskEntity::isVerifiedForDelivery` (требует реально применённых проверок доставки `> 0` либо вердикта `SATISFIED`).
+     - `qualityGateFailed` считается строго через `TaskEntity::isDeliveryVerificationFailed`. 388 задач с 0 применённых проверок классифицируются как `qualityGateUnapplied`, больше не штрафуют доверие и не генерируют фантомное предупреждение `"388 tasks have failed quality-gate evidence"`.
+     - В `OperationalTruthDto.EvidenceSummary` добавлен счётчик `qualityGateUnapplied` (с сохранением 8-аргументного конструктора для совместимости).
+     - Введено скользящее окно свежести свидетельств `TRUST_RECENCY_WINDOW = Duration.ofDays(30)`: свидетельства старше 30 дней не удерживают доверие 1.0 вечно.
+     - Заслонено в `OperationalTruthServiceTest` (16/16 green) и `TrustSnapshotServiceTest` (8/8 green).
+   - **`LeanValue` (раздел 42, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+     - Устранён искусственный отсчёт на чужом счётчике `compileAttempts`. При отсутствии класса Kano на эпике скомпилированное пожелание с `undetermined` ценностью сразу детерминированно переводится в `WishlistStatus.dismissed` с понятной причиной и сохранением `leanValue = undetermined` (отличимо от `waste`).
+     - Заслонено в `LeanValueTest` (7/7 green).
+
+6. **Что берётся следующим:** Такт 14 — Пункт 13 очереди (`LinearIssuePayloadService` / `ProjectFlowService` или `FalsificationCycleService`).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

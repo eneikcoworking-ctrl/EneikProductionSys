@@ -285,7 +285,31 @@
      - `trustLevelOverloadWithEvidenceFlag`: верификация всех диапазонов и флага наличия свидетельств.
   2. `TrustSnapshotServiceTest`: 8/8 green.
   3. Прогон Maven в Docker: 23/23 теста green (`BUILD SUCCESS`).
-- **Что берётся следующим:** Такт 13 — Пункт 12 очереди (`QualityMetricsController`, раздел XXXIX: различие трёх исходов — прошли, провалились, не применялось, устранение смешения 388 против нуля).
+- **Что берётся следующим:** Такт 13 — завершён в текущем такте (см. ниже).
+
+### 2026-09-11 Antigravity: Такт 13 — QualityMetricsController целиком (пункт 12 очереди, Раздел XXXIX; TaskEntity; OperationalTruthService; LeanValue)
+- **Что сделано:**
+  1. **Ликвидация дефекта «одно слово, два счёта: 388 против нуля» (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009):**
+     - В `TaskEntity` открыт метод `deliveryChecksApplied()`, добавлен предикат `isDeliveryVerificationFailed()` (`!isDeliveryVerificationAbsent() && !isVerifiedForDelivery()`) и метод `qualityGateChecksFailed()`.
+     - Сформирован полный непересекающийся раздел истинностных статусов: `verified + failed + unapplied == tasks with report`. Ни один результат больше не подменяется другим.
+  2. **Очистка `QualityMetricsController` от муды full-table reads и N+1 (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010):**
+     - В `getDefectSummary`: `taskRepository.findAll()` (подъём 753 задач в память) заменён на `taskRepository.findByQualityGateReportIsNotNull()`. Дефекты заслона считаются строго по проверкам с `passed == false`. При нуле проваленных проверок возвращается строго `qualityGate.total = 0`.
+     - В `getConflictDpmo`: all-time и 7-day агрегаты переведены на быстрые репозиторные счетчики (`countByMergedTrue()`, `count()`, `countByMergedTrueAndCreatedAtAfter()`, `countByDetectedAtAfter()`) без вычитки всех записей PR и конфликтов.
+     - Ликвидирован N+1 запрос `taskRepository.findById` на каждую сессию при группировке по проектам: переход на пакетную выборку `findAllById`.
+  3. **Знаниевое свидетельство и окно свежести в `OperationalTruthService` (`ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` / D006, `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):**
+     - `qualityGatePassed` переведён на `TaskEntity::isVerifiedForDelivery` (требует примененных проверок > 0 либо удовлетворенного вердикта критериев приемки).
+     - `qualityGateFailed` переведён на `TaskEntity::isDeliveryVerificationFailed`: 388 задач с нулем примененных проверок классифицируются как `qualityGateUnapplied`, больше не штрафуют счет доверия и не генерируют ложное предупреждение `"388 tasks have failed quality-gate evidence"`.
+     - В `OperationalTruthDto.EvidenceSummary` добавлен счётчик `qualityGateUnapplied` (с сохранением совместимости 8-параметрового конструктора).
+     - Введено скользящее окно свежести `TRUST_RECENCY_WINDOW = Duration.ofDays(30)`: давние свидетельства не удерживают доверие 1.0 вечно.
+  4. **Очистка `LeanValue` от псевдомеханизма отсчёта (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):**
+     - В `ProjectFlowService.processCompiledWishlistWithUndeterminedValue` устранён искусственный 3-тактный отсчёт на чужом счётчике `compileAttempts`. При отсутствии класса Kano на эпике пожелание с `undetermined` ценностью сразу детерминированно переводится в `WishlistStatus.dismissed` с понятной причиной и сохранением `leanValue = undetermined` (отличимо от `waste`).
+- **Чем проверено:**
+  1. `QualityMetricsControllerTest` (3/3 green, включая верификацию `never().findAll()` на `taskRepository` и `prReviewRepository`).
+  2. `OperationalTruthServiceTest` (16/16 green, включая тест `triStateTruthPartitionVerifiedFailedAbsentAndRecencyWindow`).
+  3. `TrustSnapshotServiceTest` (8/8 green).
+  4. `LeanValueTest` (7/7 green).
+  5. Прогон Maven в Docker: 34/34 теста green (`BUILD SUCCESS`, 45.8 с).
+- **Что берётся следующим:** Такт 14 — Пункт 13 очереди (`LinearIssuePayloadService` / `ProjectFlowService` или `FalsificationCycleService`).
 
 
 

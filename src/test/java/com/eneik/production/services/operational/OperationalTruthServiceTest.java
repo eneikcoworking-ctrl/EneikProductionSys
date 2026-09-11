@@ -443,13 +443,15 @@ class OperationalTruthServiceTest {
         project.setId(projectId);
         project.setStatus(ProjectStatus.active);
 
-        // 5 tasks with passed quality gate -> packet 1 (base score 0.65, watch)
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        // 5 tasks with verified delivery -> packet 1 (base score 0.65, watch)
         List<TaskEntity> passedTasks = java.util.stream.IntStream.range(0, 5).mapToObj(i -> {
             TaskEntity t = new TaskEntity();
             t.setId(UUID.randomUUID());
             t.setProject(project);
             t.setStatus(TaskStatus.done);
             t.setQualityGatePassed(true);
+            t.setPayload(mapper.createObjectNode().put("acceptance_verdict", "SATISFIED"));
             return t;
         }).toList();
 
@@ -525,5 +527,107 @@ class OperationalTruthServiceTest {
         assertEquals("undetermined", OperationalTruthService.trustLevel(0.95, false));
         assertEquals("blocked", OperationalTruthService.trustLevel(0.0, true));
         assertEquals("trusted", OperationalTruthService.trustLevel(0.85, true));
+    }
+
+    @Test
+    void triStateTruthPartitionVerifiedFailedAbsentAndRecencyWindow() {
+        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012) & DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009):
+        // Partition of truth: verified + failed + unapplied == tasks with quality gate report.
+        // ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS (D010): evidence older than TRUST_RECENCY_WINDOW is excluded.
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        // 1. Verified task (recent): delivery check applied > 0 and passed
+        TaskEntity verifiedTask = new TaskEntity();
+        verifiedTask.setId(UUID.randomUUID());
+        verifiedTask.setCreatedAt(Instant.now().minus(java.time.Duration.ofDays(2)));
+        verifiedTask.setQualityGatePassed(true);
+        var reportVerified = mapper.createObjectNode();
+        reportVerified.putObject("applicableChecksByStage").put("IMPLEMENTATION_RESULT", 3);
+        verifiedTask.setQualityGateReport(reportVerified);
+
+        assertTrue(verifiedTask.isVerifiedForDelivery());
+        assertFalse(verifiedTask.isDeliveryVerificationFailed());
+        assertFalse(verifiedTask.isDeliveryVerificationAbsent());
+
+        // 2. Failed task (recent): delivery check applied > 0 and failed
+        TaskEntity failedTask = new TaskEntity();
+        failedTask.setId(UUID.randomUUID());
+        failedTask.setCreatedAt(Instant.now().minus(java.time.Duration.ofDays(5)));
+        failedTask.setQualityGatePassed(false);
+        var reportFailed = mapper.createObjectNode();
+        reportFailed.putObject("applicableChecksByStage").put("IMPLEMENTATION_RESULT", 2);
+        failedTask.setQualityGateReport(reportFailed);
+
+        assertFalse(failedTask.isVerifiedForDelivery());
+        assertTrue(failedTask.isDeliveryVerificationFailed());
+        assertFalse(failedTask.isDeliveryVerificationAbsent());
+
+        // 3. Unapplied task (388 case): qualityGateReport present, but 0 delivery checks applied
+        TaskEntity unappliedTask = new TaskEntity();
+        unappliedTask.setId(UUID.randomUUID());
+        unappliedTask.setCreatedAt(Instant.now().minus(java.time.Duration.ofDays(10)));
+        unappliedTask.setQualityGatePassed(false);
+        var reportUnapplied = mapper.createObjectNode();
+        reportUnapplied.putObject("applicableChecksByStage").put("IMPLEMENTATION_RESULT", 0);
+        unappliedTask.setQualityGateReport(reportUnapplied);
+
+        assertFalse(unappliedTask.isVerifiedForDelivery());
+        assertFalse(unappliedTask.isDeliveryVerificationFailed()); // NOT failed! 0 applied checks must not count as failed!
+        assertTrue(unappliedTask.isDeliveryVerificationAbsent());
+
+        // 4. Stale verified task: older than TRUST_RECENCY_WINDOW (e.g. 40 days ago)
+        TaskEntity staleVerifiedTask = new TaskEntity();
+        staleVerifiedTask.setId(UUID.randomUUID());
+        staleVerifiedTask.setCreatedAt(Instant.now().minus(java.time.Duration.ofDays(40)));
+        staleVerifiedTask.setQualityGatePassed(true);
+        var reportStale = mapper.createObjectNode();
+        reportStale.putObject("applicableChecksByStage").put("IMPLEMENTATION_RESULT", 1);
+        staleVerifiedTask.setQualityGateReport(reportStale);
+
+        assertTrue(staleVerifiedTask.isVerifiedForDelivery());
+
+        // Verify with OperationalTruthService.build()
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var flow = mock(com.eneik.production.services.ProjectFlowService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus, flow);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(
+                List.of(verifiedTask, failedTask, unappliedTask, staleVerifiedTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+        OperationalTruthDto.EvidenceSummary ev = dto.evidence();
+
+        // Stale task excluded by recency window: only recent verified counted
+        assertEquals(1, ev.qualityGatePassed());
+        assertEquals(1, ev.qualityGateFailed());
+        assertEquals(1, ev.qualityGateUnapplied());
+
+        // For recent tasks with report: verified (1) + failed (1) + unapplied (1) == 3
+        assertEquals(3, ev.qualityGatePassed() + ev.qualityGateFailed() + ev.qualityGateUnapplied());
+
+        // Warning only includes actual failed checks, not unapplied checks
+        assertTrue(dto.trust().warnings().stream().anyMatch(w -> w.contains("1 task(s) have failed quality-gate evidence.")));
+        assertFalse(dto.trust().warnings().stream().anyMatch(w -> w.contains("unapplied")));
     }
 }

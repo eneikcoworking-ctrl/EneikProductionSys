@@ -21,6 +21,7 @@ import com.eneik.production.services.task.TaskTitleBuilder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -37,6 +38,13 @@ import java.util.stream.Collectors;
 
 @Service
 public class OperationalTruthService {
+    /**
+     * Freshness window for accumulating positive delivery/verification evidence
+     * (ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS / D010 Data lineage loss).
+     * Older evidence does not hold trust at 1.0 forever.
+     */
+    public static final Duration TRUST_RECENCY_WINDOW = Duration.ofDays(30);
+
     private static final Set<String> REVIEW_FAILING_STATUSES = Set.of(
             "failure", "failing", "conflict", "escalated", "closed_unmerged", "invalid_pr", "unowned"
     );
@@ -289,7 +297,11 @@ public class OperationalTruthService {
 
     private OperationalTruthDto.EvidenceSummary evidence(List<TaskEntity> tasks, List<PrReviewEntity> reviews,
                                                           Set<UUID> liveSessionIds) {
-        int mergedReviews = (int) reviews.stream().filter(review -> Boolean.TRUE.equals(review.getMerged())).count();
+        Instant cutoff = Instant.now().minus(TRUST_RECENCY_WINDOW);
+        int mergedReviews = (int) reviews.stream()
+                .filter(review -> Boolean.TRUE.equals(review.getMerged()))
+                .filter(review -> review.getCreatedAt() == null || review.getCreatedAt().isAfter(cutoff))
+                .count();
         int openReviews = (int) reviews.stream()
                 .filter(review -> !Boolean.TRUE.equals(review.getMerged()))
                 .filter(review -> liveSessionIds.contains(review.getJulesSessionId()))
@@ -302,10 +314,16 @@ public class OperationalTruthService {
                 .filter(review -> REVIEW_FAILING_STATUSES.contains(normalize(review.getCiStatus())))
                 .filter(review -> liveSessionIds.contains(review.getJulesSessionId()))
                 .count();
-        int qualityGatePassed = (int) tasks.stream().filter(TaskEntity::isQualityGatePassed).count();
+        int qualityGatePassed = (int) tasks.stream()
+                .filter(TaskEntity::isVerifiedForDelivery)
+                .filter(task -> task.getCreatedAt() == null || task.getCreatedAt().isAfter(cutoff))
+                .count();
         int qualityGateFailed = (int) tasks.stream()
-                .filter(task -> task.getQualityGateReport() != null)
-                .filter(task -> !task.isQualityGatePassed())
+                .filter(TaskEntity::isDeliveryVerificationFailed)
+                .filter(task -> task.getCreatedAt() == null || task.getCreatedAt().isAfter(cutoff))
+                .count();
+        int qualityGateUnapplied = (int) tasks.stream()
+                .filter(task -> task.getQualityGateReport() != null && task.isDeliveryVerificationAbsent())
                 .count();
         int screenshots = (int) reviews.stream()
                 .filter(review -> review.getScreenshotUrls() != null && !review.getScreenshotUrls().isBlank())
@@ -329,7 +347,7 @@ public class OperationalTruthService {
         }
         return new OperationalTruthDto.EvidenceSummary(
                 mergedReviews, openReviews, pendingReviews, failingReviews, qualityGatePassed, qualityGateFailed,
-                screenshots, strongest);
+                qualityGateUnapplied, screenshots, strongest);
     }
 
     private OperationalTruthDto.DefectSummary defects(List<DefectJournalEntity> recentDefects) {

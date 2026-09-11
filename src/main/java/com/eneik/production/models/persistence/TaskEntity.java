@@ -365,7 +365,7 @@ public class TaskEntity {
     }
 
     /** How many checks of the delivery stage actually applied. Zero means nobody was asked. */
-    private int deliveryChecksApplied() {
+    public int deliveryChecksApplied() {
         if (qualityGateReport == null) {
             return 0;
         }
@@ -400,6 +400,37 @@ public class TaskEntity {
             return true;
         }
         return deliveryChecksApplied() == 0;
+    }
+
+    /**
+     * Delivery verification was attempted (by criterion instrument or delivery quality gate)
+     * and resulted in failure or refutation.
+     *
+     * <p>Part of the three-valued truth partition (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012):
+     * 1. {@link #isVerifiedForDelivery()}: verification ran and succeeded.
+     * 2. {@link #isDeliveryVerificationFailed()}: verification ran and failed/refuted.
+     * 3. {@link #isDeliveryVerificationAbsent()}: verification did not run / no applicable checks.
+     *
+     * Invariant: exactly one of these three holds for every task.
+     */
+    public boolean isDeliveryVerificationFailed() {
+        return !isDeliveryVerificationAbsent() && !isVerifiedForDelivery();
+    }
+
+    /**
+     * Number of checks in the quality gate report that actually failed (passed == false).
+     */
+    public int qualityGateChecksFailed() {
+        if (qualityGateReport == null || !qualityGateReport.has("checks")) {
+            return 0;
+        }
+        int failed = 0;
+        for (JsonNode check : qualityGateReport.get("checks")) {
+            if (!check.path("passed").asBoolean(true)) {
+                failed++;
+            }
+        }
+        return failed;
     }
 
     public JsonNode getQualityGateReport() { return qualityGateReport; }

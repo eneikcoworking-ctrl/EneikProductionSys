@@ -3303,22 +3303,11 @@ public class ProjectFlowService {
                     wishlist.getId(), epicKano);
             return false;
         }
-        int attempts = wishlist.getCompileAttempts();
-        int ceiling = wishlist.effectiveCompileCeiling();
-        if (attempts + 1 >= ceiling) {
-            wishlist.setStatus(WishlistStatus.dismissed);
-            wishlist.setCompileAttempts(attempts + 1);
-            wishlistRepository.save(wishlist);
-            log.warn("ProjectFlowService: wishlist {} dismissed: lean_value remained undetermined after {} triage attempts",
-                    wishlist.getId(), attempts + 1);
-            return false;
-        } else {
-            wishlist.setCompileAttempts(attempts + 1);
-            wishlistRepository.save(wishlist);
-            log.info("ProjectFlowService: wishlist {} re-queued for lean_value triage (attempt {}/{})",
-                    wishlist.getId(), attempts + 1, ceiling);
-            return false;
-        }
+        wishlist.setStatus(WishlistStatus.dismissed);
+        wishlistRepository.save(wishlist);
+        log.warn("ProjectFlowService: wishlist {} dismissed: lean value undetermined (no Kano class on epic)",
+                wishlist.getId());
+        return false;
     }
 
     public static LeanValue resolveSliceLeanValue(MLPredictionServiceClient.TaskSliceMetadata slice, String epicKanoClass) {

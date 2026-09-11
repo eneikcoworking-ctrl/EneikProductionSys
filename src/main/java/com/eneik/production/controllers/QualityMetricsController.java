@@ -37,38 +37,14 @@ public class QualityMetricsController {
 
     @GetMapping("/conflict-dpmo")
     public Map<String, Object> getConflictDpmo() {
-        List<PrReviewEntity> allReviews = prReviewRepository.findAll();
-        List<TaskConflictEntity> allConflicts = taskConflictRepository.findAll();
-
-        Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
-
-        // Pre-build lookups
-        Map<UUID, UUID> sessionToProjectMap = new HashMap<>();
-        List<JulesSessionEntity> allSessions = julesSessionRepository.findAll();
-        for (JulesSessionEntity session : allSessions) {
-            if (session.getTaskId() != null) {
-                taskRepository.findById(session.getTaskId()).ifPresent(task -> {
-                    if (task.getProject() != null) {
-                        sessionToProjectMap.put(session.getId(), task.getProject().getId());
-                    }
-                });
-            }
-        }
-
-        // Calculate all time metrics
-        long mergedAllTime = allReviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
-        long conflictsAllTime = allConflicts.size();
+        long mergedAllTime = prReviewRepository.countByMergedTrue();
+        long conflictsAllTime = taskConflictRepository.count();
         long totalAttemptsAllTime = mergedAllTime + conflictsAllTime;
         double dpmoAllTime = totalAttemptsAllTime > 0 ? (double) conflictsAllTime / totalAttemptsAllTime * 1_000_000 : 0;
 
-        // Calculate last 7 days metrics
-        long mergedLast7Days = allReviews.stream()
-                .filter(r -> Boolean.TRUE.equals(r.getMerged()))
-                .filter(r -> r.getCreatedAt() != null && r.getCreatedAt().isAfter(sevenDaysAgo))
-                .count();
-        long conflictsLast7Days = allConflicts.stream()
-                .filter(c -> c.getDetectedAt() != null && c.getDetectedAt().isAfter(sevenDaysAgo))
-                .count();
+        Instant sevenDaysAgo = Instant.now().minus(7, ChronoUnit.DAYS);
+        long mergedLast7Days = prReviewRepository.countByMergedTrueAndCreatedAtAfter(sevenDaysAgo);
+        long conflictsLast7Days = taskConflictRepository.countByDetectedAtAfter(sevenDaysAgo);
         long totalAttemptsLast7Days = mergedLast7Days + conflictsLast7Days;
         double dpmoLast7Days = totalAttemptsLast7Days > 0 ? (double) conflictsLast7Days / totalAttemptsLast7Days * 1_000_000 : 0;
 
@@ -76,43 +52,62 @@ public class QualityMetricsController {
         List<ProjectEntity> projects = projectRepository.findAll();
         List<Map<String, Object>> byProjectList = new ArrayList<>();
 
-        for (ProjectEntity project : projects) {
-            UUID projId = project.getId();
+        if (!projects.isEmpty()) {
+            List<PrReviewEntity> mergedReviews = prReviewRepository.findByMergedTrueAndJulesSessionIdIsNotNull();
+            List<UUID> sessionIds = mergedReviews.stream().map(PrReviewEntity::getJulesSessionId).filter(Objects::nonNull).distinct().toList();
+            List<JulesSessionEntity> sessions = julesSessionRepository.findAllById(sessionIds);
+            List<UUID> taskIds = sessions.stream().map(JulesSessionEntity::getTaskId).filter(Objects::nonNull).distinct().toList();
+            List<TaskEntity> tasks = taskRepository.findAllById(taskIds);
 
-            long projMergedAll = allReviews.stream()
-                    .filter(r -> Boolean.TRUE.equals(r.getMerged()))
-                    .filter(r -> projId.equals(sessionToProjectMap.get(r.getJulesSessionId())))
-                    .count();
-            long projConflictsAll = allConflicts.stream()
-                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projId.equals(c.getTask().getProject().getId()))
-                    .count();
-            long projTotalAttemptsAll = projMergedAll + projConflictsAll;
-            double projDpmoAll = projTotalAttemptsAll > 0 ? (double) projConflictsAll / projTotalAttemptsAll * 1_000_000 : 0;
+            Map<UUID, UUID> taskToProjectMap = tasks.stream()
+                    .filter(t -> t.getProject() != null)
+                    .collect(java.util.stream.Collectors.toMap(TaskEntity::getId, t -> t.getProject().getId(), (a, b) -> a));
 
-            long projMerged7 = allReviews.stream()
-                    .filter(r -> Boolean.TRUE.equals(r.getMerged()))
-                    .filter(r -> r.getCreatedAt() != null && r.getCreatedAt().isAfter(sevenDaysAgo))
-                    .filter(r -> projId.equals(sessionToProjectMap.get(r.getJulesSessionId())))
-                    .count();
-            long projConflicts7 = allConflicts.stream()
-                    .filter(c -> c.getDetectedAt() != null && c.getDetectedAt().isAfter(sevenDaysAgo))
-                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projId.equals(c.getTask().getProject().getId()))
-                    .count();
-            long projTotalAttempts7 = projMerged7 + projConflicts7;
-            double projDpmo7 = projTotalAttempts7 > 0 ? (double) projConflicts7 / projTotalAttempts7 * 1_000_000 : 0;
+            Map<UUID, UUID> sessionToProjectMap = new HashMap<>();
+            for (JulesSessionEntity s : sessions) {
+                if (s.getTaskId() != null && taskToProjectMap.containsKey(s.getTaskId())) {
+                    sessionToProjectMap.put(s.getId(), taskToProjectMap.get(s.getTaskId()));
+                }
+            }
 
-            byProjectList.add(Map.of(
-                    "projectId", projId,
-                    "projectName", project.getName(),
-                    "totalMergeAttempts", projTotalAttemptsAll,
-                    "conflicts", projConflictsAll,
-                    "dpmo", projDpmoAll,
-                    "last7Days", Map.of(
-                            "totalMergeAttempts", projTotalAttempts7,
-                            "conflicts", projConflicts7,
-                            "dpmo", projDpmo7
-                    )
-            ));
+            List<TaskConflictEntity> allConflicts = taskConflictRepository.findAll();
+
+            for (ProjectEntity project : projects) {
+                UUID projId = project.getId();
+
+                long projMergedAll = mergedReviews.stream()
+                        .filter(r -> projId.equals(sessionToProjectMap.get(r.getJulesSessionId())))
+                        .count();
+                long projConflictsAll = allConflicts.stream()
+                        .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projId.equals(c.getTask().getProject().getId()))
+                        .count();
+                long projTotalAttemptsAll = projMergedAll + projConflictsAll;
+                double projDpmoAll = projTotalAttemptsAll > 0 ? (double) projConflictsAll / projTotalAttemptsAll * 1_000_000 : 0;
+
+                long projMerged7 = mergedReviews.stream()
+                        .filter(r -> r.getCreatedAt() != null && r.getCreatedAt().isAfter(sevenDaysAgo))
+                        .filter(r -> projId.equals(sessionToProjectMap.get(r.getJulesSessionId())))
+                        .count();
+                long projConflicts7 = allConflicts.stream()
+                        .filter(c -> c.getDetectedAt() != null && c.getDetectedAt().isAfter(sevenDaysAgo))
+                        .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projId.equals(c.getTask().getProject().getId()))
+                        .count();
+                long projTotalAttempts7 = projMerged7 + projConflicts7;
+                double projDpmo7 = projTotalAttempts7 > 0 ? (double) projConflicts7 / projTotalAttempts7 * 1_000_000 : 0;
+
+                byProjectList.add(Map.of(
+                        "projectId", projId,
+                        "projectName", project.getName(),
+                        "totalMergeAttempts", projTotalAttemptsAll,
+                        "conflicts", projConflictsAll,
+                        "dpmo", projDpmoAll,
+                        "last7Days", Map.of(
+                                "totalMergeAttempts", projTotalAttempts7,
+                                "conflicts", projConflicts7,
+                                "dpmo", projDpmo7
+                        )
+                ));
+            }
         }
 
         return Map.of(
@@ -132,14 +127,14 @@ public class QualityMetricsController {
     public Map<String, Object> getDefectSummary() {
         List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
 
-        List<TaskEntity> allTasks = taskRepository.findAll();
+        List<TaskEntity> tasksWithReport = taskRepository.findByQualityGateReportIsNotNull();
         long qualityGateDefects = 0;
         List<Map<String, Object>> qualityGateItems = new ArrayList<>();
-        for (TaskEntity task : allTasks) {
+        for (TaskEntity task : tasksWithReport) {
             com.fasterxml.jackson.databind.JsonNode report = task.getQualityGateReport();
             if (report != null && report.has("checks")) {
                 for (com.fasterxml.jackson.databind.JsonNode check : report.get("checks")) {
-                    if (!check.path("passed").asBoolean()) {
+                    if (!check.path("passed").asBoolean(true)) {
                         qualityGateDefects++;
                         qualityGateItems.add(Map.of(
                                 "taskId", task.getId(),
