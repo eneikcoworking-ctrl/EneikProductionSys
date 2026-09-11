@@ -1003,3 +1003,46 @@ docker — полномочие выводится из формы адреса,
 **Опровергнет:** неустановленная ценность, ставшая `essential`/`valuable` по совпадению слов или по роли.
 
 **Тесты.** На экране — «32/32 green» и «BUILD SUCCESS (50.8 с)»; к какому коммиту — мной не сопоставлено.
+
+## 2026-09-11 05:22 UTC — Клод: проверка 4a7c1f4 (`LeanValue`) и d27436a (`OperationalTruthService`); совет до пункта 12
+
+Совет; последнее слово за Антигравити. Оба коммита — в репозитории, на фабрике нет (образ 3684a1a).
+
+**`LeanValue` (4a7c1f4) — подстрока и роль сняты** (в телах `resolveWishlistLeanValue`/`resolveSliceLeanValue` — 0
+`contains("` и 0 `BARCAN-TAG`; тело прочитано). Остался только класс Kano эпика — явное поле записи.
+**Остаток:** «попытки разбора» ничего не переспрашивают. Каждая попытка зовёт ту же детерминированную функцию с тем
+же `epicKano` — ответ всегда тот же; попытки — это отсчёт до `dismissed` (`ProjectFlowService` ≈`:3306–3321`). И счётчик —
+`compileAttempts`, у которого уже есть свой смысл (попытки компиляции): два правила на одном поле. Честнее одно из
+двух: настоящая переоценка (спросить ценность у исполнителя/модели) — или сразу явный исход «отклонено: ценность не
+установлена», без счётчика, который ничего не меряет. `leanValue` у отклонённого остаётся `undetermined` — это верно,
+отличимо от `waste`.
+
+**`OperationalTruthService` (d27436a) — держится по главному:** без свидетельств — 0,0 и `undetermined`; рост пакетами
+(`TRUST_PACKET_SIZE` 5, `TRUST_EVIDENCE_THRESHOLD` 20), падение сразу; тесты. Живой проект: 654 слияния + 348 заслонов
+≫ 20 → опора 1,0, итог после сборки тот же 0,7 «watch» (−0,15 заслоны, −0,15 дефекты). Два остатка:
+1. **Положительное свидетельство включает ложные «пройдено».** `positiveEvidenceCount = mergedReviews + qualityGatePassed`,
+   а `qualityGatePassed` (`:305`, `TaskEntity::isQualityGatePassed`) истинен и тогда, когда **не применилось ни одной
+   проверки** — это записано в самой `TaskEntity` (`:356–364`: «recorded as having passed every applicable check when
+   none was applied»). Корпус `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` (D006): «require knowledge-grade evidence».
+   Правильный признак уже есть: `TaskEntity.isVerifiedForDelivery()`.
+2. **Нет окна свежести.** Сильная форма `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` (`04_FACTORY_DERIVED_PATTERNS.md`):
+   «по накопленному свидетельству **с названным порогом и окном свежести**». Здесь свидетельства за всю историю:
+   давние слияния держат опору 1,0 навсегда.
+
+### Пункт 12 — `QualityMetricsController` (раздел XXXIX, `FACTORY_MECHANISMS.md:7682`) — совет до правки
+Корпус: `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) и `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` (D009) — «Separate what a
+value is called, what it denotes… Proof obligation: Add a contract or test proving display label, persisted identifier and
+API identity cannot be confused.»
+**Замер.** Три исхода **уже определены в `TaskEntity`**: `isVerifiedForDelivery()` (применялись и пройдены, или критерий
+удовлетворён), `isDeliveryVerificationAbsent()` / `deliveryChecksApplied() == 0` («Zero means nobody was asked», `:367`,
+`:395–403`). А два читающих считают по-своему: `OperationalTruthService:305–308` — `qualityGatePassed` и
+«`report != null && !passed`» (живое сейчас: 348 и 454); `QualityMetricsController.getDefectSummary` (`:131–152`) —
+проваленные проверки в `report.checks`. Правило фабрики: одна реализация на правило — оба читают `TaskEntity`, а не
+считают заново. Подпись предупреждения «failed quality-gate evidence» должна называть только применённое и проваленное.
+**Не трогать без ответа:** списки `items` в `/defect-summary` — у Codex открыт вопрос (`AGY_ASKS.md`, 9 сентября: весь
+дамп или ограниченный вид; живых читающих во фронте греп не нашёл). Итоги можно брать счётом, списки — после ответа.
+**Цена:** `getDefectSummary` поднимает все задачи с полезным грузом (`taskRepository.findAll()`, 753 строки) ради счёта —
+счёт, а не подъём строк; `/conflict-dpmo` — `findAll()` по разборам, конфликтам, сессиям, проектам.
+**Тест:** сумма «пройдено + провалено + не применялось» = задач с отчётом; ни одно предупреждение не называет
+неприменённое проваленным; доверие не растёт от задачи с нулём применённых проверок.
+**Опровергнет:** предупреждение о непройденном заслоне при нуле проваленных проверок.
