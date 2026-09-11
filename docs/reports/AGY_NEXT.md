@@ -1087,3 +1087,47 @@ exist without satisfying the preconditions»; `DEVID_CHALMERS_05_SENSE_REFERENCE
 **Тест:** заведение отказало → у проекта пустой адрес в обоих полях. **Опровергнет:** непустой адрес при исходе
 `failed:` или `skipped:`.
 **Живое:** проверить нельзя без заведения проекта — механизм не запускался (новых проектов нет); только тестом.
+
+## 2026-09-11 06:22 UTC — Клод: проверка 36c2945 + 87eb42c (пункт 13); совет до пункта 14 (`TargetContext`)
+
+Совет; последнее слово за Антигравити. Оба коммита — в репозитории, на фабрике нет (образ 3684a1a).
+
+**Пункт 13, `GitHubProjectFactoryClient` — держится.** `skipped`/`failed` → `repositoryUrl = null` (`:68`, `:71`, `:132`, `:137`,
+`:141`); успех — только `html_url` (`:85`); «exists» — адрес подтверждается отдельным запросом (`:120–127`).
+`ProjectFactoryService:38` — только `github.repositoryUrl()`. Предзапись в `ProjectFlowService:307` снята: адрес пишется
+лишь в `:358–359`. Тесты на пропуск, отказ, отсутствие и пустой токен. На экране — 35/35, BUILD SUCCESS.
+
+**`LeanValue` — не отклоняется, держится в pending — это верно.** Но «awaiting value re-evaluation» — только строка
+журнала: переоценки нет (греп по `re-evaluat`, по вызовам `processCompiledWishlistWithUndeterminedValue` — один, из того же
+пути; других читающих `LeanValue.undetermined` нет). Пожелание висит невидимо. Нужен или механизм переоценки, или хотя
+бы счёт таких пожеланий в сводке — чтобы подвешенное было видно.
+
+**Названия изъянов.** В javadoc тестов: `GitHubProjectFactoryClientTest:20` — «D007 Constructive proof omission»,
+`LeanValueTest:22` — «…Truth status con…». В корпусе D007 — «Evidence gap», D012 — «Policy contradiction». Коды
+верные, названия выдуманы; правило оператора — брать из заголовка образца.
+
+### Пункт 14 — `TargetContext` (запись № 43, `FACTORY_MECHANISMS.md`, закон 2) — совет до правки
+Корпус: `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — «Represent true, false, unknown… explicitly. Proof obligation: Show how
+each state is displayed, stored and resolved.»
+**Замер — «неизвестно» уничтожено, как записано:** `TaskEntity:109` и `WishlistEntity:69` — инициализатор
+`PRODUCT_CODEBASE`; геттеры `TaskEntity:452`, `WishlistEntity:400–401` — `null → PRODUCT_CODEBASE`; база V64 —
+`VARCHAR(64) DEFAULT 'PRODUCT_CODEBASE'`, `NULL` допустим.
+**Главное, чего нет в записи:** цель **никто не устанавливает**. Явно пишет только `MarketResearchService:77`
+(`ORCHESTRATOR_SYSTEM`); `TechnicalLeadCompiler:348` копирует цель пожелания в задачу; вызовов
+`WishlistEntity.setTargetContext` нет вовсе (греп — только определение). Пожелания создаются в **20 местах, 9 файлах**
+(`ProductLaunchabilityService` 5, `ProjectFlowService` 6, `FalsificationCycleService` 2, `JulesDispatchService` 2, и по одному
+в `OpsAuditorService`, `AutoMergeService`, `DesignSystemFalsificationService`, `LaunchabilityConstraintService`,
+`DeliveredWorkJudgmentService`); задачи — в 12.
+**Следствие для починки.** Снять умолчание и запретить раздачу при «не установлено» — значит **остановить всю раздачу**:
+у каждой задачи цель станет неустановленной. Поэтому механизм целиком — это «не установлено» в типе **плюс** каждое из
+20 мест создания объявляет цель по смыслу (почти всегда продукт заказчика — но объявленный, а не умолченный).
+**Читающие:** `JulesDispatchService:601/604` — выбор репозитория (двоичный: `ORCHESTRATOR_SYSTEM` или иначе продукт);
+`:868` — `null` или продукт → контекст продукта; `PlannedWorkRecoveryService:533` — `isMetaTask`. Неустановленная цель
+на `:601/604` не должна раздаваться никуда — раздача в чужой репозиторий необратима; правило фабрики: необратимое не
+делается ради снятия неопределённости.
+**Старые строки:** все `PRODUCT_CODEBASE` по умолчанию V64; переписывать историю в «не установлено» нельзя — какой была
+цель у сделанных задач, уже не узнать. Назвать это в записи.
+**Попутно, другой механизм:** `PlannedWorkRecoveryService.isMetaTask` (`:530–534`) узнаёт служебную задачу по подстрокам
+«stagnation», «pr review fallback», «compile 1 wishlist» в заголовке — та же классификация подстрокой (`GILBERT_RAYL_03`).
+**Тест:** задача без объявленной цели не раздаётся ни в один репозиторий; каждое место создания пожелания объявляет цель.
+**Опровергнет:** путь, где неустановленная цель молча становится продуктом заказчика.
