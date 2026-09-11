@@ -4,6 +4,7 @@ import com.eneik.production.toc.model.DbrStatus;
 import com.eneik.production.toc.model.TocNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -34,7 +35,9 @@ public class TocOptimizer {
         this(graph, DEFAULT_MAX_BUFFER_CAPACITY);
     }
 
-    public TocOptimizer(TocExecutionGraph graph, long maxBufferCapacity) {
+    @Autowired
+    public TocOptimizer(TocExecutionGraph graph,
+                        @Value("${eneik.toc.max-buffer-capacity:15}") long maxBufferCapacity) {
         this.graph = graph;
         this.maxBufferCapacity = maxBufferCapacity;
         this.latestDbrStatus = new DbrStatus(
