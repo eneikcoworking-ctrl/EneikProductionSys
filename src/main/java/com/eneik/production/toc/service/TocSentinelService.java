@@ -29,10 +29,10 @@ import java.util.UUID;
  * - Anti-Mirror Telemetry (LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY / D013): Observation does not mutate
  *   the observed. getDbrStatus() returns the cached latestDbrStatus snapshot without recomputing graph node
  *   utilizations, changing node primary constraint flags, or resetting timestamps.
- * - Derived Dynamic Cadence (ALONZO_CHERCH_21_DERIVED_CUTOFF / D008): Watchdog cadence is dynamically derived
+ * - Derived Dynamic Cadence (ALONZO_CHERCH_21_DERIVED_CUTOFF / D010): Watchdog cadence is dynamically derived
  *   via Spring Trigger as half of the shortest observed step duration in the graph (Nyquist-Shannon sampling
  *   criterion), strictly clamped between declared min-cadence and max-cadence bounds. In the absence of
- *   step observations, the watchdog relaxes to max-cadence to eliminate idle polling waste.
+ *   work in flight (getActiveTokenCount() == 0), the watchdog relaxes to max-cadence to eliminate idle polling waste.
  * - Single-Writer Lifecycle Ownership (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004): Node in-flight counters
  *   are owned and mutated exclusively by TocSentinelService (incrementInFlight in enterStep, decrementInFlight
  *   in exitStep). Leaky component getters (getGraph, getAnomalyDetector, getOptimizer) are eliminated, and all
@@ -43,7 +43,18 @@ public class TocSentinelService implements SchedulingConfigurer {
 
     private static final Logger log = LoggerFactory.getLogger(TocSentinelService.class);
 
+    /**
+     * Lower cadence clamp (250 ms): prevents thread starvation, spinning, and lock contention on
+     * the scheduler thread during rapid micro-step transitions.
+     */
     public static final long DEFAULT_MIN_CADENCE_MS = 250L;
+
+    /**
+     * Upper cadence clamp (10,000 ms): grounded in the dynamic stall detection threshold
+     * (TocNode.getDynamicTimeoutLimitMs with defaultTimeoutFloorMs = 5,000 ms). An upper bound of at most
+     * 2x the stall floor guarantees that any stalled in-flight token is flagged within one polling interval
+     * of becoming anomalous, while eliminating idle CPU churn when no work is in flight.
+     */
     public static final long DEFAULT_MAX_CADENCE_MS = 10000L;
 
     private final TocExecutionGraph graph;
@@ -217,7 +228,7 @@ public class TocSentinelService implements SchedulingConfigurer {
     }
 
     /**
-     * Computes the dynamic watchdog cadence derived from active execution flow (ALONZO_CHERCH_21_DERIVED_CUTOFF / D008).
+     * Computes the dynamic watchdog cadence derived from active execution flow (ALONZO_CHERCH_21_DERIVED_CUTOFF / D010).
      *
      * Invariants:
      * 1. When the pipeline is idle (no tokens in flight, getActiveTokenCount() == 0), there are no tokens in danger
@@ -227,10 +238,10 @@ public class TocSentinelService implements SchedulingConfigurer {
      *    of active/observed nodes using the Nyquist-Shannon sampling theorem (cadence = min(meanDurationMs) / 2)
      *    to detect transitions and queue bottlenecks without sampling aliasing.
      * 3. Lower bound (minCadenceMs = 250 ms): prevents scheduler thread starvation, spinning, and lock churn on
-     *    microsecond steps.
-     * 4. Upper bound (maxCadenceMs = 10,000 ms): governed by dynamic stall detection (TocAnomalyDetector default
-     *    floor of 5,000 ms). An upper bound of 10,000 ms guarantees that an in-flight stall is caught within at
-     *    most 2x the floor window without multi-minute lag.
+     *    rapid sub-second steps.
+     * 4. Upper bound (maxCadenceMs = 10,000 ms): grounded in dynamic stall detection (TocNode.getDynamicTimeoutLimitMs
+     *    with defaultTimeoutFloorMs = 5,000 ms). Polling at at most 2x the stall floor guarantees that any stalled
+     *    in-flight work is observed within one cycle of exceeding the dynamic limit without multi-minute lag.
      */
     public long computeDerivedWatchdogCadenceMs() {
         if (getActiveTokenCount() == 0) {
