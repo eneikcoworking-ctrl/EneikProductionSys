@@ -7,6 +7,17 @@
 - **Заслоняющие тесты:** В `SystemStatusServiceTest` добавлены тесты `getStatusConsolidatesTaskAcquisitionToOneQuery` (проверка вызова `times(1)`) и `getStatusNullProjectDoesNotQueryByProjectId`. Все 11 юнит-тестов и 4 интеграционных теста `SystemStatusControllerIntegrationTest` пройдены успешно.
 - **Статус открытых вопросов:** Вопрос по `tasks(null)` carrier-предикату остаётся открытым до решения оператора (json key vs column marker); до этого момента `tasks(null)` в коде не искажался неточными json-парсерами.
 
+### 2026-09-11 Antigravity: Такт 2 — QualityGateController и SixSigmaAuditService
+- **Сделано:** 
+  1. `QualityGateController.getDefectRate` делегирован в `SixSigmaAuditService.computeQualityGateDefectRate(projectId)`. Ликвидирован дублирующий `taskRepository.findAll()` и расхождение формул.
+  2. Внедрена 3-значная классификация проверок по Белнапу (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): проверки без поля `passed` больше не роняют контроллер (NPE) и не засчитываются молча как пройденные (`asBoolean(true)`), а явно выводятся в ответе как `undetermined`.
+  3. В `TaskRepository` добавлен `findByProjectIdAndQualityGateReportIsNotNull(projectId)`. В `computeCtqBreakdown` и `computeQualityGateCounts` устранены `findAll()` и фильтрация в памяти.
+- **Чем проверено:**
+  1. `QualityGateControllerTest` (2/2 green): проверка делегирования в глобальном и проектном разрезе.
+  2. `SixSigmaAuditServiceTest` (16/16 green): тест `computeQualityGateDefectRateCategorizesMissingPassedFieldAsUndetermined` проверяет точный подсчёт `undetermined` без падения и заслоняет `never().findAll()`.
+  3. `SystemStatusServiceTest` (11/11 green): регрессионная целостность статусного свода сохранена.
+- **Что берётся следующим:** Такт 3 — пункт 2 `docs/ANTIGRAVITY_QUEUE.md`: `GeminiContextService` (retrieval corpus parsing and vector query optimization).
+
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
 
 вопрос: разрешать ли для `SystemStatusService.tasks(null)` отдельный materialized carrier marker/column или repository projection, чтобы считать статусы без `findAll()` и без JSON-предиката по `payload.taskType`?

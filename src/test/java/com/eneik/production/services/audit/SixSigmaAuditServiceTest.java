@@ -21,11 +21,14 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class SixSigmaAuditServiceTest {
@@ -411,7 +414,7 @@ public class SixSigmaAuditServiceTest {
         com.eneik.production.models.persistence.TaskEntity taskB = new com.eneik.production.models.persistence.TaskEntity();
         taskB.setQualityGateReport(new com.fasterxml.jackson.databind.ObjectMapper().readTree(
                 "{\"checks\":[{\"name\":\"unit_tests\",\"passed\":false},{\"name\":\"unit_tests\",\"passed\":false}]}"));
-        when(taskRepository.findAll()).thenReturn(List.of(taskA, taskB));
+        when(taskRepository.findByQualityGateReportIsNotNull()).thenReturn(List.of(taskA, taskB));
 
         List<SixSigmaAuditService.CtqEntry> breakdown = auditService.computeCtqBreakdown(null);
 
@@ -421,12 +424,38 @@ public class SixSigmaAuditServiceTest {
         assertThat(breakdown.get(0).opportunities()).isEqualTo(3);
         assertThat(breakdown.get(1).checkName()).isEqualTo("lint");
         assertThat(breakdown.get(1).defects()).isEqualTo(0);
+        verify(taskRepository, never()).findAll();
     }
 
     @Test
     void computeCtqBreakdownIsEmptyWhenNoTaskHasAQualityGateReport() {
-        when(taskRepository.findAll()).thenReturn(List.of(new com.eneik.production.models.persistence.TaskEntity()));
+        when(taskRepository.findByQualityGateReportIsNotNull()).thenReturn(List.of());
 
         assertThat(auditService.computeCtqBreakdown(null)).isEmpty();
+        verify(taskRepository, never()).findAll();
+    }
+
+    @Test
+    void computeQualityGateDefectRateCategorizesMissingPassedFieldAsUndetermined() throws Exception {
+        com.eneik.production.models.persistence.TaskEntity task = new com.eneik.production.models.persistence.TaskEntity();
+        task.setQualityGateReport(new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                "{\"checks\":[" +
+                "{\"name\":\"unit_tests\",\"passed\":false}," +
+                "{\"name\":\"lint\",\"passed\":true}," +
+                "{\"name\":\"security_probe\"}" +
+                "]}"));
+        when(taskRepository.findByQualityGateReportIsNotNull()).thenReturn(List.of(task));
+
+        Map<String, Object> result = auditService.computeQualityGateDefectRate(null);
+
+        assertThat(result).isNotNull();
+        assertThat(result.get("totalAttempts")).isEqualTo(1L);
+        assertThat(result.get("totalOpportunities")).isEqualTo(3L);
+        assertThat(result.get("defects")).isEqualTo(1L);
+        assertThat(result.get("passedChecks")).isEqualTo(1L);
+        assertThat(result.get("undetermined")).isEqualTo(1L);
+        double expectedDpmo = (1.0 / 3.0) * 1_000_000.0;
+        assertThat((double) result.get("dpmo")).isCloseTo(expectedDpmo, org.assertj.core.data.Offset.offset(0.01));
+        verify(taskRepository, never()).findAll();
     }
 }

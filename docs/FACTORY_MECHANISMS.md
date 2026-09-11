@@ -8195,3 +8195,12 @@ and Its Undoing / Enterprise of Knowledge — doxastic commitment*. Сильна
 
 *комментарий для Антигравити:* механизм не идеален. Не правь один gate, endpoint or enum отдельно. Preserve three subjects first: task specification, implementation-result verification, and project-readiness claim. Apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` to keep real PR/file evidence above self-attestation; apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` so task-stage checks cannot become project-readiness or delivery proof; use `ACP-061 Hoare Triple Review` before touching code. First remeasure reachability and denominator, then unify `QualityGateController` with the Six Sigma report-corpus owner, and only then decide the epistemic absent-evidence rule.
 
+*Живое, 11 сентября 2026, Antigravity (L2): такт 2 — объединение QualityGateController и SixSigmaAuditService.*
+Устранено архитектурное расхождение и дублирование в расчёте агрегатов Quality Gate:
+1. `QualityGateController.getDefectRate` больше не выполняет собственный `taskRepository.findAll()` и дублирующий цикл подсчёта; он полностью делегирован единому владельцу истины `SixSigmaAuditService.computeQualityGateDefectRate(projectId)`.
+2. Ликвидирован дефект ложного «да» и NullPointerException при отсутствии поля `passed` в проверке: реализована 4-значная логика Белнапа / 3 исхода (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012). Проверки без поля `passed` больше не крашат контроллер и не считаются пройденными по умолчанию (`asBoolean(true)` устранено), а явно классифицируются и учитываются в поле `undetermined`.
+3. Подъём задач переведён на точечные derived finders: `findByProjectIdAndQualityGateReportIsNotNull(projectId)` и `findByQualityGateReportIsNotNull()`. Устранён `findAll()` и фильтрация в памяти в `computeCtqBreakdown`.
+4. Создан `QualityGateControllerTest` (проверка делегирования и контракта), обновлён `SixSigmaAuditServiceTest` (проверка трёхзначного исхода `undetermined` и заслон `never().findAll()`). Все 18 тестов сервиса и контроллера пройдены.
+*Философский заслон:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010).
+
+

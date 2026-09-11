@@ -1,56 +1,38 @@
 package com.eneik.production.controllers;
 
-import com.eneik.production.models.persistence.TaskEntity;
-import com.eneik.production.repositories.TaskRepository;
-import com.fasterxml.jackson.databind.JsonNode;
+import com.eneik.production.services.audit.SixSigmaAuditService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
+/**
+ * QualityGateController: HTTP observation surface for quality-gate defect aggregates.
+ *
+ * Antigravity L2 Alignment (Ideal Model):
+ * - Unified Single Source of Truth: delegates defect computation to SixSigmaAuditService
+ *   rather than duplicating all-task scanning and calculation.
+ * - Belnap 4-valued logic / 3-way check outcome (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012):
+ *   absence of "passed" field is explicitly counted as "undetermined" instead of crashing
+ *   with NullPointerException or silently assuming success.
+ * - Scoped acquisition: loads only tasks with non-null qualityGateReport, supporting
+ *   both global (null) and project-scoped queries without full table scans.
+ */
 @RestController
 @RequestMapping("/api/quality-gate")
 public class QualityGateController {
 
-    private final TaskRepository taskRepository;
+    private final SixSigmaAuditService sixSigmaAuditService;
 
-    public QualityGateController(TaskRepository taskRepository) {
-        this.taskRepository = taskRepository;
+    public QualityGateController(SixSigmaAuditService sixSigmaAuditService) {
+        this.sixSigmaAuditService = sixSigmaAuditService;
     }
 
     @GetMapping("/defect-rate")
-    public Map<String, Object> getDefectRate() {
-        List<TaskEntity> allTasks = taskRepository.findAll();
-        long totalAttempts = 0;
-        long totalOpportunities = 0;
-        long totalDefects = 0;
-
-        for (TaskEntity task : allTasks) {
-            JsonNode report = task.getQualityGateReport();
-            if (report != null && report.has("checks")) {
-                totalAttempts++;
-                JsonNode checks = report.get("checks");
-                totalOpportunities += checks.size();
-                for (JsonNode check : checks) {
-                    if (!check.get("passed").asBoolean()) {
-                        totalDefects++;
-                    }
-                }
-            }
-        }
-
-        double dpmo = 0;
-        if (totalOpportunities > 0) {
-            dpmo = (double) totalDefects / totalOpportunities * 1_000_000;
-        }
-
-        return Map.of(
-            "totalAttempts", totalAttempts,
-            "totalOpportunities", totalOpportunities,
-            "defects", totalDefects,
-            "dpmo", dpmo
-        );
+    public Map<String, Object> getDefectRate(@RequestParam(value = "projectId", required = false) UUID projectId) {
+        return sixSigmaAuditService.computeQualityGateDefectRate(projectId);
     }
 }

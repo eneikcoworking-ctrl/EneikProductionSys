@@ -351,24 +351,21 @@ public class SixSigmaAuditService {
         List<TaskEntity> tasks;
         if (featureId != null) {
             tasks = taskRepository.findByFeatureId(featureId);
+        } else if (projectId != null) {
+            tasks = taskRepository.findByProjectIdAndQualityGateReportIsNotNull(projectId);
         } else {
-            tasks = taskRepository.findAll();
-            if (projectId != null) {
-                tasks = tasks.stream()
-                        .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
-                        .toList();
-            }
+            tasks = taskRepository.findByQualityGateReportIsNotNull();
         }
 
         long opportunities = 0;
         long defects = 0;
         for (TaskEntity task : tasks) {
             JsonNode report = task.getQualityGateReport();
-            if (report != null && report.has("checks")) {
+            if (report != null && report.has("checks") && report.get("checks").isArray()) {
                 JsonNode checks = report.get("checks");
-                opportunities += checks.size();
                 for (JsonNode check : checks) {
-                    if (!check.path("passed").asBoolean(true)) {
+                    opportunities++;
+                    if (check.hasNonNull("passed") && !check.get("passed").asBoolean()) {
                         defects++;
                     }
                 }
@@ -378,46 +375,97 @@ public class SixSigmaAuditService {
     }
 
     /** One quality-gate check type's own Pareto contribution - checkName is GateResult.checkName() (see GateOrchestrator). */
-    public record CtqEntry(String checkName, long defects, long opportunities) {}
+    public record CtqEntry(String checkName, long defects, long opportunities, long undetermined) {
+        public CtqEntry(String checkName, long defects, long opportunities) {
+            this(checkName, defects, opportunities, 0);
+        }
+    }
 
     /**
-     * 2026-08-08 (ML-update patch, Phase 1 / lever F1_KAIZEN_CTQ_TARGETING): per-check-name breakdown of
-     * computeQualityGateCounts' same underlying data - previously only computed inline inside
-     * SystemStatusService.qualityGate's dashboard JSON assembly (ctqBreakdown), never exposed as a reusable
-     * query. KaizenService's DEFECT_ELIMINATION proposal used to name its target generically ("QualityGate")
-     * even though ~91% of factory-wide defects concentrate in a small number of specific checks (Sober's
-     * parsimony/AIC-BIC, BARCAN-TAG-04 philosopher 6: the simplest explanation of a DPMO spike sufficient to
-     * act on is the single dominant check, not "everything"). SystemStatusService.qualityGate is expected to
-     * be migrated onto this method too so the two never silently diverge (engineering invariant #14).
+     * Per-check-name breakdown of quality-gate data.
+     *
+     * Antigravity L2 Alignment:
+     * - Scoped acquisition via repository finder instead of full table scan and in-memory filtering.
+     * - 3-way status per Belnap (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012): missing passed is undetermined.
      */
     public List<CtqEntry> computeCtqBreakdown(UUID projectId) {
-        List<TaskEntity> tasks = taskRepository.findAll();
-        if (projectId != null) {
-            tasks = tasks.stream()
-                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
-                    .toList();
-        }
+        List<TaskEntity> tasks = projectId != null
+                ? taskRepository.findByProjectIdAndQualityGateReportIsNotNull(projectId)
+                : taskRepository.findByQualityGateReportIsNotNull();
 
-        Map<String, long[]> counts = new LinkedHashMap<>(); // checkName -> [defects, opportunities]
+        Map<String, long[]> counts = new LinkedHashMap<>(); // checkName -> [defects, opportunities, undetermined]
         for (TaskEntity task : tasks) {
             JsonNode report = task.getQualityGateReport();
-            if (report == null || !report.has("checks")) {
+            if (report == null || !report.has("checks") || !report.get("checks").isArray()) {
                 continue;
             }
             for (JsonNode check : report.get("checks")) {
                 String checkName = check.path("name").asText("unknown_check");
-                long[] entry = counts.computeIfAbsent(checkName, k -> new long[2]);
-                entry[1]++;
-                if (!check.path("passed").asBoolean(true)) {
-                    entry[0]++;
+                long[] entry = counts.computeIfAbsent(checkName, k -> new long[3]);
+                entry[1]++; // opportunities
+                if (!check.hasNonNull("passed")) {
+                    entry[2]++; // undetermined
+                } else if (!check.get("passed").asBoolean()) {
+                    entry[0]++; // defects
                 }
             }
         }
 
         return counts.entrySet().stream()
-                .map(e -> new CtqEntry(e.getKey(), e.getValue()[0], e.getValue()[1]))
+                .map(e -> new CtqEntry(e.getKey(), e.getValue()[0], e.getValue()[1], e.getValue()[2]))
                 .sorted((a, b) -> Long.compare(b.defects(), a.defects()))
                 .toList();
+    }
+
+    /**
+     * Unified computation of quality-gate defect rate and DPMO for QualityGateController and audits.
+     *
+     * Antigravity L2 Alignment:
+     * - Single Source of Truth: shared calculation eliminates divergence between controller and audit service.
+     * - Belnap truth table (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012): missing passed field is explicitly
+     *   counted as undetermined without throwing NullPointerException or silently pretending success.
+     * - Scoped acquisition: queries only tasks with qualityGateReport, supporting both global and project scope.
+     */
+    public Map<String, Object> computeQualityGateDefectRate(UUID projectId) {
+        List<TaskEntity> tasks = projectId != null
+                ? taskRepository.findByProjectIdAndQualityGateReportIsNotNull(projectId)
+                : taskRepository.findByQualityGateReportIsNotNull();
+
+        long totalAttempts = 0;
+        long totalOpportunities = 0;
+        long defects = 0;
+        long passedChecks = 0;
+        long undetermined = 0;
+
+        for (TaskEntity task : tasks) {
+            JsonNode report = task.getQualityGateReport();
+            if (report != null && report.has("checks") && report.get("checks").isArray()) {
+                totalAttempts++;
+                for (JsonNode check : report.get("checks")) {
+                    totalOpportunities++;
+                    if (!check.hasNonNull("passed")) {
+                        undetermined++;
+                    } else if (check.get("passed").asBoolean()) {
+                        passedChecks++;
+                    } else {
+                        defects++;
+                    }
+                }
+            }
+        }
+
+        double dpmo = totalOpportunities > 0
+                ? (double) defects / totalOpportunities * 1_000_000.0
+                : 0.0;
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("totalAttempts", totalAttempts);
+        result.put("totalOpportunities", totalOpportunities);
+        result.put("defects", defects);
+        result.put("passedChecks", passedChecks);
+        result.put("undetermined", undetermined);
+        result.put("dpmo", dpmo);
+        return result;
     }
 
     public DefectOpportunityCount computePrConflictCounts(UUID projectId, UUID featureId) {
