@@ -121,7 +121,7 @@ public class OperationalTruthService {
                 tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds);
         List<OperationalTruthDto.InvariantStatus> invariants = invariants(
                 readiness, tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask,
-                reviewsBySession, recentDefects);
+                reviewsBySession, recentDefects, evidence);
         OperationalTruthDto.Trust trust = trust(evidence, blockers, systemStatus, duplicateContent, recentDefects);
         OperationalTruthDto.BlockedValue blockedValue = blockedValue(blockers);
         OperationalTruthDto.LearningSummary learning = learning(recentDefects, invariants);
@@ -162,7 +162,39 @@ public class OperationalTruthService {
         return "building";
     }
 
+    public static final int TRUST_EVIDENCE_THRESHOLD = 20;
+    public static final int TRUST_PACKET_SIZE = 5;
+
+    /**
+     * Goldman process reliabilism and asymmetric trust dynamics (ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE,
+     * ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS): trust is not given gratuitously at 1.0; it grows
+     * slowly and in packets from positive delivery and verification evidence up to threshold.
+     */
+    static double computeBaseTrust(int positiveEvidenceCount) {
+        if (positiveEvidenceCount <= 0) {
+            return 0.0;
+        }
+        if (positiveEvidenceCount >= TRUST_EVIDENCE_THRESHOLD) {
+            return 1.0;
+        }
+        int packets = positiveEvidenceCount / TRUST_PACKET_SIZE;
+        return switch (packets) {
+            case 0 -> 0.50;
+            case 1 -> 0.65;
+            case 2 -> 0.75;
+            case 3 -> 0.85;
+            default -> 1.00;
+        };
+    }
+
     static String trustLevel(double score) {
+        return trustLevel(score, true);
+    }
+
+    static String trustLevel(double score, boolean hasPositiveEvidence) {
+        if (!hasPositiveEvidence) {
+            return "undetermined";
+        }
         if (score >= 0.85) {
             return "trusted";
         }
@@ -403,12 +435,14 @@ public class OperationalTruthService {
         return new OperationalTruthDto.BlockedValue(blockers.size(), headline, blockers);
     }
 
-    private OperationalTruthDto.Trust trust(OperationalTruthDto.EvidenceSummary evidence,
-                                            List<OperationalTruthDto.Blocker> blockers,
-                                            String systemStatus,
-                                            DuplicateContent duplicateContent,
-                                            List<DefectJournalEntity> recentDefects) {
-        double score = 1.0;
+    OperationalTruthDto.Trust trust(OperationalTruthDto.EvidenceSummary evidence,
+                                    List<OperationalTruthDto.Blocker> blockers,
+                                    String systemStatus,
+                                    DuplicateContent duplicateContent,
+                                    List<DefectJournalEntity> recentDefects) {
+        int positiveEvidenceCount = evidence.mergedReviews() + evidence.qualityGatePassed();
+        double baseTrust = computeBaseTrust(positiveEvidenceCount);
+        double score = baseTrust;
         List<String> warnings = new ArrayList<>();
         List<String> positives = new ArrayList<>();
         if (evidence.mergedReviews() > 0) {
@@ -416,6 +450,9 @@ public class OperationalTruthService {
         }
         if (evidence.qualityGatePassed() > 0) {
             positives.add(evidence.qualityGatePassed() + " task(s) passed quality gates.");
+        }
+        if (positiveEvidenceCount == 0) {
+            positives.add("No delivery or quality-gate verification evidence accumulated yet.");
         }
         if (!isTrustBlockingSystemStatus(systemStatus)) {
             positives.add("System status is " + (systemStatus == null || systemStatus.isBlank() ? "not set" : systemStatus) + ".");
@@ -443,8 +480,8 @@ public class OperationalTruthService {
             score -= Math.min(0.15, recentDefects.size() * 0.02);
             warnings.add(recentDefects.size() + " defect-journal item(s) were recorded in the last 24h.");
         }
-        double clamped = clamp(score);
-        return new OperationalTruthDto.Trust(clamped, trustLevel(clamped), positives, warnings);
+        double clamped = positiveEvidenceCount > 0 ? clamp(score) : 0.0;
+        return new OperationalTruthDto.Trust(clamped, trustLevel(clamped, positiveEvidenceCount > 0), positives, warnings);
     }
 
     private List<OperationalTruthDto.InvariantStatus> invariants(
@@ -456,13 +493,21 @@ public class OperationalTruthService {
             DuplicateContent duplicateContent,
             Map<UUID, List<JulesSessionEntity>> sessionsByTask,
             Map<UUID, List<PrReviewEntity>> reviewsBySession,
-            List<DefectJournalEntity> recentDefects) {
+            List<DefectJournalEntity> recentDefects,
+            OperationalTruthDto.EvidenceSummary evidence) {
         List<OperationalTruthDto.InvariantStatus> result = new ArrayList<>();
         boolean deliveryHasEvidence = readiness.completeFeatures() == 0 || readiness.mergedDeliverables() > 0;
         result.add(invariant("delivered_requires_evidence", deliveryHasEvidence ? "pass" : "warn",
                 "delivered(x) requires checkable evidence(x)",
                 deliveryHasEvidence ? "Readiness evidence is present or no feature is complete yet."
                         : "A complete feature is reported without merged deliverable evidence."));
+
+        int positiveEvidenceCount = evidence.mergedReviews() + evidence.qualityGatePassed();
+        result.add(invariant("trust_requires_positive_evidence", positiveEvidenceCount > 0 ? "pass" : "observed",
+                "trusted(project) -> positive_evidence(project)",
+                positiveEvidenceCount > 0
+                        ? positiveEvidenceCount + " positive delivery/verification evidence item(s) support operational trust."
+                        : "No positive delivery or verification evidence recorded; trust remains undetermined."));
 
         long doneWithoutMerge = tasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.done)
@@ -572,7 +617,9 @@ public class OperationalTruthService {
                 sot("Quality evidence", "GateOrchestrator",
                         "Aggregate gate pass/fail evidence."),
                 sot("Defect memory", "DefectJournalService / KaizenService",
-                        "Expose defects that still need invariant capture.")
+                        "Expose defects that still need invariant capture."),
+                sot("Operational trust dynamics", "OperationalTruthService",
+                        "Accumulate trust packet-wise from positive delivery/gate evidence; penalize immediately on confirmed defects (ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS).")
         );
     }
 
@@ -669,6 +716,6 @@ public class OperationalTruthService {
         return value.length() <= max ? value : value.substring(0, max) + "...";
     }
 
-    private record DuplicateContent(boolean duplicated, long maxCount) {
+    record DuplicateContent(boolean duplicated, long maxCount) {
     }
 }

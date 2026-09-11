@@ -347,4 +347,183 @@ class OperationalTruthServiceTest {
         assertTrue(dto.blockedValue().blockers().stream()
                 .anyMatch(b -> "done_without_delivery_evidence".equals(b.type())));
     }
+
+    @Test
+    void projectWithoutEvidenceHasZeroScoreAndUndeterminedTrustLevel() {
+        // ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE (D006): do not authorize trust from belief or
+        // intention alone; require knowledge-grade evidence. A project with zero merged reviews and zero
+        // passed quality gates must never receive score 1.0 or level "trusted".
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var flow = mock(com.eneik.production.services.ProjectFlowService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus, flow);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+
+        assertEquals(0.0, dto.trust().score());
+        assertEquals("undetermined", dto.trust().level());
+        assertNotEquals("trusted", dto.trust().level());
+        assertTrue(dto.trust().positiveSignals().stream()
+                .anyMatch(s -> s.contains("No delivery or quality-gate verification evidence")));
+
+        String invariantStatus = dto.invariants().stream()
+                .filter(i -> "trust_requires_positive_evidence".equals(i.key()))
+                .map(OperationalTruthDto.InvariantStatus::status)
+                .findFirst()
+                .orElse("absent");
+        assertEquals("observed", invariantStatus);
+    }
+
+    @Test
+    void computeBaseTrustGrowsSlowlyInPackets() {
+        // ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS (D010): trust grows slowly and in packets with named
+        // threshold and packet size.
+        assertEquals(0.0, OperationalTruthService.computeBaseTrust(0));
+        assertEquals(0.0, OperationalTruthService.computeBaseTrust(-5));
+
+        // Packet 0: 1..4 items -> 0.50 (degraded baseline)
+        assertEquals(0.50, OperationalTruthService.computeBaseTrust(1));
+        assertEquals(0.50, OperationalTruthService.computeBaseTrust(4));
+
+        // Packet 1: 5..9 items -> 0.65 (watch baseline)
+        assertEquals(0.65, OperationalTruthService.computeBaseTrust(5));
+        assertEquals(0.65, OperationalTruthService.computeBaseTrust(9));
+
+        // Packet 2: 10..14 items -> 0.75 (watch upper)
+        assertEquals(0.75, OperationalTruthService.computeBaseTrust(10));
+        assertEquals(0.75, OperationalTruthService.computeBaseTrust(14));
+
+        // Packet 3: 15..19 items -> 0.85 (trusted baseline)
+        assertEquals(0.85, OperationalTruthService.computeBaseTrust(15));
+        assertEquals(0.85, OperationalTruthService.computeBaseTrust(19));
+
+        // Packet 4 / Threshold reached: >= 20 items -> 1.00 (maximum base trust)
+        assertEquals(1.00, OperationalTruthService.computeBaseTrust(20));
+        assertEquals(1.00, OperationalTruthService.computeBaseTrust(100));
+    }
+
+    @Test
+    void positiveEvidenceAccumulationPromotesTrustLevel() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var flow = mock(com.eneik.production.services.ProjectFlowService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus, flow);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        // 5 tasks with passed quality gate -> packet 1 (base score 0.65, watch)
+        List<TaskEntity> passedTasks = java.util.stream.IntStream.range(0, 5).mapToObj(i -> {
+            TaskEntity t = new TaskEntity();
+            t.setId(UUID.randomUUID());
+            t.setProject(project);
+            t.setStatus(TaskStatus.done);
+            t.setQualityGatePassed(true);
+            return t;
+        }).toList();
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(passedTasks);
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+        assertEquals(0.65, dto.trust().score());
+        assertEquals("watch", dto.trust().level());
+
+        String invariantStatus = dto.invariants().stream()
+                .filter(i -> "trust_requires_positive_evidence".equals(i.key()))
+                .map(OperationalTruthDto.InvariantStatus::status)
+                .findFirst()
+                .orElse("absent");
+        assertEquals("pass", invariantStatus);
+    }
+
+    @Test
+    void asymmetricDemotionDropsTrustImmediatelyOnConfirmedFailure() {
+        // ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS (D010): 20 items needed to reach 1.0, but a single
+        // confirmed failure demotes immediately.
+        OperationalTruthService service = new OperationalTruthService(
+                mock(ProjectRepository.class), mock(TaskRepository.class), mock(WishlistRepository.class),
+                mock(JulesSessionRepository.class), mock(PrReviewRepository.class),
+                mock(DefectJournalRepository.class), mock(ClientDeliverableReadinessService.class),
+                mock(SystemStatusService.class), mock(com.eneik.production.services.ProjectFlowService.class));
+
+        // Case 1: 20 passed gates, 0 failures -> 1.0, trusted
+        var evidenceFull = new OperationalTruthDto.EvidenceSummary(0, 0, 0, 0, 20, 0, 0, List.of());
+        var emptyBlockers = List.<OperationalTruthDto.Blocker>of();
+        var cleanDuplicate = new OperationalTruthService.DuplicateContent(false, 0);
+        var trustFull = service.trust(evidenceFull, emptyBlockers, "ok", cleanDuplicate, List.of());
+        assertEquals(1.00, trustFull.score());
+        assertEquals("trusted", trustFull.level());
+
+        // Case 2: 1 failing review (-0.20) -> immediately drops to 0.80, demoted to "watch"
+        var evidenceWithFailingReview = new OperationalTruthDto.EvidenceSummary(0, 0, 0, 1, 20, 0, 0, List.of());
+        var trustDemotedReview = service.trust(evidenceWithFailingReview, emptyBlockers, "ok", cleanDuplicate, List.of());
+        assertEquals(0.80, trustDemotedReview.score());
+        assertEquals("watch", trustDemotedReview.level());
+
+        // Case 3: Failing review (-0.20) + duplicate content (-0.30) -> drops to 0.50, demoted to "degraded"
+        var duplicateActive = new OperationalTruthService.DuplicateContent(true, 4);
+        var trustDemotedDegraded = service.trust(evidenceWithFailingReview, emptyBlockers, "ok", duplicateActive, List.of());
+        assertEquals(0.50, trustDemotedDegraded.score());
+        assertEquals("degraded", trustDemotedDegraded.level());
+
+        // Case 4: Failing review (-0.20) + content defect (-0.35) + duplicate (-0.30) + failed gate (-0.15)
+        // 1.0 - 0.20 - 0.35 - 0.30 - 0.15 = 0.0 -> "blocked"
+        var evidenceMultipleFailures = new OperationalTruthDto.EvidenceSummary(0, 0, 0, 1, 20, 1, 0, List.of());
+        var trustBlocked = service.trust(evidenceMultipleFailures, emptyBlockers, "content_defect", duplicateActive, List.of());
+        assertEquals(0.0, trustBlocked.score());
+        assertEquals("blocked", trustBlocked.level());
+    }
+
+    @Test
+    void trustLevelOverloadWithEvidenceFlag() {
+        assertEquals("trusted", OperationalTruthService.trustLevel(0.95));
+        assertEquals("watch", OperationalTruthService.trustLevel(0.70));
+        assertEquals("degraded", OperationalTruthService.trustLevel(0.50));
+        assertEquals("blocked", OperationalTruthService.trustLevel(0.20));
+
+        // Overload with explicit positive evidence flag:
+        assertEquals("undetermined", OperationalTruthService.trustLevel(0.0, false));
+        assertEquals("undetermined", OperationalTruthService.trustLevel(0.95, false));
+        assertEquals("blocked", OperationalTruthService.trustLevel(0.0, true));
+        assertEquals("trusted", OperationalTruthService.trustLevel(0.85, true));
+    }
 }

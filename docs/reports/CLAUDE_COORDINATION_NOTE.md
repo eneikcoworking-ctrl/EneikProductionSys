@@ -38,7 +38,15 @@
    - **Реализован детерминированный протокол триажа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012):** `processCompiledWishlistWithUndeterminedValue` реализует протокол с ограничением попыток (`ceiling = 3`). На попытках 1 и 2 элемент ре-триажируется, на попытке 3 детерминированно переводится в `WishlistStatus.dismissed` (не зависает в `pending` бесконечно).
    - Заслонено в `LeanValueTest` (7/7 green) и `ProjectFlowServiceTest` (37/37 green).
 
-4. **Что берётся следующим:** Такт 12 — Пункт 11 очереди (`OperationalTruthService`, раздел XXVII: динамика доверия по Голдману `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` и `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`).
+4. **Такт 12 закрыт (`OperationalTruthService`, раздел XXVII, `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` / D006, `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):**
+   - Ликвидировано априорное доверие из неведения (`score = 1.0` и только вычитания). Без положительных свидетельств проект получает строго `score = 0.0`, `level = "undetermined"` (не `"trusted"`).
+   - Внедрена асимметричная динамика доверия: базовое доверие накапливается медленно и пакетно через `computeBaseTrust` (`TRUST_PACKET_SIZE = 5`, `TRUST_EVIDENCE_THRESHOLD = 20`): 0 -> 0.0 ("undetermined"), 1..4 -> 0.50 ("degraded"), 5..9 -> 0.65 ("watch"), 10..14 -> 0.75 ("watch"), 15..19 -> 0.85 ("trusted"), >=20 -> 1.00 ("trusted").
+   - При подтвержденных отказах/дефектах штрафы вычитаются немедленно, в тот же такт, снижая уровень до `watch`, `degraded` или `blocked`.
+   - Живой проект с >20 свидетельствами и текущими 2 замечаниями сохраняет счет **0.70 ("watch")** без искажения исторических снимков `TrustSignalSnapshotEntity`.
+   - Добавлен инвариант `trust_requires_positive_evidence` и регистрация в `sourceOfTruth()`.
+   - Заслонено в `OperationalTruthServiceTest` (15/15 green, включая ступенчатый рост, отсутствие свидетельств, асимметричное немедленное падение и перегрузку `trustLevel`) и `TrustSnapshotServiceTest` (8/8 green).
+
+5. **Что берётся следующим:** Такт 13 — Пункт 12 очереди (`QualityMetricsController`, раздел XXXIX: различие трёх исходов — прошли, провалились, не применялось; 388 против нуля).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

@@ -258,6 +258,35 @@
      - `processCompiledWishlistWithUndeterminedValueResolution`: верификация 3-этапного триажа с переводом в `dismissed` на 3-й попытке.
   2. Полный регресс `ProjectFlowServiceTest`: 37/37 green (`BUILD SUCCESS`).
 
+### 2026-09-11 Antigravity: Такт 12 — OperationalTruthService целиком (пункт 11 очереди, Раздел XXVII)
+- **Что сделано:**
+  1. **Ликвидация априорного доверия по неведению (`ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` / D006):**
+     - Доверие больше не начинается автоматически с 1.0 (`score = 1.0` и только вычитания).
+     - При отсутствии положительных свидетельств (0 слитых PR и 0 пройденных заслонов качества) уровень доверия устанавливается строго как `undetermined`, а базовый счет равен `0.0`. Никакое отсутствие свидетельств против не производит положительной оценки.
+     - Список положительных сигналов честно фиксирует: `"No delivery or quality-gate verification evidence accumulated yet."`.
+  2. **Асимметричная динамика доверия (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):**
+     - Внедрен метод `computeBaseTrust(positiveEvidenceCount)`: базовое доверие накапливается медленно и пакетно (`TRUST_PACKET_SIZE = 5`, `TRUST_EVIDENCE_THRESHOLD = 20` по аналогии с `MIN_RESOLVED_SAMPLES = 20` в `LeverPromotionService`):
+       - 0 свидетельств -> `0.0` (уровень `undetermined`)
+       - 1–4 свидетельства (пакет 0) -> `0.50` (базовый уровень полосы `degraded`)
+       - 5–9 свидетельств (пакет 1) -> `0.65` (базовый уровень полосы `watch`)
+       - 10–14 свидетельств (пакет 2) -> `0.75` (верхний уровень полосы `watch`)
+       - 15–19 свидетельств (пакет 3) -> `0.85` (базовый уровень полосы `trusted`)
+       - >= 20 свидетельств (полный порог) -> `1.00` (максимальное базовое доверие полосы `trusted`)
+     - Сохранены все 6 штрафных вычитаний для дефектов и сбоев (по V90): при подтвержденных отказах (непройденные заслоны, сбойные PR, дубликаты, сбой рантайма, дефекты) доверие падает **немедленно**, в тот же такт пересчёта, снижая уровень до `watch`, `degraded` или `blocked`.
+     - Для зрелого живого проекта с >20 свидетельствами база составляет 1.0, а при наличии 2 зафиксированных дефектов счет остается равным ровно **0.70 ("watch")** — масштаб и историческая сопоставимость снимков `TrustSignalSnapshotEntity` полностью сохранены!
+     - В перечень инвариантов добавлен `trust_requires_positive_evidence` (`trusted(project) -> positive_evidence(project)`).
+     - В `sourceOfTruth()` зарегистрирован владелец истины: `Operational trust dynamics -> OperationalTruthService`.
+- **Чем проверено:**
+  1. `OperationalTruthServiceTest` (15/15 green):
+     - `projectWithoutEvidenceHasZeroScoreAndUndeterminedTrustLevel`: верификация проекта без свидетельств (score 0.0, level "undetermined", инвариант "observed").
+     - `computeBaseTrustGrowsSlowlyInPackets`: верификация ступенчатого пакетного роста базового счета (0, 0.50, 0.65, 0.75, 0.85, 1.00).
+     - `positiveEvidenceAccumulationPromotesTrustLevel`: верификация накопления свидетельств с переходом в `watch` (0.65) и инвариантом "pass".
+     - `asymmetricDemotionDropsTrustImmediatelyOnConfirmedFailure`: верификация немедленного падения с 1.00 до 0.80 ("watch"), 0.50 ("degraded") и 0.0 ("blocked").
+     - `trustLevelOverloadWithEvidenceFlag`: верификация всех диапазонов и флага наличия свидетельств.
+  2. `TrustSnapshotServiceTest`: 8/8 green.
+  3. Прогон Maven в Docker: 23/23 теста green (`BUILD SUCCESS`).
+- **Что берётся следующим:** Такт 13 — Пункт 12 очереди (`QualityMetricsController`, раздел XXXIX: различие трёх исходов — прошли, провалились, не применялось, устранение смешения 388 против нуля).
+
 
 
 ## 2026-09-08 Codex: вопрос по `tasks(null)` и carrier-задачам
