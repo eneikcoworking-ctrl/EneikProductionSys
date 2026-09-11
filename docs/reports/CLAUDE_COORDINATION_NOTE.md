@@ -464,25 +464,32 @@
     - `auditExistingDraftsExposesBothDeclaredTokensAndProducerTokensInReport`: проверяет экспозицию обоих наборов в отчёте аудита существующих черновиков.
   - Регрессия: `DesignAssetServiceTest` (9/9), `DesignConsistencyAuditServiceTest` (11/11), `DesignShopOrchestrationServiceTest` (13/13), `DesignDriftMonitorServiceTest` (3/3), `DesignShopOrchestrationServiceLaw15Test` (7/7) — 43/43 green.
 
+**Закрыто (Такт 25):** Предписание 25 — ликвидирован залп 60 запросов 404 в час к GitHub и удержание транзакции БД во время внешних операций (`DZH_L_MAKKI_03_INUS_FACTOR_CHECK` / D007 Evidence gap, `RUT_BARKAN_MARKUS_04_BOUNDARY_TOPOLOGY` / D006 Authorization ambiguity / Boundary Topology):
+- **Устранение N запросов файлов (`DZH_L_MAKKI_03_INUS_FACTOR_CHECK` / D007):**
+  - В `GitHubPullRequestService` добавлен метод `listDirectoryFiles(ProjectEntity, String ref, String directoryPath)` и парсер `parseDirectoryFileNames(JsonNode)`.
+  - Запрос к `/repos/{owner}/{repo}/contents/docs/contracts?ref={ref}` выполняет одну проверку дерева каталога. Если GitHub возвращает 404 (каталог отсутствует), метод возвращает `Optional.of(emptySet)` без генерации логов предупреждений `GitHub directory listing failed`.
+  - В `ProductCapabilityService`: если в директории `docs/contracts` файлов нет, или требуемый файл `<feature>.openapi.yaml` отсутствует в списке каталога, вызовы `fetchFileContent` для отсутствующих файлов не производятся вообще (0 сетевых обращений на отсутствующие контракты вместо 60).
+- **Кэширование отрицательного ответа до смены ref / main:**
+  - В `ProductCapabilityService` внедрён кэш `capabilityCache` (`ConcurrentHashMap<UUID, CachedDeclaredCapabilities>`) с инвалидацией при смене ветки, смене commitSha (`probeAll(..., launch.commitSha())`) либо явном вызове `invalidateCache(UUID)`.
+  - При повторном проходе с неизменным `main` сервис делает ровно **0** обращений к GitHub.
+- **Вынос сети и внешних процессов из области соединения с БД (`RUT_BARKAN_MARKUS_04_BOUNDARY_TOPOLOGY` / D006):**
+  - С метода `ClientRuntimeObservabilityService.maybeObserve(ProjectEntity)` снята аннотация `@Transactional`.
+  - Многоминутные сетевые и процессные вызовы (`launcherClient.launch` / `docker compose up`, `launcherClient.healthcheck`, `designDriftMonitorService.checkLiveInstance`, `productCapabilityService.probeAll`) больше не удерживают соединение из пула HikariCP, предотвращая срабатывания leak detection.
+  - В `ProductCapabilityService.declaredCapabilities` фичи читаются из `featureRepository` до сетевого опроса GitHub.
+- **Заслоняющие тесты:**
+  - `ProductCapabilityServiceTest`:
+    - `falsificationHarness_secondPassMakesZeroGitHubCallsWhenMainUnchanged`: на первом проходе запрашивает каталог 1 раз, при 404 каталога не делает запросов к файлам; на втором проходе при неизменном `main` делает ровно **0** обращений (`verifyNoMoreInteractions(github)`).
+    - `batchDirectoryListingFetchesOnlyPresentFilesAndCachesResult`: опрашивает каталог 1 раз, запрашивает по сети только присутствующий в списке файл `protocols-api`, не запрашивает отсутствующий `missing-api`; на 2-м проходе с тем же commitSha делает 0 обращений; на 3-м проходе с новым commitSha обновляет кэш.
+    - `cacheInvalidationForcesRequery`: проверяет принудительную реинвалидацию по `invalidateCache`.
+    - `probeAllReusesCacheAcrossLaunchesWithSameCommitSha`: проверяет, что повторный `probeAll` с тем же commitSha переиспользует кэш с 0 обращений к GitHub.
+  - `ClientRuntimeObservabilityServiceTest`:
+    - `boundaryTopology_maybeObserveIsNotTransactional`: рефлексивно заслоняет отсутствие аннотации `@Transactional` на `maybeObserve`.
+  - `GitHubPullRequestServiceTest`:
+    - `parseDirectoryFileNamesExtractsOnlyFiles`: проверяет фильтрацию только файлов из структуры JSON GitHub.
+    - `parseDirectoryFileNamesReturnsEmptyForNullOrNonArray`: проверяет безопасность при пустом/некорректном ответе.
+  - Регрессия: `ProductLaunchabilityServiceTest` (22/22), `ProductCapabilityServiceTest` (13/13), `ClientRuntimeObservabilityServiceTest` (29/29), `GitHubPullRequestServiceTest` (10/10), `FailureDemarcationLaw22Test` (5/5) — 79/79 green.
 
-
-**Открытое, самое срочное:** Предписание 23 — у выключенного аккаунта нет пути назад:
-`setEnabled(true)` нет нигде в `src/main`, а восстановление ищет только `findByStatusAndEnabledTrue`.
-Предписание 22 — резервирование аккаунта компилятора по имени вычитает его из общего пула.
-
-**Новое, срочное по расходу — предписание 25.** Раз в час `ProductCapabilityService` спрашивает у GitHub 43
-файла контрактов, которых нет, и получает 43 ответа «404»: 42 в 20:26, 43 в 21:28, 43 в 22:30, пути одни и
-те же. Больше тысячи обращений в сутки в тот же внешний бюджет, которым распоряжается закон 13, за ответом,
-известным с прошлого часа. Залп идёт **внутри удержания соединения к базе**: срабатывание `leak-detection` в
-22:28:56 и возврат в 22:30:51 обрамляют его секунда в секунду. Значит удержание соединения (ниже) объяснено —
-это не медленный запрос, а сеть внутри области соединения.
-
-**Под наблюдением, законом не ставшее — и моя прежняя запись о нём была неверна.** Я называл это «утечкой
-соединений». Замер: оба случая кончились строкой `was returned to the pool (unleaked)` — соединение
-**возвращается**, утечки нет. Что есть на самом деле: один такт оркестрации держит соединение к базе дольше
-порога в 30 секунд. `conn42` — 20:26:04 → 20:26:44, около **70 секунд**; `conn52` — 21:27:03 → 21:28:51,
-около **138 секунд**. Держатель назван и он один и тот же: `ContinuousOrchestrationService.continuousOrchestrate`.
-Пул — 24 соединения, поэтому голодания сейчас нет; смотреть надо на **рост длительности**, а не на факт
-срабатывания. Настройка `leak-detection-threshold` ровно для этого и вводилась: она назвала держателя, чего
-система прежде не умела.
+**В работе дальше:**
+- **Предписание 8** (`DefectJournalService` / чтение вердиктов слоёв в автономном потоке) — разблокирует предписание 9.
+- **Предписание 23** (восстановление выключенных аккаунтов, пп. 2–4).
 

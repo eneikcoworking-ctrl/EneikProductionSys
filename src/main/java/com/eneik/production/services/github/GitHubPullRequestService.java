@@ -20,8 +20,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 public class GitHubPullRequestService {
@@ -585,6 +588,67 @@ public class GitHubPullRequestService {
                     directoryPath, ref, project.getId(), e.getMessage());
             return Optional.empty();
         }
+    }
+
+    /**
+     * Lists file names in a directory via the GitHub contents API.
+     * INUS_FACTOR_CHECK (D007): replaces N individual file requests with a single directory query.
+     * Returns Optional.of(emptySet) if the directory returns 404 (an absent directory is normal state,
+     * not an error). Returns Optional.empty() if an API/network error occurs or GitHub is disabled.
+     */
+    public Optional<Set<String>> listDirectoryFiles(ProjectEntity project, String ref, String directoryPath) {
+        if (project == null || ref == null || ref.isBlank() || directoryPath == null || directoryPath.isBlank()) {
+            return Optional.empty();
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/contents/" + encodePath(directoryPath) + "?ref=" + encode(ref);
+            HttpRequest request = baseRequest(urlPath, token).GET().build();
+            HttpResponse<String> response = sendGitHub(request);
+            if (response.statusCode() == 404) {
+                // Directory doesn't exist on this branch - genuinely zero files, not an error.
+                return Optional.of(Collections.emptySet());
+            }
+            if (response.statusCode() != 200) {
+                log.warn("GitHub directory listing failed for {}/{} path={} ref={}: status={} body={}",
+                        repoRef.owner(), repoRef.repo(), directoryPath, ref, response.statusCode(), preview(response.body()));
+                return Optional.empty();
+            }
+            JsonNode entries = objectMapper.readTree(response.body());
+            return Optional.of(parseDirectoryFileNames(entries));
+        } catch (Exception e) {
+            log.warn("Could not list directory {} at ref {} for project {}: {}",
+                    directoryPath, ref, project.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    static Set<String> parseDirectoryFileNames(JsonNode entries) {
+        if (entries == null || !entries.isArray()) {
+            return Collections.emptySet();
+        }
+        Set<String> files = new LinkedHashSet<>();
+        for (JsonNode entry : entries) {
+            if ("file".equals(entry.path("type").asText(""))) {
+                String name = entry.path("name").asText("");
+                if (!name.isBlank()) {
+                    files.add(name);
+                }
+            }
+        }
+        return Collections.unmodifiableSet(files);
     }
 
     /**

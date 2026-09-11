@@ -12,6 +12,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -19,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 class ProductCapabilityServiceTest {
@@ -220,5 +223,131 @@ class ProductCapabilityServiceTest {
         assertEquals(0, value.workingCapabilities());
         assertEquals(0, value.opportunities());
         assertEquals(0, value.defects());
+    }
+
+    /**
+     * INUS_FACTOR_CHECK (D007), DZH_L_MAKKI_03_INUS_FACTOR_CHECK / RUT_BARKAN_MARKUS_04_BOUNDARY_TOPOLOGY:
+     * Falsification barrier for Prescription 25: A second pass of ProductCapabilityService on an unchanged
+     * main ref makes zero calls to GitHub. Absent contracts (404) are remembered until main changes.
+     */
+    @Test
+    void falsificationHarness_secondPassMakesZeroGitHubCallsWhenMainUnchanged() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(
+                feature("Feature One"),
+                feature("Feature Two")
+        ));
+        // docs/contracts directory returns 404 (empty set of files):
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of()));
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        // First pass: queries GitHub directory once; makes 0 file content requests since directory has no contracts.
+        List<ProductCapabilityService.DeclaredCapability> pass1 = service.declaredCapabilities(project);
+        assertTrue(pass1.isEmpty());
+        verify(github, times(1)).listDirectoryFiles(project, "main", "docs/contracts");
+        verify(github, never()).fetchFileContent(any(), any(), any());
+
+        // Second pass: with main unchanged, MUST make zero GitHub calls.
+        List<ProductCapabilityService.DeclaredCapability> pass2 = service.declaredCapabilities(project);
+        assertTrue(pass2.isEmpty());
+        verifyNoMoreInteractions(github);
+    }
+
+    @Test
+    void batchDirectoryListingFetchesOnlyPresentFilesAndCachesResult() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(
+                feature("Protocols API"),
+                feature("Missing API")
+        ));
+        // docs/contracts contains only protocols-api.openapi.yaml
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of("protocols-api.openapi.yaml")));
+        when(github.fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml"))
+                .thenReturn(Optional.of(CONTRACT));
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        // Pass 1: fetches directory (1 call), fetches ONLY protocols-api (1 call), NEVER calls for missing-api (0 calls).
+        List<ProductCapabilityService.DeclaredCapability> pass1 = service.declaredCapabilities(project, "sha-1");
+        assertEquals(3, pass1.size()); // /protocols, /materials, /materials/{id}
+        verify(github, times(1)).listDirectoryFiles(project, "main", "docs/contracts");
+        verify(github, times(1)).fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml");
+        verify(github, never()).fetchFileContent(project, "main", "docs/contracts/missing-api.openapi.yaml");
+
+        // Pass 2 with same commitSha: 0 GitHub calls.
+        List<ProductCapabilityService.DeclaredCapability> pass2 = service.declaredCapabilities(project, "sha-1");
+        assertEquals(3, pass2.size());
+        verifyNoMoreInteractions(github);
+
+        // Pass 3 with a new commitSha: invalidates and re-queries.
+        List<ProductCapabilityService.DeclaredCapability> pass3 = service.declaredCapabilities(project, "sha-2");
+        assertEquals(3, pass3.size());
+        verify(github, times(2)).listDirectoryFiles(project, "main", "docs/contracts");
+        verify(github, times(2)).fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml");
+    }
+
+    @Test
+    void cacheInvalidationForcesRequery() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(feature("Undeclared Feature")));
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of()));
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        service.declaredCapabilities(project);
+        verify(github, times(1)).listDirectoryFiles(project, "main", "docs/contracts");
+
+        // Explicit invalidation
+        service.invalidateCache(project.getId());
+
+        service.declaredCapabilities(project);
+        verify(github, times(2)).listDirectoryFiles(project, "main", "docs/contracts");
+    }
+
+    @Test
+    void probeAllReusesCacheAcrossLaunchesWithSameCommitSha() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(feature("Protocols API")));
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of("protocols-api.openapi.yaml")));
+        when(github.fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml"))
+                .thenReturn(Optional.of(CONTRACT));
+        when(launcher.fetchHtml(any())).thenReturn(new RuntimeLauncherClient.FetchResult(200, "ok", 5, null));
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        int satisfied1 = service.probeAll(project, "http://localhost:18080", "sha-abc");
+        assertEquals(2, satisfied1);
+        verify(github, times(1)).listDirectoryFiles(project, "main", "docs/contracts");
+        verify(github, times(1)).fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml");
+
+        // Second launch on same commit sha: zero GitHub calls
+        int satisfied2 = service.probeAll(project, "http://localhost:18080", "sha-abc");
+        assertEquals(2, satisfied2);
+        verifyNoMoreInteractions(github);
     }
 }

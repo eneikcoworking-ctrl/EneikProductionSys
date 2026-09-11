@@ -161,4 +161,23 @@ class GitHubPullRequestServiceTest {
         assertTrue(service.fetchOpenPullRequests(acceptedProject).isEmpty());
         verifyNoInteractions(settingsService);
     }
+
+    @Test
+    void parseDirectoryFileNamesExtractsOnlyFiles() throws Exception {
+        JsonNode entries = objectMapper.readTree("""
+                [
+                  {"name":"feature-a.openapi.yaml","type":"file"},
+                  {"name":"subfolder","type":"dir"},
+                  {"name":"feature-b.openapi.yaml","type":"file"}
+                ]
+                """);
+        java.util.Set<String> files = GitHubPullRequestService.parseDirectoryFileNames(entries);
+        assertEquals(java.util.Set.of("feature-a.openapi.yaml", "feature-b.openapi.yaml"), files);
+    }
+
+    @Test
+    void parseDirectoryFileNamesReturnsEmptyForNullOrNonArray() {
+        assertTrue(GitHubPullRequestService.parseDirectoryFileNames(null).isEmpty());
+        assertTrue(GitHubPullRequestService.parseDirectoryFileNames(objectMapper.createObjectNode()).isEmpty());
+    }
 }

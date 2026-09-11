@@ -865,6 +865,13 @@ class ClientRuntimeObservabilityServiceTest {
 
         assertEquals(1.0 / 5.0, summary.posteriorMean(), 1e-9); // Beta(1,4): three draws
     }
+
+    @Test
+    void boundaryTopology_maybeObserveIsNotTransactional() throws Exception {
+        var method = ClientRuntimeObservabilityService.class.getMethod("maybeObserve", ProjectEntity.class);
+        assertFalse(method.isAnnotationPresent(org.springframework.transaction.annotation.Transactional.class));
+    }
+
     /**
      * A ClientRuntimeObservationRepository mock whose save() behaves like a real JPA save() - it returns
      * the persisted entity rather than null.

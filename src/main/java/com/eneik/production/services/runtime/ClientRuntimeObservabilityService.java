@@ -99,7 +99,9 @@ public class ClientRuntimeObservabilityService {
         this.launchabilityConstraintService = launchabilityConstraintService;
     }
 
-    @Transactional
+    // BOUNDARY_TOPOLOGY (D006): removed @Transactional so that external process execution
+    // (docker compose up), healthchecks, design drift checks, and capability probing do not
+    // hold a database connection from the pool. Individual repo saves/queries handle their own transactions.
     public void maybeObserve(ProjectEntity project) {
         if (!settingsService.effectiveBoolean("client_runtime_observability_enabled")) {
             return;
@@ -223,7 +225,7 @@ public class ClientRuntimeObservabilityService {
             // routes while missing a health endpoint is a real case, and refusing to look would make the
             // measure depend on a convention rather than on the product.
             try {
-                productCapabilityService.probeAll(project, "http://localhost:" + port);
+                productCapabilityService.probeAll(project, "http://localhost:" + port, launch.commitSha());
             } catch (Exception e) {
                 log.warn("ClientRuntimeObservabilityService: capability probing failed for project {}: {}",
                         project.getId(), e.getMessage());
