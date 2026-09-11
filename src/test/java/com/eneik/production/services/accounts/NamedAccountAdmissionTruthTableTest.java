@@ -176,8 +176,29 @@ class NamedAccountAdmissionTruthTableTest {
                 Optional.empty(), COMPILER_ACCOUNT, UUID.randomUUID(), DEFAULT_MAX_SESSIONS);
 
         assertEquals(AccountAdmissionOutcome.LOCKED_BY_CONCURRENT_CLAIM, decision.outcome());
-        assertThat(decision.dispatchStatus()).isEqualTo("Compiler account 'eneikdru' is locked by concurrent claim");
-        assertThat(decision.logMessage()).contains("locked by concurrent claim");
+        assertThat(decision.dispatchStatus()).isEqualTo("Compiler account 'eneikdru': refusal not reproduced on recheck (locked or state change)");
+        assertThat(decision.logMessage()).contains("refusal not reproduced");
+        assertThat(decision.logMessage().toLowerCase()).doesNotContain("capacity");
+        assertThat(decision.logMessage().toLowerCase()).doesNotContain("ёмкость");
+    }
+
+    @Test
+    @DisplayName("MULTIPLE_CONJUNCTS_VIOLATED: account is both disabled and in daily_limited (both must be named)")
+    void multipleConjunctsNamesBothDisabledAndResting() {
+        AccountEntity account = createAccount(false, AccountStatus.daily_limited, 3);
+        when(accountRepository.findByName(COMPILER_ACCOUNT)).thenReturn(Optional.of(account));
+        when(accountRepository.countOpenSessions(account.getId())).thenReturn(0);
+
+        ProjectFlowService.NamedAccountAdmissionDecision decision = service.evaluateNamedAccountAdmissionDecision(
+                Optional.empty(), COMPILER_ACCOUNT, UUID.randomUUID(), DEFAULT_MAX_SESSIONS);
+
+        assertEquals(AccountAdmissionOutcome.MULTIPLE_CONJUNCTS_VIOLATED, decision.outcome());
+        assertThat(decision.violatedConjuncts()).containsExactlyInAnyOrder(
+                AccountAdmissionOutcome.DISABLED, AccountAdmissionOutcome.RESTING);
+        assertThat(decision.dispatchStatus()).contains("resting/blocked");
+        assertThat(decision.dispatchStatus()).contains("disabled");
+        assertThat(decision.logMessage()).contains("resting/blocked");
+        assertThat(decision.logMessage()).contains("disabled (enabled=false)");
         assertThat(decision.logMessage().toLowerCase()).doesNotContain("capacity");
         assertThat(decision.logMessage().toLowerCase()).doesNotContain("ёмкость");
     }

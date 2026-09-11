@@ -1,6 +1,9 @@
 package com.eneik.production.services.settings;
 
 import com.eneik.production.dto.settings.SettingDto;
+import com.eneik.production.kaizen.model.DefectJournalEntity;
+import com.eneik.production.kaizen.repository.DefectJournalRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,10 +25,18 @@ public class SystemSettingsService {
 
     private final JdbcTemplate jdbcTemplate;
     private final Environment environment;
+    private final DefectJournalRepository defectJournalRepository;
 
-    public SystemSettingsService(JdbcTemplate jdbcTemplate, Environment environment) {
+    @Autowired
+    public SystemSettingsService(JdbcTemplate jdbcTemplate, Environment environment,
+                                 @Autowired(required = false) DefectJournalRepository defectJournalRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.environment = environment;
+        this.defectJournalRepository = defectJournalRepository;
+    }
+
+    public SystemSettingsService(JdbcTemplate jdbcTemplate, Environment environment) {
+        this(jdbcTemplate, environment, null);
     }
 
     public List<SettingDto> listSettings() {
@@ -163,8 +174,16 @@ public class SystemSettingsService {
 
     @Transactional
     public SettingDto save(String key, String value) {
+        return save(key, value, null);
+    }
+
+    @Transactional
+    public SettingDto save(String key, String value, String reason) {
         SettingDefinition definition = requireDefinition(key);
         rejectIfMalformed(definition.key(), value);
+
+        String oldValue = databaseValue(definition.key()).orElse(null);
+
         int updated = jdbcTemplate.update(
                 "UPDATE system_settings SET \"value\" = ?, updated_at = CURRENT_TIMESTAMP WHERE \"key\" = ?",
                 value,
@@ -177,7 +196,45 @@ public class SystemSettingsService {
                     value
             );
         }
+
+        // INSTITUTIONAL_FACT_REGISTER (D007) / Law 12:
+        // Record an institutional fact audit record whenever setting value changes or is newly initialized
+        if (!java.util.Objects.equals(oldValue, value)) {
+            recordSettingMutationAudit(definition, oldValue, value, reason);
+        }
+
         return toDto(definition.key());
+    }
+
+    private void recordSettingMutationAudit(SettingDefinition definition, String oldValue, String newValue, String reason) {
+        String rule = "SYSTEM_SETTING_MUTATION_RULE";
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
+        String effectiveReason = (reason != null && !reason.isBlank())
+                ? reason.trim()
+                : "Administrative update via /api/settings";
+
+        String displayedOld = definition.secret() ? mask(oldValue) : oldValue;
+        String displayedNew = definition.secret() ? mask(newValue) : newValue;
+
+        String description = String.format("Setting '%s' changed [old: '%s' -> new: '%s']. Caller: %s. Rule: %s. Reason: %s",
+                definition.key(), displayedOld, displayedNew, caller, rule, effectiveReason);
+
+        if (defectJournalRepository != null) {
+            defectJournalRepository.save(new DefectJournalEntity(
+                    null, null, null, "INFO", "INSTITUTIONAL_AUDIT", definition.key(),
+                    rule, description, 1.0));
+        } else {
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO defect_journal (id, severity, category, source_component, defect_type, description, metric_value, created_at) "
+                                + "VALUES (?, 'INFO', 'INSTITUTIONAL_AUDIT', ?, ?, ?, 1.0, CURRENT_TIMESTAMP)",
+                        java.util.UUID.randomUUID(), definition.key(), rule, description
+                );
+            } catch (Exception e) {
+                log.warn("Failed to persist institutional fact audit via jdbcTemplate: {}", e.getMessage());
+            }
+        }
+        log.info("Institutional Fact Audit: {}", description);
     }
 
     /**

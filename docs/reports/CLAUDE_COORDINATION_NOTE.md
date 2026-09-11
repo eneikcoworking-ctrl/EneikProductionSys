@@ -16,6 +16,34 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-11 22:00 UTC — Antigravity (L2): Предписание 21 закрыто (`INSTITUTIONAL_FACT_REGISTER` / D007, Закон 12), остатки Предписания 20 закрыты**
+
+1. **Остатки Предписания 20 закрыты:**
+   - **Все нарушенные конъюнкты называются явно (`MULTIPLE_CONJUNCTS_VIOLATED`):** При вычислении причины отказа аккаунта (`evaluateNamedAccountAdmissionDecision`) проверяются все условия независимо. Если аккаунт одновременно `disabled` и находится в статусе `daily_limited`/`api_blocked` (`RESTING`) или `decommissioned`/`offline` (`RETIRED`), `logMessage` и `dispatchStatus` перечисляют все нарушенные условия через союз `" and "` (`"Compiler account '<name>' violated multiple conditions: administratively disabled (enabled=false) and resting / daily limit / API block (status=daily_limited)"`).
+   - **Честная фиксация невоспроизведённого отказа при повторной проверке (`REFUSAL_NOT_REPRODUCED_ON_RECHECK`):** Если `lockAccountByNameWithCapacity` вернул отказ, но при повторном чтении все конъюнкты (`enabled`, `idle`, лимит сессий) выполнены, система больше не выдумывает безальтернативный `LOCKED_BY_CONCURRENT_CLAIM`, а честно фиксирует: `"Compiler account '<name>': refusal not reproduced on recheck (locked or state change)"` со статусом `"named_account_refusal_not_reproduced"`.
+   - Заслонено: `NamedAccountAdmissionTruthTableTest.multipleConjunctsNamesBothDisabledAndResting` и `lockedByConcurrentClaimRefusalNotReproduced`.
+
+2. **Предписание 21 закрыто (`INSTITUTIONAL_FACT_REGISTER` / D007):**
+   - **Истинная фиксация субъекта действия (`AuditCallerResolver`):**
+     - В API фабрики нет персональных учетных записей (один общий ключ оператора). Фальсификация субъекта (придумывание фиктивных пользователей) устранена (D013).
+     - Резолвер определяет истинный контекст: `"носитель ключа оператора (IP: <remoteAddr>)"`, `"анонимный запрос (IP: <remoteAddr>)"` либо `"не установлено (internal/system)"`.
+   - **Нестираемый аудит изменения системных настроек (`SYSTEM_SETTING_MUTATION_RULE`):**
+     - `PUT /api/settings` принимает опциональный `reason` (`SettingUpdateRequest`).
+     - В `SystemSettingsService.save(key, value, reason)` перед записью в `system_settings` извлекается предыдущее значение.
+     - При мутации значения фиксируется институциональный факт в `defect_journal`: `category="INSTITUTIONAL_AUDIT"`, `defectType="SYSTEM_SETTING_MUTATION"`, `rootCausePatternId=null`.
+     - Описание строго содержит: ключ, `old: '...' -> new: '...'` (секретные настройки `SettingDefinition.secret()` маскируются как `*** [MASKED]`), субъект (`AuditCallerResolver`), правило (`SYSTEM_SETTING_MUTATION_RULE`), основание (`reason`).
+     - Если значение не изменилось — холостая запись в `defect_journal` не порождается.
+   - **Нестираемый аудит удаления аккаунтов (`ACCOUNT_DELETION_RULE`):**
+     - В `DELETE /api/accounts/{id}` добавлен параметр `reason`.
+     - Метод аннотирован `@Transactional`.
+     - **Инвариант порядка сохранения:** сущность сначала удаляется в БД (`accountRepository.deleteById(id)`), и только затем в `defect_journal` вносится запись институционального факта (`ACCOUNT_DELETION_RULE`) с именем аккаунта, ID, статусом, enabled, субъектом и причиной. Фантомные записи при падении БД исключены.
+     - Методы `update` и `applyStatus` в `AccountController` также обернуты в `@Transactional` с сохранением перед аудитом и интеграцией `AuditCallerResolver`.
+   - **Заслоны:**
+     - `SystemSettingsServiceTest`: проверка создания институционального факта с фиксацией старого и нового значений, маскированием секретов, правила и субъекта; проверка отсутствия холостых записей при неизменном значении.
+     - `SettingsControllerIntegrationTest`: интеграционная проверка сквозного вызова `PUT /api/settings` со сменой `task_compiler_account_name` и подтверждением появления записи в `defect_journal`.
+     - `AccountLifecycleInvariantTest`: проверка записи институционального факта при удалении аккаунта с `ACCOUNT_DELETION_RULE`, субъектом и причиной.
+     - `AccountControllerIntegrationTest`: сквозной интеграционный тест HTTP `DELETE /api/accounts/{id}` с проверкой удаления из `accounts` и появления факта в `defect_journal`.
+
 **2026-09-11 21:30 UTC — Antigravity (L2): Предписание 20 закрыто (`PRINCIPLED_INTEGRITY` / D012, Закон 12)**
 
 1. **Типизированный исход допуска (`AccountAdmissionOutcome`):**

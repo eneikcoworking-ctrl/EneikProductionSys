@@ -1,13 +1,26 @@
 package com.eneik.production.services.settings;
 
+import com.eneik.production.kaizen.model.DefectJournalEntity;
+import com.eneik.production.kaizen.repository.DefectJournalRepository;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 2026-08-04 (live incident, design/QA acceptance redesign, Phase B): DesignSystemFalsificationService
@@ -127,5 +140,52 @@ class SystemSettingsServiceTest {
     @Test
     void debugSqlEndpointEnabledKeyIsRegistered() {
         assertTrue(service.isKnownKey("debug_sql_endpoint_enabled"));
+    }
+
+    @Test
+    void saveSettingMutationRecordsInstitutionalFactAuditWithOldAndNewValues() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        Environment environment = mock(Environment.class);
+        DefectJournalRepository defectJournalRepository = mock(DefectJournalRepository.class);
+
+        SystemSettingsService settings = new SystemSettingsService(jdbcTemplate, environment, defectJournalRepository);
+
+        // Previous value is 'eneikdru'
+        when(jdbcTemplate.query(anyString(), any(ResultSetExtractor.class), eq("task_compiler_account_name")))
+                .thenReturn(Optional.of("eneikdru"));
+        when(jdbcTemplate.update(anyString(), any(), any())).thenReturn(1);
+
+        settings.save("task_compiler_account_name", "compiler-backup", "Operator manual reallocation");
+
+        ArgumentCaptor<DefectJournalEntity> captor = ArgumentCaptor.forClass(DefectJournalEntity.class);
+        verify(defectJournalRepository).save(captor.capture());
+        DefectJournalEntity audit = captor.getValue();
+
+        assertThat(audit.getCategory()).isEqualTo("INSTITUTIONAL_AUDIT");
+        assertThat(audit.getSourceComponent()).isEqualTo("task_compiler_account_name");
+        assertThat(audit.getDefectType()).isEqualTo("SYSTEM_SETTING_MUTATION_RULE");
+        assertThat(audit.getSeverity()).isEqualTo("INFO");
+        assertThat(audit.getDescription()).contains("old: 'eneikdru' -> new: 'compiler-backup'");
+        assertThat(audit.getDescription()).contains("Operator manual reallocation");
+        assertThat(audit.getDescription()).contains("Caller: ");
+        assertThat(audit.getDescription()).contains("Rule: SYSTEM_SETTING_MUTATION_RULE");
+    }
+
+    @Test
+    void saveSettingWithUnchangedValueDoesNotCreateAuditRecord() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        Environment environment = mock(Environment.class);
+        DefectJournalRepository defectJournalRepository = mock(DefectJournalRepository.class);
+
+        SystemSettingsService settings = new SystemSettingsService(jdbcTemplate, environment, defectJournalRepository);
+
+        // Value is already 'eneikdru'
+        when(jdbcTemplate.query(anyString(), any(ResultSetExtractor.class), eq("task_compiler_account_name")))
+                .thenReturn(Optional.of("eneikdru"));
+        when(jdbcTemplate.update(anyString(), any(), any())).thenReturn(1);
+
+        settings.save("task_compiler_account_name", "eneikdru");
+
+        verify(defectJournalRepository, never()).save(any());
     }
 }

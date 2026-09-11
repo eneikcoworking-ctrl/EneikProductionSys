@@ -3879,15 +3879,26 @@ public class ProjectFlowService {
 
     public record NamedAccountAdmissionDecision(
             AccountAdmissionOutcome outcome,
+            java.util.Set<AccountAdmissionOutcome> violatedConjuncts,
             AccountStatus status,
             String logMessage,
             String dispatchStatus
-    ) {}
+    ) {
+        public NamedAccountAdmissionDecision(
+                AccountAdmissionOutcome outcome,
+                AccountStatus status,
+                String logMessage,
+                String dispatchStatus
+        ) {
+            this(outcome, java.util.Set.of(outcome), status, logMessage, dispatchStatus);
+        }
+    }
 
     /**
      * Prescription 20 (PRINCIPLED_INTEGRITY / D012, Law 12):
      * Resolves the exact failure reason when a named account admission fails.
-     * Evaluates the specific conjunct of the admission predicate that was violated,
+     * Evaluates all specific conjuncts of the admission predicate that were violated.
+     * If multiple conjuncts failed (e.g. disabled AND resting), ALL failed conjuncts are named,
      * ensuring that disabled, retired, resting, or locked accounts never report false capacity exhaustion.
      */
     public NamedAccountAdmissionDecision evaluateNamedAccountAdmissionDecision(
@@ -3898,6 +3909,7 @@ public class ProjectFlowService {
         if (lockedAccountOpt != null && lockedAccountOpt.isPresent()) {
             return new NamedAccountAdmissionDecision(
                     AccountAdmissionOutcome.ADMITTED,
+                    java.util.Set.of(AccountAdmissionOutcome.ADMITTED),
                     lockedAccountOpt.get().getStatus(),
                     String.format("Wishlist compiler account '%s' admitted; task %s", exactAccountName, taskId),
                     "Admitted"
@@ -3907,6 +3919,7 @@ public class ProjectFlowService {
         if (namedAccOpt.isEmpty()) {
             return new NamedAccountAdmissionDecision(
                     AccountAdmissionOutcome.NOT_FOUND,
+                    java.util.Set.of(AccountAdmissionOutcome.NOT_FOUND),
                     null,
                     String.format("Wishlist compiler account '%s' was not found; task %s stays queued for the next cycle", exactAccountName, taskId),
                     "Compiler account '" + exactAccountName + "' not found"
@@ -3914,47 +3927,62 @@ public class ProjectFlowService {
         }
         AccountEntity account = namedAccOpt.get();
         AccountStatus st = account.getStatus();
+
+        java.util.EnumSet<AccountAdmissionOutcome> violated = java.util.EnumSet.noneOf(AccountAdmissionOutcome.class);
+        java.util.List<String> logReasons = new java.util.ArrayList<>();
+        java.util.List<String> statusReasons = new java.util.ArrayList<>();
+
         if (st != null && (st == AccountStatus.decommissioned || st == AccountStatus.offline)) {
-            return new NamedAccountAdmissionDecision(
-                    AccountAdmissionOutcome.RETIRED,
-                    st,
-                    String.format("Wishlist compiler account '%s' is retired/offline (status=%s); task %s stays queued for the next cycle", exactAccountName, st, taskId),
-                    "Compiler account '" + exactAccountName + "' is retired/offline"
-            );
+            violated.add(AccountAdmissionOutcome.RETIRED);
+            logReasons.add("retired/offline (status=" + st + ")");
+            statusReasons.add("retired/offline");
         }
         if (st != null && (st == AccountStatus.daily_limited || st == AccountStatus.api_blocked)) {
-            return new NamedAccountAdmissionDecision(
-                    AccountAdmissionOutcome.RESTING,
-                    st,
-                    String.format("Wishlist compiler account '%s' is resting/blocked (status=%s); task %s stays queued for the next cycle", exactAccountName, st, taskId),
-                    "Compiler account '" + exactAccountName + "' is resting/blocked"
-            );
+            violated.add(AccountAdmissionOutcome.RESTING);
+            logReasons.add("resting/blocked (status=" + st + ")");
+            statusReasons.add("resting/blocked");
         }
-        if (!account.isEnabled()) {
-            return new NamedAccountAdmissionDecision(
-                    AccountAdmissionOutcome.DISABLED,
-                    st,
-                    String.format("Wishlist compiler account '%s' is disabled (enabled=false); task %s stays queued for the next cycle", exactAccountName, taskId),
-                    "Compiler account '" + exactAccountName + "' is disabled"
-            );
+        if (!account.isEnabled() && st != AccountStatus.decommissioned) {
+            violated.add(AccountAdmissionOutcome.DISABLED);
+            logReasons.add("disabled (enabled=false)");
+            statusReasons.add("disabled");
         }
+
         int effectiveLimit = account.getMaxConcurrentSessions() != null
                 ? account.getMaxConcurrentSessions()
                 : maxSessions;
         int openSessions = accountRepository.countOpenSessions(account.getId());
         if (openSessions >= effectiveLimit) {
+            violated.add(AccountAdmissionOutcome.SESSIONS_EXHAUSTED);
+            logReasons.add(String.format("has no free capacity right now (open sessions: %d, limit: %d)", openSessions, effectiveLimit));
+            statusReasons.add("has no free capacity");
+        }
+
+        if (violated.isEmpty()) {
             return new NamedAccountAdmissionDecision(
-                    AccountAdmissionOutcome.SESSIONS_EXHAUSTED,
+                    AccountAdmissionOutcome.LOCKED_BY_CONCURRENT_CLAIM,
+                    java.util.Set.of(AccountAdmissionOutcome.LOCKED_BY_CONCURRENT_CLAIM, AccountAdmissionOutcome.REFUSAL_NOT_REPRODUCED_ON_RECHECK),
                     st,
-                    String.format("Wishlist compiler account '%s' has no free capacity right now (open sessions: %d, limit: %d); task %s stays queued for the next cycle", exactAccountName, openSessions, effectiveLimit, taskId),
-                    "Compiler account '" + exactAccountName + "' has no free capacity"
+                    String.format("Wishlist compiler account '%s' passed admission check on recheck; refusal not reproduced (concurrent lock or transient state change); task %s stays queued for the next cycle", exactAccountName, taskId),
+                    "Compiler account '" + exactAccountName + "': refusal not reproduced on recheck (locked or state change)"
             );
         }
+
+        AccountAdmissionOutcome primaryOutcome = violated.size() == 1
+                ? violated.iterator().next()
+                : AccountAdmissionOutcome.MULTIPLE_CONJUNCTS_VIOLATED;
+
+        String combinedLog = String.join(" and ", logReasons);
+        String combinedStatus = String.join(" and ", statusReasons);
+        String statusPrefix = combinedStatus.startsWith("has ") ? " " : " is ";
+        String logPrefix = combinedLog.startsWith("has ") ? " " : " is ";
+
         return new NamedAccountAdmissionDecision(
-                AccountAdmissionOutcome.LOCKED_BY_CONCURRENT_CLAIM,
+                primaryOutcome,
+                violated,
                 st,
-                String.format("Wishlist compiler account '%s' is locked by concurrent claim; task %s stays queued for the next cycle", exactAccountName, taskId),
-                "Compiler account '" + exactAccountName + "' is locked by concurrent claim"
+                String.format("Wishlist compiler account '%s'%s%s; task %s stays queued for the next cycle", exactAccountName, logPrefix, combinedLog, taskId),
+                "Compiler account '" + exactAccountName + "'" + statusPrefix + combinedStatus
         );
     }
 

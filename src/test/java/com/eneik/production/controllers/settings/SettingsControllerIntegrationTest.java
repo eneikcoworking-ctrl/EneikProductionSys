@@ -139,4 +139,37 @@ class SettingsControllerIntegrationTest {
         assertThat(response.statusCode()).isEqualTo(401);
         assertThat(response.body()).contains("\"code\":\"UNAUTHORIZED\"");
     }
+
+    @Test
+    void changingTaskCompilerAccountNameCreatesInstitutionalAuditRecordWithOldAndNewValues() {
+        // Initial setup via PUT to avoid transaction isolation conflict between test thread and server thread
+        restTemplate.exchange(
+                "/api/settings",
+                HttpMethod.PUT,
+                new HttpEntity<>(new SettingUpdateRequest("task_compiler_account_name", "eneikdru", "Initial setup")),
+                SettingDto.class
+        );
+
+        ResponseEntity<SettingDto> saveResponse = restTemplate.exchange(
+                "/api/settings",
+                HttpMethod.PUT,
+                new HttpEntity<>(new SettingUpdateRequest("task_compiler_account_name", "compiler-backup-2", "Switching compiler account")),
+                SettingDto.class
+        );
+
+        assertThat(saveResponse.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(saveResponse.getBody()).isNotNull();
+        assertThat(saveResponse.getBody().maskedValue()).isEqualTo("compiler-backup-2");
+
+        // Verify defect_journal audit records (initial + update)
+        java.util.List<Map<String, Object>> audits = jdbcTemplate.queryForList(
+                "SELECT * FROM defect_journal WHERE category = 'INSTITUTIONAL_AUDIT' AND source_component = 'task_compiler_account_name' ORDER BY created_at ASC"
+        );
+        assertThat(audits).hasSize(2);
+        String updateDescription = (String) audits.get(1).get("description");
+        assertThat(updateDescription).contains("old: 'eneikdru' -> new: 'compiler-backup-2'");
+        assertThat(updateDescription).contains("SYSTEM_SETTING_MUTATION_RULE");
+        assertThat(updateDescription).contains("Switching compiler account");
+        assertThat(updateDescription).contains("носитель ключа оператора");
+    }
 }

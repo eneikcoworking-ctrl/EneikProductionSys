@@ -33,6 +33,6 @@ public class SettingsController {
         if (request == null || request.key() == null || !settingsService.isKnownKey(request.key())) {
             return ResponseEntity.badRequest().body(Map.of("error", "unknown setting key"));
         }
-        return ResponseEntity.ok(settingsService.save(request.key(), request.value()));
+        return ResponseEntity.ok(settingsService.save(request.key(), request.value(), request.reason()));
     }
 }

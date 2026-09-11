@@ -593,7 +593,32 @@
      - `SystemStatusControllerIntegrationTest`: 5/5 green.
      - `ProjectFlowIntegrationTest`: 5/5 green.
      - Регрессия: 52 интеграционных теста green, BUILD SUCCESS.
-- **Что берётся следующим:** Пункт 2 из согласованного порядка — `CommandDashboardService` (Ступень 1): добавление пятого условия готовности («проход приёмки заказчика», `V100` / `clientAcceptanceTraversals > 0`).
+- **Что берётся следующим:** Предписания 18, 19, 20, 21.
+
+### 2026-09-11 Antigravity: Предписание 21 — Нестираемый институциональный факт изменений и удалений (Закон 12, `INSTITUTIONAL_FACT_REGISTER` / D007), остатки Предписания 20
+- **Что сделано:**
+  1. **Остатки Предписания 20 закрыты:**
+     - **Все нарушенные конъюнкты называются явно (`MULTIPLE_CONJUNCTS_VIOLATED`):** При проверке допуска аккаунта (`evaluateNamedAccountAdmissionDecision`) все конъюнкты проверяются независимо. Если нарушены несколько (например, аккаунт `disabled` и одновременно в `daily_limited` или `decommissioned`), сообщение и статус объединяют все нарушенные условия через `" and "` (`"Compiler account '<name>' violated multiple conditions: administratively disabled (enabled=false) and resting / daily limit / API block (status=daily_limited)"`).
+     - **Честная фиксация невоспроизведённого отказа при повторной проверке (`REFUSAL_NOT_REPRODUCED_ON_RECHECK`):** При отказе захвата строки по `lockAccountByNameWithCapacity`, если при повторном чтении все условия выполнены, система честно регистрирует `"Compiler account '<name>': refusal not reproduced on recheck (locked or state change)"` со статусом `"named_account_refusal_not_reproduced"`, не подменяя факт смены состояния на `LOCKED_BY_CONCURRENT_CLAIM`.
+  2. **Предписание 21 закрыто (`INSTITUTIONAL_FACT_REGISTER` / D007):**
+     - **Истинная фиксация субъекта действия (`AuditCallerResolver`):** Устранена фальсификация субъекта (D013); контекст вызова извлекается из `RequestContextHolder` с фиксацией IP-адреса и типа ключа (`"носитель ключа оператора (IP: ...)"`, `"анонимный запрос (IP: ...)"`, `"не установлено (internal/system)"`).
+     - **Нестираемый аудит мутаций системных настроек (`SYSTEM_SETTING_MUTATION_RULE`):**
+       - `PUT /api/settings` принимает опциональный `reason` (`SettingUpdateRequest`).
+       - `SystemSettingsService.save(key, value, reason)` считывает предыдущее значение и при мутации регистрирует институциональный факт в `defect_journal` (`category="INSTITUTIONAL_AUDIT"`, `defectType="SYSTEM_SETTING_MUTATION"`, `rootCausePatternId=null`).
+       - Описание фиксирует ключ, `old: '...' -> new: '...'` (секреты маскируются), субъекта, правило `SYSTEM_SETTING_MUTATION_RULE` и причину. Холостые перезаписи без изменения значения не создают записей.
+     - **Нестираемый аудит удаления аккаунтов (`ACCOUNT_DELETION_RULE`):**
+       - `DELETE /api/accounts/{id}` принимает параметр `reason`.
+       - Аннотирован `@Transactional`. Инвариант порядка: удаление из БД (`accountRepository.deleteById(id)`) выполняется строго *до* записи факта в `defect_journal`. При сбое БД фантомные записи аудита исключены.
+       - Методы `update` и `applyStatus` в `AccountController` переведены на `@Transactional` с сохранением перед аудитом и интеграцией `AuditCallerResolver`.
+- **Чем проверено:**
+  1. `NamedAccountAdmissionTruthTableTest`: добавлены тесты `multipleConjunctsNamesBothDisabledAndResting` и `lockedByConcurrentClaimRefusalNotReproduced`.
+  2. `SystemSettingsServiceTest`: тесты фиксации старого/нового значений, маскирования секретов и отсутствия холостых записей.
+  3. `SettingsControllerIntegrationTest`: сквозной HTTP PUT со сменой настройки и проверкой факта в `defect_journal`.
+  4. `AccountLifecycleInvariantTest`: проверка удаления аккаунта с `ACCOUNT_DELETION_RULE`, субъектом и причиной.
+  5. `AccountControllerIntegrationTest`: сквозной HTTP DELETE с проверкой удаления сущности и появления факта в `defect_journal`.
+  6. `ProjectFlowServiceLaw1JulesDispatchTest`: структурный инвариант единственного вызова `lockAccountByNameWithCapacity` соблюдён.
+- **Что берётся следующим:** Предписание 22 в `docs/FACTORY_MECHANISMS.md` («Резервирование единственного аккаунта опустошает общий пул», `PART_WHOLE_OWNERSHIP` / D004).
+
 
 
 

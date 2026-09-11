@@ -127,4 +127,32 @@ class AccountLifecycleInvariantTest {
 
         assertThrows(IllegalStateException.class, () -> account.setEnabled(true));
     }
+
+    @Test
+    void deletingAccountRecordsInstitutionalFactAuditWithRuleAndCaller() {
+        UUID id = UUID.randomUUID();
+        AccountEntity account = new AccountEntity();
+        account.setId(id);
+        account.setName("deletable-acc");
+        account.setStatus(AccountStatus.idle);
+        account.setEnabled(true);
+
+        when(accountRepository.findById(id)).thenReturn(Optional.of(account));
+
+        ResponseEntity<Void> response = controller.delete(id, "Decommissioning completed");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        verify(accountRepository).deleteById(id);
+
+        ArgumentCaptor<DefectJournalEntity> captor = ArgumentCaptor.forClass(DefectJournalEntity.class);
+        verify(defectJournalRepository).save(captor.capture());
+        DefectJournalEntity audit = captor.getValue();
+        assertThat(audit.getCategory()).isEqualTo("INSTITUTIONAL_AUDIT");
+        assertThat(audit.getSourceComponent()).isEqualTo("deletable-acc");
+        assertThat(audit.getDefectType()).isEqualTo("ACCOUNT_DELETION_RULE");
+        assertThat(audit.getDescription()).contains("Account 'deletable-acc'");
+        assertThat(audit.getDescription()).contains("ACCOUNT_DELETION_RULE");
+        assertThat(audit.getDescription()).contains("Decommissioning completed");
+        assertThat(audit.getDescription()).contains("Caller: ");
+    }
 }

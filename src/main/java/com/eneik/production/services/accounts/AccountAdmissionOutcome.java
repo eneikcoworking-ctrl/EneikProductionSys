@@ -21,6 +21,15 @@ public enum AccountAdmissionOutcome {
     /** Account has reached or exceeded its max concurrent session capacity. */
     SESSIONS_EXHAUSTED,
 
+    /** More than one conjunct failed (e.g. account is disabled AND in daily limit). All failed conjuncts are named. */
+    MULTIPLE_CONJUNCTS_VIOLATED,
+
+    /**
+     * Account satisfies all conjuncts on recheck, meaning the initial refusal was due to a concurrent
+     * transaction holding the row lock under SKIP LOCKED, or a transient state change between reads.
+     */
+    REFUSAL_NOT_REPRODUCED_ON_RECHECK,
+
     /** Account satisfies all conjuncts, but could not be locked due to a concurrent transaction claim (SKIP LOCKED). */
     LOCKED_BY_CONCURRENT_CLAIM,
 

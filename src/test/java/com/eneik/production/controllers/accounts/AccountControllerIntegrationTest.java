@@ -126,6 +126,17 @@ class AccountControllerIntegrationTest {
         );
         assertThat(deleteResponse.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
         assertThat(accountRepository.existsById(created.id())).isFalse();
+
+        java.util.List<Map<String, Object>> deletionAudits = jdbcTemplate.queryForList(
+                "SELECT * FROM defect_journal WHERE category = 'INSTITUTIONAL_AUDIT' AND defect_type = 'ACCOUNT_DELETION_RULE' AND source_component = ?",
+                created.name()
+        );
+        assertThat(deletionAudits).hasSize(1);
+        String desc = (String) deletionAudits.get(0).get("description");
+        assertThat(desc).contains("Account 'agent-api'");
+        assertThat(desc).contains("deleted");
+        assertThat(desc).contains("ACCOUNT_DELETION_RULE");
+        assertThat(desc).contains("носитель ключа оператора");
     }
 
     @Test

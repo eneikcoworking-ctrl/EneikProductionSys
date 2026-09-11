@@ -22,9 +22,13 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.RequestParam;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 @RestController
@@ -78,6 +82,7 @@ public class AccountController {
     }
 
     @PatchMapping("/{id}")
+    @Transactional
     public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody Map<String, Object> updates) {
         return accountRepository.findById(id)
                 .<ResponseEntity<?>>map(account -> {
@@ -107,8 +112,8 @@ public class AccountController {
                         boolean newEnabled = (Boolean) updates.get("enabled");
                         if (newEnabled && account.getStatus() == AccountStatus.decommissioned) {
                             return ResponseEntity.badRequest().body(Map.of(
-                                    "error", "Account in status 'decommissioned' cannot be enabled; change status to operational first",
-                                    "code", 400));
+                                     "error", "Account in status 'decommissioned' cannot be enabled; change status to operational first",
+                                     "code", 400));
                         }
                         account.setEnabled(newEnabled);
                     }
@@ -121,25 +126,29 @@ public class AccountController {
                         account.setGithubUsername(account.getName());
                     }
 
+                    // Save entity first so audit trail never claims a transition that failed to persist
+                    AccountEntity saved = accountRepository.save(account);
+
                     // INSTITUTIONAL_FACT_REGISTER (D007) / ACTUAL_OBJECT_REGISTER (D002):
                     // Record an institutional fact audit record when status or enablement changes.
-                    if (account.isEnabled() != wasEnabled || account.getStatus() != wasStatus) {
-                        String rule = (account.getStatus() == AccountStatus.decommissioned || wasStatus == AccountStatus.decommissioned)
+                    if (saved.isEnabled() != wasEnabled || saved.getStatus() != wasStatus) {
+                        String rule = (saved.getStatus() == AccountStatus.decommissioned || wasStatus == AccountStatus.decommissioned)
                                 ? "ACCOUNT_DECOMMISSION_RULE"
-                                : (!account.isEnabled() || !wasEnabled)
+                                : (!saved.isEnabled() || !wasEnabled)
                                 ? "ACCOUNT_LIFECYCLE_ENABLEMENT_RULE"
                                 : "ACCOUNT_OPERATIONAL_STATUS_RULE";
-                        String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Rule: %s. Reason: %s",
-                                account.getName(), wasStatus, account.getStatus(), wasEnabled, account.isEnabled(), rule, reason);
+                        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
+                        String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Caller: %s. Rule: %s. Reason: %s",
+                                saved.getName(), wasStatus, saved.getStatus(), wasEnabled, saved.isEnabled(), caller, rule, reason);
                         defectJournalRepository.save(new DefectJournalEntity(
-                                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", account.getName(),
+                                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", saved.getName(),
                                 rule,
                                 description,
-                                account.isEnabled() ? 1.0 : 0.0));
+                                saved.isEnabled() ? 1.0 : 0.0));
                         log.info("Institutional Fact Audit: {}", description);
                     }
 
-                    return ResponseEntity.ok(toDto(accountRepository.save(account)));
+                    return ResponseEntity.ok(toDto(saved));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -154,6 +163,7 @@ public class AccountController {
         return applyStatus(id, request);
     }
 
+    @Transactional
     private ResponseEntity<?> applyStatus(UUID id, AccountStatusRequestDto request) {
         if (request.status() == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "status is required", "code", 400));
@@ -165,21 +175,25 @@ public class AccountController {
                     boolean wasEnabled = account.isEnabled();
                     account.setStatus(request.status());
 
-                    if (account.isEnabled() != wasEnabled || account.getStatus() != wasStatus) {
-                        String rule = account.getStatus() == AccountStatus.decommissioned
+                    // Save entity first so audit trail never claims a transition that failed to persist
+                    AccountEntity saved = accountRepository.save(account);
+
+                    if (saved.isEnabled() != wasEnabled || saved.getStatus() != wasStatus) {
+                        String rule = saved.getStatus() == AccountStatus.decommissioned
                                 ? "ACCOUNT_DECOMMISSION_RULE"
                                 : "ACCOUNT_OPERATIONAL_STATUS_RULE";
-                        String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Rule: %s. Reason: %s",
-                                account.getName(), wasStatus, account.getStatus(), wasEnabled, account.isEnabled(), rule, "Status updated via /status endpoint");
+                        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
+                        String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Caller: %s. Rule: %s. Reason: %s",
+                                saved.getName(), wasStatus, saved.getStatus(), wasEnabled, saved.isEnabled(), caller, rule, "Status updated via /status endpoint");
                         defectJournalRepository.save(new DefectJournalEntity(
-                                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", account.getName(),
+                                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", saved.getName(),
                                 rule,
                                 description,
-                                account.isEnabled() ? 1.0 : 0.0));
+                                saved.isEnabled() ? 1.0 : 0.0));
                         log.info("Institutional Fact Audit: {}", description);
                     }
 
-                    return ResponseEntity.ok(toDto(accountRepository.save(account)));
+                    return ResponseEntity.ok(toDto(saved));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
@@ -198,11 +212,30 @@ public class AccountController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable UUID id) {
-        if (!accountRepository.existsById(id)) {
+    @Transactional
+    public ResponseEntity<Void> delete(@PathVariable UUID id,
+                                       @RequestParam(value = "reason", required = false) String reason) {
+        Optional<AccountEntity> accountOpt = accountRepository.findById(id);
+        if (accountOpt.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
+        AccountEntity account = accountOpt.get();
         accountRepository.deleteById(id);
+
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
+        String effectiveReason = (reason != null && !reason.isBlank())
+                ? reason.trim()
+                : "Administrative deletion via DELETE /api/accounts/{id}";
+        String rule = "ACCOUNT_DELETION_RULE";
+        String description = String.format("Account '%s' (id: %s, status: %s, enabled: %s) deleted. Caller: %s. Rule: %s. Reason: %s",
+                account.getName(), id, account.getStatus(), account.isEnabled(), caller, rule, effectiveReason);
+        defectJournalRepository.save(new DefectJournalEntity(
+                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", account.getName(),
+                rule,
+                description,
+                0.0));
+        log.info("Institutional Fact Audit: {}", description);
+
         return ResponseEntity.noContent().build();
     }
 
