@@ -21,6 +21,7 @@ import com.eneik.production.services.settings.SystemSettingsService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -297,6 +298,137 @@ class ContinuousOrchestrationServiceTest {
         boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
 
         assertEquals(true, duplicated);
+    }
+
+    @Test
+    void duplicateGenerationVelocityDetectsExcessiveCompilerSessionsWithoutBlockingSystem() {
+        ProjectEntity project = project(UUID.randomUUID(), "test-forty-second", ProjectStatus.active);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        var defectJournalService = mock(com.eneik.production.kaizen.service.DefectJournalService.class);
+        var defectJournalRepository = mock(com.eneik.production.kaizen.repository.DefectJournalRepository.class);
+
+        String sharedContentKey = "compile:" + project.getId() + ":sha256abc";
+        // V137: a single compiler task row exists in the database
+        TaskEntity compilerTask = task(project, TaskStatus.done);
+        compilerTask.setContentKey(sharedContentKey);
+        compilerTask.setDescription("Compile into task graph: .eneik/records/task-plan-" + UUID.randomUUID() + ".json");
+
+        // 4 Jules sessions dispatched in the 2-hour window (exceeding COMPILE_ATTEMPT_BUDGET = 3)
+        Instant now = Instant.now();
+        JulesSessionEntity s1 = new JulesSessionEntity(); s1.setTaskId(compilerTask.getId()); s1.setCreatedAt(now.minusSeconds(3000));
+        JulesSessionEntity s2 = new JulesSessionEntity(); s2.setTaskId(compilerTask.getId()); s2.setCreatedAt(now.minusSeconds(2000));
+        JulesSessionEntity s3 = new JulesSessionEntity(); s3.setTaskId(compilerTask.getId()); s3.setCreatedAt(now.minusSeconds(1000));
+        JulesSessionEntity s4 = new JulesSessionEntity(); s4.setTaskId(compilerTask.getId()); s4.setCreatedAt(now.minusSeconds(200));
+        List<JulesSessionEntity> sessions = List.of(s1, s2, s3, s4);
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(compilerTask));
+        when(taskRepository.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(project.getId()), org.mockito.ArgumentMatchers.any(java.time.Instant.class)))
+                .thenReturn(List.of());
+        when(julesSessionRepository.findByTaskId(compilerTask.getId())).thenReturn(sessions);
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+        when(defectJournalRepository.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(project.getId()), org.mockito.ArgumentMatchers.any(java.time.Instant.class)))
+                .thenReturn(List.of());
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                mock(ProjectRepository.class), mock(ProjectFlowService.class), mock(AccountRepository.class),
+                julesSessionRepository, mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                wishlistRepository, mock(TechnicalLeadCompiler.class), mock(MLPredictionServiceClient.class),
+                taskRepository, new SystemProgressTracker(), mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class), mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class));
+
+        service.setDefectJournalService(defectJournalService);
+        service.setDefectJournalRepository(defectJournalRepository);
+
+        // 1. In-flight stuck duplicate check does NOT trip because compiler task is terminal
+        boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
+        assertEquals(false, duplicated);
+
+        // 2. Velocity check detects 4 sessions > budget 3, and records defect with rootCausePatternId = null
+        service.checkDuplicateGenerationVelocity(project);
+
+        verify(defectJournalService, times(1)).recordDefect(
+                org.mockito.ArgumentMatchers.eq(project.getId()),
+                org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.isNull(), // rootCausePatternId must be null
+                org.mockito.ArgumentMatchers.eq("HIGH"),
+                org.mockito.ArgumentMatchers.eq("WASTE_REDUCTION"),
+                org.mockito.ArgumentMatchers.eq("ContinuousOrchestrationService"),
+                org.mockito.ArgumentMatchers.eq("DUPLICATE_GENERATION_VELOCITY"),
+                org.mockito.ArgumentMatchers.contains(sharedContentKey),
+                org.mockito.ArgumentMatchers.eq(4.0)
+        );
+
+        // 3. Second call within the same window when defect is already present does NOT duplicate record
+        var recordedDefect = new com.eneik.production.kaizen.model.DefectJournalEntity(
+                project.getId(), null, null, "HIGH", "WASTE_REDUCTION", "ContinuousOrchestrationService",
+                "DUPLICATE_GENERATION_VELOCITY", "Threshold exceeded for contentKey: '" + sharedContentKey + "'", 4.0);
+        when(defectJournalRepository.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(project.getId()), org.mockito.ArgumentMatchers.any(java.time.Instant.class)))
+                .thenReturn(List.of(recordedDefect));
+
+        service.checkDuplicateGenerationVelocity(project);
+        // still 1 invocation total
+        verify(defectJournalService, times(1)).recordDefect(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()
+        );
+    }
+
+    @Test
+    void duplicateGenerationVelocityAllowsLawfulRecoveryDepthAndThrowsOnNullBeans() {
+        ProjectEntity project = project(UUID.randomUUID(), "test-forty-third", ProjectStatus.active);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        var defectJournalService = mock(com.eneik.production.kaizen.service.DefectJournalService.class);
+        var defectJournalRepository = mock(com.eneik.production.kaizen.repository.DefectJournalRepository.class);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                mock(ProjectRepository.class), mock(ProjectFlowService.class), mock(AccountRepository.class),
+                mock(JulesSessionRepository.class), mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class), mock(TechnicalLeadCompiler.class), mock(MLPredictionServiceClient.class),
+                taskRepository, new SystemProgressTracker(), mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class), mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class));
+
+        // Fail-closed setters
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.setDefectJournalService(null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> service.setDefectJournalRepository(null));
+
+        service.setDefectJournalService(defectJournalService);
+        service.setDefectJournalRepository(defectJournalRepository);
+
+        // 1 base task + 2 recovery tasks = 3 tasks total with identical slice_title
+        String sliceTitle = "Auth slice work";
+        TaskEntity t1 = taskWithSliceTitle(project, TaskStatus.failed, sliceTitle);
+        TaskEntity t2 = taskWithSliceTitle(project, TaskStatus.failed, sliceTitle);
+        TaskEntity t3 = taskWithSliceTitle(project, TaskStatus.done, sliceTitle);
+        List<TaskEntity> lawfulBatch = List.of(t1, t2, t3);
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(lawfulBatch);
+        when(taskRepository.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(project.getId()), org.mockito.ArgumentMatchers.any(java.time.Instant.class)))
+                .thenReturn(lawfulBatch);
+
+        // Lawful budget (3 attempts) does NOT trigger defect
+        service.checkDuplicateGenerationVelocity(project);
+        verify(defectJournalService, never()).recordDefect(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()
+        );
     }
 
     @Test

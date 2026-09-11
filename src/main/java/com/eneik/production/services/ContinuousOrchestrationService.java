@@ -17,6 +17,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.eneik.production.services.MLPredictionServiceClient;
 
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.WishlistEntity;
+
+import com.eneik.production.kaizen.model.DefectJournalEntity;
+import com.eneik.production.kaizen.repository.DefectJournalRepository;
+import com.eneik.production.kaizen.service.DefectJournalService;
+import com.eneik.production.services.task.TaskDuplicateDetector;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -48,6 +54,9 @@ public class ContinuousOrchestrationService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ProjectAuditPipelineService projectAuditPipelineService;
+
+    private DefectJournalService defectJournalService;
+    private DefectJournalRepository defectJournalRepository;
 
     // 2026-08-01: account-health ownership (status transitions, backoff math, statusChangedAt correctness)
     // moved entirely to AccountHealthService - this class only triggers it on schedule now, matching the
@@ -85,7 +94,36 @@ public class ContinuousOrchestrationService {
                 wishlistRepository, technicalLeadCompiler, mlPredictionServiceClient, taskRepository,
                 systemProgressTracker, settingsService, plannedWorkRecoveryService, branchGarbageCollectorService,
                 gitHubPullRequestService, operationalPolicyService, accountHealthService, productLaunchabilityService,
-                clientRuntimeObservabilityService, deliveredWorkJudgmentService, tocSubordinationLever, null);
+                clientRuntimeObservabilityService, deliveredWorkJudgmentService, tocSubordinationLever, null, null, null);
+    }
+
+    public ContinuousOrchestrationService(ProjectRepository projectRepository,
+                                         ProjectFlowService projectFlowService,
+                                         AccountRepository accountRepository,
+                                         com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
+                                         com.eneik.production.services.jules.JulesDispatchService julesDispatchService,
+                                         com.eneik.production.repositories.WishlistRepository wishlistRepository,
+                                         com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler,
+                                         MLPredictionServiceClient mlPredictionServiceClient,
+                                         com.eneik.production.repositories.TaskRepository taskRepository,
+                                         com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
+                                         com.eneik.production.services.settings.SystemSettingsService settingsService,
+                                         PlannedWorkRecoveryService plannedWorkRecoveryService,
+                                         com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
+                                         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                                         OperationalPolicyService operationalPolicyService,
+                                         com.eneik.production.services.accounts.AccountHealthService accountHealthService,
+                                         com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService,
+                                         com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
+                                         com.eneik.production.services.judgment.DeliveredWorkJudgmentService deliveredWorkJudgmentService,
+                                         com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever,
+                                         com.eneik.production.services.verdict.AutonomousVerdictObservationService autonomousVerdictObservationService) {
+        this(projectRepository, projectFlowService, accountRepository, julesSessionRepository, julesDispatchService,
+                wishlistRepository, technicalLeadCompiler, mlPredictionServiceClient, taskRepository,
+                systemProgressTracker, settingsService, plannedWorkRecoveryService, branchGarbageCollectorService,
+                gitHubPullRequestService, operationalPolicyService, accountHealthService, productLaunchabilityService,
+                clientRuntimeObservabilityService, deliveredWorkJudgmentService, tocSubordinationLever,
+                autonomousVerdictObservationService, null, null);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -109,7 +147,9 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
                                          com.eneik.production.services.judgment.DeliveredWorkJudgmentService deliveredWorkJudgmentService,
                                          com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever,
-                                         com.eneik.production.services.verdict.AutonomousVerdictObservationService autonomousVerdictObservationService) {
+                                         com.eneik.production.services.verdict.AutonomousVerdictObservationService autonomousVerdictObservationService,
+                                         DefectJournalService defectJournalService,
+                                         DefectJournalRepository defectJournalRepository) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -131,6 +171,8 @@ public class ContinuousOrchestrationService {
         this.deliveredWorkJudgmentService = deliveredWorkJudgmentService;
         this.tocSubordinationLever = tocSubordinationLever;
         this.autonomousVerdictObservationService = autonomousVerdictObservationService;
+        this.defectJournalService = defectJournalService;
+        this.defectJournalRepository = defectJournalRepository;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -205,6 +247,7 @@ public class ContinuousOrchestrationService {
                         branchGarbageCollectorService.cleanOrphanedAndStagnatedPullRequests(project);
                     }
                     checkForDuplicateTaskContent(project);
+                    checkDuplicateGenerationVelocity(project);
                 } catch (Exception e) {
                     log.error("Continuous Orchestration: CI sync/PR cleanup/duplicate-content check failed for project {}", project.getId(), e);
                 }
@@ -401,30 +444,22 @@ public class ContinuousOrchestrationService {
     // recovery path (this state has no Gemini lever either). The detector's real purpose is catching a
     // generation fallback actively wasting capacity RIGHT NOW - a duplicate that already completed spent
     // its waste once and is not still spending it, so it must not count toward the block.
-    private static final java.util.Set<TaskStatus> TERMINAL_STATUSES = java.util.Set.of(
-            TaskStatus.done, TaskStatus.failed, TaskStatus.blocked, TaskStatus.spike_completed);
+    private static final java.util.Set<TaskStatus> TERMINAL_STATUSES = TaskDuplicateDetector.TERMINAL_STATUSES;
 
     private boolean checkForDuplicateTaskContent(ProjectEntity project) {
         try {
-            List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
-                    .stream()
-                    .limit(30)
-                    .filter(task -> !TERMINAL_STATUSES.contains(task.getStatus()))
-                    .toList();
-            java.util.Map<String, Long> contentCounts = recentTasks.stream()
-                    .map(this::duplicateDetectionKey)
-                    .filter(key -> key != null && !key.isBlank())
-                    .collect(java.util.stream.Collectors.groupingBy(key -> key, java.util.stream.Collectors.counting()));
-            contentCounts.forEach((content, count) -> {
-                if (count >= 3) {
-                    log.error("DUPLICATE TASK CONTENT: a task with this exact content appears {} times among the "
-                                    + "last {} tasks for project {} - likely sign of a generation fallback producing "
-                                    + "generic/fabricated content instead of real derived work. Content: '{}'. "
-                                    + "Investigate before trusting recent throughput numbers.",
-                            count, recentTasks.size(), project.getName(), preview(content));
-                }
+            List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+            List<TaskDuplicateDetector.StuckDuplicateContent> stuckDuplicates =
+                    TaskDuplicateDetector.findStuckDuplicateContent(recentTasks);
+
+            stuckDuplicates.forEach(stuck -> {
+                log.error("DUPLICATE TASK CONTENT: a task with this exact content appears {} times among the "
+                                + "recent non-terminal tasks for project {} - likely sign of a generation fallback producing "
+                                + "generic/fabricated content instead of real derived work. Content: '{}'. "
+                                + "Investigate before trusting recent throughput numbers.",
+                        stuck.count(), project.getName(), preview(stuck.contentKey()));
             });
-            boolean duplicated = contentCounts.values().stream().anyMatch(count -> count >= 3);
+            boolean duplicated = !stuckDuplicates.isEmpty();
             if (duplicated) {
                 setSystemStatus("content_defect");
             }
@@ -435,14 +470,110 @@ public class ContinuousOrchestrationService {
         }
     }
 
-    private String duplicateDetectionKey(TaskEntity task) {
-        if (task.getPayload() != null) {
-            String sliceTitle = task.getPayload().path("slice_title").asText("");
-            if (!sliceTitle.isBlank()) {
-                return sliceTitle;
-            }
+    public void checkDuplicateGenerationVelocity(ProjectEntity project) {
+        if (project == null) {
+            return;
         }
-        return task.getDescription();
+        if (defectJournalService == null || defectJournalRepository == null) {
+            log.error("Continuous Orchestration: DefectJournalService or DefectJournalRepository is missing; duplicate velocity tracking is disabled (Prescription 19: TRUTH_STATUS_TABLE / D012)");
+            return;
+        }
+        try {
+            Instant now = Instant.now();
+            Instant windowStart = now.minus(TaskDuplicateDetector.DEFAULT_VELOCITY_WINDOW);
+            Duration window = TaskDuplicateDetector.DEFAULT_VELOCITY_WINDOW;
+            int threshold = TaskDuplicateDetector.DEFAULT_VELOCITY_THRESHOLD;
+
+            List<TaskDuplicateDetector.DuplicateGenerationVelocity> velocities = new java.util.ArrayList<>();
+
+            // 1. Check tasks created in the window (multiple rows: decomposition loops, recovery cascades)
+            List<TaskEntity> tasksInWindow = taskRepository.findByProjectIdAndCreatedAtAfter(project.getId(), windowStart);
+            velocities.addAll(TaskDuplicateDetector.detectDuplicateGenerationVelocity(
+                    tasksInWindow, windowStart, now, threshold));
+
+            // 2. Check compiler tasks (V137 revives the single TaskEntity row by contentKey;
+            // process unit is Jules sessions across the window)
+            List<TaskEntity> allProjectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+            for (TaskEntity task : allProjectTasks) {
+                String contentKey = task.getContentKey();
+                if (contentKey != null && contentKey.startsWith("compile:")) {
+                    List<com.eneik.production.models.persistence.JulesSessionEntity> sessions =
+                            julesSessionRepository.findByTaskId(task.getId());
+                    long sessionsInWindow = sessions.stream()
+                            .filter(s -> s.getCreatedAt() != null && !s.getCreatedAt().isBefore(windowStart))
+                            .count();
+                    TaskDuplicateDetector.evaluateVelocity(contentKey, sessionsInWindow, window, windowStart, now, threshold)
+                            .ifPresent(velocities::add);
+                }
+            }
+
+            // 3. Check wishlists compileAttempts directly (if dispatched in window and compileAttempts > budget)
+            List<WishlistEntity> wishlists = wishlistRepository.findByProjectId(project.getId());
+            for (WishlistEntity w : wishlists) {
+                if (w.getCompileAttempts() > threshold
+                        && w.getLastCompileDispatchedAt() != null
+                        && !w.getLastCompileDispatchedAt().isBefore(windowStart)) {
+                    String wishlistKey = "compile:" + project.getId() + ":wishlist:" + w.getId();
+                    TaskDuplicateDetector.evaluateVelocity(wishlistKey, (long) w.getCompileAttempts(), window, windowStart, now, threshold)
+                            .ifPresent(velocities::add);
+                }
+            }
+
+            if (velocities.isEmpty()) {
+                return;
+            }
+
+            List<DefectJournalEntity> recentDefects =
+                    defectJournalRepository.findByProjectIdAndCreatedAtAfter(project.getId(), windowStart);
+
+            for (TaskDuplicateDetector.DuplicateGenerationVelocity velocity : velocities) {
+                // Exactly one record per contentKey per window (no duplicate spam per tick)
+                boolean alreadyRecorded = recentDefects.stream()
+                        .anyMatch(d -> "DUPLICATE_GENERATION_VELOCITY".equals(d.getDefectType())
+                                && d.getDescription() != null
+                                && d.getDescription().contains(velocity.contentKey()));
+                if (!alreadyRecorded) {
+                    String desc = String.format(
+                            "Duplicate generation velocity threshold exceeded (%d attempts/tasks > %d within %s) for contentKey: '%s'",
+                            velocity.count(),
+                            threshold,
+                            window,
+                            velocity.contentKey());
+                    defectJournalService.recordDefect(
+                            project.getId(),
+                            null, // featureId
+                            null, // rootCausePatternId is NULL (Prescription 19: do not pollute Thagard evidence graph with un-triaged pattern)
+                            "HIGH",
+                            "WASTE_REDUCTION",
+                            "ContinuousOrchestrationService",
+                            "DUPLICATE_GENERATION_VELOCITY",
+                            desc,
+                            (double) velocity.count());
+                    log.warn("DUPLICATE GENERATION VELOCITY recorded for project {}: {} attempts/tasks generated with key '{}' in window {}",
+                            project.getName(), velocity.count(), velocity.contentKey(), window);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Continuous Orchestration: Failed to check duplicate generation velocity for project {}", project.getId(), e);
+        }
+    }
+
+    public void setDefectJournalService(DefectJournalService defectJournalService) {
+        if (defectJournalService == null) {
+            throw new IllegalArgumentException("DefectJournalService cannot be null (Prescription 19: TRUTH_STATUS_TABLE / D012)");
+        }
+        this.defectJournalService = defectJournalService;
+    }
+
+    public void setDefectJournalRepository(DefectJournalRepository defectJournalRepository) {
+        if (defectJournalRepository == null) {
+            throw new IllegalArgumentException("DefectJournalRepository cannot be null (Prescription 19: TRUTH_STATUS_TABLE / D012)");
+        }
+        this.defectJournalRepository = defectJournalRepository;
+    }
+
+    private String duplicateDetectionKey(TaskEntity task) {
+        return TaskDuplicateDetector.taskContentKey(task);
     }
 
     private String preview(String text) {

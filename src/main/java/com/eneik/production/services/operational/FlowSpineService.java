@@ -23,6 +23,7 @@ import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.dashboard.SystemStatusService;
 import com.eneik.production.services.lever.LeverAgreement;
 import com.eneik.production.services.lever.LeverPromotionService;
+import com.eneik.production.services.task.TaskDuplicateDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
@@ -1015,18 +1016,10 @@ public class FlowSpineService {
     // excluding terminal tasks, once 3+ historical (fully resolved) duplicates existed in the last-30-tasks
     // window, the block could never clear on its own. Mirrors the same terminal-status exclusion applied to
     // ContinuousOrchestrationService's own duplicate-content check.
-    private static final Set<TaskStatus> DUPLICATE_CONTENT_TERMINAL_STATUSES = Set.of(
-            TaskStatus.done, TaskStatus.failed, TaskStatus.blocked, TaskStatus.spike_completed);
+    private static final Set<TaskStatus> DUPLICATE_CONTENT_TERMINAL_STATUSES = TaskDuplicateDetector.TERMINAL_STATUSES;
 
     private boolean duplicateContent(List<TaskEntity> tasks) {
-        Map<String, Long> counts = tasks.stream()
-                .limit(30)
-                .filter(task -> !DUPLICATE_CONTENT_TERMINAL_STATUSES.contains(task.getStatus()))
-                .filter(task -> !isDeliberateRecoveryTask(task))
-                .map(this::duplicateKey)
-                .filter(key -> key != null && !key.isBlank())
-                .collect(Collectors.groupingBy(Function.identity(), HashMap::new, Collectors.counting()));
-        return counts.values().stream().anyMatch(count -> count >= 3);
+        return TaskDuplicateDetector.hasStuckDuplicateContent(tasks);
     }
 
     // 2026-08-08 (ML-update patch, Phase 2 / lever D3_EMBEDDING_DUPLICATE_DETECTION): incumbent above is
@@ -1128,17 +1121,11 @@ public class FlowSpineService {
     // toward this threshold retripped the exact same hard-stop the recovery mechanism exists to route
     // around, within the same orchestration cycle that created it.
     private static boolean isDeliberateRecoveryTask(TaskEntity task) {
-        return task.getPayload() != null && task.getPayload().has("recoversFailedTaskId");
+        return TaskDuplicateDetector.isDeliberateRecoveryTask(task);
     }
 
     private String duplicateKey(TaskEntity task) {
-        if (task.getPayload() != null) {
-            String sliceTitle = task.getPayload().path("slice_title").asText("");
-            if (!sliceTitle.isBlank()) {
-                return sliceTitle;
-            }
-        }
-        return task.getDescription();
+        return TaskDuplicateDetector.taskContentKey(task);
     }
 
     private long countStatus(List<TaskEntity> tasks, TaskStatus status) {

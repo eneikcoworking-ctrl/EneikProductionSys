@@ -581,6 +581,51 @@ class FlowSpineServiceTest {
         assertEquals("BLOCKED_BY_DUPLICATE_CONTENT", dto.currentState());
     }
 
+    @Test
+    void compilerTasksWithSharedContentKeyWhenTerminalDoNotBlockFlowSpine() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        String contentKey = "compile:" + projectId + ":sha256abc";
+        TaskEntity t1 = taskWithSliceTitle(TaskStatus.done, "Compile batch");
+        t1.setContentKey(contentKey);
+        t1.setDescription(".eneik/records/task-plan-" + UUID.randomUUID() + ".json");
+        TaskEntity t2 = taskWithSliceTitle(TaskStatus.done, "Compile batch");
+        t2.setContentKey(contentKey);
+        t2.setDescription(".eneik/records/task-plan-" + UUID.randomUUID() + ".json");
+        TaskEntity t3 = taskWithSliceTitle(TaskStatus.done, "Compile batch");
+        t3.setContentKey(contentKey);
+        t3.setDescription(".eneik/records/task-plan-" + UUID.randomUUID() + ".json");
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(t1, t2, t3));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        FlowSpineDto dto = service.build(projectId);
+        assertNotEquals("BLOCKED_BY_DUPLICATE_CONTENT", dto.currentState());
+    }
+
     private TaskEntity taskWithSliceTitle(TaskStatus status, String sliceTitle) {
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());

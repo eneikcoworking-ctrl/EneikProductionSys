@@ -16,6 +16,36 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-11 20:53 UTC — Antigravity (L2): Предписание 19 закрыто (`CATEGORY_ERROR_SCAN` / D002), остаток по 18 закрыт**
+
+1. **Остаток по Предписанию 18 закрыт:**
+   - Публичный метод `GitHubPullRequestService.setCodeChangeClassifier` снабжен проверкой на `null` с выбросом `IllegalArgumentException("CodeChangeClassifier cannot be null (Prescription 18: TRUTH_STATUS_TABLE / D012)")`. Невозможно занулить классификатор после инициализации сервиса.
+
+2. **Предписание 19 закрыто (`CATEGORY_ERROR_SCAN` / D002):**
+   - **Сохранение категориальной границы в типах (`TaskDuplicateDetector`):**
+     - Состояние в очереди (in-flight state): `StuckDuplicateContent(String contentKey, long count)` — сколько активных нетерминальных задач застряло сейчас.
+     - Процесс во времени (process over time): `DuplicateGenerationVelocity(String contentKey, long count, Duration window, Instant windowStart, Instant windowEnd)` — темп создания задач с одним ключом за временное окно.
+   - **Единая идентификация работы (`TaskDuplicateDetector.taskContentKey`):**
+     - Приоритет: (1) `task.getContentKey()` (включая компиляторный ключ `compile:<projectId>:<sha256>`), (2) `payload.slice_title`, (3) `task.getDescription()`.
+     - Задачи компиляции с уникальными UUID файлов плана (`.eneik/records/task-plan-<UUID>.json`) в описании теперь однозначно объединяются общим `contentKey`.
+   - **Унификация проверки застрявших дубликатов:**
+     - `FlowSpineService.duplicateContent` и `ContinuousOrchestrationService.checkForDuplicateTaskContent` объединены на вызове `TaskDuplicateDetector.findStuckDuplicateContent` / `hasStuckDuplicateContent`.
+     - Обе копии исключают терминальные статусы (`done`, `failed`, `blocked`, `spike_completed`) и намеренные ремонтные задачи (`isDeliberateRecoveryTask`).
+   - **Темп порождения дубликатов (`checkDuplicateGenerationVelocity`):**
+     - Скользящее 2-часовое временное окно (`createdAt >= windowStart`, ритм Кайдзен).
+     - Порог темпа: строго `count > COMPILE_ATTEMPT_BUDGET` (> 3; 1 базовая попытка + 2 законных ремонта). Законная глубина ремонта не считается дефектом.
+     - Единица процесса: для компиляции (где V137 оживляет одну строку по `contentKey`) темп измеряется через число сессий Jules в окне и `wishlist.compileAttempts`; для срезовых задач — по числу созданных строк в окне через `TaskRepository.findByProjectIdAndCreatedAtAfter`.
+     - Запись в `DefectJournalService.recordDefect` (`rootCausePatternId = null` — не засоряет граф когерентности Таггарда неотсортированным паттерном; `category = "WASTE_REDUCTION"`, `defectType = "DUPLICATE_GENERATION_VELOCITY"`).
+     - Ровно **одна запись на ключ за окно** (проверка существующих дефектов через `DefectJournalRepository.findByProjectIdAndCreatedAtAfter`).
+     - Защита от fail-open: `DefectJournalService` и `DefectJournalRepository` обязательны в конструкторе `@Autowired` и сеттерах с выбросом `IllegalArgumentException` на `null`.
+     - Темп порождения **не блокирует фабрику**: не входит в `duplicateContentDetected`, не переводит проект в `BLOCKED_BY_DUPLICATE_CONTENT` и не ставит `content_defect`.
+   - **Заслоны:**
+     - `TaskDuplicateDetectorTest`: проверка приоритета `contentKey` поверх случайных UUID в описании; исключение терминальных задач и ремонтов из застрявших; порог строго `> 3` (3 попытки зелёные, 4-я даёт темп); работа метода `evaluateVelocity` (5/5 green).
+     - `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityRecordsDefectWithoutBlockingSystem`: оживлённая строка компиляции с 4 сессиями Jules в окне порождает ровно 1 запись дефекта в `defect_journal` с `rootCausePatternId = null`, не блокируя систему и не дублируя запись при повторном такте (13/13 green).
+     - `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityAllowsLawfulRecoveryDepthAndThrowsOnNullBeans`: законная глубина ремонта (3 задачи) не порождает дефект, а `null` в сеттерах выбрасывает `IllegalArgumentException`.
+     - `FlowSpineServiceTest.compilerTasksWithSharedContentKeyWhenTerminalDoNotBlockFlowSpine`: терминальные задачи компиляции не переводят систему в `BLOCKED_BY_DUPLICATE_CONTENT` (26/26 green).
+     - `GitHubPullRequestServiceTest`: отказ на отсутствие классификатора в 4 точках записи (12/12 green). Все 56/56 green в контейнере Maven.
+
 **2026-09-11 20:35 UTC — Antigravity (L2): Предписание 18 закрыто (`TRUTH_STATUS_TABLE` / D012), ответ по 17+34**
 
 1. **Предписания 17 + 34 (запушены в `65ed514`) — ответ по множителю $\times 10$ и полу 30 с:**
