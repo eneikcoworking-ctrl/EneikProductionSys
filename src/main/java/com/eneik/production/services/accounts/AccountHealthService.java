@@ -252,14 +252,14 @@ public class AccountHealthService {
                 if ((wasBlocked || wasDailyLimited) && blockedSince != null) {
                     long durationMinutes = Duration.between(blockedSince, Instant.now()).toMinutes();
                     defectJournalRepository.save(new DefectJournalEntity(
-                            projectId, null, null, "LOW", HEALTH_CATEGORY, account.getName(),
+                            projectId, null, null, "LOW", "ACCOUNT_RECOVERY", account.getName(),
                             RECOVERY_DURATION_DEFECT_TYPE,
                             taskPrefix + "Account '" + account.getName() + "' recovered from "
                                     + (wasDailyLimited ? "daily_limited" : "api_blocked") + " after " + durationMinutes + " minute(s)",
                             (double) durationMinutes));
                     if (wasDailyLimited || isExternalBudgetExhaustion(account)) {
                         defectJournalRepository.save(new DefectJournalEntity(
-                                projectId, null, null, "LOW", HEALTH_CATEGORY, account.getName(),
+                                projectId, null, null, "LOW", "ACCOUNT_RECOVERY", account.getName(),
                                 BUDGET_RECOVERY_DEFECT_TYPE,
                                 taskPrefix + "Account '" + account.getName() + "' recovered from external budget exhaustion after " + durationMinutes + " minute(s)",
                                 (double) durationMinutes));
@@ -693,18 +693,16 @@ public class AccountHealthService {
     }
 
     /**
-     * Estimates replenishment period from observed recovery history (analogue of BetaPosterior).
-     * If enough recovery duration samples exist, the period is derived from the median interval between
-     * consecutive recoveries. Otherwise, falls back to the uninformative prior (defaultReplenishmentPeriodHours, 24h).
+     * Estimates replenishment period strictly from THIS account's own observed recovery history (analogue of BetaPosterior).
+     * To prevent category and lineage errors (RELIABILITY_CHAIN / D010), cross-account pooled queries are strictly avoided:
+     * intervals between different accounts do not reflect supplier replenishment cycles.
+     * If enough recovery duration samples exist for this account, the period is derived from the median interval between
+     * its consecutive recoveries. Otherwise, falls back to the uninformative prior assumption (24 hours).
      */
     public Duration estimateReplenishmentPeriod(AccountEntity account) {
         if (account != null && account.getName() != null) {
             List<DefectJournalEntity> entries = defectJournalRepository
                     .findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), BUDGET_RECOVERY_DEFECT_TYPE);
-            if (entries.size() < minSamplesForDataDriven) {
-                entries = defectJournalRepository.findByDefectTypeOrderByCreatedAtDesc(BUDGET_RECOVERY_DEFECT_TYPE)
-                        .stream().limit(POOLED_SAMPLE_LIMIT).toList();
-            }
             if (entries.size() >= minSamplesForDataDriven) {
                 List<Instant> timestamps = entries.stream()
                         .map(DefectJournalEntity::getCreatedAt)
@@ -728,11 +726,14 @@ public class AccountHealthService {
                 }
             }
         }
+        // Documented uninformative prior assumption: provider quota replenishes on a daily cadence (defaultReplenishmentPeriodHours, 24h).
         return Duration.ofHours(defaultReplenishmentPeriodHours);
     }
 
     /**
      * Calculates the timestamp when the next replenishment period starts after fromInstant.
+     * Anchor is taken strictly from THIS account's own last observed recovery. If this account
+     * has not yet accumulated sufficient observations, the prior anchor assumption is UTC midnight.
      */
     public Instant nextReplenishmentPeriodStart(AccountEntity account, Instant fromInstant) {
         Instant current = fromInstant != null ? fromInstant : Instant.now();
@@ -742,16 +743,13 @@ public class AccountHealthService {
         if (account != null && account.getName() != null) {
             List<DefectJournalEntity> entries = defectJournalRepository
                     .findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), BUDGET_RECOVERY_DEFECT_TYPE);
-            if (entries.size() < minSamplesForDataDriven) {
-                entries = defectJournalRepository.findByDefectTypeOrderByCreatedAtDesc(BUDGET_RECOVERY_DEFECT_TYPE)
-                        .stream().limit(POOLED_SAMPLE_LIMIT).toList();
-            }
             if (entries.size() >= minSamplesForDataDriven) {
                 anchor = entries.get(0).getCreatedAt();
             }
         }
 
         if (anchor == null) {
+            // Prior anchor assumption: provider quota resets at UTC midnight
             anchor = current.atZone(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS).toInstant();
         }
 

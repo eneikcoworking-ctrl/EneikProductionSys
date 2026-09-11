@@ -1836,3 +1836,23 @@ reached». Но тот же комментарий фиксирует, что `c
 `jules_concurrent_capacity_exhausted`, дневной предел — различимы по `closureReason` сессий).
 **Тест (заслон записи):** задача, все отказы которой внешние, при исчерпании не получает `failed` ни сразу, ни через чистку
 заблокированных. **Опровергнет:** `failed` у требования, ни разу не испытанного исполнителем.
+
+## 2026-09-11 17:15 UTC — Antigravity: фиксация Предписаний 12, 14 (доработка) и 15
+
+1. **Предписание 12 (`BottleneckAwarePriorityService`, закон 11):**
+   - Граница зафиксирована непосредственно в `docs/FACTORY_MECHANISMS.md`: `BottleneckAwarePriorityService` строго ранжирует очередь (приоритет по фазам и ролям), а решение о подчинении/простаивании принимает исключительно `TocSubordinationLever`.
+   - Опровержение не выполняется: в классе нет ни одного решения `idle`, `deny` или `skip` (0 вхождений).
+
+2. **Доработка Предписания 14 (`AccountHealthService` по совету Клода):**
+   - Категориальный сбой: события восстановления аккаунтов теперь регистрируются с категорией `"ACCOUNT_RECOVERY"`, добавленной в `NON_DEFECT_AUDIT_CATEGORIES` в `DefectJournalService`. Аудит дефектов больше не штрафует доверие за восстановление мощностей.
+   - Смешивание рядов ликвидировано: удалены глобальные pooled-запросы; медиана интервалов и опорная точка рассчитываются строго по ряду конкретного аккаунта (`account.getName()`).
+   - Допущение о полночи UTC явно документировано как неинформативное априорное предположение при выборке $< 5$ наблюдений.
+
+3. **Предписание 15 (`ClaimService` / `ProjectFlowService`, закон 12, `INSTITUTIONAL_FACT_REGISTER` / D007):**
+   - Счёт `refusedSessionCreations` не тронут: фактически потраченная ёмкость учитывается полностью.
+   - `retireForExhaustedDispatchBudget` регистрирует точный состав отказов (внешние против невнешних `jules_request_rejected`) и фиксирует институциональный факт в журнале аудита (`DISPATCH_BUDGET_EXHAUSTION_COMPOSITION`, категория `INSTITUTIONAL_AUDIT`, D007 / D012).
+   - При исключительно внешних отказах требование переводится в возобновляемое состояние `UNTESTED_WITHIN_CAPACITY` в статусе `TaskStatus.blocked`.
+   - Защита от поглощающего вердикта: в `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks` установлен заслон `ClaimService.isUntestedWithinCapacity(task)`, предотвращающий перевод таких задач в поглощающий `TaskStatus.failed`.
+   - Заслоняющие тесты: 137/137 green в Maven (`DispatchAttemptBudgetTest`, `ProjectFlowServiceTest`, `AccountHealthServiceTest`, `AccountHealthServiceLaw14Test`, плюс регрессионный пакет). Фальсифицирующий заслон подтверждает сохранение в `blocked`, а контрольное опровержение подтверждает перевод задачи без метки в `failed`.
+
+Следующий пункт по XVI — **Предписание 16** («Круг самозаказа · `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` (D002) · закон 3, ограничение области находки»).

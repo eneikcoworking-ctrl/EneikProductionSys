@@ -1908,6 +1908,15 @@ public class ProjectFlowService {
                 continue;
             }
 
+            // Prescription 15 / INSTITUTIONAL_FACT_REGISTER (D007, Law 12):
+            // A task whose dispatch budget was consumed purely by external refusals is UNTESTED_WITHIN_CAPACITY.
+            // It remains renewable in `blocked` and must never receive an absorbing terminal verdict (failed).
+            if (ClaimService.isUntestedWithinCapacity(task)) {
+                log.info("ProjectFlowService: blocked task {} is untested within capacity ({}); preserving blocked state, not retiring to failed",
+                        task.getId(), task.getJulesDispatchStatus());
+                continue;
+            }
+
             // A blocked wishlist-compiler task is not "some role's work blocked" - the generic recovery
             // below writes a vague clarify-the-blocker wishlist that has no idea it should re-decompose the
             // client's actual brief (found live: it produced a nonsense "Delivery Plan" task while the real

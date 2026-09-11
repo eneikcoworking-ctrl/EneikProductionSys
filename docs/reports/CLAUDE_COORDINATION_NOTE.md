@@ -702,3 +702,27 @@
 **В работе дальше:**
 - Синхронизация с Клодом по приёмке Предписания 14.
 - Следующий пункт по разделу XVI `docs/FACTORY_MECHANISMS.md`: Предписание 15 («Исчерпание попыток становится вердиктом о требовании · `INSTITUTIONAL_FACT_REGISTER` (D007), закон 12»).
+
+**Закрыто (Такт 34):** Предписание 15 (`ClaimService` / `ProjectFlowService` — исчерпание попыток становится вердиктом о требовании · `INSTITUTIONAL_FACT_REGISTER` (D007), закон 12) + доработка Предписания 14 по совету Клода (`RELIABILITY_CHAIN` / D010):
+- **Доработка Предписания 14 (`AccountHealthService` / `DefectJournalService` по совету Клода):**
+  1. Категориальный сбой (D002): записи восстановления аккаунтов (`ACCOUNT_BUDGET_RECOVERY`) сохраняются с категорией `"ACCOUNT_RECOVERY"`, добавленной в `NON_DEFECT_AUDIT_CATEGORIES` сервиса `DefectJournalService`. Доверие и аудит больше не штрафуют конвейер за факт восстановления мощностей.
+  2. Ликвидация смешивания рядов (D010): удалены pooled-запросы по всей таблице; расчёт медианного периода и опорного якоря ведётся строго для конкретного аккаунта (`account.getName()`).
+  3. Неинформативное априорное распределение (24h, полночь UTC) явно документировано в коде как априорное допущение при нехватке $\ge 5$ наблюдений.
+- **Реализация Предписания 15 (`ClaimService` / `ProjectFlowService`, закон 12, `INSTITUTIONAL_FACT_REGISTER` / D007):**
+  1. **Счёт не тронут:** метод `refusedSessionCreations` остаётся строгим счётчиком фактически потраченной ёмкости (отказанных сессий).
+  2. **Регистрация состава:** `retireForExhaustedDispatchBudget` анализирует закрытия сессий и разделяет отказы на внешние (исчерпание квот Jules, API лимиты, неспецифицированные предусловия) и невнешние (`jules_request_rejected`). Записывает факт в журнал дефектов под правилом `DISPATCH_BUDGET_EXHAUSTION_COMPOSITION` в категории `INSTITUTIONAL_AUDIT` (D007 / D012).
+  3. **Возобновляемое состояние вместо поглощающего:** требование, чей бюджет исчерпан одними внешними отказами, переходит в статус `TaskStatus.blocked` с пометкой `UNTESTED_WITHIN_CAPACITY` (требование не оценивалось).
+  4. **Защита от поглощающего вердикта `failed`:** в `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks` установлен заслон `ClaimService.isUntestedWithinCapacity(task)`: задача не переводится в `TaskStatus.failed`, сохраняя нетерминальный возобновляемый статус `blocked`.
+- **Заслоняющие тесты (137/137 green в изолированном контейнере Maven):**
+  - `DispatchAttemptBudgetTest` (9/9):
+    - `exhaustionWithOnlyExternalRefusals_markedUntestedWithinCapacityAndDoesNotReceiveTerminalFailed`: задача при одних внешних отказах получает `UNTESTED_WITHIN_CAPACITY`, фиксирует состав, никогда не переходит в `failed`, регистрирует институциональный факт в журнале.
+    - `exhaustionWithNonExternalRefusal_markedDispatchBudgetExhaustedWithoutUntestedTag`: при наличии отказа запроса (`jules_request_rejected`) задача помечается `DISPATCH_BUDGET_EXHAUSTED` с точным составом и не получает статус `UNTESTED_WITHIN_CAPACITY`.
+    - `attemptCountIsFaithfulAndNotDampened`: счётчик попыток честен и неизменен.
+  - `ProjectFlowServiceTest` (39/39):
+    - `untestedWithinCapacityTask_isPreservedInBlockedAndNeverRetiredToFailed`: фальсифицирующий заслон — чистильщик блокировок сохраняет задачу в `blocked` и никогда не выставляет `failed`.
+    - `nonUntestedBlockedTask_isRetiredToFailedWhenOrphaned`: контрольное опровержение — обычная зависшая задача без метки `UNTESTED_WITHIN_CAPACITY` переводится в `failed`.
+  - `AccountHealthServiceTest` (30/30) и `AccountHealthServiceLaw14Test` (7/7).
+  - Регрессионный пакет: `ContinuousOrchestrationServiceTest` (10/10), `VerdictGateTest` (14/14), `ReviewAdmissionLaw16Test` (10/10), `WatermarkMonotonicityLaw10Test` (6/6), `DispatchRefusalObservabilityLaw8Law12Test` (4/4), `ClaimServiceRaceGuardTest` (5/5), `UndeliveredReviewTaskExitTest` (3/3).
+
+**В работе дальше:**
+- Следующий пункт по разделу XVI `docs/FACTORY_MECHANISMS.md`: Предписание 16 («Круг самозаказа · `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` (D002) · закон 3, ограничение области находки»).

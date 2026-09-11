@@ -2036,6 +2036,9 @@ for title,n in c.most_common():
 решение принимать нельзя, это прямой путь к спору, измеренному в разделе XIV. Оставить как есть и записать
 границу: приоритет ранжирует, подчинение решает `TocSubordinationLever`.
 
+*Граница зафиксирована (2026-09-11):* приоритет ранжирует, подчинение решает `TocSubordinationLever`. В коде
+`BottleneckAwarePriorityService` решений простаивать нет (опровержение не выполняется, класс чист: 0 решений `idle`/`deny`/`skip`).
+
 *Опровержение:* найти в приоритете решение простаивать — это будет второй хозяин одного вопроса.
 
 ---
@@ -2084,6 +2087,8 @@ for title,n in c.most_common():
 *Заслон:* задача, все отказы которой внешние, при исчерпании не получает поглощающего вердикта.
 
 *Опровержение:* исчерпать предел одними внешними отказами и посмотреть на итоговый статус требования.
+
+*Статус заслона (2026-09-11):* держится. Счёт `refusedSessionCreations` не тронут (закон 12 / D007). `retireForExhaustedDispatchBudget` фиксирует точный состав отказов (внешние vs невнешние) и регистрирует факт в `DefectJournalEntity` (`INSTITUTIONAL_AUDIT` / `DISPATCH_BUDGET_EXHAUSTION_COMPOSITION`). При одних внешних отказах требование переводится в возобновляемое состояние `UNTESTED_WITHIN_CAPACITY` в статусе `blocked`. `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks` заслонён предикатом `ClaimService.isUntestedWithinCapacity` и не переводит требование в поглощающий `failed`. Заслонено тестами в `DispatchAttemptBudgetTest` и `ProjectFlowServiceTest`.
 
 ---
 

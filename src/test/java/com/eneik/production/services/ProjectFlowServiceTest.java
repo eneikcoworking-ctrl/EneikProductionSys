@@ -1129,4 +1129,86 @@ class ProjectFlowServiceTest {
         assertTrue(service.isReviewFallbackTask(savedTask));
         assertEquals(".eneik/records/review-verdict-1.json", service.reviewFallbackVerdictPath(savedTask));
     }
+
+    /**
+     * Prescription 15 (Law 12 / D007 INSTITUTIONAL_FACT_REGISTER):
+     * A task whose dispatch budget was exhausted solely by external refusals (UNTESTED_WITHIN_CAPACITY)
+     * must NEVER receive an absorbing terminal verdict (failed) by the orphaned blocked work sweeper.
+     */
+    @Test
+    void untestedWithinCapacityTask_isPreservedInBlockedAndNeverRetiredToFailed() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        project.setName("test-capacity-project");
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(TaskStatus.blocked);
+        task.setJulesDispatchStatus("UNTESTED_WITHIN_CAPACITY: dispatch budget exhausted (14/14 attempts); all refusals external (14 external, 0 non-external); requirement not evaluated");
+
+        TaskRepository taskRepo = mock(TaskRepository.class);
+        when(taskRepo.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(projectId, TaskStatus.blocked))
+                .thenReturn(List.of(task));
+
+        JulesSessionRepository julesRepo = mock(JulesSessionRepository.class);
+        when(julesRepo.findByTaskId(task.getId())).thenReturn(List.of());
+
+        ProjectFlowService service = serviceWithWishlistsAndWorker(
+                mock(WishlistRepository.class),
+                mock(PersistentWorkerSessionService.class),
+                julesRepo,
+                taskRepo,
+                mock(ClientDeliverableReadinessService.class));
+
+        service.recoverBlockedWork(projectId);
+
+        // Task must NOT have been converted to failed
+        assertEquals(TaskStatus.blocked, task.getStatus());
+        verify(taskRepo, never()).save(argThat(t -> t != null && t.getStatus() == TaskStatus.failed));
+    }
+
+    /**
+     * Prescription 15 Refutation:
+     * A task whose dispatch budget had non-external refusals is regular blocked work, and IS retired to failed.
+     */
+    @Test
+    void nonUntestedBlockedTask_isRetiredToFailedWhenOrphaned() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        project.setName("test-orphaned-project");
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(TaskStatus.blocked);
+        task.setJulesDispatchStatus("DISPATCH_BUDGET_EXHAUSTED: dispatch budget exhausted (14/14 attempts); composition: 13 external, 1 non-external");
+
+        TaskRepository taskRepo = mock(TaskRepository.class);
+        when(taskRepo.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(projectId, TaskStatus.blocked))
+                .thenReturn(List.of(task));
+
+        JulesSessionRepository julesRepo = mock(JulesSessionRepository.class);
+        when(julesRepo.findByTaskId(task.getId())).thenReturn(List.of());
+
+        ProjectFlowService service = serviceWithWishlistsAndWorker(
+                mock(WishlistRepository.class),
+                mock(PersistentWorkerSessionService.class),
+                julesRepo,
+                taskRepo,
+                mock(ClientDeliverableReadinessService.class));
+
+        service.recoverBlockedWork(projectId);
+
+        // Regular blocked task without UNTESTED_WITHIN_CAPACITY is retired to failed
+        assertEquals(TaskStatus.failed, task.getStatus());
+    }
 }

@@ -1,7 +1,10 @@
 package com.eneik.production.services;
 
+import com.eneik.production.kaizen.model.DefectJournalEntity;
+import com.eneik.production.kaizen.repository.DefectJournalRepository;
 import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.ClaimEntity;
+import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
@@ -12,10 +15,12 @@ import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.gate.GateOrchestrator;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,10 +48,11 @@ class DispatchAttemptBudgetTest {
     private final JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
     private final GateOrchestrator gateOrchestrator = mock(GateOrchestrator.class);
     private final ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+    private final DefectJournalRepository defectJournalRepository = mock(DefectJournalRepository.class);
 
     private final ClaimService claimService = new ClaimService(
             claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator,
-            readinessService);
+            readinessService, null, defectJournalRepository);
 
     private TaskEntity claimedTask(UUID id) {
         TaskEntity task = new TaskEntity();
@@ -150,5 +156,87 @@ class DispatchAttemptBudgetTest {
         claimService.releaseClaimToQueue(taskId, "jules_create_session_failed");
 
         verify(taskRepository, never()).save(any(TaskEntity.class));
+    }
+
+    /**
+     * Prescription 15 (Law 12 / D007 INSTITUTIONAL_FACT_REGISTER):
+     * Task whose refusals are all external transitions to UNTESTED_WITHIN_CAPACITY in status `blocked`,
+     * and never receives an absorbing terminal verdict (failed).
+     */
+    @Test
+    void exhaustionWithOnlyExternalRefusals_markedUntestedWithinCapacityAndDoesNotReceiveTerminalFailed() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = claimedTask(taskId);
+        wire(taskId, task, 7L, 14L);
+        when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.blocked))).thenReturn(1);
+
+        JulesSessionEntity s1 = new JulesSessionEntity();
+        s1.setTaskId(taskId);
+        s1.setStatus("failed");
+        s1.setClosureReason("jules_concurrent_capacity_exhausted: account reached Jules concurrent session limit.");
+
+        JulesSessionEntity s2 = new JulesSessionEntity();
+        s2.setTaskId(taskId);
+        s2.setStatus("failed");
+        s2.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit.");
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1, s2));
+
+        claimService.releaseClaimToQueue(taskId, "jules_precondition_unspecified: Jules cited a precondition");
+
+        // Status is set to blocked (non-terminal, renewable)
+        verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.failed);
+
+        // Jules dispatch status reflects composition and UNTESTED_WITHIN_CAPACITY
+        assertTrue(task.getJulesDispatchStatus().startsWith("UNTESTED_WITHIN_CAPACITY"));
+        assertTrue(task.getJulesDispatchStatus().contains("14/14 attempts"));
+        assertTrue(task.getJulesDispatchStatus().contains("14 external, 0 non-external"));
+        assertTrue(ClaimService.isUntestedWithinCapacity(task));
+
+        // Audit registered
+        verify(defectJournalRepository).save(any(DefectJournalEntity.class));
+    }
+
+    /**
+     * Prescription 15: If any refusal was non-external (e.g. jules_request_rejected where the executor refused
+     * the request itself), the task is marked DISPATCH_BUDGET_EXHAUSTED naming the composition, and is not
+     * marked UNTESTED_WITHIN_CAPACITY.
+     */
+    @Test
+    void exhaustionWithNonExternalRefusal_markedDispatchBudgetExhaustedWithoutUntestedTag() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = claimedTask(taskId);
+        wire(taskId, task, 7L, 14L);
+        when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.blocked))).thenReturn(1);
+
+        JulesSessionEntity s1 = new JulesSessionEntity();
+        s1.setTaskId(taskId);
+        s1.setStatus("failed");
+        s1.setClosureReason("jules_request_rejected: Jules refused the request itself, not the account. HTTP 400 INVALID_ARGUMENT");
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1));
+
+        claimService.releaseClaimToQueue(taskId, "jules_precondition_unspecified");
+
+        // Status is blocked
+        verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.failed);
+
+        // Jules dispatch status reflects non-external refusal present
+        assertTrue(task.getJulesDispatchStatus().startsWith("DISPATCH_BUDGET_EXHAUSTED"));
+        assertTrue(task.getJulesDispatchStatus().contains("13 external, 1 non-external"));
+        assertFalse(ClaimService.isUntestedWithinCapacity(task));
+    }
+
+    /**
+     * Prescription 15 Rule 1: "счёт не трогать — ёмкость действительно потрачена, запрос был сделан".
+     * refusedSessionCreations remains faithful and is not dampened or reset.
+     */
+    @Test
+    void attemptCountIsFaithfulAndNotDampened() {
+        UUID taskId = UUID.randomUUID();
+        when(julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatus(taskId, "failed")).thenReturn(14L);
+        assertEquals(14L, claimService.refusedSessionCreations(taskId));
     }
 }

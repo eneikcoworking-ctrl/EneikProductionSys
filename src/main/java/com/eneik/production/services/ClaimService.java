@@ -2,6 +2,8 @@ package com.eneik.production.services;
 
 import com.eneik.production.dto.ClaimDto;
 import com.eneik.production.models.persistence.*;
+import com.eneik.production.kaizen.model.DefectJournalEntity;
+import com.eneik.production.kaizen.repository.DefectJournalRepository;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
@@ -43,6 +45,7 @@ public class ClaimService {
     private final GateOrchestrator gateOrchestrator;
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private final PrReviewRepository prReviewRepository;
+    private final DefectJournalRepository defectJournalRepository;
 
     public enum ReviewAdmissionDecision {
         ADMIT("Review artifact present or role does not require code"),
@@ -89,7 +92,8 @@ public class ClaimService {
                         JulesSessionRepository julesSessionRepository,
                         GateOrchestrator gateOrchestrator,
                         com.eneik.production.services.ClientDeliverableReadinessService readinessService,
-                        PrReviewRepository prReviewRepository) {
+                        @org.springframework.beans.factory.annotation.Autowired(required = false) PrReviewRepository prReviewRepository,
+                        @org.springframework.beans.factory.annotation.Autowired(required = false) DefectJournalRepository defectJournalRepository) {
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
@@ -97,6 +101,17 @@ public class ClaimService {
         this.gateOrchestrator = gateOrchestrator;
         this.readinessService = readinessService;
         this.prReviewRepository = prReviewRepository;
+        this.defectJournalRepository = defectJournalRepository;
+    }
+
+    public ClaimService(ClaimRepository claimRepository,
+                        TaskRepository taskRepository,
+                        AccountRepository accountRepository,
+                        JulesSessionRepository julesSessionRepository,
+                        GateOrchestrator gateOrchestrator,
+                        com.eneik.production.services.ClientDeliverableReadinessService readinessService,
+                        PrReviewRepository prReviewRepository) {
+        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, prReviewRepository, null);
     }
 
     public ClaimService(ClaimRepository claimRepository,
@@ -105,7 +120,7 @@ public class ClaimService {
                         JulesSessionRepository julesSessionRepository,
                         GateOrchestrator gateOrchestrator,
                         com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
-        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, null);
+        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, null, null);
     }
 
     /**
@@ -631,21 +646,107 @@ public class ClaimService {
     // the same one the wishlist compiler already takes at its own retry cap, and not `failed`, which would
     // state a verdict nobody reached. `blocked` keeps the task recoverable by a human; what it does not do
     // is put the task back in front of the selector.
+    //
+    // Prescription 15 / INSTITUTIONAL_FACT_REGISTER (D007, Law 12):
+    // Count of attempts is NOT modified (capacity was indeed spent, request was made).
+    // The exhaustion record names the composition (external vs non-external refusals).
+    // A task whose budget is consumed solely by external refusals transitions to the renewable
+    // state UNTESTED_WITHIN_CAPACITY in status TaskStatus.blocked, and never receives an absorbing
+    // terminal verdict (TaskStatus.failed).
     private void retireForExhaustedDispatchBudget(UUID taskId, long refusals, long budget, String reason) {
         int written = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
         if (written == 0) {
             log.info("ClaimService: task {} reached a terminal status concurrently; dispatch-budget retirement skipped", taskId);
             return;
         }
+
+        List<JulesSessionEntity> failedSessions = julesSessionRepository.findByTaskId(taskId).stream()
+                .filter(s -> s.getExternalSessionId() == null && "failed".equalsIgnoreCase(s.getStatus()))
+                .toList();
+
+        long externalCount = 0;
+        long nonExternalCount = 0;
+        for (JulesSessionEntity s : failedSessions) {
+            if (isExternalDispatchRefusal(s.getClosureReason())) {
+                externalCount++;
+            } else {
+                nonExternalCount++;
+            }
+        }
+
+        long accounted = externalCount + nonExternalCount;
+        if (accounted < refusals) {
+            long delta = refusals - accounted;
+            if (isExternalDispatchRefusal(reason)) {
+                externalCount += delta;
+            } else {
+                nonExternalCount += delta;
+            }
+        }
+
+        final long finalExternalCount = externalCount;
+        final long finalNonExternalCount = nonExternalCount;
+        boolean allExternal = finalNonExternalCount == 0;
+        String dispatchStatus;
+        if (allExternal) {
+            dispatchStatus = String.format("UNTESTED_WITHIN_CAPACITY: dispatch budget exhausted (%d/%d attempts); all refusals external (%d external, %d non-external); requirement not evaluated. Last reason: %s",
+                    refusals, budget, finalExternalCount, finalNonExternalCount, reason != null ? reason : "<none>");
+        } else {
+            dispatchStatus = String.format("DISPATCH_BUDGET_EXHAUSTED: dispatch budget exhausted (%d/%d attempts); composition: %d external, %d non-external. Last reason: %s",
+                    refusals, budget, finalExternalCount, finalNonExternalCount, reason != null ? reason : "<none>");
+        }
+
         taskRepository.findById(taskId).ifPresent(task -> {
-            task.setJulesDispatchStatus(reason);
+            task.setStatus(TaskStatus.blocked);
+            task.setJulesDispatchStatus(dispatchStatus);
             taskRepository.save(task);
+
+            if (defectJournalRepository != null) {
+                UUID projectId = task.getProject() != null ? task.getProject().getId() : null;
+                String auditDesc = String.format("Task %s dispatch budget exhausted (%d/%d). Composition: %d external, %d non-external. Status: %s",
+                        taskId, refusals, budget, finalExternalCount, finalNonExternalCount, allExternal ? "UNTESTED_WITHIN_CAPACITY" : "DISPATCH_BUDGET_EXHAUSTED");
+                defectJournalRepository.save(new DefectJournalEntity(
+                        projectId, taskId, null, "INFO", "INSTITUTIONAL_AUDIT", "ClaimService",
+                        "DISPATCH_BUDGET_EXHAUSTION_COMPOSITION", auditDesc, (double) finalExternalCount));
+            }
         });
-        // Left in `blocked` with the reason on the task, and nothing waits for a person: the factory is
-        // autonomous (operator, 2026-08-29). createRecoveryWishlistForOrphanedBlockedTasks retires blocked
-        // tasks to `failed` on its own, and PlannedWorkRecoveryService resumes such a task once from there.
-        log.warn("Task {} left the dispatch queue: {} refused session creations against a budget of {}.",
-                taskId, refusals, budget);
+
+        log.warn("Task {} left the dispatch queue: {} refused session creations against a budget of {}. Status: {}",
+                taskId, refusals, budget, dispatchStatus);
+    }
+
+    public static boolean isExternalDispatchRefusal(String closureReason) {
+        if (closureReason == null || closureReason.isBlank()) {
+            return true;
+        }
+        String lower = closureReason.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("jules_request_rejected")
+                || lower.contains("target context is undetermined")
+                || lower.contains("no project found for task")
+                || lower.contains("invalid_argument")
+                || lower.contains("bad json")
+                || lower.contains("malformed")) {
+            return false;
+        }
+        return true;
+    }
+
+    public static boolean isExternalDispatchRefusal(JulesSessionEntity session) {
+        if (session == null) {
+            return true;
+        }
+        return isExternalDispatchRefusal(session.getClosureReason());
+    }
+
+    public static boolean isUntestedWithinCapacity(TaskEntity task) {
+        if (task == null) {
+            return false;
+        }
+        if (task.getStatus() != TaskStatus.blocked) {
+            return false;
+        }
+        String status = task.getJulesDispatchStatus();
+        return status != null && status.contains("UNTESTED_WITHIN_CAPACITY");
     }
 
     private boolean isTerminal(TaskStatus status) {

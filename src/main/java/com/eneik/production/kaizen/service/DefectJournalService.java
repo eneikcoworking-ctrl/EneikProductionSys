@@ -74,6 +74,7 @@ public class DefectJournalService {
     public static final java.util.Set<String> NON_DEFECT_AUDIT_CATEGORIES = java.util.Set.of(
             "INSTITUTIONAL_AUDIT",
             "ACCOUNT_LIFECYCLE_AUDIT",
+            "ACCOUNT_RECOVERY",
             "AUDIT_TRAIL"
     );
 

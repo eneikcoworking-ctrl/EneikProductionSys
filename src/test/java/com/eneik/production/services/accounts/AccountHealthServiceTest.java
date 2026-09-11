@@ -675,7 +675,7 @@ class AccountHealthServiceTest {
         List<DefectJournalEntity> entries = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             DefectJournalEntity e = new DefectJournalEntity(
-                    UUID.randomUUID(), null, null, "LOW", "ACCOUNT_HEALTH", account.getName(),
+                    UUID.randomUUID(), null, null, "LOW", "ACCOUNT_RECOVERY", account.getName(),
                     AccountHealthService.BUDGET_RECOVERY_DEFECT_TYPE, "recovery", 720.0);
             e.setCreatedAt(base.plus(Duration.ofHours(12 * i)));
             entries.add(e);
