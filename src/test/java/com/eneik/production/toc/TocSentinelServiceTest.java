@@ -239,11 +239,87 @@ public class TocSentinelServiceTest {
     }
 
     /**
-     * Flaw 3: Watchdog cadence is derived and refreshDbrStatus allows explicit re-evaluation.
-     * (ALONZO_CHERCH_21_DERIVED_CUTOFF)
+     * Flaw 3: Watchdog cadence is derived from shortest observed step duration (ALONZO_CHERCH_21_DERIVED_CUTOFF).
+     * Case 1: Without observations, watchdog relaxes to declared max-cadence bound to eliminate idle polling.
      */
     @Test
-    void watchdogCadenceAndExplicitRefreshSubordination() {
+    void derivedCadenceWithoutObservationsRelaxesToMaxBound() {
+        assertThat(graph.getAllNodes().stream().mapToLong(TocNode::getCompletedCount).sum()).isEqualTo(0L);
+        assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(sentinelService.getMaxCadenceMs());
+        assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(10000L);
+    }
+
+    /**
+     * Flaw 3: Watchdog cadence adapts dynamically to actual observed step throughput.
+     * Refutation test: Cadence MUST change when observed step durations change.
+     */
+    @Test
+    void derivedCadenceAdaptsDynamicallyToObservedStepDurations() {
+        sentinelService.setCadenceBounds(100L, 10000L);
+
+        // Record execution of 1200ms on STEP_A -> half is 600ms
+        TocNode nodeA = graph.getOrCreateNode("STEP_A");
+        nodeA.recordExecution(1_200_000_000L, true);
+
+        long cadence1 = sentinelService.computeDerivedWatchdogCadenceMs();
+        assertThat(cadence1).isEqualTo(600L);
+
+        // Record slower execution of 3000ms on STEP_B -> shortest is still STEP_A (1200ms), cadence remains 600ms
+        TocNode nodeB = graph.getOrCreateNode("STEP_B");
+        nodeB.recordExecution(3_000_000_000L, true);
+        assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(600L);
+
+        // Record faster execution of 500ms on STEP_C -> shortest becomes 500ms, cadence must adapt to 250ms
+        TocNode nodeC = graph.getOrCreateNode("STEP_C");
+        nodeC.recordExecution(500_000_000L, true);
+
+        long cadence2 = sentinelService.computeDerivedWatchdogCadenceMs();
+        assertThat(cadence2).isEqualTo(250L);
+        assertThat(cadence2).isNotEqualTo(cadence1); // Direct proof of dynamic adaptability
+    }
+
+    /**
+     * Flaw 3: Derived watchdog cadence is strictly clamped to declared min and max bounds.
+     */
+    @Test
+    void derivedCadenceClampsToDeclaredMinAndMaxBounds() {
+        sentinelService.setCadenceBounds(250L, 5000L);
+
+        // Sub-minimum case: ultra-fast step (80ms) -> half is 40ms, must clamp to minCadenceMs (250ms)
+        TocNode fastNode = graph.getOrCreateNode("FAST_STEP");
+        fastNode.recordExecution(80_000_000L, true);
+        assertThat(sentinelService.computeDerivedWatchdogCadenceMs()).isEqualTo(250L);
+
+        // Sub-maximum clamp case: configure high min/max, record very slow step (30s) -> half is 15s, must clamp to max (5000ms)
+        TocExecutionGraph slowGraph = new TocExecutionGraph();
+        TocSentinelService slowSentinel = new TocSentinelService(slowGraph, new TocAnomalyDetector(slowGraph), new TocOptimizer(slowGraph));
+        slowSentinel.setCadenceBounds(250L, 5000L);
+        slowGraph.getOrCreateNode("SLOW_STEP").recordExecution(30_000_000_000L, true);
+        assertThat(slowSentinel.computeDerivedWatchdogCadenceMs()).isEqualTo(5000L);
+    }
+
+    /**
+     * Single-Writer Lifecycle Ownership (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004).
+     * Node inFlight counter is owned and mutated strictly by TocSentinelService (enterStep/exitStep).
+     */
+    @Test
+    void inFlightCounterOwnedExclusivelyBySentinelServiceLifecycle() {
+        TocToken token = sentinelService.startExecution("OWNERSHIP_FLOW", 10);
+        assertThat(token.getStatus()).isEqualTo(TocToken.TokenStatus.ACTIVE);
+
+        // Step enter increments inFlight strictly within TocSentinelService
+        sentinelService.enterStep(token, "STAGE_EXCLUSIVE");
+        TocNode node = sentinelService.getNode("STAGE_EXCLUSIVE");
+        assertThat(node.getInFlightCount()).isEqualTo(1L);
+
+        // Step exit decrements inFlight strictly within TocSentinelService
+        sentinelService.exitStep(token, "STAGE_EXCLUSIVE", true);
+        assertThat(node.getInFlightCount()).isEqualTo(0L);
+        assertThat(node.getCompletedCount()).isEqualTo(1L);
+    }
+
+    @Test
+    void watchdogThrottlingSubordinationAndExplicitRefresh() {
         sentinelService.setMaxBufferCapacity(2);
 
         TocToken t1 = sentinelService.startExecution("FLOW_1", 10);

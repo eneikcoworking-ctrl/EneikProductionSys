@@ -7618,16 +7618,22 @@ meaning as use, private-language argument*. Сильная дословно: «�
 `BARCAN-TAG-01 ACTUALIST-OBJECT`, принцип топологии пространственно-временных границ, anchor *Parts and
 Places / formal ontology of boundaries and spatial parts*. Сильная дословно: «до разделения модулей
 объявлено, какой агрегат вправе менять каждую часть». Слабая: «классы разделены по размеру или по слоям».
-Опровержение: «найти поле, которое пишут два сервиса». **Форма: сильная.** Владение графом инкапсулировано
-в `TocSentinelService`: утечка внутренних объектов через геттеры ликвидирована, граф наружу не отдаётся.
+Опровержение: «найти поле, которое пишут два сервиса». **Форма: сильная.** Владение графом и узлами
+инкапсулировано в `TocSentinelService`: утечка внутренних объектов через геттеры ликвидирована, граф
+наружу не отдаётся. Счётчик «в работе» (`inFlightCount`) сведён к строго единственному владельцу: инкремент
+перенесён из `TocAnomalyDetector` в `TocSentinelService.enterStep`, декремент выполняется в
+`TocSentinelService.exitStep`. `TocAnomalyDetector` теперь только детектирует аномалии и ставит флаг застоя,
+`TocOptimizer` ставит загрузку и главное ограничение, а счётчиками и жизненным циклом узла владеет только
+`TocSentinelService`. Ни у одного поля нет двух сервисов-писателей. Опровержение снято.
 
 *Приведение к идеальной модели (Antigravity L2, 11 сентября 2026):*
 1. **Чистое чтение без изменения наблюдаемого (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013):**
    `TocOptimizer` сохраняет снимок `latestDbrStatus`. `TocSentinelService.getDbrStatus()` возвращает его чистым чтением без вызова `evaluateConstraintsAndDbr()`, без пересчёта входного потока и без изменения узлов `TocNode` (`setUtilization`, `setPrimaryConstraint`). Пересчёт графа изолирован в `periodicWatchdog()` и явном `refreshDbrStatus()`. Заслонено тестом `getDbrStatusDoesNotMutateGraphOrConstraintState()`.
-2. **Ликвидация утечки внутренних компонентов (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004):**
-   Геттеры `getGraph()`, `getAnomalyDetector()` и `getOptimizer()` удалены из `TocSentinelService`. Доступ ко всем операционным сущностям переведён на методы сервиса: `getToken(id)`, `getNode(name)`, `getAllNodes()` (unmodifiable), `getEdges()` (unmodifiable), `getActiveTokenCount()`, `getGlobalArrivalRatePerSec()`, `getCompletedCountAllNodes()`, `getMaxBufferCapacity()`, `setMaxBufferCapacity(cap)`. Сторонние сервисы (`KaizenService`, `SixSigmaAuditService`, `TocSentinelController`) избавлены от прямого хождения во внутренние компоненты. Заслонено тестом `partWholeEncapsulationEnforcedWithoutLeakyComponentGetters()`.
-3. **Обоснованная частота обхода (`ALONZO_CHERCH_21_DERIVED_CUTOFF`):**
-   Частота сторожа вынесена в конфигурацию `@Scheduled(fixedRateString = "${eneik.toc.sentinel-rate-ms:2000}")` и объявлена в `application.properties`: 2000 мс выведены из минимального цикла шага асинхронного пайплайна (~1.5–2.0с) для устранения эффекта Найквиста при расчёте входного потока и предотвращения холостого сжигания CPU. Заслонено тестом `watchdogCadenceAndExplicitRefreshSubordination()`.
+2. **Ликвидация утечки внутренних компонентов и единственный владелец счётчиков (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004):**
+   Геттеры `getGraph()`, `getAnomalyDetector()` и `getOptimizer()` удалены из `TocSentinelService`. Доступ ко всем операционным сущностям переведён на методы сервиса: `getToken(id)`, `getNode(name)`, `getAllNodes()` (unmodifiable), `getEdges()` (unmodifiable), `getActiveTokenCount()`, `getGlobalArrivalRatePerSec()`, `getCompletedCountAllNodes()`, `getMaxBufferCapacity()`, `setMaxBufferCapacity(cap)`. Сторонние сервисы (`KaizenService`, `SixSigmaAuditService`, `TocSentinelController`) избавлены от прямого хождения во внутренние компоненты. Инкремент `inFlightCount` узла перенесён из обнаружителя в фасад `TocSentinelService`. Заслонено тестами `partWholeEncapsulationEnforcedWithoutLeakyComponentGetters()` и `inFlightCounterOwnedExclusivelyBySentinelServiceLifecycle()`.
+3. **Выведенная динамическая частота обхода (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D008):**
+   Частота сторожа больше не является фиксированной константой в коде или настройке. `TocSentinelService` реализует `SchedulingConfigurer`, регистрируя динамический `Trigger`: период вычисляется как половина кратчайшей наблюдённой длительности шага в графе (`min(meanDurationMs) / 2` по критерию Найквиста–Шеннона), зажат объявленными границами `[minCadenceMs, maxCadenceMs]`. Без завершённых шагов сторож расслабляется до верхнего предела (`maxCadenceMs = 10000ms`), предотвращая пустой опрос при отсутствии нагрузки. При появлении наблюдений частота динамически адаптируется под реальную скорость шагов. Заслонено тестами `derivedCadenceWithoutObservationsRelaxesToMaxBound()`, `derivedCadenceAdaptsDynamicallyToObservedStepDurations()` (опровержение: период меняется при изменении замеров) и `derivedCadenceClampsToDeclaredMinAndMaxBounds()`.
+
 
 
 **`VideoAssetService`** (229 строк) — порождает видео-образы через тот же путь к внешней модели.

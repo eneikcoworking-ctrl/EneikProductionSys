@@ -76,8 +76,7 @@ public class TocAnomalyDetector {
             graph.recordTransition(currentActiveNode, nodeName);
         }
 
-        TocNode node = graph.getOrCreateNode(nodeName);
-        node.incrementInFlight();
+        graph.getOrCreateNode(nodeName);
         return true;
     }
 

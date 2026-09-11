@@ -10,7 +10,9 @@ import com.eneik.production.toc.model.TocNode;
 import com.eneik.production.toc.model.TocToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.SchedulingConfigurer;
+import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -27,20 +29,29 @@ import java.util.UUID;
  * - Anti-Mirror Telemetry (LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY / D013): Observation does not mutate
  *   the observed. getDbrStatus() returns the cached latestDbrStatus snapshot without recomputing graph node
  *   utilizations, changing node primary constraint flags, or resetting timestamps.
- * - Derived Cadence (ALONZO_CHERCH_21_DERIVED_CUTOFF): Watchdog rate is configurable via 'eneik.toc.sentinel-rate-ms'
- *   rather than fixed hardcoded integer.
- * - Part-Whole Ownership (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004): Buffer capacity controls (getMaxBufferCapacity,
- *   setMaxBufferCapacity) and refresh triggers (refreshDbrStatus) are owned and exposed directly by TocSentinelService
- *   rather than requiring callers (e.g. KaizenService) to manipulate internal TocOptimizer state directly.
+ * - Derived Dynamic Cadence (ALONZO_CHERCH_21_DERIVED_CUTOFF / D008): Watchdog cadence is dynamically derived
+ *   via Spring Trigger as half of the shortest observed step duration in the graph (Nyquist-Shannon sampling
+ *   criterion), strictly clamped between declared min-cadence and max-cadence bounds. In the absence of
+ *   step observations, the watchdog relaxes to max-cadence to eliminate idle polling waste.
+ * - Single-Writer Lifecycle Ownership (AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004): Node in-flight counters
+ *   are owned and mutated exclusively by TocSentinelService (incrementInFlight in enterStep, decrementInFlight
+ *   in exitStep). Leaky component getters (getGraph, getAnomalyDetector, getOptimizer) are eliminated, and all
+ *   operational queries/mutations (buffer capacity, unmodifiable node/edge collections) are encapsulated on the service.
  */
 @Service
-public class TocSentinelService {
+public class TocSentinelService implements SchedulingConfigurer {
 
     private static final Logger log = LoggerFactory.getLogger(TocSentinelService.class);
+
+    public static final long DEFAULT_MIN_CADENCE_MS = 250L;
+    public static final long DEFAULT_MAX_CADENCE_MS = 10000L;
 
     private final TocExecutionGraph graph;
     private final TocAnomalyDetector anomalyDetector;
     private final TocOptimizer optimizer;
+
+    private long minCadenceMs = DEFAULT_MIN_CADENCE_MS;
+    private long maxCadenceMs = DEFAULT_MAX_CADENCE_MS;
 
     public TocSentinelService(TocExecutionGraph graph,
                               TocAnomalyDetector anomalyDetector,
@@ -51,6 +62,29 @@ public class TocSentinelService {
         // Initial evaluation establishes baseline DbrStatus snapshot without waiting for first scheduled tick
         this.optimizer.evaluateConstraintsAndDbr();
         log.info("[TOC-SENTINEL][INIT] TOC Sentinel Service initialized successfully.");
+    }
+
+    @Value("${eneik.toc.sentinel.min-cadence-ms:250}")
+    public void setMinCadenceMs(long minCadenceMs) {
+        this.minCadenceMs = minCadenceMs;
+    }
+
+    @Value("${eneik.toc.sentinel.max-cadence-ms:10000}")
+    public void setMaxCadenceMs(long maxCadenceMs) {
+        this.maxCadenceMs = maxCadenceMs;
+    }
+
+    public long getMinCadenceMs() {
+        return minCadenceMs;
+    }
+
+    public long getMaxCadenceMs() {
+        return maxCadenceMs;
+    }
+
+    public void setCadenceBounds(long minMs, long maxMs) {
+        this.minCadenceMs = minMs;
+        this.maxCadenceMs = maxMs;
     }
 
     /**
@@ -88,6 +122,8 @@ public class TocSentinelService {
 
         boolean allowed = anomalyDetector.checkAndRegisterStepEnter(token, stepName);
         if (allowed) {
+            TocNode node = graph.getOrCreateNode(stepName);
+            node.incrementInFlight();
             log.info("[TOC-SENTINEL][STEP_ENTER] Token '{}' entered step '{}'. Active path: {}",
                     token.getTokenId(), stepName, token.getCallStack());
         }
@@ -167,12 +203,57 @@ public class TocSentinelService {
         }
     }
 
+    @Override
+    public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
+        taskRegistrar.addTriggerTask(
+                this::periodicWatchdog,
+                triggerContext -> {
+                    long delayMs = computeDerivedWatchdogCadenceMs();
+                    Instant lastCompletion = triggerContext.lastCompletion();
+                    Instant base = (lastCompletion != null) ? lastCompletion : Instant.now();
+                    return base.plusMillis(delayMs);
+                }
+        );
+    }
+
     /**
-     * Scheduled periodic background watchdog task.
-     * Evaluates dynamic stalls, identifies primary constraint, and updates Drum-Buffer-Rope (DBR) state.
-     * Derived Cadence: Configurable via 'eneik.toc.sentinel-rate-ms' (default 2000 ms).
+     * Computes the dynamic watchdog cadence derived from observed step durations in the execution graph
+     * (ALONZO_CHERCH_21_DERIVED_CUTOFF / D008).
+     *
+     * In accordance with the Nyquist-Shannon sampling criterion, tracking bottleneck migrations and queue
+     * buildup reliably without aliasing requires an inspection cadence at least twice as fast as the
+     * shortest step cycle:
+     *     cadence = min(meanDurationMs) / 2
+     *
+     * When no step observations exist in the graph, the cadence relaxes to maxCadenceMs to eliminate
+     * idle polling waste. When step observations exist, the period scales dynamically with actual throughput
+     * and is strictly clamped between minCadenceMs and maxCadenceMs.
      */
-    @Scheduled(fixedRateString = "${eneik.toc.sentinel-rate-ms:2000}")
+    public long computeDerivedWatchdogCadenceMs() {
+        double shortestMeanMs = -1.0;
+
+        for (TocNode node : graph.getAllNodes()) {
+            if (node.getCompletedCount() > 0) {
+                double mean = node.getMeanDurationMs();
+                if (mean > 0 && (shortestMeanMs < 0 || mean < shortestMeanMs)) {
+                    shortestMeanMs = mean;
+                }
+            }
+        }
+
+        if (shortestMeanMs < 0) {
+            // No completed step observations in graph: relax to max bound
+            return maxCadenceMs;
+        }
+
+        long derivedMs = Math.round(shortestMeanMs / 2.0);
+        return Math.max(minCadenceMs, Math.min(maxCadenceMs, derivedMs));
+    }
+
+    /**
+     * Periodic background watchdog task executed dynamically via Spring Trigger.
+     * Evaluates dynamic stalls, identifies primary constraint, and updates Drum-Buffer-Rope (DBR) state.
+     */
     public void periodicWatchdog() {
         try {
             anomalyDetector.scanForStalls();
