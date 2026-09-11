@@ -59,6 +59,7 @@ public class ContinuousOrchestrationService {
     private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
     private final com.eneik.production.services.judgment.DeliveredWorkJudgmentService deliveredWorkJudgmentService;
     private final com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever;
+    private final com.eneik.production.services.verdict.AutonomousVerdictObservationService autonomousVerdictObservationService;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
@@ -80,6 +81,35 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
                                          com.eneik.production.services.judgment.DeliveredWorkJudgmentService deliveredWorkJudgmentService,
                                          com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever) {
+        this(projectRepository, projectFlowService, accountRepository, julesSessionRepository, julesDispatchService,
+                wishlistRepository, technicalLeadCompiler, mlPredictionServiceClient, taskRepository,
+                systemProgressTracker, settingsService, plannedWorkRecoveryService, branchGarbageCollectorService,
+                gitHubPullRequestService, operationalPolicyService, accountHealthService, productLaunchabilityService,
+                clientRuntimeObservabilityService, deliveredWorkJudgmentService, tocSubordinationLever, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public ContinuousOrchestrationService(ProjectRepository projectRepository,
+                                         ProjectFlowService projectFlowService,
+                                         AccountRepository accountRepository,
+                                         com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
+                                         com.eneik.production.services.jules.JulesDispatchService julesDispatchService,
+                                         com.eneik.production.repositories.WishlistRepository wishlistRepository,
+                                         com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler,
+                                         MLPredictionServiceClient mlPredictionServiceClient,
+                                         com.eneik.production.repositories.TaskRepository taskRepository,
+                                         com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
+                                         com.eneik.production.services.settings.SystemSettingsService settingsService,
+                                         PlannedWorkRecoveryService plannedWorkRecoveryService,
+                                         com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
+                                         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                                         OperationalPolicyService operationalPolicyService,
+                                         com.eneik.production.services.accounts.AccountHealthService accountHealthService,
+                                         com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService,
+                                         com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
+                                         com.eneik.production.services.judgment.DeliveredWorkJudgmentService deliveredWorkJudgmentService,
+                                         com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever,
+                                         com.eneik.production.services.verdict.AutonomousVerdictObservationService autonomousVerdictObservationService) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -100,6 +130,7 @@ public class ContinuousOrchestrationService {
         this.clientRuntimeObservabilityService = clientRuntimeObservabilityService;
         this.deliveredWorkJudgmentService = deliveredWorkJudgmentService;
         this.tocSubordinationLever = tocSubordinationLever;
+        this.autonomousVerdictObservationService = autonomousVerdictObservationService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -149,6 +180,18 @@ public class ContinuousOrchestrationService {
                             + "check this tick fails closed: {}", project.getId(), e.getMessage());
                     flowSnapshot = null;
                 }
+
+                // 2026-09-11 (Prescription 8, D011 Teleosemantic Feedback): autonomous reader of layer
+                // verdicts. Observes composite layer rulings on declared propositions; records refusals
+                // to DefectJournalService on state transitions (delta-only, no duplicate spam).
+                if (autonomousVerdictObservationService != null) {
+                    try {
+                        autonomousVerdictObservationService.observe(project.getId());
+                    } catch (Exception e) {
+                        log.error("Continuous Orchestration: layer verdict observation failed for project {}", project.getId(), e);
+                    }
+                }
+
                 // 2026-08-14 (bug-hunt sweep): these 3 calls used to run unguarded, unlike every other step
                 // in this loop. An uncaught exception here would skip the rest of THIS project's steps below
                 // AND propagate out of the whole method, aborting every subsequent project in activeProjects

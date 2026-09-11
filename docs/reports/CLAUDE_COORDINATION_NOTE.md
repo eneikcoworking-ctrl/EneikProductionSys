@@ -489,7 +489,32 @@
     - `parseDirectoryFileNamesReturnsEmptyForNullOrNonArray`: проверяет безопасность при пустом/некорректном ответе.
   - Регрессия: `ProductLaunchabilityServiceTest` (22/22), `ProductCapabilityServiceTest` (13/13), `ClientRuntimeObservabilityServiceTest` (29/29), `GitHubPullRequestServiceTest` (10/10), `FailureDemarcationLaw22Test` (5/5) — 79/79 green.
 
+**Закрыто (Такт 26):** Предписание 8 (`FACTORY_MECHANISMS.md`, раздел XVI §8, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011 Perception failure) — автономный читатель вердикта решётки слоёв с дельта-записью в журнал дефектов:
+- **Ликвидация глухоты конвейера к отказам слоёв (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011):**
+  - До сих пор вердикт решётки (`VerdictReconciliation`) опрашивался только по HTTP через `VerdictController` или через выключенный `VerdictGate`. Отказы слоёв (например, 9 отказов ролей доктрины) были не слышны автономному циклу оркестрации.
+  - Создан сервис `AutonomousVerdictObservationService` в пакете `com.eneik.production.services.verdict`.
+  - Внедрён в `ContinuousOrchestrationService.continuousOrchestrate` на тике каждого активного проекта (`LogScope.project`) с изолированным try/catch.
+  - Сохранён инвариант предписания 9: полномочия гейтов не расширялись, блокировок не добавлено — читатель сугубо наблюдательный (`observe` и запись в журнал).
+- **Защита от зашумления журнала дефектов и искажения доверия:**
+  - Реализован дельта-реестр активных отказов (`activeRefusals: ConcurrentHashMap<RefusalKey, String>`).
+  - Запись в `DefectJournalService` производится **строго при смене состояния**: новый отказ либо изменение причины отказа по ключу `[projectId, layer, proposition]`.
+  - Повторные тики с идентичным отказом производят ровно **0** записей в журнал (подавление дублирующего шума ~540 записей/час при 9 отказах доктрины на 60-секундном тике).
+  - При переходе предложения обратно в `PERMIT` или `ABSTAIN` (или исчезновении) отказ снимается из реестра, гарантируя, что любая будущая регрессия будет зафиксирована заново как новое событие.
+  - Воздержания (`ABSTAIN`) как эпистемический долг не трактуются как отказы и дефектов не порождают.
+  - Поддерживается конфигурируемый каденс (`verdict.observation.cadence-ticks`, по умолчанию 1) с возможностью принудительного опроса (`observe(projectId, true)`).
+- **Заслоняющие тесты:**
+  - `AutonomousVerdictObservationServiceTest`:
+    - `falsificationHarness_consecutiveTicksWithSameRefusalProducesSingleDefectRecord`: слой отказывает два тика подряд — ровно 1 запись; причина сменилась — ровно 2-я запись; слой переходит в PERMIT — 0 записей и очистка реестра; повторный отказ — 3-я запись.
+    - `abstentionProducesZeroDefectRecords`: воздержания не порождают записей в журнале.
+    - `multipleLayersAndPropositionsTrackedIndependently`: независимое ведение реестров нескольких слоёв и предложений.
+    - `exceptionInReconciliationHandledGracefully`: сбой сведений изолируется и не роняет поток.
+    - `cadenceThrottlingSkipsIntermediateTicksWhenConfigured`: пропуск промежуточных тиков при каденсе > 1 и обход через force.
+    - `sanitizeDefectTypeHandlesHyphensAndSpaces`: нормализация типов дефектов (`DOCTRINE_REFUSAL`, `SIX_SIGMA_REFUSAL`).
+  - `ContinuousOrchestrationServiceTest`:
+    - `continuousOrchestrateDelegatesVerdictObservationForActiveProjects`: проверяет вызов `observe(projectId)` на тике для каждого активного проекта.
+  - Регрессия: `AutonomousVerdictObservationServiceTest` (6/6), `ContinuousOrchestrationServiceTest` (7/7), `AcceptanceVerdictLayerTest` (7/7), `InfrastructureVerdictLayerTest` (8/8), `RuntimeVerdictLayerTest` (6/6), `VerdictGateTest` (8/8), `VerdictReconciliationTest` (8/8) — 50/50 green.
+
 **В работе дальше:**
-- **Предписание 8** (`DefectJournalService` / чтение вердиктов слоёв в автономном потоке) — разблокирует предписание 9.
+- **Предписание 9** (`VerdictGate` — теперь предписание 8 выполнено и разблокировало анализ гейта).
 - **Предписание 23** (восстановление выключенных аккаунтов, пп. 2–4).
 

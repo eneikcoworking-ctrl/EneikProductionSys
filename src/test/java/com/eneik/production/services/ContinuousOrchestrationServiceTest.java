@@ -295,6 +295,44 @@ class ContinuousOrchestrationServiceTest {
         assertEquals(true, duplicated);
     }
 
+    @Test
+    void continuousOrchestrateDelegatesVerdictObservationForActiveProjects() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectEntity activeProject = project(UUID.randomUUID(), "active-test", ProjectStatus.active);
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active))
+                .thenReturn(List.of(activeProject));
+
+        var verdictObserver = mock(com.eneik.production.services.verdict.AutonomousVerdictObservationService.class);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository,
+                mock(ProjectFlowService.class),
+                mock(AccountRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class),
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                mock(TaskRepository.class),
+                new SystemProgressTracker(),
+                mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class),
+                verdictObserver
+        );
+
+        service.continuousOrchestrate();
+
+        verify(verdictObserver, times(1)).observe(activeProject.getId());
+    }
+
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {
         ProjectEntity project = new ProjectEntity();
         project.setId(id);
