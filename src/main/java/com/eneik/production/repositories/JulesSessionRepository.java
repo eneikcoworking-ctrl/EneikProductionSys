@@ -75,4 +75,9 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
             + "WHERE a.id = s.accountId AND a.name = :accountName "
             + "AND s.externalSessionId IS NOT NULL AND s.externalSessionId <> 'skipped'")
     Instant latestAcceptedSessionAtForAccount(@Param("accountName") String accountName);
+
+    @Query("SELECT s.accountId, COUNT(s) FROM JulesSessionEntity s "
+            + "WHERE s.createdAt >= :since AND s.accountId IS NOT NULL "
+            + "GROUP BY s.accountId")
+    List<Object[]> countDispatchedSessionsByAccountSince(@Param("since") Instant since);
 }

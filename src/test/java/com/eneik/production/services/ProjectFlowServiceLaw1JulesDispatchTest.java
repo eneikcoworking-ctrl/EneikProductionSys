@@ -166,4 +166,35 @@ class ProjectFlowServiceLaw1JulesDispatchTest {
         verify(julesDispatchService).dispatch(compilerTask, account.getId());
         verify(accountRepository, never()).lockNextJulesAccountWithCapacity(any(), any(), anyInt(), any(), anyInt(), any());
     }
+
+    @Test
+    void falsificationHarness_allAccountsDisabledReportsDisabledStatusWithoutCapacityWord() {
+        // Prescription 23 Falsification Barrier (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012):
+        // When all accounts are disabled, the factory reports "disabled" / "выключены",
+        // and strictly MUST NOT report "capacity" / "ёмкость".
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-05");
+        task.setRole(role);
+        task.setStatus(TaskStatus.queued);
+
+        when(taskRepository.findById(task.getId())).thenReturn(Optional.of(task));
+        when(accountRepository.lockNextJulesAccountWithCapacity(any(), any(), anyInt(), any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+        when(accountRepository.countLiveAccounts()).thenReturn(5L);
+        when(accountRepository.countByEnabledFalseAndStatusNot(com.eneik.production.models.persistence.AccountStatus.decommissioned))
+                .thenReturn(5L);
+
+        boolean dispatched = ReflectionTestUtils.invokeMethod(service, "dispatchToGeneralPool",
+                task, java.util.Set.of(), null, null);
+
+        assertThat(dispatched).isFalse();
+        assertThat(task.getJulesDispatchStatus()).isNotNull();
+        assertThat(task.getJulesDispatchStatus()).contains("disabled");
+        assertThat(task.getJulesDispatchStatus().toLowerCase()).doesNotContain("capacity");
+        assertThat(task.getJulesDispatchStatus().toLowerCase()).doesNotContain("ёмкость");
+        verify(taskRepository).save(task);
+    }
 }

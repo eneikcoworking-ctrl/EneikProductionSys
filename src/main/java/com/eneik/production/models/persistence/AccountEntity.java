@@ -88,6 +88,9 @@ public class AccountEntity {
             this.statusChangedAt = Instant.now();
         }
         this.status = status;
+        if (status == AccountStatus.decommissioned) {
+            this.enabled = false;
+        }
     }
     public Instant getStatusChangedAt() { return statusChangedAt; }
     public String getCapabilities() { return capabilities; }
@@ -103,7 +106,15 @@ public class AccountEntity {
     public String getGithubUsername() { return githubUsername; }
     public void setGithubUsername(String githubUsername) { this.githubUsername = githubUsername; }
     public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public void setEnabled(boolean enabled) {
+        if (enabled && this.status == AccountStatus.decommissioned) {
+            throw new IllegalStateException("Account in status 'decommissioned' cannot be enabled; change status to operational first");
+        }
+        if (this.enabled != enabled) {
+            this.statusChangedAt = Instant.now();
+        }
+        this.enabled = enabled;
+    }
     public int getSessionsDispatchedToday() { return sessionsDispatchedToday; }
     public void setSessionsDispatchedToday(int sessionsDispatchedToday) { this.sessionsDispatchedToday = sessionsDispatchedToday; }
     public Integer getMaxConcurrentSessions() { return maxConcurrentSessions; }

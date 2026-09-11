@@ -543,7 +543,30 @@
   - `ClientRuntimeObservabilityServiceTest`: 29/29 green.
   - Регрессия: 57/57 green.
 
+**Закрыто (Такт 29):** Предписание 23 (`FACTORY_MECHANISMS.md`, раздел XVI §23) — единый жизненный цикл аккаунтов, институциональный факт с аудитом, деривативный порог монополии и заслон против подмены «выключен» на «ёмкость»:
+- **Реестр институциональных фактов (`INSTITUTIONAL_FACT_REGISTER` / D007 Evidence gap):**
+  - Любая мутация флага `enabled` или статуса аккаунта через `PATCH /api/accounts/{id}` в `AccountController` порождает неизменяемую институциональную запись аудита в `DefectJournalEntity` с типом `ACCOUNT_STATE_TRANSITION`, указанием правила (`ACCOUNT_DECOMMISSION_RULE`, `ACCOUNT_LIFECYCLE_ENABLEMENT_RULE`, `ACCOUNT_OPERATIONAL_STATUS_RULE`), старого и нового значений, причины и временной метки.
+- **Единый жизненный цикл и разрешение противоречий (`ACTUAL_OBJECT_REGISTER` / D002, `TRUTH_STATUS_TABLE` / D012):**
+  - Устранено двоевластие между `status=decommissioned` и `enabled=false`.
+  - В `AccountEntity`: перевод статуса в `decommissioned` атомарно сбрасывает `enabled = false`; попытка установить `enabled = true` на списанном аккаунте отвергается с `IllegalStateException` (в контроллере — HTTP 400 с явным объяснением).
+  - В `AccountRepository` и `AccountHealthService.recoverEligibleAccounts`: внедрена JPQL-нормализация `normalizeDecommissionedAccounts()` (`UPDATE AccountEntity a SET a.enabled = false WHERE a.status = 'decommissioned' AND a.enabled = true`), очищающая исторические противоречивые строки БД при каждом обходе.
+- **Отказ от необратимого авто-списания и предложение к возврату (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010):**
+  - В `AccountHealthService.recoverEligibleAccounts`: автоматическое необратимое списание исключено. Аккаунты, выключенные более 24 часов (`statusChangedAt`), логируются как «предлагается к возврату» без самовольного перевода в `decommissioned`.
+  - При `candidates.isEmpty()` и наличии выключенных аккаунтов выводится явное эпистемическое сообщение: `No eligible accounts found for recovery (N operational accounts currently disabled)`.
+- **Математически выведенный порог монополии (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):**
+  - Вместо жестко зашитого числа (например 0.75 или 0.90) внедрен `derivedMonopolyCutoff(int livePoolSize)`: порог монополии вычисляется от живого пула $N$ как $(N-1)/N$, ограниченный отрезком $[0.70, 0.90]$ (для $N=4$ порог 0.75, для $N=10$ — 0.90).
+  - При превышении порога в 6-часовом окне раздач логируется предупреждение о концентрации без блокировки.
+- **Заслон фальсификации против подмены понятий («выключен» вместо «ёмкость»):**
+  - В `ProjectFlowService.dispatchToGeneralPool`: если пул пуст и все операционные аккаунты выключены (`disabledAccounts >= liveAccounts`), статус задачи выставляется как `"All operational Jules accounts are disabled (N disabled)..."`.
+  - Заслон строго гарантирует: сообщение лога и статус задачи **не содержат** слова «capacity» / «ёмкость».
+  - В `BottleneckDetectionService` выключенные аккаунты выделены в отдельную метрику `disabledAccounts` и явно перечисляются в причине узкого места, не маскируясь под нехватку слотов.
+  - В `ContinuousOrchestrationService` затор по причине отключения всех аккаунтов отделен от легитимной занятости задачами.
+- **Заслоняющие тесты (34/34 green в контейнере Maven):**
+  - `AccountLifecycleInvariantTest` (4/4): аудит институциональных фактов, `decommissioned` влечет `enabled=false`, отказ включения списанного (400), guard на сущности.
+  - `ProjectFlowServiceLaw1JulesDispatchTest` (4/4): включая `falsificationHarness_allAccountsDisabledReportsDisabledStatusWithoutCapacityWord`.
+  - `AccountHealthServiceTest` (23/23): проверка нормализации, вывод N выключенных, предложение к возврату >24ч, Church derived cutoff (N=1, 4, 10, 100), монополия.
+  - `BottleneckDetectionServiceTest` (3/3): разделение выключенных и занятых аккаунтов.
+
 **В работе дальше:**
-- **Предписание 9** (`VerdictGate` — теперь предписание 8 выполнено и разблокировало анализ гейта).
-- **Предписание 23** (восстановление выключенных аккаунтов, пп. 2–4).
+- **Предписание 9** (`VerdictGate` — анализ условий готовности к включению гейта после выполнения предписаний 8 и 24).
 

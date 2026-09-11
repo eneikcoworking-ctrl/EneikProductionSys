@@ -507,7 +507,17 @@ public class ContinuousOrchestrationService {
                     log.warn("SYSTEM STALLED: Branch Garbage Collector not triggered because no review task with a PR URL is actionable.");
                 }
             } else {
-                setSystemStatus("busy_with_actionable_work");
+                List<com.eneik.production.models.persistence.AccountEntity> operational = accountRepository.findAll().stream()
+                        .filter(a -> a.getStatus() != com.eneik.production.models.persistence.AccountStatus.decommissioned)
+                        .toList();
+                long disabledCount = operational.stream().filter(a -> !a.isEnabled()).count();
+                if (!operational.isEmpty() && disabledCount == operational.size()) {
+                    log.error("SYSTEM STALLED: all {} operational accounts are disabled (enabled=false); actionable work cannot be dispatched: {}.",
+                            disabledCount, work.describe());
+                    setSystemStatus("stalled");
+                } else {
+                    setSystemStatus("busy_with_actionable_work");
+                }
             }
         } catch (Exception e) {
             log.error("Continuous Orchestration: Failed to run system stall check", e);

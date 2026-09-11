@@ -68,4 +68,27 @@ class BottleneckDetectionServiceTest {
         assertEquals(accountId, bottlenecks.get(0).accountId());
         assertEquals(6L, bottlenecks.get(0).expiredCount24h());
     }
+
+    @Test
+    void detectNoFreeJulesSlotExplicitlyReportsDisabledAccounts() {
+        String tag = "BARCAN-TAG-08";
+        QueueDashboardDto.TagCountDto row = new QueueDashboardDto.TagCountDto(tag, 2L, 15L);
+        when(taskRepository.queuedGroupedByTag()).thenReturn(List.of(row));
+        when(accountRepository.existsJulesAccountWithCapacity(eq(tag), anyInt())).thenReturn(false);
+
+        com.eneik.production.models.persistence.AccountEntity disabledAccount = new com.eneik.production.models.persistence.AccountEntity();
+        disabledAccount.setId(UUID.randomUUID());
+        disabledAccount.setName("acc-disabled");
+        disabledAccount.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
+        disabledAccount.setEnabled(false);
+
+        when(accountRepository.findAll()).thenReturn(List.of(disabledAccount));
+
+        List<BottleneckDto> bottlenecks = service.detect();
+
+        assertEquals(1, bottlenecks.size());
+        assertEquals("no_free_jules_slot", bottlenecks.get(0).type());
+        assertTrue(bottlenecks.get(0).reason().contains("disabled=1"));
+        assertTrue(bottlenecks.get(0).reason().contains("operational account(s) are disabled"));
+    }
 }

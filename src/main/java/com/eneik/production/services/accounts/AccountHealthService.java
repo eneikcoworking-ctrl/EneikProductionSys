@@ -17,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -128,6 +130,15 @@ public class AccountHealthService {
 
     @Value("${jules.offline-account-relaxation-minutes:15}")
     private int offlineRelaxationMinutes = 15;
+
+    @Value("${jules.disabled-account-review-threshold-hours:24}")
+    private int disabledReviewThresholdHours = 24;
+
+    @Value("${jules.account-monopoly-window-hours:6}")
+    private int monopolyWindowHours = 6;
+
+    @Value("${jules.account-monopoly-min-sessions:10}")
+    private int monopolyMinSessions = 10;
 
     private java.util.Random random = new java.util.Random();
 
@@ -380,6 +391,9 @@ public class AccountHealthService {
      */
     @Transactional
     public int recoverEligibleAccounts() {
+        // ACTUAL_OBJECT_REGISTER (D002): unify lifecycle - decommissioned accounts cannot be enabled.
+        accountRepository.normalizeDecommissionedAccounts();
+
         List<AccountEntity> blocked = accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked);
         Instant now = Instant.now();
         int recovered = 0;
@@ -414,7 +428,92 @@ public class AccountHealthService {
             }
         }
 
+        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012):
+        // Absorbing state visibility: disabled accounts must not be invisible to the recovery sweep.
+        // When recovery candidates are zero, report disabled operational accounts.
+        List<AccountEntity> disabledOperational = accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
+        if (!disabledOperational.isEmpty()) {
+            if (blocked.isEmpty() && offline.isEmpty()) {
+                log.info("AccountHealthService: zero recovery candidates in pool; {} operational account(s) are currently disabled (enabled=false)",
+                        disabledOperational.size());
+            }
+            for (AccountEntity account : disabledOperational) {
+                Instant disabledSince = account.getStatusChangedAt() != null
+                        ? account.getStatusChangedAt()
+                        : account.getLastHeartbeat();
+                if (disabledSince != null && Duration.between(disabledSince, now).toHours() >= disabledReviewThresholdHours) {
+                    log.warn("AccountHealthService: account '{}' has been disabled for {}h (since {}); предлагается к возврату в пул оператором",
+                            account.getName(), Duration.between(disabledSince, now).toHours(), disabledSince);
+                }
+            }
+        }
+
+        // ALONZO_CHERCH_21_DERIVED_CUTOFF (D010):
+        // Inspect single-account monopoly over rolling window against derived cutoff.
+        checkAccountMonopoly(now);
+
         return recovered;
+    }
+
+    /**
+     * Alonzo Church derived cutoff (ALONZO_CHERCH_21_DERIVED_CUTOFF / D010):
+     * Cutoff is derived from the live pool size N, rather than an arbitrary constant.
+     * Fair share is 1/N. Cutoff scales with (N - 1) / N, bounded by declared floor (0.70) and ceiling (0.90).
+     * For degenerate pools (N <= 1), returns 1.0 (no monopoly possible).
+     */
+    public static double derivedMonopolyCutoff(int livePoolSize) {
+        if (livePoolSize <= 1) {
+            return 1.0;
+        }
+        double derived = (double) (livePoolSize - 1) / livePoolSize;
+        return Math.min(0.90, Math.max(0.70, derived));
+    }
+
+    void checkAccountMonopoly(Instant now) {
+        try {
+            long livePoolSize = accountRepository.countLiveAccounts();
+            if (livePoolSize <= 1) {
+                return;
+            }
+            Instant windowStart = now.minus(Duration.ofHours(monopolyWindowHours));
+            List<Object[]> sessionCounts = julesSessionRepository.countDispatchedSessionsByAccountSince(windowStart);
+            if (sessionCounts == null || sessionCounts.isEmpty()) {
+                return;
+            }
+            long totalSessions = 0;
+            Map<UUID, Long> countsByAccount = new HashMap<>();
+            for (Object[] row : sessionCounts) {
+                if (row != null && row.length >= 2 && row[0] instanceof UUID accId && row[1] instanceof Number count) {
+                    long c = count.longValue();
+                    countsByAccount.put(accId, c);
+                    totalSessions += c;
+                }
+            }
+            if (totalSessions < monopolyMinSessions) {
+                return;
+            }
+
+            double cutoff = derivedMonopolyCutoff((int) livePoolSize);
+            for (Map.Entry<UUID, Long> entry : countsByAccount.entrySet()) {
+                double share = (double) entry.getValue() / totalSessions;
+                if (share >= cutoff) {
+                    String accountName = accountRepository.findById(entry.getKey())
+                            .map(AccountEntity::getName)
+                            .orElse(entry.getKey().toString());
+                    log.warn("AccountHealthService / rotation: monopoly detected on account '{}': carrying {}% of dispatches ({}/{}) over past {}h against live pool of {} accounts (derived cutoff {}%)",
+                            accountName, Math.round(share * 100), entry.getValue(), totalSessions,
+                            monopolyWindowHours, livePoolSize, Math.round(cutoff * 100));
+                    defectJournalRepository.save(new DefectJournalEntity(
+                            null, null, null, "HIGH", HEALTH_CATEGORY, accountName,
+                            "ACCOUNT_MONOPOLY_CONCENTRATION",
+                            "Account '" + accountName + "' monopoly detected: carrying " + Math.round(share * 100) +
+                                    "% of dispatches (" + entry.getValue() + "/" + totalSessions + ") against pool of " + livePoolSize,
+                            share));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("AccountHealthService: failed to check account monopoly: {}", e.getMessage());
+        }
     }
 
     /**

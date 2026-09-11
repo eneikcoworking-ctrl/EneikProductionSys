@@ -3772,8 +3772,27 @@ public class ProjectFlowService {
                             ));
             if (accountOpt.isEmpty()) {
                 if (exactAccountName != null) {
-                    log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
-                            exactAccountName, task.getId());
+                    Optional<AccountEntity> namedAccOpt = accountRepository.findByName(exactAccountName);
+                    if (namedAccOpt.isPresent() && !namedAccOpt.get().isEnabled()) {
+                        log.warn("Wishlist compiler account '{}' is disabled (enabled=false); task {} stays queued for the next cycle",
+                                exactAccountName, task.getId());
+                    } else {
+                        log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
+                                exactAccountName, task.getId());
+                    }
+                    return false;
+                }
+                long liveAccounts = accountRepository.countLiveAccounts();
+                long disabledAccounts = accountRepository.countByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
+                if (liveAccounts > 0 && disabledAccounts >= liveAccounts) {
+                    String disabledStatus = "All operational Jules accounts are disabled (" + disabledAccounts + " disabled); role context "
+                            + task.getRole().getTag();
+                    if (!disabledStatus.equals(task.getJulesDispatchStatus())) {
+                        task.setJulesDispatchStatus(disabledStatus);
+                        taskRepository.save(task);
+                    }
+                    log.warn("All operational Jules accounts are disabled ({} disabled); task {} stays queued for the next cycle",
+                            disabledAccounts, task.getId());
                     return false;
                 }
                 String noCapacity = "No free Jules shared session slot available for role context "

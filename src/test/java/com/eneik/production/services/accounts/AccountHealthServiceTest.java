@@ -386,4 +386,96 @@ class AccountHealthServiceTest {
         assertEquals(AccountStatus.idle, offlineActive.getStatus());
         verify(accountRepository).save(offlineActive);
     }
+
+    @Test
+    void recoveringZeroCandidatesInspectsDisabledOperationalAccounts() {
+        AccountEntity disabled1 = account("acc-dis-1", AccountStatus.idle, 0, Instant.now().minus(2, ChronoUnit.HOURS));
+        disabled1.setEnabled(false);
+        AccountEntity disabled2 = account("acc-dis-2", AccountStatus.idle, 0, Instant.now().minus(50, ChronoUnit.HOURS));
+        disabled2.setEnabled(false);
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(List.of(disabled1, disabled2));
+
+        int recovered = service.recoverEligibleAccounts();
+
+        assertEquals(0, recovered);
+        verify(accountRepository).findByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
+    }
+
+    @Test
+    void derivedMonopolyCutoffObeysAlonzoChurchSpecification() {
+        // Alonzo Church derived cutoff (ALONZO_CHERCH_21_DERIVED_CUTOFF / D010):
+        // N <= 1: 1.0 (degenerate pool, no monopoly possible)
+        assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(1), 1e-6);
+        assertEquals(1.0, AccountHealthService.derivedMonopolyCutoff(0), 1e-6);
+
+        // N = 2: (2-1)/2 = 0.50 -> clamped to declared floor 0.70
+        assertEquals(0.70, AccountHealthService.derivedMonopolyCutoff(2), 1e-6);
+
+        // N = 3: (3-1)/3 = 0.667 -> clamped to declared floor 0.70
+        assertEquals(0.70, AccountHealthService.derivedMonopolyCutoff(3), 1e-6);
+
+        // N = 4: (4-1)/4 = 0.75
+        assertEquals(0.75, AccountHealthService.derivedMonopolyCutoff(4), 1e-6);
+
+        // N = 7: (7-1)/7 = 0.85714...
+        assertEquals(6.0 / 7.0, AccountHealthService.derivedMonopolyCutoff(7), 1e-6);
+
+        // N = 22: (22-1)/22 = 0.9545 -> clamped to declared ceiling 0.90
+        assertEquals(0.90, AccountHealthService.derivedMonopolyCutoff(22), 1e-6);
+    }
+
+    @Test
+    void monopolyDetectionFiresWhenSingleAccountExceedsDerivedCutoff() {
+        UUID acc1 = UUID.randomUUID();
+        UUID acc2 = UUID.randomUUID();
+        AccountEntity entity1 = account("acc-monopoly", AccountStatus.idle, 0, Instant.now());
+        entity1.setId(acc1);
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.countLiveAccounts()).thenReturn(4L);
+        when(accountRepository.findById(acc1)).thenReturn(Optional.of(entity1));
+
+        // Total 20 sessions: acc1 has 18 sessions (90%), acc2 has 2 sessions (10%).
+        // Pool of 4 live accounts -> derived cutoff is (4-1)/4 = 0.75 (75%). 90% >= 75% -> monopoly detected!
+        List<Object[]> sessionCounts = new ArrayList<>();
+        sessionCounts.add(new Object[]{acc1, 18L});
+        sessionCounts.add(new Object[]{acc2, 2L});
+        when(julesSessionRepository.countDispatchedSessionsByAccountSince(any())).thenReturn(sessionCounts);
+
+        service.recoverEligibleAccounts();
+
+        verify(defectJournalRepository).save(argThat(defect ->
+                "ACCOUNT_MONOPOLY_CONCENTRATION".equals(defect.getDefectType())
+                        && "acc-monopoly".equals(defect.getSourceComponent())
+                        && defect.getMetricValue() != null
+                        && Math.abs(defect.getMetricValue() - 0.90) < 1e-6));
+    }
+
+    @Test
+    void monopolyDetectionSilentWhenDistributionIsBalanced() {
+        UUID acc1 = UUID.randomUUID();
+        UUID acc2 = UUID.randomUUID();
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned)).thenReturn(Collections.emptyList());
+        when(accountRepository.countLiveAccounts()).thenReturn(4L);
+
+        // Total 20 sessions: acc1 has 10 (50%), acc2 has 10 (50%).
+        // Pool of 4 live accounts -> derived cutoff is 0.75. 50% < 75% -> no monopoly!
+        List<Object[]> sessionCounts = new ArrayList<>();
+        sessionCounts.add(new Object[]{acc1, 10L});
+        sessionCounts.add(new Object[]{acc2, 10L});
+        when(julesSessionRepository.countDispatchedSessionsByAccountSince(any())).thenReturn(sessionCounts);
+
+        service.recoverEligibleAccounts();
+
+        verify(defectJournalRepository, never()).save(argThat(defect ->
+                "ACCOUNT_MONOPOLY_CONCENTRATION".equals(defect.getDefectType())));
+    }
 }

@@ -64,6 +64,7 @@ public class AutonomousVerdictObservationService {
     @Value("${verdict.observation.cadence-ticks:5}")
     private int cadenceTicks = 5;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public AutonomousVerdictObservationService(VerdictReconciliation reconciliation,
                                               DefectJournalService defectJournalService) {
         this(reconciliation, defectJournalService, 5);

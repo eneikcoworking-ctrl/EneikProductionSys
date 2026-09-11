@@ -7,6 +7,10 @@ import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.services.jules.JulesRoleCapabilities;
+import com.eneik.production.kaizen.model.DefectJournalEntity;
+import com.eneik.production.kaizen.repository.DefectJournalRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -26,10 +30,15 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/accounts")
 public class AccountController {
-    private final AccountRepository accountRepository;
+    private static final Logger log = LoggerFactory.getLogger(AccountController.class);
 
-    public AccountController(AccountRepository accountRepository) {
+    private final AccountRepository accountRepository;
+    private final DefectJournalRepository defectJournalRepository;
+
+    public AccountController(AccountRepository accountRepository,
+                             DefectJournalRepository defectJournalRepository) {
         this.accountRepository = accountRepository;
+        this.defectJournalRepository = defectJournalRepository;
     }
 
     @GetMapping
@@ -72,6 +81,12 @@ public class AccountController {
     public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody Map<String, Object> updates) {
         return accountRepository.findById(id)
                 .<ResponseEntity<?>>map(account -> {
+                    boolean wasEnabled = account.isEnabled();
+                    AccountStatus wasStatus = account.getStatus();
+                    String reason = updates.containsKey("reason")
+                            ? String.valueOf(updates.get("reason")).trim()
+                            : "Administrative update via PATCH /api/accounts/{id}";
+
                     if (updates.containsKey("name")) {
                         account.setName(((String) updates.get("name")).trim());
                     }
@@ -79,21 +94,23 @@ public class AccountController {
                         account.setGithubUsername((String) updates.get("githubUsername"));
                     }
                     if (updates.containsKey("capabilities")) {
-                        // Intentional, not a bug: every account is a generalist across all 13 BARCAN
-                        // roles by design - the frontend's capabilities field is disabled/hardcoded to
-                        // "All 13 BARCAN roles" (AdminDashboard.svelte) and there is no per-account
-                        // restriction UI anywhere. Whatever value the client sends is ignored in favor
-                        // of the canonical set, same as the create() endpoint above.
                         account.setCapabilities(JulesRoleCapabilities.canonicalCapabilities());
                     }
                     if (updates.containsKey("apiKey")) {
                         account.setApiKey((String) updates.get("apiKey"));
                     }
-                    if (updates.containsKey("enabled")) {
-                        account.setEnabled((Boolean) updates.get("enabled"));
-                    }
                     if (updates.containsKey("status")) {
-                        account.setStatus(AccountStatus.valueOf((String) updates.get("status")));
+                        AccountStatus newStatus = AccountStatus.valueOf((String) updates.get("status"));
+                        account.setStatus(newStatus);
+                    }
+                    if (updates.containsKey("enabled")) {
+                        boolean newEnabled = (Boolean) updates.get("enabled");
+                        if (newEnabled && account.getStatus() == AccountStatus.decommissioned) {
+                            return ResponseEntity.badRequest().body(Map.of(
+                                    "error", "Account in status 'decommissioned' cannot be enabled; change status to operational first",
+                                    "code", 400));
+                        }
+                        account.setEnabled(newEnabled);
                     }
                     if (updates.containsKey("maxConcurrentSessions")) {
                         Object raw = updates.get("maxConcurrentSessions");
@@ -102,6 +119,24 @@ public class AccountController {
 
                     if (account.getGithubUsername() == null || account.getGithubUsername().trim().isEmpty()) {
                         account.setGithubUsername(account.getName());
+                    }
+
+                    // INSTITUTIONAL_FACT_REGISTER (D007) / ACTUAL_OBJECT_REGISTER (D002):
+                    // Record an institutional fact audit record when status or enablement changes.
+                    if (account.isEnabled() != wasEnabled || account.getStatus() != wasStatus) {
+                        String rule = (account.getStatus() == AccountStatus.decommissioned || wasStatus == AccountStatus.decommissioned)
+                                ? "ACCOUNT_DECOMMISSION_RULE"
+                                : (!account.isEnabled() || !wasEnabled)
+                                ? "ACCOUNT_LIFECYCLE_ENABLEMENT_RULE"
+                                : "ACCOUNT_OPERATIONAL_STATUS_RULE";
+                        String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Rule: %s. Reason: %s",
+                                account.getName(), wasStatus, account.getStatus(), wasEnabled, account.isEnabled(), rule, reason);
+                        defectJournalRepository.save(new DefectJournalEntity(
+                                null, null, null, "MEDIUM", "ACCOUNT_LIFECYCLE", account.getName(),
+                                "ACCOUNT_STATE_TRANSITION",
+                                description,
+                                account.isEnabled() ? 1.0 : 0.0));
+                        log.info("Institutional Fact Audit: {}", description);
                     }
 
                     return ResponseEntity.ok(toDto(accountRepository.save(account)));
@@ -126,7 +161,24 @@ public class AccountController {
 
         return accountRepository.findById(id)
                 .<ResponseEntity<?>>map(account -> {
+                    AccountStatus wasStatus = account.getStatus();
+                    boolean wasEnabled = account.isEnabled();
                     account.setStatus(request.status());
+
+                    if (account.isEnabled() != wasEnabled || account.getStatus() != wasStatus) {
+                        String rule = account.getStatus() == AccountStatus.decommissioned
+                                ? "ACCOUNT_DECOMMISSION_RULE"
+                                : "ACCOUNT_OPERATIONAL_STATUS_RULE";
+                        String description = String.format("Account '%s' state transition [status: %s -> %s, enabled: %s -> %s]. Rule: %s. Reason: %s",
+                                account.getName(), wasStatus, account.getStatus(), wasEnabled, account.isEnabled(), rule, "Status updated via /status endpoint");
+                        defectJournalRepository.save(new DefectJournalEntity(
+                                null, null, null, "MEDIUM", "ACCOUNT_LIFECYCLE", account.getName(),
+                                "ACCOUNT_STATE_TRANSITION",
+                                description,
+                                account.isEnabled() ? 1.0 : 0.0));
+                        log.info("Institutional Fact Audit: {}", description);
+                    }
+
                     return ResponseEntity.ok(toDto(accountRepository.save(account)));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
