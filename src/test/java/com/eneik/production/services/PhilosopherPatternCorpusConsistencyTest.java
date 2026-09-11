@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Verification harness for philosopher patterns corpus consistency
- * (ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE / D014 Storage lineage loss,
+ * (ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE / D014 RAG hallucination,
  *  ALFRED_TARSKIY_01_FALSIFICATION_HARNESS / D008 False green).
  *
  * <p>Three origins of the corpus must agree at all times:
