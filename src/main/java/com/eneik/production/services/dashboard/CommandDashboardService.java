@@ -2,6 +2,7 @@ package com.eneik.production.services.dashboard;
 
 import com.eneik.production.dto.dashboard.AcceptanceReadinessDto;
 import com.eneik.production.dto.dashboard.CommandDashboardDto;
+import com.eneik.production.repositories.ClientAcceptanceTraversalRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.verdict.Verdict;
 import com.eneik.production.services.verdict.VerdictGate;
@@ -19,15 +20,19 @@ public class CommandDashboardService {
     // them - the gate is an addition to what is reported, never a new requirement for reporting at all.
     private final ProjectRepository projectRepository;
     private final VerdictGate verdictGate;
+    private final ClientAcceptanceTraversalRepository traversalRepository;
 
     public CommandDashboardService(JdbcTemplate jdbcTemplate,
                                    @org.springframework.beans.factory.annotation.Autowired(required = false)
                                    ProjectRepository projectRepository,
                                    @org.springframework.beans.factory.annotation.Autowired(required = false)
-                                   VerdictGate verdictGate) {
+                                   VerdictGate verdictGate,
+                                   @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                   ClientAcceptanceTraversalRepository traversalRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.projectRepository = projectRepository;
         this.verdictGate = verdictGate;
+        this.traversalRepository = traversalRepository;
     }
 
     public CommandDashboardDto getDashboard(UUID projectId) {
@@ -205,10 +210,37 @@ public class CommandDashboardService {
             githubAccessHealthy = !Boolean.FALSE.equals(lastStatus.get("has_repo_access")) && !Boolean.FALSE.equals(lastStatus.get("ci_status"));
         }
 
+        Boolean clientAcceptanceWitnessed;
+        if (dataSourcesStatus.containsKey("client_acceptance_traversals")) {
+            clientAcceptanceWitnessed = null;
+        } else if (traversalRepository != null && projectId != null) {
+            try {
+                long traversals = traversalRepository.countByProjectIdAndWalkedByIgnoreCase(projectId, "client");
+                clientAcceptanceWitnessed = traversals > 0;
+            } catch (Exception e) {
+                dataSourcesStatus.put("client_acceptance_traversals", "error: " + e.getMessage());
+                clientAcceptanceWitnessed = null;
+            }
+        } else if (projectId != null && tableExists("client_acceptance_traversals")) {
+            try {
+                Integer count = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM client_acceptance_traversals WHERE project_id = ? AND LOWER(walked_by) = 'client'",
+                        Integer.class, projectId);
+                clientAcceptanceWitnessed = count != null && count > 0;
+            } catch (Exception e) {
+                dataSourcesStatus.put("client_acceptance_traversals", "error: " + e.getMessage());
+                clientAcceptanceWitnessed = null;
+            }
+        } else {
+            dataSourcesStatus.put("client_acceptance_traversals", "data source not yet available");
+            clientAcceptanceWitnessed = null;
+        }
+
         if (Boolean.FALSE.equals(allTasksDone)) unmetConditions.add("Some tasks are not done or in review");
         if (Boolean.FALSE.equals(allQualityGatesPassed)) unmetConditions.add("Some quality gates failed");
         if (Boolean.FALSE.equals(allPrsMerged)) unmetConditions.add("Some PRs have pending or failing CI");
         if (Boolean.FALSE.equals(githubAccessHealthy)) unmetConditions.add("GitHub access or CI is unhealthy");
+        if (Boolean.FALSE.equals(clientAcceptanceWitnessed)) unmetConditions.add("No client acceptance traversal recorded (scope built, awaiting client acceptance)");
 
         // Kano Model Analysis for Project Completion recommendation
         String kanoRecommendation = "No outstanding requirements found.";
@@ -261,20 +293,20 @@ public class CommandDashboardService {
             kanoRecommendation = "Kano Model Suggestion: All tasks completed! Ready to complete and accept the project.";
         }
 
-        // Step 18. These four conditions were already being combined in three values - `unknown` when one
-        // is unmeasurable, `not ready` when one fails, `ready` only when all hold - which is Kleene
-        // conjunction written out by hand and never named. Naming it lets the verdict lattice join as one
-        // more conjunct instead of being bolted on beside it:
-        //
-        //     report(P) = construction(P) ∧ ⋀ verdict_layer(P)
-        //
-        // Every one of these four is about CONSTRUCTION - tasks done, gates passed, PRs merged, GitHub
-        // reachable. None is about the product running or having been shown to anyone, which is why
-        // `ready` could be reached on merge counts alone (F1, F30).
+        // Step 18 / Prescription 9: The five conditions combined in Kleene conjunction
+        // (report(P) = construction(P) ∧ ⋀ verdict_layer(P)):
+        // 1. allTasksDone
+        // 2. allQualityGatesPassed
+        // 3. allPrsMerged
+        // 4. githubAccessHealthy
+        // 5. clientAcceptanceWitnessed (NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT / D007,
+        //                              DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT / D009)
+        // Without client acceptance traversal (witnessed = false), readiness cannot be reached:
+        // the state is "scope built, awaiting acceptance" (WITHHOLD), not PERMIT.
         Verdict construction;
-        if (allTasksDone == null || allQualityGatesPassed == null || allPrsMerged == null || githubAccessHealthy == null) {
+        if (allTasksDone == null || allQualityGatesPassed == null || allPrsMerged == null || githubAccessHealthy == null || clientAcceptanceWitnessed == null) {
             construction = Verdict.ABSTAIN;
-        } else if (allTasksDone && allQualityGatesPassed && allPrsMerged && githubAccessHealthy) {
+        } else if (allTasksDone && allQualityGatesPassed && allPrsMerged && githubAccessHealthy && clientAcceptanceWitnessed) {
             construction = Verdict.PERMIT;
         } else {
             construction = Verdict.WITHHOLD;
@@ -315,7 +347,7 @@ public class CommandDashboardService {
             }
         }
 
-        return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, unmetConditions, statusLabel, uiColorToken, kanoRecommendation);
+        return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, clientAcceptanceWitnessed, unmetConditions, statusLabel, uiColorToken, kanoRecommendation);
     }
 
     /**

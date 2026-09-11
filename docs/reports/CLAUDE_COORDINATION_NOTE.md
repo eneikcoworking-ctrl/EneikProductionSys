@@ -168,7 +168,7 @@
       - В `TocSentinelServiceTest` добавлены фальсифицирующий тест `singleInstrumentedStageDoesNotClaimSystemFlowOptimal` и подтверждающий `multiStageFlowWithinCapacityReportsSystemFlowOptimal`.
     - **Анализ топологии шагов конвейера в `AGY_ASKS.md`:** Зафиксирован вопрос и архитектурный анализ разметки шагов потока (разметка Intake/Dispatch/Compile/Review/Merge, где верёвка должна придерживать раздачу входных задач, а не блокировать сливающее звено на выходе).
 
-13. **Такт 21 закрыт (`scripts/generate_philosopher_patterns.py`, пункт 20 очереди, раздел XXIV `FACTORY_MECHANISMS.md`, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014 Storage lineage loss, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008 False green):**
+13. **Такт 21 закрыт (`scripts/generate_philosopher_patterns.py`, пункт 20 очереди, раздел XXIV `FACTORY_MECHANISMS.md`, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014 RAG hallucination, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008 False green):**
     - **Сверка трёх источников корпуса образцов:**
       - Источник 1 (генератор `scripts/generate_philosopher_patterns.py`): порождает `00_COMMON`, `01`, `02`, `PHILOSOPHER_INDEX`, `philosopher_patterns_index.json`, `QA_REPORT`, `README` и 86 файлов `philosophers/` (1720 образцов).
       - Источник 2 (ручной `03_PATTERN_STRENGTH.md`): 53 канонических семейства образцов.
@@ -433,6 +433,19 @@
 от предписания осталось одно: **строка сноса обязана называть род** — что снесено наблюдение, а не выкладка.
 
 **Закрыто (Такт 22):** Предписания 24 + 59 — закрыт управляющий контур пульта (`ApiAuthorizationInterceptor` на `/api/**` и `/internal/**`: все 64 изменяющих метода требуют `X-API-Key` или `Bearer`, исключение вебхука снято против `NUEL_BELNAP_06_SUBSTITUTION_ORACLE`, мутации `/internal/**` требуют ключ даже с localhost, `OPTIONS` и безопасные чтения открыты).
+
+**Закрыто (Такт 23):** `CommandDashboardService` (Ступень 1, пятое условие готовности `clientAcceptanceWitnessed` на базе `V100` / `client_acceptance_traversals`, `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` / D007 Evidence gap, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009):
+- В `AcceptanceReadinessDto` добавлено пятое условие `clientAcceptanceWitnessed`.
+- Расчёт в `CommandDashboardService` выведен через единый источник истины `ClientAcceptanceTraversalRepository.countByProjectIdAndWalkedByIgnoreCase(projectId, "client") > 0` (аналогично `FlowSpineService:613`).
+- Если `clientAcceptanceWitnessed == false`, статус готовности не может быть `PERMIT` (`ready`), а переходит в `WITHHOLD` (`not ready`) с фиксацией условия: `"No client acceptance traversal recorded (scope built, awaiting client acceptance)"`.
+- Не нарушен инвариант предписания 9: `verdict_gating_enabled` остаётся выключенным по умолчанию (активный гейт не расширяется до реализации предписания 8), пятое условие действует непосредственно в отчёте панели готовности.
+- Заслоняющие тесты `CommandDashboardServiceTest` (4/4 green):
+  - `allFourConstructionConditionsSatisfiedWithZeroClientAcceptanceTraversalsIsWithheldAsNotReady`: опровергает готовность при нуле проходов заказчика.
+  - `allFourConstructionConditionsSatisfiedWithClientAcceptanceTraversalIsPermittedAsReady`: подтверждает `ready` при наличии прохода заказчика.
+  - `unmeasurableClientAcceptanceTraversalsYieldsAbstainAndUnknownReadiness`: честный три-стейт ABSTAIN / unknown при недоступности источника.
+  - `unfinishedTasksWithWitnessedClientTraversalYieldsNotReady`: незавершённые задачи не маскируются проходом.
+- Регрессия: `CommandDashboardServiceTest` (4/4), `SystemStatusControllerIntegrationTest` (5/5), `SystemStatusServiceTest` (16/16) — 25/25 green.
+
 
 **Открытое, самое срочное:** Предписание 23 — у выключенного аккаунта нет пути назад:
 `setEnabled(true)` нет нигде в `src/main`, а восстановление ищет только `findByStatusAndEnabledTrue`.
