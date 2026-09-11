@@ -514,6 +514,18 @@
     - `continuousOrchestrateDelegatesVerdictObservationForActiveProjects`: проверяет вызов `observe(projectId)` на тике для каждого активного проекта.
   - Регрессия: `AutonomousVerdictObservationServiceTest` (6/6), `ContinuousOrchestrationServiceTest` (7/7), `AcceptanceVerdictLayerTest` (7/7), `InfrastructureVerdictLayerTest` (8/8), `RuntimeVerdictLayerTest` (6/6), `VerdictGateTest` (8/8), `VerdictReconciliationTest` (8/8) — 50/50 green.
 
+**Закрыто (Такт 27):** Разрешение несовпадения смысла и референта в именах контрактов OpenAPI (`ProductCapabilityService`, раздел XVI §25 `FACTORY_MECHANISMS.md`, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009 Substitution failure, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013 Runtime drift):
+- **Диагностика:** В реальном клоне продукта (`test-fiftieth/docs/contracts`) 17 контрактов названы по предметным доменам (`StrainManagement.openapi.yaml`, `EmployeeDossier.openapi.yaml`, `MoodleSso.openapi.yaml`, `Auth.openapi.yaml` и т.д.). Ранее `ProductCapabilityService` пытался угадать имя файла через kebab-case заголовка внутренней фичи БД (`title.toLowerCase().replace(' ', '-') + ".openapi.yaml"` $\rightarrow$ `strain-management-api.openapi.yaml`). Из-за несовпадения внутренних догадок фабрики и физической реальности продукта сопоставление давало 0 контрактов, и `/api/projects/<id>/product-value` отчитывался `declaredCapabilities = 0, workingCapabilities = 0`.
+- **Устранение расхождения («своё изделие — не сведения о предмете»):**
+  - `ProductCapabilityService.declaredCapabilities`: при обнаружении файлов в каталоге `docs/contracts` (через `gitHubPullRequestService.listDirectoryFiles`) сервис больше не угадывает имена по фичам, а напрямую считывает и разбирает все валидные OpenAPI-контракты (`.openapi.yaml`, `.openapi.yml`, `.yaml`, `.yml`), отсортированные по алфавиту для строгой детерминированности.
+  - Вспомогательный метод `isContractFile` валидирует допустимые расширения контрактов, отсекая нерелевантные файлы (`README.md`, служебные файлы).
+  - Сохранена обратная совместимость (fallback) при `listDirectoryFiles == Optional.empty()` для легаси-тестов со старыми моками.
+  - Кэширование по branch и commitSha (`INUS_FACTOR_CHECK` / D007) сохранено в полном объёме: второй проход с неизменным commitSha по-прежнему даёт ровно 0 сетевых обращений к GitHub.
+- **Заслоняющие тесты:**
+  - `ProductCapabilityServiceTest`:
+    - `falsificationHarness_allContractsInDirectoryParsedWithoutFeatureTitleGuessing`: фальсифицирующий заслон — проверяет, что контракты с именами доменов (`StrainManagement.openapi.yaml`, `EmployeeDossier.openapi.yaml`) парсятся независимо от несовпадающих заголовков фич в БД (`Strain Management API`), `README.md` не запрашивается по сети, `declaredCapabilities` строго больше нуля (3 маршрута) с точными источниками.
+  - Регрессия: `ProductCapabilityServiceTest` (14/14), `BetaPosteriorTest` (9/9), `ClientRuntimeObservabilityServiceTest` (29/29), `ProductLaunchabilityServiceTest` (22/22), `RuntimeHealthShiftDetectorTest` (9/9) — 83/83 green.
+
 **В работе дальше:**
 - **Предписание 9** (`VerdictGate` — теперь предписание 8 выполнено и разблокировало анализ гейта).
 - **Предписание 23** (восстановление выключенных аккаунтов, пп. 2–4).

@@ -122,6 +122,10 @@ public class ProductCapabilityService {
      * and caches known results until the branch or commit SHA advances.
      * BOUNDARY_TOPOLOGY (D006): loads DB entities before network operations so database connections
      * are never held across external HTTP calls.
+     * <p>DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009) / LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY (D013):
+     * The product's declared capabilities are derived from what the product itself asserts in its contracts
+     * directory ({@code docs/contracts/*.openapi.yaml}, {@code *.yaml}, etc.), NOT by guessing file names from
+     * the factory's internal feature titles.
      */
     public List<DeclaredCapability> declaredCapabilities(ProjectEntity project) {
         return declaredCapabilities(project, null);
@@ -139,14 +143,6 @@ public class ProductCapabilityService {
             }
         }
 
-        // BOUNDARY_TOPOLOGY (D006): Read DB features upfront before network calls
-        List<FeatureEntity> features = featureRepository.findByProjectId(project.getId());
-        if (features == null || features.isEmpty()) {
-            List<DeclaredCapability> empty = List.of();
-            capabilityCache.put(project.getId(), new CachedDeclaredCapabilities(branch, commitSha, empty));
-            return empty;
-        }
-
         // INUS_FACTOR_CHECK (D007): Query docs/contracts directory once instead of asking N individual 404 questions
         Optional<Set<String>> filesInDirectory = gitHubPullRequestService.listDirectoryFiles(project, branch, "docs/contracts");
 
@@ -156,15 +152,12 @@ public class ProductCapabilityService {
         if (filesInDirectory.isPresent()) {
             Set<String> dirFiles = filesInDirectory.get();
             if (!dirFiles.isEmpty()) {
-                for (FeatureEntity feature : features) {
-                    String title = feature.getTitle();
-                    if (title == null || title.isBlank()) {
-                        continue;
-                    }
-                    String fileName = title.toLowerCase(Locale.ROOT).replace(' ', '-') + ".openapi.yaml";
-                    if (!dirFiles.contains(fileName)) {
-                        continue; // Absent from directory listing - zero network calls made for 404
-                    }
+                // DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009): Derive capabilities from all contracts in docs/contracts
+                List<String> contractFiles = dirFiles.stream()
+                        .filter(ProductCapabilityService::isContractFile)
+                        .sorted()
+                        .toList();
+                for (String fileName : contractFiles) {
                     String path = "docs/contracts/" + fileName;
                     String content = gitHubPullRequestService
                             .fetchFileContent(project, branch, path)
@@ -182,22 +175,25 @@ public class ProductCapabilityService {
             }
         } else {
             // Fallback if listDirectoryFiles is not supported or stubbed (backward compatibility with legacy mocks)
-            for (FeatureEntity feature : features) {
-                String title = feature.getTitle();
-                if (title == null || title.isBlank()) {
-                    continue;
-                }
-                String path = "docs/contracts/" + title.toLowerCase(Locale.ROOT).replace(' ', '-') + ".openapi.yaml";
-                String content = gitHubPullRequestService
-                        .fetchFileContent(project, branch, path)
-                        .orElse(null);
-                if (content == null) {
-                    continue;
-                }
-                for (String route : getRoutesOf(content)) {
-                    String key = "GET " + route;
-                    if (seen.add(key)) {
-                        declared.add(new DeclaredCapability(key, route, path));
+            List<FeatureEntity> features = featureRepository.findByProjectId(project.getId());
+            if (features != null && !features.isEmpty()) {
+                for (FeatureEntity feature : features) {
+                    String title = feature.getTitle();
+                    if (title == null || title.isBlank()) {
+                        continue;
+                    }
+                    String path = "docs/contracts/" + title.toLowerCase(Locale.ROOT).replace(' ', '-') + ".openapi.yaml";
+                    String content = gitHubPullRequestService
+                            .fetchFileContent(project, branch, path)
+                            .orElse(null);
+                    if (content == null) {
+                        continue;
+                    }
+                    for (String route : getRoutesOf(content)) {
+                        String key = "GET " + route;
+                        if (seen.add(key)) {
+                            declared.add(new DeclaredCapability(key, route, path));
+                        }
                     }
                 }
             }
@@ -206,6 +202,17 @@ public class ProductCapabilityService {
         List<DeclaredCapability> immutableDeclared = List.copyOf(declared);
         capabilityCache.put(project.getId(), new CachedDeclaredCapabilities(branch, commitSha, immutableDeclared));
         return immutableDeclared;
+    }
+
+    static boolean isContractFile(String fileName) {
+        if (fileName == null || fileName.isBlank()) {
+            return false;
+        }
+        String lower = fileName.toLowerCase(Locale.ROOT);
+        return lower.endsWith(".openapi.yaml")
+                || lower.endsWith(".openapi.yml")
+                || lower.endsWith(".yaml")
+                || lower.endsWith(".yml");
     }
 
     /**

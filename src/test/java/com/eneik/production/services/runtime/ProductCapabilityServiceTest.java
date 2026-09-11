@@ -350,4 +350,82 @@ class ProductCapabilityServiceTest {
         assertEquals(2, satisfied2);
         verifyNoMoreInteractions(github);
     }
+
+    /**
+     * DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009) / LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY (D013):
+     * Falsification barrier: Declared capabilities are derived directly from all contract files in docs/contracts,
+     * without guessing file names from feature titles.
+     * Prevents: declaredCapabilities = 0 when docs/contracts contains domain contracts like StrainManagement.openapi.yaml.
+     */
+    @Test
+    void falsificationHarness_allContractsInDirectoryParsedWithoutFeatureTitleGuessing() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        // Factory has DB features with mismatched names that do not match contract file names
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(
+                feature("Strain Management API"),
+                feature("Moodle SSO Connector")
+        ));
+
+        // Repo contains domain-named OpenAPI contracts and a non-contract file
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of(
+                        "StrainManagement.openapi.yaml",
+                        "EmployeeDossier.openapi.yaml",
+                        "README.md"
+                )));
+
+        String strainContract = """
+                openapi: 3.0.3
+                info:
+                  title: Strain Management
+                paths:
+                  /strains:
+                    get:
+                      summary: List strains
+                """;
+        String dossierContract = """
+                openapi: 3.0.3
+                info:
+                  title: Employee Dossier
+                paths:
+                  /dossiers:
+                    get:
+                      summary: List dossiers
+                  /dossiers/{id}:
+                    get:
+                      summary: Get dossier
+                """;
+
+        when(github.fetchFileContent(project, "main", "docs/contracts/StrainManagement.openapi.yaml"))
+                .thenReturn(Optional.of(strainContract));
+        when(github.fetchFileContent(project, "main", "docs/contracts/EmployeeDossier.openapi.yaml"))
+                .thenReturn(Optional.of(dossierContract));
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        List<ProductCapabilityService.DeclaredCapability> declared = service.declaredCapabilities(project);
+
+        // Falsification check: declaredCapabilities MUST NOT be empty (proves defect is killed)
+        assertEquals(3, declared.size());
+        assertEquals("GET /dossiers", declared.get(0).key());
+        assertEquals("/dossiers", declared.get(0).path());
+        assertEquals("docs/contracts/EmployeeDossier.openapi.yaml", declared.get(0).sourceContract());
+
+        assertEquals("GET /dossiers/{id}", declared.get(1).key());
+        assertEquals("/dossiers/{id}", declared.get(1).path());
+
+        assertEquals("GET /strains", declared.get(2).key());
+        assertEquals("/strains", declared.get(2).path());
+        assertEquals("docs/contracts/StrainManagement.openapi.yaml", declared.get(2).sourceContract());
+
+        // README.md was never fetched as a contract
+        verify(github, never()).fetchFileContent(project, "main", "docs/contracts/README.md");
+        // No kebab guessed files were fetched
+        verify(github, never()).fetchFileContent(project, "main", "docs/contracts/strain-management-api.openapi.yaml");
+    }
 }
