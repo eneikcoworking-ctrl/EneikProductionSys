@@ -97,4 +97,83 @@ class EmsMetricsServiceTest {
                     assertThat(role.satisfactionScore()).isEqualTo(73.8);
                 });
     }
+
+    // D012 / D002 / Prescription 9: Falsification of absorbing failure states in doctrine readiness
+
+    @Test
+    void unrecoveredFailedTaskRefusesDoctrineReadinessWithActionableObjection() {
+        RoleEntity r = new RoleEntity();
+        r.setTag("BARCAN-TAG-00");
+        r.setDescription("code guardian");
+
+        TaskEntity failedTask = new TaskEntity();
+        failedTask.setRole(r);
+        failedTask.setStatus(com.eneik.production.models.persistence.TaskStatus.failed);
+        failedTask.setContentKey("key-auth-1");
+
+        EmsDashboardMetricsDto metrics = service.build(List.of(failedTask), List.of());
+
+        assertThat(metrics.roleDoctrineReadiness().roles())
+                .filteredOn(role -> role.roleTag().equals("BARCAN-TAG-00"))
+                .singleElement()
+                .satisfies(role -> {
+                    assertThat(role.stance()).isEqualTo("refuses");
+                    assertThat(role.topObjection()).contains("unrecovered failed work");
+                });
+    }
+
+    @Test
+    void recoveredFailedTaskDoesNotRefuseDoctrineReadiness() {
+        RoleEntity r = new RoleEntity();
+        r.setTag("BARCAN-TAG-00");
+        r.setDescription("code guardian");
+
+        TaskEntity failedTask = new TaskEntity();
+        failedTask.setRole(r);
+        failedTask.setStatus(com.eneik.production.models.persistence.TaskStatus.failed);
+        failedTask.setContentKey("key-auth-1");
+
+        // Successor task for the same content key succeeds
+        TaskEntity recoveredTask = new TaskEntity();
+        recoveredTask.setRole(r);
+        recoveredTask.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+        recoveredTask.setContentKey("key-auth-1");
+        recoveredTask.setQualityGatePassed(true);
+
+        EmsDashboardMetricsDto metrics = service.build(List.of(failedTask, recoveredTask), List.of());
+
+        assertThat(metrics.roleDoctrineReadiness().roles())
+                .filteredOn(role -> role.roleTag().equals("BARCAN-TAG-00"))
+                .singleElement()
+                .satisfies(role -> {
+                    assertThat(role.stance())
+                            .as("Historical failed task recovered by succeeding work must NOT cause 'refuses'")
+                            .isNotEqualTo("refuses");
+                    assertThat(role.stance()).isEqualTo("satisfied");
+                });
+    }
+
+    @Test
+    void closedDefectWorkDoesNotTriggerDefectWorkObjection() {
+        RoleEntity r = new RoleEntity();
+        r.setTag("BARCAN-TAG-07");
+        r.setDescription("security / second-order knowledge");
+
+        // Task with retryCount > 0 that successfully finished (closed defect recovery)
+        TaskEntity defectTaskDone = new TaskEntity();
+        defectTaskDone.setRole(r);
+        defectTaskDone.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+        defectTaskDone.setRetryCount(2);
+        defectTaskDone.setQualityGatePassed(true);
+
+        EmsDashboardMetricsDto metrics = service.build(List.of(defectTaskDone), List.of());
+
+        assertThat(metrics.roleDoctrineReadiness().roles())
+                .filteredOn(role -> role.roleTag().equals("BARCAN-TAG-07"))
+                .singleElement()
+                .satisfies(role -> {
+                    assertThat(role.stance()).isEqualTo("satisfied");
+                    assertThat(role.topObjection()).doesNotContain("Defect-work evidence remains attached");
+                });
+    }
 }

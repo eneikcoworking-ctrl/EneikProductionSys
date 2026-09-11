@@ -25,9 +25,18 @@ public class OperationalPolicyService {
             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT");
 
     private final OperationalFlowCoreService flowCoreService;
+    private final com.eneik.production.services.verdict.VerdictGate verdictGate;
 
     public OperationalPolicyService(OperationalFlowCoreService flowCoreService) {
+        this(flowCoreService, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OperationalPolicyService(OperationalFlowCoreService flowCoreService,
+                                    @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                    com.eneik.production.services.verdict.VerdictGate verdictGate) {
         this.flowCoreService = flowCoreService;
+        this.verdictGate = verdictGate;
     }
 
     /**
@@ -212,9 +221,25 @@ public class OperationalPolicyService {
                     && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
         };
 
+        // DZHOZEF_RAZ_01_PROHIBITION_AS_CODE: Evaluate targeted prohibitions from VerdictGate
+        com.eneik.production.services.verdict.VerdictGate.ActionProhibition prohibition = null;
+        if (allowed && verdictGate != null && core.project() != null) {
+            com.eneik.production.models.persistence.ProjectEntity p = new com.eneik.production.models.persistence.ProjectEntity();
+            p.setId(core.project().id());
+            p.setSlug(core.project().name());
+            prohibition = verdictGate.evaluateActionProhibition(p, action.name());
+            if (prohibition.prohibited()) {
+                allowed = false;
+            }
+        }
+
         String reason = allowed
                 ? "Operational action " + action + " is allowed in state " + snapshot.currentState() + "."
-                : denialReason(action, core);
+                : (prohibition != null && prohibition.prohibited() ? prohibition.explanation() : denialReason(action, core));
+        List<String> blockers = new java.util.ArrayList<>(snapshot.bottlenecks().stream().map(FlowSpineDto.Bottleneck::type).toList());
+        if (prohibition != null && prohibition.prohibited()) {
+            blockers.add(prohibition.ruleName());
+        }
         return new OperationalDecision(
                 core.project().id(),
                 action,
@@ -222,7 +247,7 @@ public class OperationalPolicyService {
                 snapshot.currentState(),
                 authorization.status(),
                 reason,
-                snapshot.bottlenecks().stream().map(FlowSpineDto.Bottleneck::type).toList(),
+                List.copyOf(blockers),
                 core
         );
     }

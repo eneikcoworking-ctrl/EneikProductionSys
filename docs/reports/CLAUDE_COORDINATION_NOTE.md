@@ -572,6 +572,39 @@
   - `ProjectFlowServiceLaw1JulesDispatchTest` (4/4): включая `falsificationHarness_allAccountsDisabledReportsDisabledStatusWithoutCapacityWord`.
   - `BottleneckDetectionServiceTest` (3/3): разделение выключенных и занятых аккаунтов.
 
+**Закрыто (Такт 30):** Предписание 9 (`FACTORY_MECHANISMS.md`, раздел XVI §9) — запреты как исполняемый код (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006), устранение поглощающего состояния сбоев в доктрине (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002), операционный пул монополии (Предписание 23):
+- **Исполнимые запреты как код (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, Предписание 9):**
+  - В `VerdictGate` реализован механизм адресных, объяснимых запретов вместо слепого глобального блокирования конвейера.
+  - Введена запись `ActionProhibition(boolean prohibited, String layer, String proposition, String ruleName, String explanation)` и метод `evaluateActionProhibition(ProjectEntity project, String action)`.
+  - Сформулированы и заслонены конкретные правила запрета:
+    1. `INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION`: слой `infrastructure` при отказе (нездоровая БД фабрики или недоступный runtime launcher) блокирует `DISPATCH_QUEUED_TASKS` с явным указанием слоя, предложения и метрики (например, `bloat > threshold`).
+    2. `DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION`: слой `doctrine` при наличии реального невосстановленного сбоя блокирует `DISPATCH_QUEUED_TASKS` и `EXPAND_FEATURE` с указанием конкретной незакрытой причины.
+  - Запреты строго **не поглощающие и обратимые**: при возврате слоя в `PERMIT` запрет немедленно и автоматически снимается без ручных вмешательств.
+  - Интеграция в поток: `OperationalPolicyService.authorize` вызывает `VerdictGate.evaluateActionProhibition` для целевого проекта, добавляя `ruleName` в список `blockers` и формируя объяснимый отказ.
+  - Сохранена строгая изоляция: флаг `verdict_gating_enabled` по умолчанию выключен (`false`), гейт стоит в стороне для неактивированных проектов.
+- **Устранение поглощающего состояния сбоев в доктрине (`EmsMetricsService`, D012, D002):**
+  - Диагностика: 7 из 9 ролей доктрины перманентно находились в `refuses` с причиной `"Owner-role execution has failed work"`, так как метрика считывала все 45 исторических неудачных попыток задач за всё время жизни базы, даже если работа была давно успешно переделана и принята.
+  - Внедрён предикат `isUnrecoveredFailure(task, allTasks, wishlistById)`: исторический сбой признаётся закрытым/восстановленным, если пройден Quality Gate, задача попала в `main`, либо существует преемник с тем же `contentKey` / `sourceWishlistId` / `featureId` и ролью в состоянии `done-like`, либо связанный бриф был отклонён (`dismissed`).
+  - `ownerOpen` теперь учитывает только реально открытую работу (`isActiveLike(task) || task.getStatus() == TaskStatus.queued`), исключая терминальные строки.
+  - `openDefectWork` больше не считает исторические сбои, если они уже восстановлены.
+- **Уточнение знаменателя монополии (Предписание 23 follow-up):**
+  - В `AccountRepository` добавлен запрос `countOperationalAccounts()` (`enabled = true AND status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')`).
+  - В `AccountHealthService.checkMonopoly` знаменатель пула $N$ берётся из операционных доступных аккаунтов, предотвращая искусственное занижение порога монополии из-за временно заблокированных или списанных аккаунтов.
+- **Заслоняющие тесты (59/59 green в контейнере Maven):**
+  - `VerdictGateTest` (12/12):
+    - `infrastructureRefusalProhibitsTaskDispatchWithNamedRuleAndReason`: отказ БД инфраструктуры блокирует раздачу с именем правила `INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION`.
+    - `infrastructureRecoveryLiftsProhibitionAndPermitsDispatch`: восстановление здоровья БД немедленно снимает запрет (не-поглощаемость).
+    - `doctrineUnrecoveredFailureProhibitsActionAndLiftsOnRecovery`: невосстановленный сбой доктрины блокирует действие и снимается при удовлетворении.
+    - `prohibitionStandsAsideWhenGatingDisabledOrDifferentProject`: гейт стоит в стороне при выключенном флаге или нецелевом проекте.
+  - `OperationalPolicyServiceTest` (16/16):
+    - `verdictGateProhibitionDeniesDispatchWithRuleNameAndExplanation`: политика проверяет запреты гейта, фиксирует правило в `blockers` и формирует отказ; разрешает при отсутствии запрета.
+  - `EmsMetricsServiceTest` (6/6):
+    - `unrecoveredFailedTaskRefusesDoctrineReadinessWithActionableObjection`: невосстановленный сбой переводит доктрину в `refuses`.
+    - `recoveredFailedTaskDoesNotRefuseDoctrineReadiness`: исторический сбой с успешным преемником переводит роль в `satisfied`.
+    - `closedDefectWorkDoesNotTriggerDefectWorkObjection`: закрытая дефектная работа не препятствует удовлетворению.
+  - `AccountHealthServiceTest` (25/25): верификация расчёта порога монополии и жизненного цикла.
+
 **В работе дальше:**
-- **Предписание 9** (`VerdictGate` — анализ условий готовности к включению гейта после выполнения предписаний 8 и 24).
+- Синхронизация с Клодом по результатам применения Предписания 9 и дальнейшим пунктам очереди `FACTORY_MECHANISMS.md` (Ступень 2: пункты 10, 11, 24).
+
 

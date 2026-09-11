@@ -10,7 +10,10 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OperationalPolicyServiceTest {
 
@@ -272,5 +275,35 @@ class OperationalPolicyServiceTest {
                 new FlowCoreDto.MathematicalContract("facts", "decision", "precedence", "safety", List.of()),
                 new FlowCoreDto.Journal(null, null, false, 0)
         );
+    }
+
+    @Test
+    void verdictGateProhibitionDeniesDispatchWithRuleNameAndExplanation() {
+        com.eneik.production.services.verdict.VerdictGate verdictGate = mock(com.eneik.production.services.verdict.VerdictGate.class);
+        OperationalPolicyService policyService = new OperationalPolicyService(
+                mock(OperationalFlowCoreService.class), verdictGate);
+
+        FlowCoreDto core = core("QUEUED", "active", 2, 0, 0, 1, 0);
+
+        // When gate prohibits DISPATCH_QUEUED_TASKS
+        when(verdictGate.evaluateActionProhibition(any(), eq("DISPATCH_QUEUED_TASKS")))
+                .thenReturn(com.eneik.production.services.verdict.VerdictGate.ActionProhibition.denied(
+                        "infrastructure",
+                        "the orchestrator's own database is healthy",
+                        "INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION",
+                        "database bloat exceeds safety threshold"
+                ));
+
+        OperationalPolicyService.OperationalDecision decision = policyService.authorize(core, OperationalAction.DISPATCH_QUEUED_TASKS);
+        assertFalse(decision.allowed());
+        assertTrue(decision.reason().contains("INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION"));
+        assertTrue(decision.blockers().contains("INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION"));
+
+        // When gate permits DISPATCH_QUEUED_TASKS
+        when(verdictGate.evaluateActionProhibition(any(), eq("DISPATCH_QUEUED_TASKS")))
+                .thenReturn(com.eneik.production.services.verdict.VerdictGate.ActionProhibition.permitted());
+
+        OperationalPolicyService.OperationalDecision allowedDecision = policyService.authorize(core, OperationalAction.DISPATCH_QUEUED_TASKS);
+        assertTrue(allowedDecision.allowed());
     }
 }

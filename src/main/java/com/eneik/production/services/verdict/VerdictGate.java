@@ -109,6 +109,82 @@ public class VerdictGate {
     }
 
     /**
+     * Prescription 9 (FACTORY_MECHANISMS.md XVI §9 / DZHOZEF_RAZ_01_PROHIBITION_AS_CODE / D006):
+     * Executable denial path with explainable reason, named policy rule, and non-absorbing reversibility.
+     * Prohibits operational actions (e.g. DISPATCH_QUEUED_TASKS, EXPAND_FEATURE) on verified inputs
+     * (such as infrastructure database health or doctrine unrecovered failures) per proposition rule.
+     */
+    public record ActionProhibition(
+            boolean prohibited,
+            String layer,
+            String proposition,
+            String ruleName,
+            String explanation
+    ) {
+        public static ActionProhibition permitted() {
+            return new ActionProhibition(false, "", "", "", "Action is permitted by verdict gate");
+        }
+
+        public static ActionProhibition denied(String layer, String proposition, String ruleName, String reason) {
+            return new ActionProhibition(true, layer, proposition, ruleName,
+                    "Action denied by " + layer + " layer [" + ruleName + "]: " + proposition + " - " + reason);
+        }
+    }
+
+    /**
+     * Evaluates actionable prohibitions per proposition rule with verified inputs rather than a blanket advance block.
+     *
+     * @param project the project under evaluation
+     * @param action the operational action to evaluate (e.g. DISPATCH_QUEUED_TASKS, EXPAND_FEATURE)
+     * @return ActionProhibition indicating whether the action is forbidden, with rule name and explainable reason
+     */
+    public ActionProhibition evaluateActionProhibition(ProjectEntity project, String action) {
+        if (project == null || !activeFor(project)) {
+            return ActionProhibition.permitted();
+        }
+        try {
+            VerdictReconciliation.Reconciliation r = reconciliation.reconcile(project.getId());
+            if (r == null || r.judgements().isEmpty()) {
+                return ActionProhibition.permitted();
+            }
+
+            for (Judgement j : r.judgements()) {
+                if (j == null || j.verdict() != Verdict.WITHHOLD) {
+                    continue;
+                }
+                // Rule 1: Infrastructure health prohibition (DZHOZEF_RAZ_01_PROHIBITION_AS_CODE):
+                // If orchestrator DB is unhealthy or runtime launcher unreachable, deny task dispatch.
+                if ("infrastructure".equalsIgnoreCase(j.layer())
+                        && "DISPATCH_QUEUED_TASKS".equalsIgnoreCase(action)) {
+                    return ActionProhibition.denied(
+                            j.layer(),
+                            j.proposition(),
+                            "INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION",
+                            j.reason() == null ? "infrastructure health refused" : j.reason()
+                    );
+                }
+                // Rule 2: Doctrine unrecovered failure prohibition (DZHOZEF_RAZ_01_PROHIBITION_AS_CODE):
+                // If doctrine layer refuses because of active unrecovered failed work, deny feature expansion or dispatch.
+                if ("doctrine".equalsIgnoreCase(j.layer())
+                        && ("DISPATCH_QUEUED_TASKS".equalsIgnoreCase(action) || "EXPAND_FEATURE".equalsIgnoreCase(action))
+                        && j.reason() != null && j.reason().contains("unrecovered failed work")) {
+                    return ActionProhibition.denied(
+                            j.layer(),
+                            j.proposition(),
+                            "DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION",
+                            j.reason()
+                    );
+                }
+            }
+            return ActionProhibition.permitted();
+        } catch (RuntimeException e) {
+            log.warn("VerdictGate: evaluating action prohibition failed for project {}, standing aside: {}",
+                    project.getId(), e.getMessage());
+            return ActionProhibition.permitted();
+        }
+    }
+
+    /**
      * Deliberately scoped to ONE named project while the gate is being trusted.
      *
      * An empty slug means no project, never every project. A scoping value that falls back to "all" turns

@@ -497,7 +497,8 @@ public class AccountHealthService {
 
     void checkAccountMonopoly(Instant now) {
         try {
-            long livePoolSize = accountRepository.countLiveAccounts();
+            long operationalPoolSize = accountRepository.countOperationalAccounts();
+            long livePoolSize = operationalPoolSize > 0 ? operationalPoolSize : accountRepository.countLiveAccounts();
             if (livePoolSize <= 1) {
                 return;
             }

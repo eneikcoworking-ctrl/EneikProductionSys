@@ -156,4 +156,95 @@ class VerdictGateTest {
                 .isEqualTo(Verdict.PERMIT);
         assertThat(d.applied()).isFalse();
     }
+
+    // DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006) / Prescription 9:
+    // Every forbidden action has an executable denial path with an explainable reason, named rule, and non-absorbing reversibility.
+
+    @Test
+    void infrastructureRefusalProhibitsTaskDispatchWithNamedRuleAndReason() {
+        gatingOn("test-forty-seventh");
+        Judgement dbUnhealthy = Judgement.withhold("infrastructure",
+                "the orchestrator's own database is healthy",
+                "bloat 4.2 > threshold", "file=100MB");
+        latticeSays(Verdict.WITHHOLD, dbUnhealthy);
+
+        VerdictGate.ActionProhibition prohibition = gate.evaluateActionProhibition(
+                project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS");
+
+        assertThat(prohibition.prohibited()).isTrue();
+        assertThat(prohibition.layer()).isEqualTo("infrastructure");
+        assertThat(prohibition.ruleName()).isEqualTo("INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION");
+        assertThat(prohibition.explanation())
+                .contains("INFRASTRUCTURE_HEALTH_DISPATCH_PROHIBITION")
+                .contains("the orchestrator's own database is healthy")
+                .contains("bloat 4.2 > threshold");
+    }
+
+    @Test
+    void infrastructureRecoveryLiftsProhibitionAndPermitsDispatch() {
+        gatingOn("test-forty-seventh");
+
+        // Violation: DB is unhealthy
+        Judgement dbUnhealthy = Judgement.withhold("infrastructure",
+                "the orchestrator's own database is healthy",
+                "bloat 4.2 > threshold", "file=100MB");
+        latticeSays(Verdict.WITHHOLD, dbUnhealthy);
+        assertThat(gate.evaluateActionProhibition(project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS").prohibited()).isTrue();
+
+        // Recovery: DB health is restored
+        Judgement dbHealthy = Judgement.permit("infrastructure",
+                "the orchestrator's own database is healthy",
+                "bloat 1.1 <= threshold");
+        latticeSays(Verdict.PERMIT, dbHealthy);
+
+        VerdictGate.ActionProhibition afterRecovery = gate.evaluateActionProhibition(
+                project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS");
+
+        assertThat(afterRecovery.prohibited())
+                .as("Prohibition must not be absorbing: once condition clears, gate permits the action")
+                .isFalse();
+    }
+
+    @Test
+    void doctrineUnrecoveredFailureProhibitsActionAndLiftsOnRecovery() {
+        gatingOn("test-forty-seventh");
+
+        // Violation: doctrine layer refuses due to unrecovered failed work
+        Judgement doctrineRefusal = Judgement.withhold("doctrine",
+                "doctrine BARCAN-TAG-00 accepts the current project state",
+                "Owner-role execution has unrecovered failed work; recover through a fresh atomic wishlist item before claiming doctrine satisfaction.",
+                "stance=refuses");
+        latticeSays(Verdict.WITHHOLD, doctrineRefusal);
+
+        VerdictGate.ActionProhibition prohibition = gate.evaluateActionProhibition(
+                project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS");
+
+        assertThat(prohibition.prohibited()).isTrue();
+        assertThat(prohibition.layer()).isEqualTo("doctrine");
+        assertThat(prohibition.ruleName()).isEqualTo("DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION");
+        assertThat(prohibition.explanation()).contains("unrecovered failed work");
+
+        // Recovery: doctrine failure resolved
+        Judgement doctrinePermit = Judgement.permit("doctrine",
+                "doctrine BARCAN-TAG-00 accepts the current project state",
+                "stance=satisfied");
+        latticeSays(Verdict.PERMIT, doctrinePermit);
+
+        assertThat(gate.evaluateActionProhibition(project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS").prohibited()).isFalse();
+    }
+
+    @Test
+    void prohibitionStandsAsideWhenGatingDisabledOrDifferentProject() {
+        // Flag off: stands aside
+        when(settings.effectiveBoolean(VerdictGate.FLAG)).thenReturn(false);
+        Judgement dbUnhealthy = Judgement.withhold("infrastructure",
+                "the orchestrator's own database is healthy", "outage", "");
+        latticeSays(Verdict.WITHHOLD, dbUnhealthy);
+
+        assertThat(gate.evaluateActionProhibition(project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS").prohibited()).isFalse();
+
+        // Scoped to another project: stands aside
+        gatingOn("different-project");
+        assertThat(gate.evaluateActionProhibition(project("test-forty-seventh"), "DISPATCH_QUEUED_TASKS").prohibited()).isFalse();
+    }
 }

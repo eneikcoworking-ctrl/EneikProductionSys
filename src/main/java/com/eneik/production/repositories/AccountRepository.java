@@ -305,6 +305,16 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             "a.status <> com.eneik.production.models.persistence.AccountStatus.decommissioned")
     long countLiveAccounts();
 
+    // Operational accounts actively capable of taking work (enabled=true and not in non-operational statuses).
+    // Used by monopoly detection so that temporarily unavailable accounts (api_blocked, offline) do not inflate the pool denominator.
+    @Query("SELECT COUNT(a) FROM AccountEntity a WHERE " +
+            "a.enabled = true AND a.status NOT IN (" +
+            "com.eneik.production.models.persistence.AccountStatus.decommissioned, " +
+            "com.eneik.production.models.persistence.AccountStatus.offline, " +
+            "com.eneik.production.models.persistence.AccountStatus.daily_limited, " +
+            "com.eneik.production.models.persistence.AccountStatus.api_blocked)")
+    long countOperationalAccounts();
+
     List<AccountEntity> findByEnabledFalseAndStatusNot(AccountStatus status);
 
     long countByEnabledFalseAndStatusNot(AccountStatus status);

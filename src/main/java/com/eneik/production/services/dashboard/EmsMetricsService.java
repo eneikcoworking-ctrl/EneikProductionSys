@@ -156,13 +156,17 @@ public class EmsMetricsService {
         Map<String, List<WishlistEntity>> wishlistBySourceRole = wishlist.stream()
                 .filter(item -> item.getSourceRoleTag() != null && !item.getSourceRoleTag().isBlank())
                 .collect(Collectors.groupingBy(WishlistEntity::getSourceRoleTag, LinkedHashMap::new, Collectors.toList()));
+        Map<UUID, WishlistEntity> wishlistById = wishlist.stream()
+                .filter(item -> item.getId() != null)
+                .collect(Collectors.toMap(WishlistEntity::getId, item -> item, (a, b) -> a));
 
         List<EmsDashboardMetricsDto.RoleDoctrineVerdict> verdicts = ROLE_DOCTRINES.stream()
                 .map(profile -> roleDoctrineVerdict(
                         profile,
                         tasksByOwnerRole.getOrDefault(profile.roleTag(), List.of()),
                         wishlistBySourceRole.getOrDefault(profile.roleTag(), List.of()),
-                        tasks
+                        tasks,
+                        wishlistById
                 ))
                 .toList();
 
@@ -209,13 +213,29 @@ public class EmsMetricsService {
     private EmsDashboardMetricsDto.RoleDoctrineVerdict roleDoctrineVerdict(RoleDoctrineProfile profile,
                                                                            List<TaskEntity> ownerTasks,
                                                                            List<WishlistEntity> sourceWishlist,
-                                                                           List<TaskEntity> allTasks) {
+                                                                           List<TaskEntity> allTasks,
+                                                                           Map<UUID, WishlistEntity> wishlistById) {
         long ownerTotal = ownerTasks.size();
         long ownerDone = ownerTasks.stream().filter(this::isDoneLike).count();
-        long ownerOpen = ownerTasks.stream().filter(task -> !isDoneLike(task)).count();
-        long ownerBlocked = ownerTasks.stream().filter(this::isBlockedLike).count();
-        long ownerFailed = ownerTasks.stream().filter(task -> task.getStatus() == TaskStatus.failed).count();
-        long defectWork = ownerTasks.stream().filter(this::isDefectWork).count();
+        long ownerOpen = ownerTasks.stream()
+                .filter(task -> isActiveLike(task) || task.getStatus() == TaskStatus.queued)
+                .count();
+        long ownerOpenBlocked = ownerTasks.stream()
+                .filter(task -> task.getStatus() == TaskStatus.blocked && !isDoneLike(task))
+                .count();
+        // D012 / D002: Distinguish active unrecovered failures from historical settled failures.
+        // A historical failed attempt whose work has already been recovered by a succeeding task
+        // or complete deliverable does not permanently withhold doctrine satisfaction.
+        long ownerUnrecoveredFailed = ownerTasks.stream()
+                .filter(task -> task.getStatus() == TaskStatus.failed)
+                .filter(task -> isUnrecoveredFailure(task, allTasks, wishlistById))
+                .count();
+        // Open defect-work evidence only: closed recovery work (isDoneLike) does not count against advancement.
+        long openDefectWork = ownerTasks.stream()
+                .filter(this::isDefectWork)
+                .filter(task -> !isDoneLike(task))
+                .filter(task -> task.getStatus() != TaskStatus.failed || isUnrecoveredFailure(task, allTasks, wishlistById))
+                .count();
         long gatePassed = ownerTasks.stream().filter(TaskEntity::isQualityGatePassed).count();
         long sourceTotal = sourceWishlist.size();
         long sourcePending = sourceWishlist.stream()
@@ -226,7 +246,7 @@ public class EmsMetricsService {
         boolean severeSourceObjection = sourceWishlist.stream()
                 .filter(item -> item.getStatus() == WishlistStatus.pending)
                 .anyMatch(EmsMetricsService::isRoleRefusal);
-        boolean hardFailure = ownerBlocked > 0 || ownerFailed > 0;
+        boolean hardFailure = ownerOpenBlocked > 0 || ownerUnrecoveredFailed > 0;
 
         double totalPotentialImpact = 0.0;
         double actualRealizedImpact = 0.0;
@@ -245,13 +265,13 @@ public class EmsMetricsService {
         if (!hasEvidence) {
             stance = "unknown";
             satisfactionScore = 25.0;
-        } else if ((severeSourceObjection && "must_be".equals(profile.kanoBias())) || ownerFailed > 0) {
+        } else if ((severeSourceObjection && "must_be".equals(profile.kanoBias())) || ownerUnrecoveredFailed > 0) {
             stance = "refuses";
-            double maxPotential = Math.max(0.0, 34.0 - (ownerFailed * 6.0) - Math.min(20.0, sourcePending * 4.0));
+            double maxPotential = Math.max(0.0, 34.0 - (ownerUnrecoveredFailed * 6.0) - Math.min(20.0, sourcePending * 4.0));
             satisfactionScore = impactRatio * maxPotential;
-        } else if (sourcePending > 0 || hardFailure || defectWork > 0) {
+        } else if (sourcePending > 0 || hardFailure || openDefectWork > 0) {
             stance = "objects";
-            double maxPotential = Math.max(35.0, 62.0 - (ownerBlocked * 5.0) - Math.min(18.0, sourcePending * 3.0) - Math.min(12.0, defectWork * 2.0));
+            double maxPotential = Math.max(35.0, 62.0 - (ownerOpenBlocked * 5.0) - Math.min(18.0, sourcePending * 3.0) - Math.min(12.0, openDefectWork * 2.0));
             satisfactionScore = 35.0 + impactRatio * (maxPotential - 35.0);
         } else if (ownerOpen > 0) {
             stance = "almost_satisfied";
@@ -264,7 +284,7 @@ public class EmsMetricsService {
 
         double confidence = confidence(ownerTotal, ownerDone, gatePassed, sourceTotal, hasEvidence);
         String kanoPressure = kanoPressure(profile, stance);
-        String topObjection = topObjection(stance, sourcePending, ownerOpen, ownerBlocked, ownerFailed, defectWork);
+        String topObjection = topObjection(stance, sourcePending, ownerOpen, ownerOpenBlocked, ownerUnrecoveredFailed, openDefectWork);
 
         return new EmsDashboardMetricsDto.RoleDoctrineVerdict(
                 profile.roleTag(),
@@ -280,10 +300,10 @@ public class EmsMetricsService {
                 sourceTotal,
                 ownerTotal,
                 ownerOpen,
-                ownerBlocked,
+                ownerOpenBlocked,
                 ownerDone,
-                defectWork,
-                roleEvidence(ownerTotal, ownerDone, gatePassed, sourcePending, sourceTotal, ownerBlocked, defectWork)
+                openDefectWork,
+                roleEvidence(ownerTotal, ownerDone, gatePassed, sourcePending, sourceTotal, ownerOpenBlocked, openDefectWork)
         );
     }
 
@@ -737,12 +757,12 @@ public class EmsMetricsService {
         };
     }
 
-    private String topObjection(String stance, long sourcePending, long ownerOpen, long ownerBlocked, long ownerFailed, long defectWork) {
+    private String topObjection(String stance, long sourcePending, long ownerOpen, long ownerBlocked, long ownerUnrecoveredFailed, long openDefectWork) {
         if ("unknown".equals(stance)) {
             return "No role-attack or execution evidence exists yet; run the BARCAN council attack before project acceptance.";
         }
-        if (ownerFailed > 0) {
-            return "Owner-role execution has failed work; recover through a fresh atomic wishlist item before claiming doctrine satisfaction.";
+        if (ownerUnrecoveredFailed > 0) {
+            return "Owner-role execution has unrecovered failed work; recover through a fresh atomic wishlist item before claiming doctrine satisfaction.";
         }
         if (sourcePending > 0) {
             return "Source-role objections are still pending; compile, deduplicate, or explicitly dismiss them.";
@@ -750,13 +770,77 @@ public class EmsMetricsService {
         if (ownerBlocked > 0) {
             return "Owner-role work is blocked; analyze the failed attempt and create smaller recovery work.";
         }
-        if (defectWork > 0) {
-            return "Defect-work evidence remains attached to this role; close recovery before increasing feature scope.";
+        if (openDefectWork > 0) {
+            return "Open defect-work evidence remains attached to this role; close recovery before increasing feature scope.";
         }
         if (ownerOpen > 0) {
             return "Execution work is still open; role is close but not fully satisfied.";
         }
         return "No open doctrine objection is visible in the current project evidence.";
+    }
+
+    private boolean isSameTask(TaskEntity a, TaskEntity b) {
+        if (a == b) {
+            return true;
+        }
+        if (a == null || b == null) {
+            return false;
+        }
+        if (a.getId() != null && b.getId() != null) {
+            return a.getId().equals(b.getId());
+        }
+        return false;
+    }
+
+    /**
+     * D012 / D002: Distinguish active unrecovered failure from historical settled failure.
+     * A failed task is recovered if:
+     * - its deliverable has verified quality gate or reached main;
+     * - or a sibling/successor task for the same contentKey has reached done-like state;
+     * - or a sibling/successor task for the same source wishlist has reached done-like state,
+     *   or the source wishlist was dismissed;
+     * - or sibling work for the same role within the same feature succeeded.
+     */
+    private boolean isUnrecoveredFailure(TaskEntity task, List<TaskEntity> allTasks, Map<UUID, WishlistEntity> wishlistById) {
+        if (task == null || task.getStatus() != TaskStatus.failed) {
+            return false;
+        }
+        if (task.isQualityGatePassed() || payloadBoolean(task, "reached_main")) {
+            return false;
+        }
+        if (task.getContentKey() != null && !task.getContentKey().isBlank()) {
+            boolean contentRecovered = allTasks.stream()
+                    .anyMatch(t -> !isSameTask(t, task)
+                            && task.getContentKey().equals(t.getContentKey())
+                            && isDoneLike(t));
+            if (contentRecovered) {
+                return false;
+            }
+        }
+        if (task.getSourceWishlistId() != null) {
+            boolean wishlistRecovered = allTasks.stream()
+                    .anyMatch(t -> !isSameTask(t, task)
+                            && task.getSourceWishlistId().equals(t.getSourceWishlistId())
+                            && isDoneLike(t));
+            if (wishlistRecovered) {
+                return false;
+            }
+            WishlistEntity brief = wishlistById != null ? wishlistById.get(task.getSourceWishlistId()) : null;
+            if (brief != null && brief.getStatus() == WishlistStatus.dismissed) {
+                return false;
+            }
+        }
+        if (task.getFeatureId() != null) {
+            boolean featureRoleRecovered = allTasks.stream()
+                    .anyMatch(t -> !isSameTask(t, task)
+                            && task.getFeatureId().equals(t.getFeatureId())
+                            && roleTag(t).equals(roleTag(task))
+                            && isDoneLike(t));
+            if (featureRoleRecovered) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private List<String> roleEvidence(long ownerTotal, long ownerDone, long gatePassed, long sourcePending,
