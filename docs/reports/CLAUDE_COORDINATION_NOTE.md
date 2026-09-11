@@ -149,7 +149,26 @@
       - В `SystemStatusControllerIntegrationTest` добавлен интеграционный тест эндпоинта (5/5 green).
       - Регрессионная целостность: `SystemStatusServiceTest` (16/16 green), `GeminiContextServiceTest` (23/23 green). Итого 47/47 тестов green.
 
-12. **Что берётся следующим:** Такт 20 — Пункт 19 очереди (`TocOptimizer` · раздел XLIII: предел буфера 15 при одном шаге, где в полёте не больше одного).
+12. **Такт 20 закрыт (`TocOptimizer` / `TocSentinelService`, пункт 19 очереди, раздел XLIII `FACTORY_MECHANISMS.md`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008 False green, `ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010 Data lineage loss):**
+    - **Ликвидация ложного оптимума («System flow optimal») при недостижимом пределе:**
+      - В `TocOptimizer.computeRecommendation` устранена подмена «невозможно измерить» на «всё оптимально».
+      - При пустом графе / отсутствии инструментальных узлов возвращается честный статус:
+        `Flow unmeasured: no instrumented stages present in TOC graph; flow status undetermined.`
+      - При $\le 1$ размеченном шаге конвейера (живой кейс `AUTOMERGE_PROCESSING`) рекомендация возвращает:
+        `Flow unmeasured: single instrumented stage ('%s') with in-flight capacity <= 1 cannot stretch buffer capacity %d; flow status undetermined.`
+      - Рекомендация `System flow optimal. Primary constraint: '%s'.` возвращается строго при наличии $\ge 2$ стадий конвейера, когда поток реально наблюдается и буфер не переполнен.
+      - При действительном превышении предела буфера (`bufferSize >= maxBufferCapacity`) логика придержания полностью сохранена:
+        `Throttling active! Elevate priority of work targeting node '%s' and defer non-critical jobs.`
+    - **Выводимый / конфигурируемый порог буфера (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):**
+      - Устранена зашитая магическая константа: вынесен `DEFAULT_MAX_BUFFER_CAPACITY = 15L`.
+      - Добавлен конструктор `TocOptimizer(graph, maxBufferCapacity)` и аннотированный сеттер `@Value("${eneik.toc.max-buffer-capacity:15}") setConfiguredMaxBufferCapacity`.
+      - `setMaxBufferCapacity(newCap)` динамически обновляет `latestDbrStatus` и вычисляет статус с учётом реального числа узлов графа.
+    - **Заслоняющие тесты:**
+      - Создан `TocOptimizerTest` (7/7 green): проверка исходного базиса, пустого графа, фальсифицирующий заслон на 1 шаг (отсутствие "optimal" в строке), сохранение придержания при реальном превышении емкости, многостадийный оптимальный поток, динамическое обновление порога и полная таблица истинности `computeRecommendation`.
+      - В `TocSentinelServiceTest` добавлены фальсифицирующий тест `singleInstrumentedStageDoesNotClaimSystemFlowOptimal` и подтверждающий `multiStageFlowWithinCapacityReportsSystemFlowOptimal`.
+    - **Анализ топологии шагов конвейера в `AGY_ASKS.md`:** Зафиксирован вопрос и архитектурный анализ разметки шагов потока (разметка Intake/Dispatch/Compile/Review/Merge, где верёвка должна придерживать раздачу входных задач, а не блокировать сливающее звено на выходе).
+
+13. **Что берётся следующим:** Такт 21 — Пункт 20 очереди (`generate_philosopher_patterns.py` · раздел XXIV: две половины корпуса образцов не сверяются; список порождается скриптом, формы написаны рукой; сверять при сборке и ронять её при расхождении).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

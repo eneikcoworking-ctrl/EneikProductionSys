@@ -4,6 +4,7 @@ import com.eneik.production.toc.model.DbrStatus;
 import com.eneik.production.toc.model.TocNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -19,26 +20,33 @@ public class TocOptimizer {
     private static final Logger log = LoggerFactory.getLogger(TocOptimizer.class);
     private static final int HIGH_PRIORITY_BYPASS = 80;
 
+    public static final long DEFAULT_MAX_BUFFER_CAPACITY = 15L;
+
     private final TocExecutionGraph graph;
 
-    private volatile long maxBufferCapacity = 15;
+    private volatile long maxBufferCapacity = DEFAULT_MAX_BUFFER_CAPACITY;
     private volatile boolean ropeThrottlingActive = false;
     private volatile String currentConstraintName = "NONE";
     private volatile Instant lastEvaluatedAt = Instant.now();
     private volatile DbrStatus latestDbrStatus;
 
     public TocOptimizer(TocExecutionGraph graph) {
+        this(graph, DEFAULT_MAX_BUFFER_CAPACITY);
+    }
+
+    public TocOptimizer(TocExecutionGraph graph, long maxBufferCapacity) {
         this.graph = graph;
+        this.maxBufferCapacity = maxBufferCapacity;
         this.latestDbrStatus = new DbrStatus(
                 "NONE",
                 0,
                 0.0,
                 0.0,
                 0,
-                maxBufferCapacity,
+                this.maxBufferCapacity,
                 false,
                 this.lastEvaluatedAt,
-                "System flow optimal. Primary constraint: 'NONE'."
+                computeRecommendation(false, "NONE", 0, this.maxBufferCapacity)
         );
     }
 
@@ -100,9 +108,7 @@ public class TocOptimizer {
                     constraintName, bufferSize, maxBufferCapacity);
         }
 
-        String recommendation = ropeThrottlingActive
-                ? String.format("Throttling active! Elevate priority of work targeting node '%s' and defer non-critical jobs.", constraintName)
-                : String.format("System flow optimal. Primary constraint: '%s'.", constraintName);
+        String recommendation = computeRecommendation(ropeThrottlingActive, constraintName, allNodes.size(), maxBufferCapacity);
 
         lastEvaluatedAt = Instant.now();
 
@@ -162,12 +168,21 @@ public class TocOptimizer {
         return maxBufferCapacity;
     }
 
+    @Value("${eneik.toc.max-buffer-capacity:15}")
+    public void setConfiguredMaxBufferCapacity(long capacity) {
+        if (capacity > 0) {
+            setMaxBufferCapacity(capacity);
+        }
+    }
+
     public void setMaxBufferCapacity(long maxBufferCapacity) {
         this.maxBufferCapacity = maxBufferCapacity;
         DbrStatus current = this.latestDbrStatus;
         if (current != null) {
             boolean throttle = current.bufferSize() >= maxBufferCapacity;
             this.ropeThrottlingActive = throttle;
+            int nodeCount = graph != null ? graph.getAllNodes().size() : 0;
+            String rec = computeRecommendation(throttle, current.primaryConstraintNode(), nodeCount, maxBufferCapacity);
             this.latestDbrStatus = new DbrStatus(
                     current.primaryConstraintNode(),
                     current.constraintQueueLength(),
@@ -177,10 +192,29 @@ public class TocOptimizer {
                     maxBufferCapacity,
                     throttle,
                     current.lastEvaluatedAt(),
-                    throttle
-                            ? String.format("Throttling active! Elevate priority of work targeting node '%s' and defer non-critical jobs.", current.primaryConstraintNode())
-                            : String.format("System flow optimal. Primary constraint: '%s'.", current.primaryConstraintNode())
+                    rec
             );
         }
+    }
+
+    /**
+     * Derives Drum-Buffer-Rope recommendation.
+     * Enforces ALFRED_TARSKIY_01_FALSIFICATION_HARNESS (D008 False green):
+     * A check that cannot fail has no evidentiary value. When the graph has fewer than
+     * two instrumented stages or in-flight capacity cannot saturate the buffer, flow optimality
+     * is unmeasured/undetermined, not optimal.
+     */
+    public static String computeRecommendation(boolean throttled, String constraintName, int stageCount, long bufferLimit) {
+        if (throttled) {
+            return String.format("Throttling active! Elevate priority of work targeting node '%s' and defer non-critical jobs.", constraintName);
+        }
+        if (stageCount == 0 || "NONE".equals(constraintName)) {
+            return "Flow unmeasured: no instrumented stages present in TOC graph; flow status undetermined.";
+        }
+        if (stageCount == 1) {
+            return String.format("Flow unmeasured: single instrumented stage ('%s') with in-flight capacity <= 1 cannot stretch buffer capacity %d; flow status undetermined.",
+                    constraintName, bufferLimit);
+        }
+        return String.format("System flow optimal. Primary constraint: '%s'.", constraintName);
     }
 }

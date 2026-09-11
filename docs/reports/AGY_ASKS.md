@@ -494,5 +494,47 @@
    - Обновлён `SystemStatusControllerIntegrationTest` (5/5 green).
    - Регрессионные наборы: `SystemStatusServiceTest` (16/16 green), `GeminiContextServiceTest` (23/23 green). Итого 47/47 тестов green.
 
+## 2026-09-11 Antigravity: Такт 20 — TocOptimizer и Drum-Buffer-Rope Falsification (пункт 19 очереди, раздел XLIII)
+
+### Что сделано:
+1. **Ликвидация ложного оптимума («System flow optimal») при недостижимом пределе (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008 False green):**
+   - В `TocOptimizer.computeRecommendation` устранена подмена отсутствия измерений на утверждение об оптимальности потока («P истинно тогда и только тогда, когда P»).
+   - При графе с 0 узлами или отсутствии ограничений возвращается статус:
+     `Flow unmeasured: no instrumented stages present in TOC graph; flow status undetermined.`
+   - При графе с $\le 1$ размеченной стадией (как живой `AUTOMERGE_PROCESSING`) возвращается:
+     `Flow unmeasured: single instrumented stage ('%s') with in-flight capacity <= 1 cannot stretch buffer capacity %d; flow status undetermined.`
+   - Статус `System flow optimal. Primary constraint: '%s'.` возвращается строго при $\ge 2$ стадиях конвейера, когда между ними существует измеримый относительный поток и буфер не переполнен.
+   - Логика придержания выпуска `Throttling active! Elevate priority of work targeting node '%s' and defer non-critical jobs.` полностью сохранена при реальном `bufferSize >= maxBufferCapacity`.
+2. **Устранение неизменного магического порога (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010 Data lineage loss):**
+   - Вынесена константа по умолчанию `DEFAULT_MAX_BUFFER_CAPACITY = 15L`.
+   - Добавлен конструктор `TocOptimizer(TocExecutionGraph graph, long maxBufferCapacity)` и аннотированный сеттер `@Value("${eneik.toc.max-buffer-capacity:15}") setConfiguredMaxBufferCapacity`.
+   - `setMaxBufferCapacity(newCap)` динамически обновляет снимок `latestDbrStatus` и вычисляет рекомендацию с учётом актуальной топологии графа.
+3. **Заслоняющие тесты:**
+   - Создан `TocOptimizerTest` (7/7 green):
+     - `initialBaselineStatusDoesNotClaimSystemFlowOptimal` (базис не содержит "optimal")
+     - `emptyGraphEvaluationReportsFlowUnmeasured` (пустой граф -> unmeasured)
+     - `singleInstrumentedStageRefutesSystemFlowOptimal` (фальсифицирующий заслон на 1 шаг -> doesNotContain "optimal")
+     - `singleInstrumentedStageWhenBufferExceededEnforcesThrottling` (придержание работает)
+     - `multiStageFlowWithinBufferLimitReportsSystemFlowOptimal` (многостадийный поток -> optimal)
+     - `setMaxBufferCapacityUpdatesRecommendationDynamically` (динамическая подстройка емкости)
+     - `computeRecommendationTruthTable` (полная истинностная таблица)
+   - В `TocSentinelServiceTest` добавлены фальсифицирующий `singleInstrumentedStageDoesNotClaimSystemFlowOptimal` и подтверждающий `multiStageFlowWithinCapacityReportsSystemFlowOptimal`.
+
+### Архитектурный вопрос по топологии шагов конвейера и обратной связи DBR:
+**Вопрос:** Какие стадии конвейера должны быть размечены как узлы `TocExecutionGraph` и где должна натягиваться верёвка?
+**Анализ обратной связи (Инвертированная петля):**
+- В текущем коде единственный размеченный узел — `AUTOMERGE_PROCESSING`, и верёвка `shouldAdmit` проверяется перед его запуском (`AutoMergeService:165`).
+- В теории Голдратта верёвка (Rope) связывает барабан (Drum, самое узкое место) с **началом потока** (Release of Work into the Gate), замедляя впуск новой работы при переполнении буфера перед ограничением.
+- Придерживать же сам сливающий узел (`AutoMergeService`), когда накопились готовые PR — это обратная связь с неверным знаком: при перегрузке фабрики мы перестаём сливать PR, отчего очередь только растёт, а число наблюдений падает до 0.
+- **Целевая топология:**
+  1. Входной гейт / Верёвка (Rope): `JulesDispatchService` (запуск новых задач воркерам) — именно здесь `shouldAdmit()` должен придерживать низкоприоритетные задачи, если буфер узкого места переполнен.
+  2. Размеченные стадии потока:
+     - `DISPATCH_PROCESSING` (`JulesDispatchService`)
+     - `COMPILATION_PROCESSING` (`TechnicalLeadCompiler` / `ProjectFlowService`)
+     - `JULES_SESSION_ACTIVE` (`JulesSessionService`)
+     - `PR_REVIEW_PROCESSING` (`PrReviewService`)
+     - `AUTOMERGE_PROCESSING` (`AutoMergeService`)
+  При такой 5-стадийной разметке TOC-граф станет реальной моделью потока создания ценности фабрики, выявляющей истинное узкое место.
+
 
 

@@ -195,6 +195,8 @@
 
 ### 19. Верёвка не может сработать · `TocOptimizer` · раздел XLIII
 Предел буфера 15 при одном шаге, где в полёте не больше одного.
+**Чинить:** при недостижимом пределе верёвки (один размеченный шаг, работа по одной) состояние — «не определено / не измерено» с указанием причины, а не «System flow optimal». Сохранить придержание при действительном переполнении буфера. Сделать порог выводимым/конфигурируемым (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, D008; `ALONZO_CHERCH_21_DERIVED_CUTOFF`, D010).
+**Закрыто (Такт 20):** В `TocOptimizer.computeRecommendation` устранена подмена отсутствия измерений на «System flow optimal». При графе с $\le 1$ шагом рекомендация возвращает честный статус `Flow unmeasured: single instrumented stage ('%s') with in-flight capacity <= 1 cannot stretch buffer capacity %d; flow status undetermined.`. При превышении предела буфера сохранено придержание `Throttling active!`. Порог `maxBufferCapacity` сделан конфигурируемым (`DEFAULT_MAX_BUFFER_CAPACITY = 15L`, `@Value("${eneik.toc.max-buffer-capacity:15}")`). Заслонено в `TocOptimizerTest` (7/7) и `TocSentinelServiceTest`.
 
 ### 20. Две половины корпуса образцов не сверяются · `generate_philosopher_patterns.py` · раздел XXIV
 Список порождается скриптом, формы написаны рукой, согласие не проверяется ничем.

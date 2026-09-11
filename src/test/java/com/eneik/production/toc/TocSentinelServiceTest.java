@@ -408,4 +408,41 @@ public class TocSentinelServiceTest {
         TocToken blocked = sentinelService.startExecution("FLOW_3", 10);
         assertThat(blocked.getStatus()).isEqualTo(TocToken.TokenStatus.THROTTLED);
     }
+
+    /**
+     * ALFRED_TARSKIY_01_FALSIFICATION_HARNESS (D008 False green):
+     * Single instrumented stage with buffer capacity 15 cannot stretch the rope, so flow status
+     * must be reported as unmeasured/undetermined, not falsely claimed as 'System flow optimal'.
+     */
+    @Test
+    void singleInstrumentedStageDoesNotClaimSystemFlowOptimal() {
+        TocToken token = sentinelService.startExecution("FLOW_SINGLE", 10);
+        sentinelService.enterStep(token, "STAGE_SOLO");
+        sentinelService.periodicWatchdog();
+
+        DbrStatus status = sentinelService.getDbrStatus();
+        assertThat(status.primaryConstraintNode()).isEqualTo("STAGE_SOLO");
+        assertThat(status.ropeThrottlingActive()).isFalse();
+        assertThat(status.recommendation()).doesNotContain("optimal");
+        assertThat(status.recommendation()).contains("Flow unmeasured: single instrumented stage ('STAGE_SOLO') with in-flight capacity <= 1 cannot stretch buffer capacity");
+    }
+
+    /**
+     * When multiple pipeline stages exist and flow is within buffer capacity,
+     * the system flow is legitimately optimal.
+     */
+    @Test
+    void multiStageFlowWithinCapacityReportsSystemFlowOptimal() {
+        TocToken t1 = sentinelService.startExecution("FLOW_MULTI_1", 10);
+        sentinelService.enterStep(t1, "STAGE_DISPATCH");
+
+        TocToken t2 = sentinelService.startExecution("FLOW_MULTI_2", 10);
+        sentinelService.enterStep(t2, "STAGE_COMPILE");
+
+        sentinelService.periodicWatchdog();
+
+        DbrStatus status = sentinelService.getDbrStatus();
+        assertThat(status.ropeThrottlingActive()).isFalse();
+        assertThat(status.recommendation()).contains("System flow optimal");
+    }
 }
