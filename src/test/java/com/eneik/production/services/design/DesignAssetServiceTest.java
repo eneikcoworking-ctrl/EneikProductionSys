@@ -189,6 +189,91 @@ class DesignAssetServiceTest {
         verify(gitHubPullRequestService).commitFile(eq(project), contains("mockup.html"), any(), anyString());
     }
 
+    @Test
+    void generateAssetPassesDeclaredBrandTokensToProducerPromptAndRecordsBothInMetadata() throws Exception {
+        when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
+        when(stitchClient.hasStitchKey()).thenReturn(true);
+        when(stitchClient.createProject(anyString())).thenReturn("123456");
+        org.mockito.ArgumentCaptor<String> promptCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        when(stitchClient.generateScreenFromText(eq("123456"), promptCaptor.capture(), anyString(), eq("ds-42")))
+                .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
+        when(stitchClient.download("https://example.com/html"))
+                .thenReturn("<style>body{background:#fbf9f1;color:#7d8570;}</style>".getBytes());
+        when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
+
+        DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
+                project, null, "A login screen", "mockup", "fast", false, "ds-42",
+                java.util.List.of("#fbf9f1", "#7d8570"), java.util.List.of("IBM Plex Sans")
+        );
+
+        assertThat(result.available()).isTrue();
+        // Producer received the declared tokens in prompt
+        assertThat(promptCaptor.getValue()).contains("Brand colors: #fbf9f1, #7d8570");
+        assertThat(promptCaptor.getValue()).contains("Brand fonts: IBM Plex Sans");
+
+        // Metadata on disk captures both declared tokens and producer tokens
+        assertThat(result.metadataPath()).isNotBlank();
+        String metadataContent = java.nio.file.Files.readString(java.nio.file.Paths.get(result.metadataPath()));
+        var node = new ObjectMapper().readTree(metadataContent);
+        assertThat(node.has("declaredTokens")).isTrue();
+        assertThat(node.has("producerTokens")).isTrue();
+        java.util.List<String> declaredList = new java.util.ArrayList<>();
+        node.path("declaredTokens").forEach(t -> declaredList.add(t.asText()));
+        java.util.List<String> producerList = new java.util.ArrayList<>();
+        node.path("producerTokens").forEach(t -> producerList.add(t.asText()));
+        assertThat(declaredList).contains("#fbf9f1", "#7d8570", "ibm plex sans");
+        assertThat(producerList).contains("#fbf9f1", "#7d8570", "ibm plex sans");
+    }
+
+    @Test
+    void rejectionMessageIncludesBothDeclaredTokensAndProducerTokens() {
+        when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
+        when(stitchClient.hasStitchKey()).thenReturn(true);
+        when(stitchClient.createProject(anyString())).thenReturn("123456");
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), eq("ds-42")))
+                .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
+        when(stitchClient.download("https://example.com/html"))
+                .thenReturn("<style>body{background:#090f13;color:#161c21;}</style>".getBytes());
+        when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
+
+        DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
+                project, null, "A login screen", "mockup", "fast", false, "ds-42",
+                java.util.List.of("#fbf9f1", "#7d8570"), java.util.List.of("IBM Plex Sans"), true
+        );
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.message()).contains("Declared tokens:");
+        assertThat(result.message()).contains("Producer tokens:");
+        assertThat(result.message()).contains("#fbf9f1");
+    }
+
+    @Test
+    void auditExistingDraftsExposesBothDeclaredTokensAndProducerTokensInReport() throws Exception {
+        java.nio.file.Path projectDir = tempDir.resolve("test-project");
+        java.nio.file.Files.createDirectories(projectDir);
+        java.nio.file.Files.writeString(projectDir.resolve("mockup-1.html"),
+                "<style>body{background:#fbf9f1;color:#7d8570;}</style>");
+        var meta = new ObjectMapper().createObjectNode();
+        var prod = meta.putArray("producerTokens");
+        prod.add("#fbf9f1");
+        prod.add("#7d8570");
+        java.nio.file.Files.writeString(projectDir.resolve("mockup-1.json"), meta.toString());
+
+        var reports = designAssetService.auditExistingDrafts(
+                project,
+                java.util.List.of("mockup-1"),
+                java.util.List.of("#fbf9f1", "#7d8570"),
+                java.util.List.of("IBM Plex Sans")
+        );
+
+        assertThat(reports).containsKey("mockup-1");
+        var report = reports.get("mockup-1");
+        assertThat(report.declaredTokens()).contains("#fbf9f1", "#7d8570", "ibm plex sans");
+        assertThat(report.producerTokens()).contains("#fbf9f1", "#7d8570");
+    }
+
     private String base64Png() {
         return java.util.Base64.getEncoder().encodeToString(new byte[]{1, 2, 3});
     }

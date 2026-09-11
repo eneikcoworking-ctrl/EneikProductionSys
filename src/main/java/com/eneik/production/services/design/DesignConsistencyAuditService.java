@@ -46,7 +46,14 @@ public class DesignConsistencyAuditService {
 
     public record ConsistencyReport(double traceRatio, boolean traceAccepted,
                                      double avgCrossScreenJaccard, boolean crossScreenAccepted,
-                                     Set<String> offTokenValues) {
+                                     Set<String> offTokenValues,
+                                     Set<String> declaredTokens,
+                                     Set<String> producerTokens) {
+        public ConsistencyReport(double traceRatio, boolean traceAccepted,
+                                 double avgCrossScreenJaccard, boolean crossScreenAccepted,
+                                 Set<String> offTokenValues) {
+            this(traceRatio, traceAccepted, avgCrossScreenJaccard, crossScreenAccepted, offTokenValues, Set.of(), Set.of());
+        }
     }
 
     /** Extracts the distinct colors and font-family values actually present in a screen's HTML/CSS. */
@@ -102,10 +109,16 @@ public class DesignConsistencyAuditService {
      * sibling screens from the same design-system session (may be empty if this is the first screen).
      */
     public ConsistencyReport audit(String html, TokenSet declaredTokens, List<String> siblingHtmlDrafts) {
+        return audit(html, declaredTokens, siblingHtmlDrafts, null);
+    }
+
+    public ConsistencyReport audit(String html, TokenSet declaredTokens, List<String> siblingHtmlDrafts, TokenSet producerTokens) {
         TokenSet used = extractUsedTokens(html);
         double trace = traceRatio(used, declaredTokens);
         Set<String> offToken = new LinkedHashSet<>(used.all());
-        offToken.removeAll(declaredTokens.all());
+        if (declaredTokens != null) {
+            offToken.removeAll(declaredTokens.all());
+        }
 
         double avgJaccard = 1.0;
         if (siblingHtmlDrafts != null && !siblingHtmlDrafts.isEmpty()) {
@@ -116,8 +129,11 @@ public class DesignConsistencyAuditService {
             avgJaccard = sum / siblingHtmlDrafts.size();
         }
 
+        Set<String> declaredAll = declaredTokens != null ? declaredTokens.all() : Set.of();
+        Set<String> producerAll = producerTokens != null ? producerTokens.all() : Set.of();
+
         return new ConsistencyReport(trace, trace >= MIN_TRACE_RATIO, avgJaccard,
-                avgJaccard >= MIN_CROSS_SCREEN_JACCARD, offToken);
+                avgJaccard >= MIN_CROSS_SCREEN_JACCARD, offToken, declaredAll, producerAll);
     }
 
     private static String normalizeColor(String raw) {

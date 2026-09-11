@@ -86,11 +86,21 @@ public class DesignAssetService {
         var declaredTokens = DesignConsistencyAuditService.TokenSet.of(declaredColors, declaredFonts);
 
         java.util.Map<String, String> htmlByBasename = new java.util.LinkedHashMap<>();
+        java.util.Map<String, DesignConsistencyAuditService.TokenSet> producerTokensByBasename = new java.util.LinkedHashMap<>();
         for (String basename : basenames) {
             try {
                 Path htmlFile = directory.resolve(basename + ".html").normalize();
                 if (Files.isRegularFile(htmlFile)) {
                     htmlByBasename.put(basename, Files.readString(htmlFile, StandardCharsets.UTF_8));
+                }
+                Path jsonFile = directory.resolve(basename + ".json").normalize();
+                if (Files.isRegularFile(jsonFile)) {
+                    var node = objectMapper.readTree(Files.readString(jsonFile, StandardCharsets.UTF_8));
+                    java.util.List<String> prodTokens = new java.util.ArrayList<>();
+                    if (node.has("producerTokens") && node.path("producerTokens").isArray()) {
+                        node.path("producerTokens").forEach(t -> prodTokens.add(t.asText()));
+                    }
+                    producerTokensByBasename.put(basename, DesignConsistencyAuditService.TokenSet.of(prodTokens, List.of()));
                 }
             } catch (Exception e) {
                 log.debug("DesignAssetService: could not read draft {} for audit: {}", basename, e.getMessage());
@@ -103,7 +113,13 @@ public class DesignAssetService {
                     .filter(other -> !other.getKey().equals(entry.getKey()))
                     .map(java.util.Map.Entry::getValue)
                     .toList();
-            results.put(entry.getKey(), consistencyAuditService.audit(entry.getValue(), declaredTokens, siblings));
+            var prodTokens = producerTokensByBasename.getOrDefault(entry.getKey(),
+                    DesignConsistencyAuditService.TokenSet.of(List.of(), List.of()));
+            var report = consistencyAuditService.audit(entry.getValue(), declaredTokens, siblings, prodTokens);
+            log.info("DesignAssetService: consistency audit draft={} traceRatio={} crossScreenJaccard={} offTokens={} declaredTokens={} producerTokens={}",
+                    entry.getKey(), report.traceRatio(), report.avgCrossScreenJaccard(), report.offTokenValues(),
+                    report.declaredTokens(), report.producerTokens());
+            results.put(entry.getKey(), report);
         }
         return results;
     }
@@ -301,7 +317,7 @@ public class DesignAssetService {
                 : googleAiResourceService.model("nano_banana_model", "gemini-3.1-flash-image");
         boolean allowSearch = useGoogleSearch && settingsService.effectiveBoolean("google_search_grounding_enabled");
 
-        String prompt = designPrompt(project, context, brief, assetType, normalizedQuality);
+        String prompt = designPrompt(project, context, brief, assetType, normalizedQuality, designSystemColors, designSystemFonts);
         var interaction = googleAiResourceService.callInteraction(
                 model,
                 prompt,
@@ -385,9 +401,19 @@ public class DesignAssetService {
                     "Stitch did not return a project ID for create_project.", "", "", "");
         }
 
-        String prompt = brief == null || brief.isBlank()
+        StringBuilder promptBuilder = new StringBuilder(brief == null || brief.isBlank()
                 ? "Create a UI screen for: " + firstNonBlank(assetType, "the current project feature")
-                : brief;
+                : brief);
+        if (designSystemColors != null && !designSystemColors.isEmpty()) {
+            promptBuilder.append("\nBrand colors: ").append(String.join(", ", designSystemColors));
+        }
+        if (designSystemFonts != null && !designSystemFonts.isEmpty()) {
+            promptBuilder.append("\nBrand fonts: ").append(String.join(", ", designSystemFonts));
+        }
+        String prompt = promptBuilder.toString();
+        var producerTokens = DesignConsistencyAuditService.TokenSet.of(
+                designSystemColors == null ? List.of() : designSystemColors,
+                designSystemFonts == null ? List.of() : designSystemFonts);
         StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_FLASH", designSystemId);
         if (!screen.available()) {
             return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message(), "", "", "");
@@ -462,15 +488,18 @@ public class DesignAssetService {
                 var declaredTokens = DesignConsistencyAuditService.TokenSet.of(
                         designSystemColors, designSystemFonts == null ? List.of() : designSystemFonts);
                 List<String> siblingHtml = loadSiblingHtmlForDesignSystem(directory, designSystemId);
-                consistencyReport = consistencyAuditService.audit(htmlText, declaredTokens, siblingHtml);
-                log.info("DesignAssetService: consistency audit traceRatio={} crossScreenJaccard={} offTokens={}",
-                        consistencyReport.traceRatio(), consistencyReport.avgCrossScreenJaccard(), consistencyReport.offTokenValues());
+                consistencyReport = consistencyAuditService.audit(htmlText, declaredTokens, siblingHtml, producerTokens);
+                log.info("DesignAssetService: consistency audit traceRatio={} crossScreenJaccard={} offTokens={} declaredTokens={} producerTokens={}",
+                        consistencyReport.traceRatio(), consistencyReport.avgCrossScreenJaccard(), consistencyReport.offTokenValues(),
+                        consistencyReport.declaredTokens(), consistencyReport.producerTokens());
                 if (!consistencyReport.traceAccepted()) {
                     return new DesignAssetResult(false, "aesthetic_drift", "stitch", htmlPath, "", "text/html",
                             String.format(Locale.ROOT,
-                                    "Screen rejected: token_trace_ratio=%.3f below required %.2f. Off-token values: %s",
+                                    "Screen rejected: token_trace_ratio=%.3f below required %.2f. Off-token values: %s. Declared tokens: %s. Producer tokens: %s",
                                     consistencyReport.traceRatio(), DesignConsistencyAuditService.MIN_TRACE_RATIO,
-                                    consistencyReport.offTokenValues()),
+                                    consistencyReport.offTokenValues(),
+                                    consistencyReport.declaredTokens(),
+                                    consistencyReport.producerTokens()),
                             "", "", "");
                 }
             }
@@ -489,6 +518,10 @@ public class DesignAssetService {
             if (consistencyReport != null) {
                 metadata.put("tokenTraceRatio", consistencyReport.traceRatio());
                 metadata.put("crossScreenJaccard", consistencyReport.avgCrossScreenJaccard());
+                var declaredArr = metadata.putArray("declaredTokens");
+                consistencyReport.declaredTokens().forEach(declaredArr::add);
+                var producerArr = metadata.putArray("producerTokens");
+                consistencyReport.producerTokens().forEach(producerArr::add);
             }
             Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
 
@@ -516,7 +549,17 @@ public class DesignAssetService {
                                 ProjectOperationalContext context,
                                 String brief,
                                 String assetType,
-                                String quality) {
+                                String quality,
+                                List<String> designSystemColors,
+                                List<String> designSystemFonts) {
+        StringBuilder brandTokens = new StringBuilder();
+        if (designSystemColors != null && !designSystemColors.isEmpty()) {
+            brandTokens.append("\n- brand colors: ").append(String.join(", ", designSystemColors));
+        }
+        if (designSystemFonts != null && !designSystemFonts.isEmpty()) {
+            brandTokens.append("\n- brand fonts: ").append(String.join(", ", designSystemFonts));
+        }
+
         return """
                 You are Eneik Design Asset Service.
                 Produce one production-ready visual asset for the selected project.
@@ -536,7 +579,7 @@ public class DesignAssetService {
 
                 ASSET:
                 - type: %s
-                - quality: %s
+                - quality: %s%s
 
                 BRIEF:
                 %s
@@ -548,6 +591,7 @@ public class DesignAssetService {
                 project == null ? "" : firstNonBlank(project.getRepositoryName(), project.getRepositoryUrl(), project.getRepoUrl()),
                 firstNonBlank(assetType, "project visual asset"),
                 quality == null || quality.isBlank() ? "fast" : quality,
+                brandTokens.toString(),
                 brief == null || brief.isBlank() ? "Create a useful visual asset for the current project." : brief,
                 context == null ? "" : preview(context.promptJson(), 6_000)
         );

@@ -446,6 +446,25 @@
   - `unfinishedTasksWithWitnessedClientTraversalYieldsNotReady`: незавершённые задачи не маскируются проходом.
 - Регрессия: `CommandDashboardServiceTest` (4/4), `SystemStatusControllerIntegrationTest` (5/5), `SystemStatusServiceTest` (16/16) — 25/25 green.
 
+**Закрыто (Такт 24):** `DesignAssetService` (Ступень 1, раздел XXIX `FACTORY_MECHANISMS.md`, `NUEL_BELNAP_15_TOKEN_TRACE_UNITY` / D015, `NUEL_BELNAP_18_CROSS_SCREEN_JACCARD_GATE` / D015, `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009):
+- **Разделение несовпадения оснований и эстетического дрейфа:**
+  - В `DesignConsistencyAuditService.ConsistencyReport` добавлены поля `declaredTokens` и `producerTokens` (с сохранением обратно-совместимого конструктора).
+  - В метод `audit(...)` добавлен перегруженный вариант, принимающий `producerTokens` (набор токенов, переданных генератору).
+  - В `DesignAssetService.generateViaStitch` объявленные цвета и шрифты теперь передаются в промпт генератору Stitch (`Brand colors: ...`, `Brand fonts: ...`), а также в промпт нано-бананы (`designPrompt`).
+  - `producerTokens` вычисляется из переданных порождателю токенов.
+  - В логе аудита согласованности (`log.info`) выводятся оба набора:
+    `consistency audit traceRatio=... crossScreenJaccard=... offTokens=[...] declaredTokens=[...] producerTokens=[...]`
+  - В `metadata.json` сохраняются оба массива `declaredTokens` и `producerTokens`.
+  - В `auditExistingDrafts` токены генератора читаются из сохраненного мета-файла черновика и протоколируются вместе с объявленным набором.
+  - При отказе (`aesthetic_drift`) сообщение отказа также явно указывает оба набора (`Declared tokens: ..., Producer tokens: ...`), позволяя однозначно определить, был ли порождатель проинформирован о палитре.
+- **Заслоняющие тесты:**
+  - `DesignAssetServiceTest`:
+    - `generateAssetPassesDeclaredBrandTokensToProducerPromptAndRecordsBothInMetadata`: проверяет через `ArgumentCaptor`, что порождатель получил объявленные токены в промпте, и на диске в `metadata.json` зафиксированы оба набора.
+    - `rejectionMessageIncludesBothDeclaredTokensAndProducerTokens`: проверяет, что при отклонении сообщение содержит оба набора токенов.
+    - `auditExistingDraftsExposesBothDeclaredTokensAndProducerTokensInReport`: проверяет экспозицию обоих наборов в отчёте аудита существующих черновиков.
+  - Регрессия: `DesignAssetServiceTest` (9/9), `DesignConsistencyAuditServiceTest` (11/11), `DesignShopOrchestrationServiceTest` (13/13), `DesignDriftMonitorServiceTest` (3/3), `DesignShopOrchestrationServiceLaw15Test` (7/7) — 43/43 green.
+
+
 
 **Открытое, самое срочное:** Предписание 23 — у выключенного аккаунта нет пути назад:
 `setEnabled(true)` нет нигде в `src/main`, а восстановление ищет только `findByStatusAndEnabledTrue`.
