@@ -134,7 +134,22 @@
       - Успешно пройдены 31 тест в `FlowSpineServiceTest`, `FailingReviewCompositionTest`, `ReviewArtifactInvariantTest` и 13 тестов в `AcceptanceVerdictLayerTest`, `OperationalFlowCoreServiceTest`.
     - **Открытый вопрос в `AGY_ASKS.md`:** Каким каналом свидетельства прохода заказчика заносятся в систему (внешний webhook/API, агентский сеанс на живом инстансе или операторский шлюз).
 
-11. **Что берётся следующим:** Такт 19 — Пункт 18 очереди (`GeminiContextCacheManager` · раздел XLII: снять java-овский кэш как дублирующий питоновский).
+11. **Такт 19 закрыт (`GeminiContextCacheManager` / `SystemStatusController`, пункт 18 очереди, раздел XLII `FACTORY_MECHANISMS.md`, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011 Perception failure):**
+    - **Ликвидация дублирующего холостого кэша модели:**
+      - Класс `GeminiContextCacheManager.java` (162 строки) полностью удалён из кодовой базы бэкенда (`services.googleai`).
+      - В `SystemStatusController` устранены зависимости от `cacheManager` (поле и параметр конструктора) и вызовы `invalidateCache()` / `getOrCreateStaticCorpusCache()`.
+      - Метод `POST /api/system-status/gemini-context/reindex` сохранён: он честно вызывает `geminiContextService.reindexStandingKnowledge()`, позволяя оператору обновлять векторный RAG-корпус выборки (уставы, философы, заметки) без холостого создания платного 24h кэша у Google AI.
+      - В ответе эндпоинта удалено неиспользуемое поле `cacheResourceName`.
+      - Питоновский кэш контекста в ML-сайдкаре (`src/models/ml/PredictionService.py:116, 154`: `ensure_gemini_cache`, `ask_gemini_cached`) сохранён без изменений на живом пути запросов.
+    - **Заслоняющие тесты:**
+      - Создан `SystemStatusControllerTest` (3/3 green):
+        - `reindexGeminiContextTriggersKnowledgeReindexWithoutPromptCacheCall`: подтверждает вызов `reindexStandingKnowledge()` и отсутствие `cacheResourceName` в ответе.
+        - `geminiContextCacheManagerClassIsRemoved`: подтверждает отсутствие класса в рантайме (`ClassNotFoundException`).
+        - `noCachedContentsCreationInBackendJavaSource`: структурный сканер всех Java-файлов в `src/main/java` подтверждает строго 0 вхождений `cachedContents`.
+      - В `SystemStatusControllerIntegrationTest` добавлен интеграционный тест эндпоинта (5/5 green).
+      - Регрессионная целостность: `SystemStatusServiceTest` (16/16 green), `GeminiContextServiceTest` (23/23 green). Итого 47/47 тестов green.
+
+12. **Что берётся следующим:** Такт 20 — Пункт 19 очереди (`TocOptimizer` · раздел XLIII: предел буфера 15 при одном шаге, где в полёте не больше одного).
 
 
 **Что случилось с твоим черновиком, пока тебя не было.** Ты ушла на лимите, оставив в дереве пять файлов

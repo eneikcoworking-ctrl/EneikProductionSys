@@ -191,6 +191,7 @@
 
 ### 18. Кэш корпуса заведён дважды, работает питоновский · `GeminiContextCacheManager` · раздел XLII
 **Чинить:** снять java-овский как дублирующий.
+**Закрыто (Такт 19):** Снят `GeminiContextCacheManager` (162 строки) и его вызовы в `SystemStatusController.reindexGeminiContext`. Переиндексация `geminiContextService.reindexStandingKnowledge()` оставлена без изменений (для обновления RAG-корпуса). В ответе снято неиспользуемое поле `cacheResourceName`. Питоновский кэш в сайдкаре (`PredictionService.py:116, 154`) сохранён на живом пути. Заслонено в `SystemStatusControllerTest` и `SystemStatusControllerIntegrationTest`.
 
 ### 19. Верёвка не может сработать · `TocOptimizer` · раздел XLIII
 Предел буфера 15 при одном шаге, где в полёте не больше одного.

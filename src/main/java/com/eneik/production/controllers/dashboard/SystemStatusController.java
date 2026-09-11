@@ -24,20 +24,17 @@ public class SystemStatusController {
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final com.eneik.production.services.GeminiContextService geminiContextService;
     private final com.eneik.production.services.ProjectEventLogService projectEventLogService;
-    private final com.eneik.production.services.googleai.GeminiContextCacheManager cacheManager;
 
     public SystemStatusController(SystemStatusService systemStatusService,
                                   SystemSettingsService systemSettingsService,
                                   org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
                                   com.eneik.production.services.GeminiContextService geminiContextService,
-                                  com.eneik.production.services.ProjectEventLogService projectEventLogService,
-                                  com.eneik.production.services.googleai.GeminiContextCacheManager cacheManager) {
+                                  com.eneik.production.services.ProjectEventLogService projectEventLogService) {
         this.systemStatusService = systemStatusService;
         this.systemSettingsService = systemSettingsService;
         this.jdbcTemplate = jdbcTemplate;
         this.geminiContextService = geminiContextService;
         this.projectEventLogService = projectEventLogService;
-        this.cacheManager = cacheManager;
     }
 
     // Durable, deploy-independent project history (2026-07-26 restoration) - for external agents/operator
@@ -68,11 +65,8 @@ public class SystemStatusController {
     @PostMapping("/gemini-context/reindex")
     public Map<String, Object> reindexGeminiContext() {
         geminiContextService.reindexStandingKnowledge();
-        cacheManager.invalidateCache();
-        String newCacheResource = cacheManager.getOrCreateStaticCorpusCache();
         return Map.of(
-                "message", "Re-index & prompt cache refresh triggered",
-                "cacheResourceName", newCacheResource != null ? newCacheResource : "none (cache disabled or key missing)"
+                "message", "Re-index triggered"
         );
     }
 

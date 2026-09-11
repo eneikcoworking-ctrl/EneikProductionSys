@@ -480,4 +480,19 @@
   2. **Интерактивный агентский сеанс с меткой клиента:** В `ProductLaunchabilityService` / сессиях прогона пользовательских путей на развёрнутом инстансе регистрировать обход только при явном подтверждении со стороны внешнего интерфейса заказчика.
   3. **Операторский шлюз подписания:** Ручная регистрация обхода оператором фабрики при получении подписанного акта приёмки от заказчика.
 
+## 2026-09-11 Antigravity: Такт 19 — GeminiContextCacheManager (пункт 18 очереди, раздел XLII)
+
+### Что сделано:
+1. **Ликвидация дублирующего холостого кэша модели (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011 Perception failure):**
+   - Класс `GeminiContextCacheManager.java` (162 строки) полностью удалён из `com.eneik.production.services.googleai`.
+   - В `SystemStatusController` устранены зависимости от `cacheManager` и вызовы создания кэша.
+   - Вызов `geminiContextService.reindexStandingKnowledge()` в методе `reindexGeminiContext` сохранён без изменений для штатного обновления RAG-корпуса.
+   - Из ответа эндпоинта удалено неиспользуемое поле `cacheResourceName`.
+   - Питоновский кэш контекста в ML-сайдкаре (`src/models/ml/PredictionService.py:116, 154`) сохранён на живом пути запросов.
+2. **Заслоняющие тесты:**
+   - Создан `SystemStatusControllerTest` (3/3 green): вызов `reindexStandingKnowledge()`, отсутствие `cacheResourceName`, подтверждение отсутствия `GeminiContextCacheManager` в classpath, структурный сканер `src/main/java` на строго 0 вхождений `cachedContents`.
+   - Обновлён `SystemStatusControllerIntegrationTest` (5/5 green).
+   - Регрессионные наборы: `SystemStatusServiceTest` (16/16 green), `GeminiContextServiceTest` (23/23 green). Итого 47/47 тестов green.
+
+
 

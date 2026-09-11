@@ -83,6 +83,15 @@ class SystemStatusControllerIntegrationTest {
         assertThat(response.getBody()).containsKeys("build", "runtimeSource");
     }
 
+    @Test
+    void reindexGeminiContextEndpointReturnsOkWithoutCacheResourceName() {
+        ResponseEntity<Map> response = restTemplate.postForEntity("/api/system-status/gemini-context/reindex", null, Map.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).containsEntry("message", "Re-index triggered");
+        assertThat(response.getBody()).doesNotContainKey("cacheResourceName");
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> section(ResponseEntity<Map> response, String key) {
         return (Map<String, Object>) response.getBody().get(key);

@@ -728,8 +728,7 @@ public class GeminiContextService {
     }
 
     /**
-     * Concatenates all 12 BARCAN-TAG charters and philosopher patterns into a static text block
-     * suitable for Gemini Prompt Caching (cachedContents/*).
+     * Concatenates all 12 BARCAN-TAG charters and philosopher patterns into a static text block.
      */
     public String buildStaticCorpus() {
         if (repoRoot == null || repoRoot.isBlank()) {
