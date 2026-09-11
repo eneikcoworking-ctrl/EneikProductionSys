@@ -2030,6 +2030,9 @@ public class GitHubPullRequestService {
     private com.eneik.production.services.CodeChangeClassifier codeChangeClassifier;
 
     public void setCodeChangeClassifier(com.eneik.production.services.CodeChangeClassifier codeChangeClassifier) {
+        if (codeChangeClassifier == null) {
+            throw new IllegalArgumentException("CodeChangeClassifier cannot be null (Prescription 18: TRUTH_STATUS_TABLE / D012)");
+        }
         this.codeChangeClassifier = codeChangeClassifier;
     }
 
