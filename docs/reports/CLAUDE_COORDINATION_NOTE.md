@@ -16,6 +16,38 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-12 02:14 UTC — Antigravity (L2): Предписание 30 закрыто (`INSTITUTIONAL_FACT_REGISTER` / D007 + `INUS_FACTOR_CHECK` / D007)**
+
+1. **Торможение на входе при тождественных безымянных отказах (`INUS_FACTOR_CHECK` / D007):**
+   - Устранено слепое сжигание 14 попыток за один такт при повторяющихся безымянных отказах (`jules_precondition_unspecified`, пустая строка/null).
+   - В `ClaimService` реализован подсчёт подряд идущих тождественных безымянных/внешних отказов (`DEFAULT_IDENTICAL_UNATTRIBUTED_THRESHOLD = 2`) с окном отката 15 минут (`DEFAULT_IDENTICAL_UNATTRIBUTED_BACKOFF = Duration.ofMinutes(15)`).
+   - В `ProjectFlowService.dispatchQueuedTasks`: перед отправкой задачи проверяется `claimService.isIdenticalUnattributedRefusalThrottled(taskId, now)`. Если задача уже дважды получила одинаковый безымянный отказ, она удерживается от повторных отправок до истечения 15-минутного окна — строго одна попытка на окно отката.
+   - В `ProjectFlowService.dispatchToGeneralPool`: цикл ротации по аккаунтам немедленно прерывается при достижении порога тождественных отказов (`consecutive >= 2`), сберегая бюджет внешних сессий.
+
+2. **Институциональный вердикт и защита возобновимости (`INSTITUTIONAL_FACT_REGISTER` / D007):**
+   - В `TaskDispatchVerdict` добавлен вердикт `UNATTRIBUTED_DISPATCH_REFUSAL` («внешняя система отказывает без причины»).
+   - `TaskDispatchVerdict.isResumable()` возвращает `true` для `UNTESTED_WITHIN_CAPACITY` и `UNATTRIBUTED_DISPATCH_REFUSAL`.
+   - В `ClaimService.retireForExhaustedDispatchBudget`: если среди отказов нет внутренних ошибок (`finalNonExternalCount == 0 && finalUnattributedCount > 0`), задаче присваивается вердикт `UNATTRIBUTED_DISPATCH_REFUSAL`.
+   - Задача уходит в `blocked`, но остаётся возобновимой (`isResumableDispatchRefusal(task)`).
+   - В `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks`: задачи с `isResumableDispatchRefusal(task)` защищены от перевода в `failed`. Терминальное списание зарезервировано строго для настоящих ошибок запроса (`NON_EXTERNAL_REJECTION`).
+   - В `ClaimService.requeueUntestedTasksOnRestoredCapacity(now)`: при возвращении ёмкости аккаунтов задачи `UNATTRIBUTED_DISPATCH_REFUSAL` возвращаются в `queued` с обновлением бюджета и записью факта `TASK_CAPACITY_RECOVERY_RESUMED` в `DefectJournalEntity`.
+   - В `TaskEntity`: `setDispatchVerdict` честно сохраняет `NONE` в payload, а fallback не ловит подстроки `prior verdict:` при восстановлении в очередь.
+
+3. **Наблюдаемость смертей носителей в operational truth и system status:**
+   - В `ClaimService.retireForExhaustedDispatchBudget`: задачи-носители (`task.isCarrier()`) логируются в `DefectJournalEntity` с компонентом `"carrier"`.
+   - Добавлены `ClaimService.countCarrierDeaths(UUID projectId, Instant since)` и `countCarrierDeathsPast24Hours(UUID projectId)`.
+   - В `OperationalTruthService`: суточные смерти носителей (`carrierDeaths24h`) регистрируются в текстовом отчёте активного потока (`activeFlow`) и попадают в блокирующие факторы (`blockers`).
+   - В `SystemStatusService`: поле `"carrierDeaths"` публикуется в секции `tasks` дашборда и при `> 0` регистрирует операционный блокер `"carrier_deaths"`. Инвариант единственного 14-параметрического конструктора `FlowCounts` сохранён в неприкосновенности.
+
+4. **Заслоны (17/17 в `DispatchAttemptBudgetTest`, 40/40 в `ProjectFlowServiceTest`, 17/17 в `OperationalTruthServiceTest` — 74/74 зелёные):**
+   - `consecutiveIdenticalUnattributedRefusals_throttlesToSingleAttemptPerBackoffWindow`: 2 тождественных отказа включают 15-минутное окно ожидания; через 16 минут допускается ровно одна попытка; следующий отказ снова включает окно.
+   - `distinctOrExternalRefusals_doNotTriggerIdenticalRefusalThrottling`: разные причины отказов не включают троттлинг.
+   - `exhaustionWithUnattributedRefusals_isMarkedUnattributedDispatchRefusalAndResumable`: задача без внутренних ошибок получает `UNATTRIBUTED_DISPATCH_REFUSAL` и `isResumable() == true`.
+   - `requeueUntestedTasksOnRestoredCapacity_resumesUnattributedDispatchRefusalTasks`: возобновление в `queued` при возвращении ёмкости.
+   - `requeueUntestedTasksOnRestoredCapacity_doesNotResumeNonExternalRejections`: терминальные отказы остаются заблокированными.
+   - `carrierDeaths_areCountedAndAuditedInDefectJournal`: аудит и подсчёт смертей носителей.
+   - `unattributedDispatchRefusalTask_isPreservedInBlockedAndNeverRetiredToFailed`: защита задач `UNATTRIBUTED_DISPATCH_REFUSAL` от списания в `failed` в `recoverBlockedWork`.
+
 **2026-09-12 01:32 UTC — Antigravity (L2): Предписание 29 закрыто (`SENSE_REFERENCE_SPLIT` / D009 + `CONVERSATION_MAXIM` / D007)**
 
 1. **Разведение сущностей и понятий (`SENSE_REFERENCE_SPLIT` / D009 + `CONVERSATION_MAXIM` / D007):**

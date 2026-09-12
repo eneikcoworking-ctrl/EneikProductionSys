@@ -91,11 +91,16 @@ public class OperationalTruthService {
         List<WishlistEntity> wishlist = wishlistRepository.findByProjectId(projectId);
         List<JulesSessionEntity> sessions = sessionsForTasks(tasks);
         List<PrReviewEntity> reviews = reviewsForSessions(sessions);
-        List<DefectJournalEntity> recentDefects = defectJournalRepository.findByProjectIdAndCreatedAtAfter(
-                projectId, Instant.now().minus(24, ChronoUnit.HOURS))
-                .stream()
+        List<DefectJournalEntity> allRecentDefects = defectJournalRepository.findByProjectIdAndCreatedAtAfter(
+                projectId, Instant.now().minus(24, ChronoUnit.HOURS));
+        List<DefectJournalEntity> recentDefects = allRecentDefects.stream()
                 .filter(d -> !com.eneik.production.kaizen.service.DefectJournalService.NON_DEFECT_AUDIT_CATEGORIES.contains(d.getCategory()))
                 .toList();
+        long carrierDeaths = allRecentDefects.stream()
+                .filter(d -> "DISPATCH_BUDGET_EXHAUSTION_COMPOSITION".equals(d.getDefectType()))
+                .filter(d -> "carrier".equalsIgnoreCase(d.getSourceComponent())
+                        || (d.getDescription() != null && d.getDescription().contains("carrier=true")))
+                .count();
 
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(projectId);
         String systemStatus = systemStallStatus(systemStatusService.getStatus(projectId));
@@ -125,11 +130,11 @@ public class OperationalTruthService {
                 .collect(Collectors.toSet());
 
         OperationalTruthDto.Delivery delivery = delivery(readiness);
-        OperationalTruthDto.ActiveFlow activeFlow = activeFlow(tasks, wishlist, sessions);
+        OperationalTruthDto.ActiveFlow activeFlow = activeFlow(tasks, wishlist, sessions, carrierDeaths);
         OperationalTruthDto.EvidenceSummary evidence = evidence(tasks, reviews, liveSessionIds);
         OperationalTruthDto.DefectSummary defects = defects(recentDefects);
         List<OperationalTruthDto.Blocker> blockers = blockers(
-                tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds);
+                tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds, carrierDeaths);
         List<OperationalTruthDto.InvariantStatus> invariants = invariants(
                 readiness, tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask,
                 reviewsBySession, recentDefects, evidence);
@@ -273,6 +278,13 @@ public class OperationalTruthService {
     private OperationalTruthDto.ActiveFlow activeFlow(List<TaskEntity> tasks,
                                                       List<WishlistEntity> wishlist,
                                                       List<JulesSessionEntity> sessions) {
+        return activeFlow(tasks, wishlist, sessions, 0L);
+    }
+
+    private OperationalTruthDto.ActiveFlow activeFlow(List<TaskEntity> tasks,
+                                                      List<WishlistEntity> wishlist,
+                                                      List<JulesSessionEntity> sessions,
+                                                      long carrierDeaths) {
         long queued = countStatus(tasks, TaskStatus.queued);
         long active = tasks.stream().filter(task -> Set.of(TaskStatus.claimed, TaskStatus.in_progress).contains(task.getStatus())).count();
         long review = tasks.stream().filter(task -> Set.of(TaskStatus.pending_review, TaskStatus.review).contains(task.getStatus())).count();
@@ -290,6 +302,9 @@ public class OperationalTruthService {
         }
         if (pendingWishlist > 0 || compilingWishlist > 0) {
             narrative.add((pendingWishlist + compilingWishlist) + " wishlist item(s) still need decomposition.");
+        }
+        if (carrierDeaths > 0) {
+            narrative.add(carrierDeaths + " carrier task(s) exhausted dispatch budget in the last 24h.");
         }
         if (narrative.isEmpty()) {
             narrative.add("No active flow is visible for this project.");
@@ -376,7 +391,24 @@ public class OperationalTruthService {
                                                        Map<UUID, List<JulesSessionEntity>> sessionsByTask,
                                                        Map<UUID, List<PrReviewEntity>> reviewsBySession,
                                                        Set<UUID> liveSessionIds) {
+        return blockers(tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds, 0L);
+    }
+
+    private List<OperationalTruthDto.Blocker> blockers(List<TaskEntity> tasks,
+                                                       List<WishlistEntity> wishlist,
+                                                       List<PrReviewEntity> reviews,
+                                                       String systemStatus,
+                                                       DuplicateContent duplicateContent,
+                                                       Map<UUID, List<JulesSessionEntity>> sessionsByTask,
+                                                       Map<UUID, List<PrReviewEntity>> reviewsBySession,
+                                                       Set<UUID> liveSessionIds,
+                                                       long carrierDeaths) {
         List<OperationalTruthDto.Blocker> blockers = new ArrayList<>();
+        if (carrierDeaths > 0) {
+            blockers.add(new OperationalTruthDto.Blocker(
+                    "carrier_deaths", "medium", "carrier", "Carrier tasks exhausted dispatch budget",
+                    carrierDeaths + " carrier task(s) exhausted dispatch budget in the last 24h."));
+        }
         if (isTrustBlockingSystemStatus(systemStatus)) {
             blockers.add(new OperationalTruthDto.Blocker(
                     "system_status", "high", "system", "System stop condition",

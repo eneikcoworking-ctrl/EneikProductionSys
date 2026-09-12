@@ -2758,7 +2758,7 @@ HTML продукта и потому видит пустоту. **Он его �
 
 ---
 
-### 30. Исчерпание нашего доступа становится вердиктом о носителе · `INSTITUTIONAL_FACT_REGISTER` (D007) + `INUS_FACTOR_CHECK` (D007)
+### 30. Исчерпание нашего доступа становится вердиктом о носителе · `INSTITUTIONAL_FACT_REGISTER` (D007) + `INUS_FACTOR_CHECK` (D007) · **СДЕЛАНО (держится)**
 
 *Откуда взято.* Запись `ClaimService` сама называла открытое место: образец стоит «**сильная по притязанию,
 слабая по последствию**». Последствие теперь измерено.
@@ -2796,21 +2796,30 @@ HTML продукта и потому видит пустоту. **Он его �
 Наблюдение, которое решит: отказы шли при `promptLength` 26 565, 38 307 и 47 755; если ни один отказ после
 15:00 не имеет длины выше порога — причина в длине.
 
-*Делать.*
-1. **Бюджет попыток обязан различать вид отказа.** Четырнадцать попыток осмысленны при разных причинах и
-   бессмысленны при тождественной безымянной. При повторе того же безымянного отказа бюджет обязан
-   схлопываться до одной пробы за окно отката.
-2. **Вердикт обязан называть, о ком он.** Сообщение «14 refused session creations against a budget of 14»
-   говорит о нас; статус, который оно ставит, говорит о носителе. Разделить: носитель не «несостоятелен», а
-   «не отправлен, внешняя система отказывает без причины».
-3. **Смерть носителя обязана считаться.** Тридцать три за сутки не видны нигде, кроме журнала: ни свод, ни
-   детектор застоя их не называют.
-
-*Заслон:* тест, дающий диспетчеру подряд тождественные безымянные отказы и требующий, чтобы попыток было не
-14, а одна за окно отката.
-
-*Опровержение:* посчитать за сутки события «left the dispatch queue» и сложить их попытки. Больше одной
-попытки на окно при тождественном отказе — пункт не сделан.
+*Сделано:*
+1. **Торможение на входе при тождественных безымянных отказах (`INUS_FACTOR_CHECK` / D007):**
+   - В `ClaimService` внедрено отслеживание подряд идущих тождественных безымянных/внешних отказов (`jules_precondition_unspecified`, null/blank): порог 2 отказа (`DEFAULT_IDENTICAL_UNATTRIBUTED_THRESHOLD = 2`), окно отката 15 минут (`DEFAULT_IDENTICAL_UNATTRIBUTED_BACKOFF = Duration.ofMinutes(15)`).
+   - В `ProjectFlowService.dispatchQueuedTasks`: перед отправкой проверяется предикат `claimService.isIdenticalUnattributedRefusalThrottled(task.getId(), now)`. Если задача уже получила ≥ 2 одинаковых безымянных отказа и с последней пробы прошло меньше окна отката (15 мин), она пропускается в текущем цикле и ждёт истечения окна — допускается строго 1 попытка на окно отката вместо прожигания бюджета каждую минуту.
+   - В `ProjectFlowService.dispatchToGeneralPool`: ротация по живым аккаунтам прерывается немедленно при фиксации серии тождественных безымянных отказов (`>= 2`), предотвращая сжигание всех 14 попыток за один цикл диспетчеризации.
+2. **Честный институциональный вердикт и защита возобновимости (`INSTITUTIONAL_FACT_REGISTER` / D007):**
+   - Введён вердикт `TaskDispatchVerdict.UNATTRIBUTED_DISPATCH_REFUSAL` («внешняя система отказывает без причины»), дополняющий `UNTESTED_WITHIN_CAPACITY`.
+   - В `ClaimService.retireForExhaustedDispatchBudget`: при исчерпании бюджета отправки, если `finalNonExternalCount == 0 && finalUnattributedCount > 0`, задаче присваивается вердикт `UNATTRIBUTED_DISPATCH_REFUSAL`, а не терминальный `DISPATCH_BUDGET_EXHAUSTED`.
+   - Задача переводится в статус `blocked`, но помечается возобновимой (`isResumableDispatchRefusal(task) == true`).
+   - В `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks`: задачи с `isResumableDispatchRefusal(task)` защищены от перевода в `failed` (в терминальный отказ списываются только задачи с `NON_EXTERNAL_REJECTION`).
+   - В `ClaimService.requeueUntestedTasksOnRestoredCapacity(now)`: при возвращении ёмкости аккаунтов задачи с вердиктами `UNTESTED_WITHIN_CAPACITY` и `UNATTRIBUTED_DISPATCH_REFUSAL` возвращаются в очередь `TaskStatus.queued` со сбросом бюджета попыток и фиксацией институционального факта в `DefectJournalEntity`.
+3. **Наблюдаемость смертей носителей в operational truth и system status:**
+   - В `ClaimService.retireForExhaustedDispatchBudget`: для задач-носителей (`task.isCarrier()`) компонент в `DefectJournalEntity` помечается как `"carrier"`.
+   - В `ClaimService` добавлены методы `countCarrierDeaths(UUID projectId, Instant since)` и `countCarrierDeathsPast24Hours(UUID projectId)`.
+   - В `OperationalTruthService`: суточные смерти носителей (`carrierDeaths24h`) включены в текстовый нарратив активного потока (`activeFlow`) и регистрируются как блокирующий фактор (`blockers.add("carrier_deaths past 24h: " + carrierDeaths24h)`).
+   - В `SystemStatusService`: счётчик `"carrierDeaths"` выведен в секцию `tasks` дашборда и при ненулевом значении регистрируется в `operationalBlockers` как `"carrier_deaths"`.
+4. **Заслоны (17/17 в `DispatchAttemptBudgetTest`, 40/40 в `ProjectFlowServiceTest`, 17/17 в `OperationalTruthServiceTest`):**
+   - `consecutiveIdenticalUnattributedRefusals_throttlesToSingleAttemptPerBackoffWindow`: при 2 тождественных безымянных отказах задача блокируется от повторных попыток на 15 минут; через 16 минут допускается ровно одна проба; при следующем отказе окно отката возобновляется.
+   - `distinctOrExternalRefusals_doNotTriggerIdenticalRefusalThrottling`: при разных или специфицированных отказах дророттлинг не включается, сохраняя обычный бюджет.
+   - `exhaustionWithUnattributedRefusals_isMarkedUnattributedDispatchRefusalAndResumable`: задача без внутренних ошибок получает `UNATTRIBUTED_DISPATCH_REFUSAL` и свойство `isResumable() == true`.
+   - `requeueUntestedTasksOnRestoredCapacity_resumesUnattributedDispatchRefusalTasks`: при восстановлении ёмкости возобновляет задачи с `UNATTRIBUTED_DISPATCH_REFUSAL` в `queued`.
+   - `requeueUntestedTasksOnRestoredCapacity_doesNotResumeNonExternalRejections`: не возобновляет задачи с внутренними ошибками запроса.
+   - `carrierDeaths_areCountedAndAuditedInDefectJournal`: проверяет регистрацию и подсчёт смертей носителей за 24 часа.
+   - `unattributedDispatchRefusalTask_isPreservedInBlockedAndNeverRetiredToFailed`: проверяет, что задача с `UNATTRIBUTED_DISPATCH_REFUSAL` удерживается в `blocked` и никогда не списывается в `failed`.
 
 ---
 

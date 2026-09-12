@@ -18,7 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -704,24 +706,28 @@ public class ClaimService {
         final long finalNonExternalCount = nonExternalCount;
         final long finalUnattributedCount = unattributedCount;
 
-        // Law 12 & NUEL_BELNAP_03 (D012):
-        // Only when ALL refusals are demonstrably external capacity limits (and 0 non-external, 0 unattributed)
-        // is the requirement classified as UNTESTED_WITHIN_CAPACITY.
-        // If refusals are all unattributed or mixed, it is classified as DISPATCH_BUDGET_EXHAUSTED with all 3 counts named,
-        // preventing unattributed failures from silently masquerading as tested capacity issues.
+        // Law 12, NUEL_BELNAP_03 (D012) & INSTITUTIONAL_FACT_REGISTER (D007):
+        // 1. When ALL refusals are demonstrably external capacity limits (0 non-external, 0 unattributed),
+        //    the requirement is classified as UNTESTED_WITHIN_CAPACITY.
+        // 2. When refusals are unattributed (or mixed with external capacity, but with 0 non-external rejections),
+        //    the requirement is classified as UNATTRIBUTED_DISPATCH_REFUSAL ("external system refuses without cause").
+        //    It is NOT an absorbing failure and is resumable on capacity/cooldown recovery.
+        // 3. Only when refusals include proven non-external rejections (our request content rejected)
+        //    is the requirement classified as DISPATCH_BUDGET_EXHAUSTED (terminal in blocked).
         boolean allExternalCapacity = finalExternalCount > 0 && finalNonExternalCount == 0 && finalUnattributedCount == 0;
-        com.eneik.production.models.persistence.TaskDispatchVerdict verdict = allExternalCapacity
-                ? com.eneik.production.models.persistence.TaskDispatchVerdict.UNTESTED_WITHIN_CAPACITY
-                : com.eneik.production.models.persistence.TaskDispatchVerdict.DISPATCH_BUDGET_EXHAUSTED;
-
+        boolean pureOrMixedUnattributedWithoutNonExternal = finalNonExternalCount == 0 && finalUnattributedCount > 0;
+        com.eneik.production.models.persistence.TaskDispatchVerdict verdict;
         String dispatchStatus;
         if (allExternalCapacity) {
+            verdict = com.eneik.production.models.persistence.TaskDispatchVerdict.UNTESTED_WITHIN_CAPACITY;
             dispatchStatus = String.format("UNTESTED_WITHIN_CAPACITY: dispatch budget exhausted (%d/%d attempts); all refusals external capacity (%d external, %d non-external, %d unattributed); requirement not evaluated. Last reason: %s",
                     refusals, budget, finalExternalCount, finalNonExternalCount, finalUnattributedCount, reason != null ? reason : "<none>");
-        } else if (finalUnattributedCount > 0 && finalExternalCount == 0 && finalNonExternalCount == 0) {
-            dispatchStatus = String.format("DISPATCH_BUDGET_EXHAUSTED: dispatch budget exhausted (%d/%d attempts); all refusals unattributed (%d external, %d non-external, %d unattributed); requirement unverified. Last reason: %s",
-                    refusals, budget, finalExternalCount, finalNonExternalCount, finalUnattributedCount, reason != null ? reason : "<none>");
+        } else if (pureOrMixedUnattributedWithoutNonExternal) {
+            verdict = com.eneik.production.models.persistence.TaskDispatchVerdict.UNATTRIBUTED_DISPATCH_REFUSAL;
+            dispatchStatus = String.format("UNATTRIBUTED_DISPATCH_REFUSAL: dispatch budget exhausted (%d/%d attempts); external system refuses without cause (%d external, 0 non-external, %d unattributed); requirement not evaluated. Last reason: %s",
+                    refusals, budget, finalExternalCount, finalUnattributedCount, reason != null ? reason : "<none>");
         } else {
+            verdict = com.eneik.production.models.persistence.TaskDispatchVerdict.DISPATCH_BUDGET_EXHAUSTED;
             dispatchStatus = String.format("DISPATCH_BUDGET_EXHAUSTED: dispatch budget exhausted (%d/%d attempts); composition: %d external, %d non-external, %d unattributed. Last reason: %s",
                     refusals, budget, finalExternalCount, finalNonExternalCount, finalUnattributedCount, reason != null ? reason : "<none>");
         }
@@ -734,11 +740,13 @@ public class ClaimService {
 
             if (defectJournalRepository != null) {
                 UUID projectId = task.getProject() != null ? task.getProject().getId() : null;
-                String auditDesc = String.format("Task %s dispatch budget exhausted (%d/%d). Composition: %d external, %d non-external, %d unattributed. Status: %s",
-                        taskId, refusals, budget, finalExternalCount, finalNonExternalCount, finalUnattributedCount,
-                        allExternalCapacity ? "UNTESTED_WITHIN_CAPACITY" : "DISPATCH_BUDGET_EXHAUSTED");
+                boolean isCarrier = task.isCarrier();
+                String sourceComponent = isCarrier ? "carrier" : "task";
+                String auditDesc = String.format("Task %s (carrier=%b) dispatch budget exhausted (%d/%d). Composition: %d external, %d non-external, %d unattributed. Status: %s",
+                        taskId, isCarrier, refusals, budget, finalExternalCount, finalNonExternalCount, finalUnattributedCount,
+                        verdict);
                 defectJournalRepository.save(new DefectJournalEntity(
-                        projectId, taskId, null, "INFO", "INSTITUTIONAL_AUDIT", "ClaimService",
+                        projectId, taskId, null, "INFO", "INSTITUTIONAL_AUDIT", sourceComponent,
                         "DISPATCH_BUDGET_EXHAUSTION_COMPOSITION", auditDesc, (double) finalExternalCount));
             }
         });
@@ -759,18 +767,29 @@ public class ClaimService {
     }
 
     public static boolean isUntestedWithinCapacity(TaskEntity task) {
-        if (task == null) {
-            return false;
-        }
-        if (task.getStatus() != TaskStatus.blocked) {
+        if (task == null || task.getStatus() != TaskStatus.blocked) {
             return false;
         }
         return task.isUntestedWithinCapacity();
     }
 
+    public static boolean isUnattributedDispatchRefusal(TaskEntity task) {
+        if (task == null || task.getStatus() != TaskStatus.blocked) {
+            return false;
+        }
+        return task.isUnattributedDispatchRefusal();
+    }
+
+    public static boolean isResumableDispatchRefusal(TaskEntity task) {
+        if (task == null || task.getStatus() != TaskStatus.blocked) {
+            return false;
+        }
+        return task.isResumableDispatchRefusal();
+    }
+
     /**
-     * Prescription 15 / NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012) & INSTITUTIONAL_FACT_REGISTER (D007):
-     * Resolution path for tasks in UNTESTED_WITHIN_CAPACITY.
+     * Prescription 15 & 30 / NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012) & INSTITUTIONAL_FACT_REGISTER (D007):
+     * Resolution path for tasks in UNTESTED_WITHIN_CAPACITY or UNATTRIBUTED_DISPATCH_REFUSAL.
      * When capacity has returned (e.g. accounts recovered), return such blocked tasks back to TaskStatus.queued
      * with a fresh dispatch attempt budget and record an institutional audit fact.
      */
@@ -790,28 +809,139 @@ public class ClaimService {
         List<TaskEntity> blockedTasks = taskRepository.findByStatus(TaskStatus.blocked);
         int resumed = 0;
         for (TaskEntity task : blockedTasks) {
-            if (isUntestedWithinCapacity(task)) {
+            if (isResumableDispatchRefusal(task)) {
+                TaskDispatchVerdict priorVerdict = task.getDispatchVerdict();
                 task.setStatus(TaskStatus.queued);
                 task.setLastBudgetResetAt(current);
                 task.setDispatchVerdict(com.eneik.production.models.persistence.TaskDispatchVerdict.NONE);
                 long newBudget = dispatchAttemptBudget();
-                task.setJulesDispatchStatus(String.format("REQUEUED_ON_CAPACITY_RECOVERY: returned to queue on account capacity restoration at %s (budget reset to 0/%d)",
-                        current, newBudget));
+                task.setJulesDispatchStatus(String.format("REQUEUED_ON_CAPACITY_RECOVERY: returned to queue on account capacity restoration at %s (budget reset to 0/%d, prior verdict: %s)",
+                        current, newBudget, priorVerdict));
                 taskRepository.save(task);
                 resumed++;
 
                 if (defectJournalRepository != null) {
                     UUID projectId = task.getProject() != null ? task.getProject().getId() : null;
-                    String auditDesc = String.format("Task %s returned to dispatch queue from UNTESTED_WITHIN_CAPACITY on account capacity restoration. Budget reset at %s.",
-                            task.getId(), current);
+                    String auditDesc = String.format("Task %s returned to dispatch queue from %s on account capacity restoration. Budget reset at %s.",
+                            task.getId(), priorVerdict, current);
                     defectJournalRepository.save(new DefectJournalEntity(
                             projectId, task.getId(), null, "INFO", "INSTITUTIONAL_AUDIT", "ClaimService",
                             "TASK_CAPACITY_RECOVERY_RESUMED", auditDesc, 0.0));
                 }
-                log.info("ClaimService: task {} resumed to queue from UNTESTED_WITHIN_CAPACITY with restored capacity", task.getId());
+                log.info("ClaimService: task {} resumed to queue from {} with restored capacity", task.getId(), priorVerdict);
             }
         }
         return resumed;
+    }
+
+    /**
+     * Prescription 30 / INUS_FACTOR_CHECK (D007):
+     * Default backoff duration and threshold for consecutive identical unattributed refusals.
+     * Enforces strictly one attempt per backoff window when external provider refuses without cause.
+     */
+    public static final Duration DEFAULT_IDENTICAL_UNATTRIBUTED_BACKOFF = Duration.ofMinutes(15);
+    public static final int DEFAULT_IDENTICAL_UNATTRIBUTED_THRESHOLD = 2;
+
+    public static String normalizeClosureReasonKey(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return "<unspecified>";
+        }
+        String trimmed = reason.trim().toLowerCase(Locale.ROOT);
+        int colon = trimmed.indexOf(':');
+        if (colon > 0) {
+            return trimmed.substring(0, colon).trim();
+        }
+        return trimmed;
+    }
+
+    public int consecutiveIdenticalUnattributedRefusals(UUID taskId) {
+        List<JulesSessionEntity> failedSessions = julesSessionRepository.findByTaskId(taskId).stream()
+                .filter(s -> s.getExternalSessionId() == null && "failed".equalsIgnoreCase(s.getStatus()))
+                .sorted(Comparator.comparing(JulesSessionEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .toList();
+        if (failedSessions.isEmpty()) {
+            return 0;
+        }
+        JulesSessionEntity newest = failedSessions.get(0);
+        com.eneik.production.models.persistence.DispatchRefusalCategory newestCat =
+                com.eneik.production.models.persistence.DispatchRefusalCategory.fromClosureReason(newest.getClosureReason());
+        if (!newestCat.isUnattributed()) {
+            return 0;
+        }
+        String targetKey = normalizeClosureReasonKey(newest.getClosureReason());
+        int streak = 0;
+        for (JulesSessionEntity session : failedSessions) {
+            com.eneik.production.models.persistence.DispatchRefusalCategory cat =
+                    com.eneik.production.models.persistence.DispatchRefusalCategory.fromClosureReason(session.getClosureReason());
+            if (cat.isUnattributed() && targetKey.equals(normalizeClosureReasonKey(session.getClosureReason()))) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+        return streak;
+    }
+
+    public boolean isIdenticalUnattributedRefusalThrottled(UUID taskId) {
+        return isIdenticalUnattributedRefusalThrottled(taskId, Instant.now());
+    }
+
+    public boolean isIdenticalUnattributedRefusalThrottled(UUID taskId, Instant now) {
+        Instant current = now != null ? now : Instant.now();
+        List<JulesSessionEntity> failedSessions = julesSessionRepository.findByTaskId(taskId).stream()
+                .filter(s -> s.getExternalSessionId() == null && "failed".equalsIgnoreCase(s.getStatus()))
+                .sorted(Comparator.comparing(JulesSessionEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
+                .toList();
+        if (failedSessions.isEmpty()) {
+            return false;
+        }
+        JulesSessionEntity newest = failedSessions.get(0);
+        com.eneik.production.models.persistence.DispatchRefusalCategory newestCat =
+                com.eneik.production.models.persistence.DispatchRefusalCategory.fromClosureReason(newest.getClosureReason());
+        if (!newestCat.isUnattributed()) {
+            return false;
+        }
+        String targetKey = normalizeClosureReasonKey(newest.getClosureReason());
+        int streak = 0;
+        for (JulesSessionEntity session : failedSessions) {
+            com.eneik.production.models.persistence.DispatchRefusalCategory cat =
+                    com.eneik.production.models.persistence.DispatchRefusalCategory.fromClosureReason(session.getClosureReason());
+            if (cat.isUnattributed() && targetKey.equals(normalizeClosureReasonKey(session.getClosureReason()))) {
+                streak++;
+            } else {
+                break;
+            }
+        }
+        if (streak < DEFAULT_IDENTICAL_UNATTRIBUTED_THRESHOLD) {
+            return false;
+        }
+        Instant lastAttemptAt = newest.getCreatedAt() != null ? newest.getCreatedAt() : current;
+        Instant nextAllowed = lastAttemptAt.plus(DEFAULT_IDENTICAL_UNATTRIBUTED_BACKOFF);
+        return current.isBefore(nextAllowed);
+    }
+
+    /**
+     * Prescription 30 / INSTITUTIONAL_FACT_REGISTER (D007):
+     * Counts carrier task deaths (dispatch budget exhaustions) for telemetry and observability.
+     */
+    public long countCarrierDeaths(UUID projectId, Instant since) {
+        if (defectJournalRepository == null) {
+            return 0L;
+        }
+        Instant from = since != null ? since : Instant.now().minus(Duration.ofHours(24));
+        List<DefectJournalEntity> entries = projectId != null
+                ? defectJournalRepository.findByProjectIdAndCreatedAtAfter(projectId, from)
+                : defectJournalRepository.findByCreatedAtAfter(from);
+        return entries.stream()
+                .filter(e -> "DISPATCH_BUDGET_EXHAUSTION_COMPOSITION".equals(e.getDefectType())
+                        || "CARRIER_DISPATCH_BUDGET_EXHAUSTED".equals(e.getDefectType()))
+                .filter(e -> "carrier".equalsIgnoreCase(e.getSourceComponent())
+                        || (e.getDescription() != null && e.getDescription().contains("carrier=true")))
+                .count();
+    }
+
+    public long countCarrierDeathsPast24Hours(UUID projectId) {
+        return countCarrierDeaths(projectId, Instant.now().minus(Duration.ofHours(24)));
     }
 
     private boolean isTerminal(TaskStatus status) {

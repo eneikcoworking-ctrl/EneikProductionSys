@@ -238,8 +238,15 @@ class DispatchAttemptBudgetTest {
      * DISPATCH_BUDGET_EXHAUSTED naming 0 external, 0 non-external, 14 unattributed, and is NOT marked
      * UNTESTED_WITHIN_CAPACITY.
      */
+    /**
+     * Prescription 15 & 30 / NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012) & INSTITUTIONAL_FACT_REGISTER (D007):
+     * Refusals where cause is unnamed/unattributed (e.g. jules_precondition_unspecified, null/blank)
+     * are NOT treated as proven external capacity. An exhaustion of purely unattributed refusals produces
+     * UNATTRIBUTED_DISPATCH_REFUSAL naming 0 external, 0 non-external, 14 unattributed ("external system refuses without cause").
+     * It is not marked UNTESTED_WITHIN_CAPACITY, but is marked resumable.
+     */
     @Test
-    void exhaustionWithUnattributedRefusals_isNotMarkedUntestedWithinCapacity() {
+    void exhaustionWithUnattributedRefusals_isMarkedUnattributedDispatchRefusalAndResumable() {
         UUID taskId = UUID.randomUUID();
         TaskEntity task = claimedTask(taskId);
         wire(taskId, task, 7L, 14L);
@@ -259,10 +266,157 @@ class DispatchAttemptBudgetTest {
         verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.failed);
 
         // Jules dispatch status reflects pure unattributed refusals
-        assertTrue(task.getJulesDispatchStatus().startsWith("DISPATCH_BUDGET_EXHAUSTED"));
+        assertTrue(task.getJulesDispatchStatus().startsWith("UNATTRIBUTED_DISPATCH_REFUSAL"));
         assertTrue(task.getJulesDispatchStatus().contains("0 external, 0 non-external, 14 unattributed"));
         assertFalse(ClaimService.isUntestedWithinCapacity(task));
+        assertTrue(ClaimService.isUnattributedDispatchRefusal(task));
+        assertTrue(ClaimService.isResumableDispatchRefusal(task));
+        assertEquals(com.eneik.production.models.persistence.TaskDispatchVerdict.UNATTRIBUTED_DISPATCH_REFUSAL, task.getDispatchVerdict());
+    }
+
+    /**
+     * Prescription 30 (INSTITUTIONAL_FACT_REGISTER / D007):
+     * Resolution path: tasks with UNATTRIBUTED_DISPATCH_REFUSAL are unblocked when capacity recovers,
+     * returning to `queued` with a fresh budget and logging an institutional audit fact.
+     */
+    @Test
+    void requeueUntestedTasksOnRestoredCapacity_resumesUnattributedDispatchRefusalTasks() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.blocked);
+        task.setDispatchVerdict(com.eneik.production.models.persistence.TaskDispatchVerdict.UNATTRIBUTED_DISPATCH_REFUSAL);
+        task.setJulesDispatchStatus("UNATTRIBUTED_DISPATCH_REFUSAL: dispatch budget exhausted (14/14 attempts)");
+
+        when(accountRepository.countLiveAccounts()).thenReturn(7L);
+        when(taskRepository.findByStatus(TaskStatus.blocked)).thenReturn(List.of(task));
+
+        java.time.Instant now = java.time.Instant.now();
+        int requeued = claimService.requeueUntestedTasksOnRestoredCapacity(now);
+
+        assertEquals(1, requeued);
+        assertEquals(TaskStatus.queued, task.getStatus());
+        assertEquals(com.eneik.production.models.persistence.TaskDispatchVerdict.NONE, task.getDispatchVerdict());
+        assertEquals(now, task.getLastBudgetResetAt());
+        assertTrue(task.getJulesDispatchStatus().startsWith("REQUEUED_ON_CAPACITY_RECOVERY"));
+
+        verify(taskRepository).save(task);
+
+        org.mockito.ArgumentCaptor<DefectJournalEntity> captor = org.mockito.ArgumentCaptor.forClass(DefectJournalEntity.class);
+        verify(defectJournalRepository).save(captor.capture());
+        assertEquals("TASK_CAPACITY_RECOVERY_RESUMED", captor.getValue().getDefectType());
+    }
+
+    /**
+     * Prescription 30: Tasks with DISPATCH_BUDGET_EXHAUSTED (where non-external rejections occurred)
+     * are strictly terminal in blocked and must NOT be resumed by capacity recovery.
+     */
+    @Test
+    void requeueUntestedTasksOnRestoredCapacity_doesNotResumeNonExternalRejections() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.blocked);
+        task.setDispatchVerdict(com.eneik.production.models.persistence.TaskDispatchVerdict.DISPATCH_BUDGET_EXHAUSTED);
+        task.setJulesDispatchStatus("DISPATCH_BUDGET_EXHAUSTED: dispatch budget exhausted (14/14 attempts); 13 external, 1 non-external");
+
+        when(accountRepository.countLiveAccounts()).thenReturn(7L);
+        when(taskRepository.findByStatus(TaskStatus.blocked)).thenReturn(List.of(task));
+
+        int requeued = claimService.requeueUntestedTasksOnRestoredCapacity(java.time.Instant.now());
+
+        assertEquals(0, requeued);
+        assertEquals(TaskStatus.blocked, task.getStatus());
         assertEquals(com.eneik.production.models.persistence.TaskDispatchVerdict.DISPATCH_BUDGET_EXHAUSTED, task.getDispatchVerdict());
+        verify(taskRepository, never()).save(task);
+    }
+
+    /**
+     * Prescription 30 / INUS_FACTOR_CHECK (D007):
+     * Consecutive identical unattributed refusals enforce strictly one attempt per backoff window.
+     */
+    @Test
+    void consecutiveIdenticalUnattributedRefusals_throttlesToSingleAttemptPerBackoffWindow() {
+        UUID taskId = UUID.randomUUID();
+        java.time.Instant now = java.time.Instant.now();
+
+        JulesSessionEntity s1 = new JulesSessionEntity();
+        s1.setTaskId(taskId);
+        s1.setStatus("failed");
+        s1.setClosureReason("jules_precondition_unspecified: Jules cited an unspecified precondition");
+        s1.setCreatedAt(now.minus(java.time.Duration.ofMinutes(5)));
+
+        JulesSessionEntity s2 = new JulesSessionEntity();
+        s2.setTaskId(taskId);
+        s2.setStatus("failed");
+        s2.setClosureReason("jules_precondition_unspecified: Jules cited an unspecified precondition");
+        s2.setCreatedAt(now.minus(java.time.Duration.ofMinutes(2)));
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1, s2));
+
+        // 2 consecutive identical unattributed refusals -> streak is 2
+        assertEquals(2, claimService.consecutiveIdenticalUnattributedRefusals(taskId));
+
+        // Active throttling within 15-minute window from s2 (2 minutes ago)
+        assertTrue(claimService.isIdenticalUnattributedRefusalThrottled(taskId, now));
+
+        // After the 15-minute backoff window has passed, throttling lifts allowing one probe
+        java.time.Instant future = now.plus(java.time.Duration.ofMinutes(14)); // 16 minutes after s2
+        assertFalse(claimService.isIdenticalUnattributedRefusalThrottled(taskId, future));
+    }
+
+    /**
+     * Prescription 30 / INUS_FACTOR_CHECK (D007):
+     * Non-identical or external refusals do NOT trigger identical-refusal throttling;
+     * 14 attempts remain available for diverse causes.
+     */
+    @Test
+    void distinctOrExternalRefusals_doNotTriggerIdenticalRefusalThrottling() {
+        UUID taskId = UUID.randomUUID();
+        java.time.Instant now = java.time.Instant.now();
+
+        JulesSessionEntity s1 = new JulesSessionEntity();
+        s1.setTaskId(taskId);
+        s1.setStatus("failed");
+        s1.setClosureReason("jules_daily_limit: rate limit");
+        s1.setCreatedAt(now.minus(java.time.Duration.ofMinutes(5)));
+
+        JulesSessionEntity s2 = new JulesSessionEntity();
+        s2.setTaskId(taskId);
+        s2.setStatus("failed");
+        s2.setClosureReason("jules_precondition_unspecified: condition");
+        s2.setCreatedAt(now.minus(java.time.Duration.ofMinutes(2)));
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1, s2));
+
+        // Only 1 trailing unattributed refusal -> streak is 1 (< threshold of 2)
+        assertEquals(1, claimService.consecutiveIdenticalUnattributedRefusals(taskId));
+        assertFalse(claimService.isIdenticalUnattributedRefusalThrottled(taskId, now));
+    }
+
+    /**
+     * Prescription 30 / INSTITUTIONAL_FACT_REGISTER (D007):
+     * Carrier deaths (dispatch budget exhaustions) are counted and reported for telemetry.
+     */
+    @Test
+    void carrierDeaths_areCountedAndAuditedInDefectJournal() {
+        UUID projectId = UUID.randomUUID();
+        UUID carrierTaskId = UUID.randomUUID();
+        java.time.Instant now = java.time.Instant.now();
+
+        DefectJournalEntity e1 = new DefectJournalEntity(
+                projectId, carrierTaskId, null, "INFO", "INSTITUTIONAL_AUDIT", "carrier",
+                "DISPATCH_BUDGET_EXHAUSTION_COMPOSITION", "Task " + carrierTaskId + " (carrier=true) dispatch budget exhausted", 0.0);
+
+        DefectJournalEntity e2 = new DefectJournalEntity(
+                projectId, UUID.randomUUID(), null, "INFO", "INSTITUTIONAL_AUDIT", "task",
+                "DISPATCH_BUDGET_EXHAUSTION_COMPOSITION", "Task non-carrier (carrier=false) dispatch budget exhausted", 0.0);
+
+        when(defectJournalRepository.findByProjectIdAndCreatedAtAfter(eq(projectId), any(java.time.Instant.class)))
+                .thenReturn(List.of(e1, e2));
+
+        // Only the carrier entry is counted as a carrier death
+        assertEquals(1L, claimService.countCarrierDeathsPast24Hours(projectId));
     }
 
     /**

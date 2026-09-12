@@ -211,8 +211,13 @@ public class TaskEntity {
         }
         // Transitional fallback for legacy rows prior to typed TaskDispatchVerdict persistence in payload;
         // will be deprecated and removed once all historical rows transition.
-        if (julesDispatchStatus != null && julesDispatchStatus.contains("UNTESTED_WITHIN_CAPACITY")) {
-            return TaskDispatchVerdict.UNTESTED_WITHIN_CAPACITY;
+        if (julesDispatchStatus != null && status == TaskStatus.blocked) {
+            if (julesDispatchStatus.startsWith("UNTESTED_WITHIN_CAPACITY")) {
+                return TaskDispatchVerdict.UNTESTED_WITHIN_CAPACITY;
+            }
+            if (julesDispatchStatus.startsWith("UNATTRIBUTED_DISPATCH_REFUSAL")) {
+                return TaskDispatchVerdict.UNATTRIBUTED_DISPATCH_REFUSAL;
+            }
         }
         return TaskDispatchVerdict.NONE;
     }
@@ -221,7 +226,7 @@ public class TaskEntity {
         com.fasterxml.jackson.databind.node.ObjectNode node = (payload instanceof com.fasterxml.jackson.databind.node.ObjectNode existing)
                 ? existing
                 : new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
-        if (verdict != null && verdict != TaskDispatchVerdict.NONE) {
+        if (verdict != null) {
             node.put("dispatch_verdict", verdict.name());
         } else {
             node.remove("dispatch_verdict");
@@ -231,6 +236,14 @@ public class TaskEntity {
 
     public boolean isUntestedWithinCapacity() {
         return getDispatchVerdict().isUntestedWithinCapacity();
+    }
+
+    public boolean isUnattributedDispatchRefusal() {
+        return getDispatchVerdict().isUnattributedDispatchRefusal();
+    }
+
+    public boolean isResumableDispatchRefusal() {
+        return getDispatchVerdict().isResumable();
     }
 
     public Instant getLastBudgetResetAt() {

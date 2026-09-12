@@ -1913,12 +1913,13 @@ public class ProjectFlowService {
                 continue;
             }
 
-            // Prescription 15 / INSTITUTIONAL_FACT_REGISTER (D007, Law 12):
-            // A task whose dispatch budget was consumed purely by external refusals is UNTESTED_WITHIN_CAPACITY.
+            // Prescription 15 & 30 / INSTITUTIONAL_FACT_REGISTER (D007, Law 12):
+            // A task whose dispatch budget was consumed purely by external refusals or unattributed carrier refusals
+            // (0 non-external rejections) is resumable on capacity/cooldown restoration.
             // It remains renewable in `blocked` and must never receive an absorbing terminal verdict (failed).
-            if (ClaimService.isUntestedWithinCapacity(task)) {
-                log.info("ProjectFlowService: blocked task {} is untested within capacity ({}); preserving blocked state, not retiring to failed",
-                        task.getId(), task.getJulesDispatchStatus());
+            if (ClaimService.isResumableDispatchRefusal(task)) {
+                log.info("ProjectFlowService: blocked task {} has resumable dispatch verdict ({}, {}); preserving blocked state, not retiring to failed",
+                        task.getId(), task.getDispatchVerdict(), task.getJulesDispatchStatus());
                 continue;
             }
 
@@ -3851,6 +3852,15 @@ public class ProjectFlowService {
                     if (statusAfterRelease != TaskStatus.queued) {
                         log.info("Task {} is no longer queued after a failed dispatch ({}); stopping account rotation",
                                 savedTask.getId(), statusAfterRelease);
+                        return false;
+                    }
+                    // Prescription 30 / INUS_FACTOR_CHECK (D007):
+                    // If consecutive identical unattributed refusals occurred, enforce strictly one attempt per backoff window
+                    // instead of burning through the remaining accounts in a tight rotation loop.
+                    if (claimService.isIdenticalUnattributedRefusalThrottled(savedTask.getId(), java.time.Instant.now())
+                            || claimService.consecutiveIdenticalUnattributedRefusals(savedTask.getId()) >= ClaimService.DEFAULT_IDENTICAL_UNATTRIBUTED_THRESHOLD) {
+                        log.warn("Failed to dispatch task {} to account {}: {}. Consecutive identical unattributed refusals detected (1 attempt per backoff window); stopping account rotation",
+                                savedTask.getId(), account.getName(), dispatch.reason());
                         return false;
                     }
                     log.warn("Failed to dispatch task {} to account {} (attempt {}/3): {}. Rotating to next account...",
@@ -6380,6 +6390,15 @@ public class ProjectFlowService {
                             task.getId(), p.ruleName(), p.explanation());
                     continue;
                 }
+            }
+
+            // Prescription 30 / INUS_FACTOR_CHECK (D007):
+            // If consecutive identical unattributed refusals occurred, enforce strictly one attempt per backoff window
+            // instead of retrying every cycle and burning through attempt budgets.
+            if (claimService.isIdenticalUnattributedRefusalThrottled(task.getId())) {
+                log.info("ProjectFlowService: task {} is in identical-unattributed-refusal backoff cooldown; skipping dispatch this cycle",
+                        task.getId());
+                continue;
             }
 
             if (task.getTargetContext() == null || task.getTargetContext() == TargetContext.UNDETERMINED) {

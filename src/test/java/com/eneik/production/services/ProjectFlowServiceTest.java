@@ -1211,4 +1211,46 @@ class ProjectFlowServiceTest {
         // Regular blocked task without UNTESTED_WITHIN_CAPACITY is retired to failed
         assertEquals(TaskStatus.failed, task.getStatus());
     }
+
+    /**
+     * Prescription 30:
+     * A task whose dispatch budget was exhausted due to unattributed external refusals
+     * (UNATTRIBUTED_DISPATCH_REFUSAL) is resumable and must NOT be retired to failed.
+     */
+    @Test
+    void unattributedDispatchRefusalTask_isPreservedInBlockedAndNeverRetiredToFailed() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        project.setName("test-unattributed-project");
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(TaskStatus.blocked);
+        task.setJulesDispatchStatus("UNATTRIBUTED_DISPATCH_REFUSAL: dispatch budget exhausted (14/14 attempts); composition: 0 external, 0 non-external, 14 unattributed");
+
+        TaskRepository taskRepo = mock(TaskRepository.class);
+        when(taskRepo.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(projectId, TaskStatus.blocked))
+                .thenReturn(List.of(task));
+
+        JulesSessionRepository julesRepo = mock(JulesSessionRepository.class);
+        when(julesRepo.findByTaskId(task.getId())).thenReturn(List.of());
+
+        ProjectFlowService service = serviceWithWishlistsAndWorker(
+                mock(WishlistRepository.class),
+                mock(PersistentWorkerSessionService.class),
+                julesRepo,
+                taskRepo,
+                mock(ClientDeliverableReadinessService.class));
+
+        service.recoverBlockedWork(projectId);
+
+        // Task must NOT have been converted to failed
+        assertEquals(TaskStatus.blocked, task.getStatus());
+        verify(taskRepo, never()).save(argThat(t -> t != null && t.getStatus() == TaskStatus.failed));
+    }
 }
