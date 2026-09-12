@@ -16,6 +16,35 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-12 02:38 UTC — Antigravity (L2): Предписание 31 закрыто (`ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` / D011 + `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008)**
+
+1. **Машинный заслон геометрии макета и масштабируемости (`ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` / D011):**
+   - Устранена дыра в критерии `DesignExcellenceGate`, где зачёт отзывчивости давался за простое различие размеров файлов (`desktopSize != mobileSize`, вес 40) без инспекции разметки и геометрии элементов.
+   - Разработан сервис `LayoutGeometryAuditService`:
+     - Репрезентация прямоугольников `BoundingBox` (left, top, width, height, group) с проверкой пересечений (`overlaps`), расчётом площади наложения (`overlapArea`) и расстояния между элементами (`distanceTo`).
+     - Извлечение ограничивающих прямоугольников из SVG (`<rect>`), HTML data-атрибутов (`data-rect`, `data-box`), inline-стилей и JSON-структур верстки.
+     - Проверка отношения близости Гештальта (`intraGroupDistance / interGroupDistance < 1.0`): связанные элементы измеримо ближе друг к другу, чем к несвязанным.
+     - Аудит масштабируемости viewport (`auditViewportScalability`): детекция и отказ при директивах `user-scalable=no`, `user-scalable=0`, `maximum-scale=1.0` в `<meta name="viewport">` (нарушение стандартов доступности WCAG 1.4.4 / 1.4.10).
+   - В `DesignExcellenceGate.check(task)`:
+     - При проверке изменённых файлов задачи анализируется верстка (`.html`, `.svelte`, `.vue`, `.jsx`, `.tsx`, `layout.json`).
+     - При обнаружении наложения прямоугольников или запрета масштабирования сбрасывается флаг `responsive_ok` (вес 40), снижая итоговый балл до 60 < 70 (ОТКАЗ) с детальным объяснением в `failureReasons`.
+   - В `DesignConsistencyAuditService.audit`:
+     - При наличии запрета масштабирования верстка отклоняется с вердиктом `AuditVerdict.REJECTED` и причиной `viewport scalability prohibited`.
+
+2. **Демаркация суверенитета ревьюера (`ProjectFlowService`):**
+   - Текст задания ревьюеру `designReviewPrompt` освобожден от смешения: машинные проверки геометрии, отсутствия коллизий, двух разрешений (1440px desktop, 375px mobile) и масштабируемости возложены на автоматические гейты (`DesignExcellenceGate`, `GROUPING_PROXIMITY_GATE`). За человеком закреплены эстетика, контрастность WCAG, плотность информации (закон Миллера) и семантика.
+   - Текст задания и разделение ролей зафиксированы строгим модульным тестом `designReviewPrompt_explicitlySeparatesAutomatedMachineGates`.
+
+3. **Заслоны (89/89 зелёные в тестах дизайна и потока):**
+   - `LayoutGeometryAuditServiceTest` (8/8): проверка пересекающихся и непересекающихся прямоугольников, запрета масштабирования `user-scalable=no` и `maximum-scale=1.0`, нормального viewport, коллизий в SVG, соблюдения и нарушения коэффициента близости Гештальта.
+   - `DesignExcellenceGateTest` (9/9):
+     - `shouldFailWhenScreenshotsDifferInSizeButMarkupHasOverlappingElements`: доказано опровержение — два снимка разного размера ПАДАЮТ (балл 60 < 70) при наличии наложения элементов в разметке.
+     - `shouldFailWhenScreenshotsDifferInSizeButMarkupDisablesUserScalable`: два снимка разного размера ПАДАЮТ (балл 60 < 70) при наличии `user-scalable=no`.
+     - `shouldPassWhenScreenshotsDifferInSizeAndMarkupHasNoCollisionsAndIsScalable`: чистая разметка проходит заслон (балл 100 >= 70).
+   - `DesignConsistencyAuditServiceTest` (14/14): `htmlWithUserScalableNoReturnsRejected`.
+   - `ProjectFlowServiceTest` (41/41): `designReviewPrompt_explicitlySeparatesAutomatedMachineGates`.
+   - Регрессионный пакет: `DesignAssetServiceTest` (10/10), `DesignDriftMonitorServiceTest` (7/7).
+
 **2026-09-12 02:14 UTC — Antigravity (L2): Предписание 30 закрыто (`INSTITUTIONAL_FACT_REGISTER` / D007 + `INUS_FACTOR_CHECK` / D007)**
 
 1. **Торможение на входе при тождественных безымянных отказах (`INUS_FACTOR_CHECK` / D007):**

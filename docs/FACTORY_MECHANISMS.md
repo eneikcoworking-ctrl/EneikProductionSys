@@ -8047,6 +8047,36 @@ meaning as use, private-language argument*. Сильная дословно: «�
 обратную сторону образца, которой в нём нет прямо: заслон, краснеющий **всегда**, опровергающей силы имеет
 не больше, чем зелёный, — и до 3 августа этот был именно таков.
 
+*Предписание 31 (2026-09-12): машинная проверка геометрии макета, масштабируемости и демаркация ревьюера.*
+Третий образец: `ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` (D011) — Энди Кларк, `BARCAN-TAG-03 BELIEF-INTENSION`,
+принцип расширенного разума, anchor *The Extended Mind / Supersizing the Mind — cognition extended into artifacts*.
+Обязательство доказательства: показать отношение расстояний между кластерами связанных элементов к расстоянию до
+ближайшего несвязанного элемента (`intraGroupDistance / interGroupDistance < 1.0`), отсутствие пересечений
+(отрицательного расстояния) и соблюдение масштабируемости области просмотра.
+- **Поправка к предписанию по замеру:** Второе разрешение фабрика уже требовала в `JulesDispatchService:684–692`
+  (для ролей `UI_TAGS` требовались `desktop-1440.png` и `mobile-375.png`). Заслон подключён к живому потоку
+  (35 задач TAG-03/TAG-11 из 369). Дефект крылся в критерии: зачёт отзывчивости давался за простое различие
+  размеров файлов (`desktopSize != mobileSize`, вес 40), без анализа разметки и геометрии. Наложение меню
+  (коллизия прямоугольников) проходило заслон по построению.
+- **Реализация:**
+  1. Создан `LayoutGeometryAuditService`: вычисляет геометрию прямоугольников `BoundingBox` (`overlaps`, `overlapArea`,
+     `distanceTo`), проверяет отсутствие пересечений и Gestalt proximity ratio (`intra / inter < 1.0`), проводит аудит
+     масштабируемости viewport (`auditViewportScalability`, запрет `user-scalable=no`, `user-scalable=0`, `maximum-scale=1.0`).
+  2. `DesignExcellenceGate`: проверяет изменённую разметку (`.html`, `.svelte`, `.vue`, `.jsx`, `.tsx`, `layout.json`).
+     При обнаружении наложения элементов или запрета масштабирования сбрасывает проверку отзывчивости (`responsive_ok = false`,
+     вес 40), снижая общий балл до 60 < 70 и отвергая задачу с явной причиной.
+  3. `DesignConsistencyAuditService`: отклоняет вердиктом `REJECTED` разметку с `user-scalable=no` / `maximum-scale=1.0`.
+  4. `ProjectFlowService`: текст задания ревьюеру `designReviewPrompt` явно разделяет машинные инварианты геометрии
+     (`DesignExcellenceGate`, `GROUPING_PROXIMITY_GATE`) и эстетическое/семантическое суждение человека. Текст задания
+     закреплен строгим тестом.
+- **Заслоны (89/89 зелёные в тестах):**
+  - `LayoutGeometryAuditServiceTest` (8/8): проверка пересечений, Gestalt proximity ratio, `user-scalable=no`, `maximum-scale=1.0`.
+  - `DesignExcellenceGateTest` (9/9): снимки разного размера при наложении элементов в разметке или при `user-scalable=no`
+    отвергаются с баллом 60 < 70; чистая разметка проходит с баллом 100 >= 70.
+  - `DesignConsistencyAuditServiceTest` (14/14): `htmlWithUserScalableNoReturnsRejected`.
+  - `ProjectFlowServiceTest` (41/41): `designReviewPrompt_explicitlySeparatesAutomatedMachineGates`.
+- **Форма:** сильная, подтверждена падающими тестами на опровержение. Статус: **СДЕЛАНО (держится)**.
+
 # XLII. Кэш постоянного корпуса: два механизма на одно дело, работает один
 
 **`GeminiContextCacheManager`** (162 строки) — заводит на стороне поставщика модели кэш постоянного корпуса:

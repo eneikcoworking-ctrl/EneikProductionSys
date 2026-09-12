@@ -35,11 +35,19 @@ public class DesignExcellenceGate implements GateCheck {
 
     private final JulesSessionRepository julesSessionRepository;
     private final GitHubPullRequestService gitHubPullRequestService;
+    private final com.eneik.production.services.design.LayoutGeometryAuditService layoutGeometryAuditService;
 
     public DesignExcellenceGate(JulesSessionRepository julesSessionRepository,
                                  GitHubPullRequestService gitHubPullRequestService) {
+        this(julesSessionRepository, gitHubPullRequestService, new com.eneik.production.services.design.LayoutGeometryAuditService());
+    }
+
+    public DesignExcellenceGate(JulesSessionRepository julesSessionRepository,
+                                 GitHubPullRequestService gitHubPullRequestService,
+                                 com.eneik.production.services.design.LayoutGeometryAuditService layoutGeometryAuditService) {
         this.julesSessionRepository = julesSessionRepository;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.layoutGeometryAuditService = layoutGeometryAuditService != null ? layoutGeometryAuditService : new com.eneik.production.services.design.LayoutGeometryAuditService();
     }
 
     @Override
@@ -99,11 +107,48 @@ public class DesignExcellenceGate implements GateCheck {
             if (!hasMobile) failureReasons.add("missing real mobile screenshot at " + mobilePath);
         }
 
-        // 2. responsive_ok (both present, real byte sizes genuinely differ): weight 40.
-        if (hasDesktop && hasMobile && desktopSize != mobileSize) {
+        // 2. responsive_ok (both present, real byte sizes genuinely differ, AND layout geometry verified): weight 40.
+        // GROUPING_PROXIMITY_GATE (D011) & FALSIFICATION_HARNESS (D008):
+        // File sizes differing is necessary but not sufficient:
+        // - Viewport scalability must not be prohibited (user-scalable=no, maximum-scale=1.0)
+        // - Markup and layout geometry must have 0 collisions (no overlapping menus/elements)
+        boolean responsiveOk = false;
+        if (hasDesktop && hasMobile) {
+            if (desktopSize == mobileSize) {
+                failureReasons.add("responsive check failed: screenshots have identical file sizes");
+            } else {
+                responsiveOk = true;
+            }
+        }
+
+        boolean layoutGeometryPassed = true;
+        for (String changedPath : changedFiles) {
+            if (isMarkupOrLayoutPath(changedPath)) {
+                java.util.Optional<String> contentOpt = gitHubPullRequestService.fetchFileContent(task.getProject(), headRef, changedPath);
+                if (contentOpt.isPresent()) {
+                    String content = contentOpt.get();
+                    com.eneik.production.services.design.LayoutGeometryAuditService.LayoutAuditResult layoutResult =
+                            layoutGeometryAuditService.auditLayout(content);
+                    if (!layoutResult.scalable()) {
+                        layoutGeometryPassed = false;
+                        failureReasons.add("viewport scalability prohibited in " + changedPath + ": user-scalable=no or maximum-scale=1 detected (violates mobile accessibility and prevents zoom recovery)");
+                    }
+                    if (layoutResult.hasCollisions()) {
+                        layoutGeometryPassed = false;
+                        for (com.eneik.production.services.design.LayoutGeometryAuditService.Collision col : layoutResult.collisions()) {
+                            failureReasons.add("responsive check failed: layout collision detected in " + changedPath + ": " + col.description());
+                        }
+                    }
+                    if (!layoutResult.passed() && layoutResult.scalable() && !layoutResult.hasCollisions()) {
+                        layoutGeometryPassed = false;
+                        failureReasons.add("responsive check failed: " + layoutResult.verdictReason() + " in " + changedPath);
+                    }
+                }
+            }
+        }
+
+        if (responsiveOk && layoutGeometryPassed) {
             score += 40;
-        } else if (hasDesktop && hasMobile) {
-            failureReasons.add("responsive check failed: screenshots have identical file sizes");
         }
 
         // 3. visual_qa_ok (real size > 1KB, not an empty/error placeholder): weight 30.
@@ -149,5 +194,13 @@ public class DesignExcellenceGate implements GateCheck {
                 .filter(s -> "pr_opened".equals(s.getStatus()))
                 .findFirst()
                 .orElseGet(() -> sessions.stream().filter(s -> s.getPrUrl() != null).findFirst().orElse(null));
+    }
+
+    private boolean isMarkupOrLayoutPath(String path) {
+        if (path == null) return false;
+        String lower = path.toLowerCase(java.util.Locale.ROOT);
+        return lower.endsWith(".html") || lower.endsWith(".svelte") || lower.endsWith(".vue")
+                || lower.endsWith(".jsx") || lower.endsWith(".tsx")
+                || lower.endsWith("layout.json") || lower.endsWith("layout-check.json");
     }
 }

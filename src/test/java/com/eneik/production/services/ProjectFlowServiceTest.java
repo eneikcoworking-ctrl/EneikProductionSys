@@ -1253,4 +1253,26 @@ class ProjectFlowServiceTest {
         assertEquals(TaskStatus.blocked, task.getStatus());
         verify(taskRepo, never()).save(argThat(t -> t != null && t.getStatus() == TaskStatus.failed));
     }
+
+    /**
+     * Prescription 31:
+     * Reviewer prompt must explicitly separate automated machine layout gates
+     * (DesignExcellenceGate, GROUPING_PROXIMITY_GATE: 1440px desktop, 375px mobile, non-overlapping bounding boxes,
+     * mobile viewport scalability) from human aesthetic/semantic review.
+     */
+    @Test
+    void designReviewPrompt_explicitlySeparatesAutomatedMachineGates() {
+        ProjectFlowService service = service();
+        String prompt = service.designReviewPrompt("draft/screen1", "Build landing page", "UI designer charter", "verdict.json");
+
+        assertTrue(prompt.contains("DesignExcellenceGate"));
+        assertTrue(prompt.contains("GROUPING_PROXIMITY_GATE"));
+        assertTrue(prompt.contains("1440px desktop"));
+        assertTrue(prompt.contains("375px mobile"));
+        assertTrue(prompt.contains("non-overlapping bounding"));
+        assertTrue(prompt.contains("mobile viewport scalability"));
+        assertTrue(prompt.contains("Miller's Law"));
+        assertTrue(prompt.contains("Gestalt principles"));
+    }
 }
+

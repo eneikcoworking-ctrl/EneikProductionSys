@@ -6236,7 +6236,7 @@ public class ProjectFlowService {
         return "";
     }
 
-    private String designReviewPrompt(String draftPath, String brief, String charter, String verdictPath) {
+    String designReviewPrompt(String draftPath, String brief, String charter, String verdictPath) {
         return """
                 You are the design reviewer for this project (BARCAN-TAG-03 role - UI/UX Designer). A
                 draft mockup was just generated and committed to THIS repository at `%s/mockup.html`
@@ -6246,17 +6246,16 @@ public class ProjectFlowService {
 
                 Apply your role charter below: composition, WCAG contrast where determinable from the
                 markup/CSS, Gestalt principles, information density (Miller's Law), and the
-                philosophical framing in your charter. This is a single generated screen, not a
-                desktop/mobile pair - do not reject it solely for missing a second resolution; judge
-                what is actually checkable from this one file.
+                philosophical framing in your charter. Automated layout gates (DesignExcellenceGate, GROUPING_PROXIMITY_GATE)
+                independently enforce machine responsive checks (1440px desktop, 375px mobile, non-overlapping bounding
+                boxes, and mobile viewport scalability); your role is human aesthetic and semantic judgment. Judge
+                what is actually checkable from this file.
 
-                Be lenient by design: work must never stall waiting on your opinion. Reject
-                ("verdict":"reject") ONLY for a small set of genuinely severe problems: the file is
-                empty, corrupted, or unreadable; contrast is badly broken (illegible text); the layout
-                is fundamentally incoherent; or it has nothing to do with the brief below. Anything else
-                - taste, minor spacing, a debatable color choice - is NOT a blocker: approve it and list
-                it as a "concern" instead, so it becomes a follow-up improvement item rather than
-                stopped work.
+                Be lenient by design on matters of pure taste: work must never stall waiting on minor stylistic preferences.
+                Reject ("verdict":"reject") ONLY for genuine severe problems: the file is empty, corrupted, or unreadable;
+                contrast is badly broken (illegible text); the layout is fundamentally incoherent; or it has nothing to do with
+                the brief below. Anything else - minor spacing, a debatable color choice - is NOT a blocker: approve it and list
+                it as a "concern" instead, so it becomes a follow-up improvement item rather than stopped work.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
                 (this EXACT path - it is unique to this task, do not use any other path), with EXACTLY

@@ -32,6 +32,20 @@ public class DesignConsistencyAuditService {
     // the opening quote, leaving nothing to split on commas - caught live by this class's own test).
     private static final Pattern FONT_FAMILY = Pattern.compile("font-family\\s*:\\s*([^;}]+)");
 
+    private final LayoutGeometryAuditService layoutGeometryAuditService;
+
+    public DesignConsistencyAuditService() {
+        this(new LayoutGeometryAuditService());
+    }
+
+    public DesignConsistencyAuditService(LayoutGeometryAuditService layoutGeometryAuditService) {
+        this.layoutGeometryAuditService = layoutGeometryAuditService != null ? layoutGeometryAuditService : new LayoutGeometryAuditService();
+    }
+
+    public LayoutGeometryAuditService getLayoutGeometryAuditService() {
+        return layoutGeometryAuditService;
+    }
+
     public record TokenSet(Set<String> colors, Set<String> fonts) {
         public static TokenSet of(List<String> colors, List<String> fonts) {
             return new TokenSet(normalizeColors(colors), normalizeFonts(fonts));
@@ -189,9 +203,22 @@ public class DesignConsistencyAuditService {
     }
 
     public ConsistencyReport audit(String html, TokenSet declaredTokens, List<String> siblingHtmlDrafts, TokenSet producerTokens) {
-        TokenSet used = extractUsedTokens(html);
         Set<String> declaredAll = declaredTokens != null ? declaredTokens.all() : Set.of();
         Set<String> producerAll = producerTokens != null ? producerTokens.all() : Set.of();
+
+        // Prescription 31 / FALSIFICATION_HARNESS (D008): Viewport scalability restriction
+        // user-scalable=no or maximum-scale=1.0 blocks pinch-to-zoom on mobile devices.
+        var scalability = layoutGeometryAuditService.auditViewportScalability(html);
+        if (!scalability.scalable()) {
+            return new ConsistencyReport(
+                    0.0, false, 0.0, false,
+                    Set.of(), declaredAll, producerAll,
+                    AuditVerdict.REJECTED,
+                    "отвергнуто: " + scalability.violation()
+            );
+        }
+
+        TokenSet used = extractUsedTokens(html);
 
         // Level of Abstraction / Truth Status Table (Prescription 28: D010 + D012):
         // 1. If the delivered HTML has no visual tokens (e.g. SPA skeleton/shell without inline styles),

@@ -147,4 +147,16 @@ class DesignConsistencyAuditServiceTest {
         assertThat(report.isCannotJudge()).isTrue();
         assertThat(report.traceAccepted()).isFalse();
     }
+
+    @Test
+    void htmlWithUserScalableNoReturnsRejected() {
+        String html = "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\">"
+                + "<style>body{background:#fbf9f1;color:#7d8570;}</style>";
+        var report = service.audit(html, VERDANT_FLOW_TOKENS, List.of());
+
+        assertThat(report.verdict()).isEqualTo(DesignConsistencyAuditService.AuditVerdict.REJECTED);
+        assertThat(report.verdictReason()).contains("viewport scalability prohibited");
+        assertThat(report.traceAccepted()).isFalse();
+    }
 }
+

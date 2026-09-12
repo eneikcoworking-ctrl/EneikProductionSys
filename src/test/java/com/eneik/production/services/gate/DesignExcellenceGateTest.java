@@ -120,6 +120,87 @@ class DesignExcellenceGateTest {
         assertThat(result.failureReasons()).contains("missing real mobile screenshot at " + DesignExcellenceGate.designCheckDir(task) + "mobile-375.png");
     }
 
+    @Test
+    void shouldFailWhenScreenshotsDifferInSizeButMarkupHasOverlappingElements() {
+        TaskEntity task = createTask("BARCAN-TAG-11", null);
+        stubRealPrWithFiles(task,
+                List.of("desktop-1440.png", "mobile-375.png"),
+                List.of("frontend/src/App.svelte"));
+        stubFileBytes(task, "desktop-1440.png", 2000);
+        stubFileBytes(task, "mobile-375.png", 1500);
+
+        String overlappingMarkup = """
+                <div id="nav-bar" style="left: 10px; top: 20px; width: 200px; height: 60px;">Nav</div>
+                <div id="dropdown-menu" style="left: 50px; top: 40px; width: 180px; height: 100px;">Dropdown</div>
+                """;
+        when(gitHubPullRequestService.fetchFileContent(any(), eq(HEAD_REF), eq("frontend/src/App.svelte")))
+                .thenReturn(Optional.of(overlappingMarkup));
+
+        GateResult result = gate.check(task);
+
+        // Responsive check fails due to layout collision, score = 30 + 0 + 30 = 60 < 70
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureReasons()).anyMatch(r -> r.contains("responsive check failed: layout collision detected"));
+    }
+
+    @Test
+    void shouldFailWhenScreenshotsDifferInSizeButMarkupDisablesUserScalable() {
+        TaskEntity task = createTask("BARCAN-TAG-11", null);
+        stubRealPrWithFiles(task,
+                List.of("desktop-1440.png", "mobile-375.png"),
+                List.of("frontend/index.html"));
+        stubFileBytes(task, "desktop-1440.png", 2000);
+        stubFileBytes(task, "mobile-375.png", 1500);
+
+        String restrictedViewportMarkup = """
+                <html>
+                <head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+                </head>
+                <body>
+                    <div id="content" style="left: 0px; top: 0px; width: 375px; height: 200px;">Content</div>
+                </body>
+                </html>
+                """;
+        when(gitHubPullRequestService.fetchFileContent(any(), eq(HEAD_REF), eq("frontend/index.html")))
+                .thenReturn(Optional.of(restrictedViewportMarkup));
+
+        GateResult result = gate.check(task);
+
+        // Responsive check fails due to user-scalable=no, score = 30 + 0 + 30 = 60 < 70
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureReasons()).anyMatch(r -> r.contains("viewport scalability prohibited"));
+    }
+
+    @Test
+    void shouldPassWhenScreenshotsDifferInSizeAndMarkupHasNoCollisionsAndIsScalable() {
+        TaskEntity task = createTask("BARCAN-TAG-11", null);
+        stubRealPrWithFiles(task,
+                List.of("desktop-1440.png", "mobile-375.png"),
+                List.of("frontend/index.html"));
+        stubFileBytes(task, "desktop-1440.png", 2000);
+        stubFileBytes(task, "mobile-375.png", 1500);
+
+        String validMarkup = """
+                <html>
+                <head>
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                </head>
+                <body>
+                    <div id="header" style="left: 0px; top: 0px; width: 375px; height: 60px;">Header</div>
+                    <div id="main" style="left: 0px; top: 70px; width: 375px; height: 300px;">Main</div>
+                </body>
+                </html>
+                """;
+        when(gitHubPullRequestService.fetchFileContent(any(), eq(HEAD_REF), eq("frontend/index.html")))
+                .thenReturn(Optional.of(validMarkup));
+
+        GateResult result = gate.check(task);
+
+        assertThat(result.passed()).isTrue();
+        assertThat(result.failureReasons()).isEmpty();
+    }
+
     private void stubRealPr(TaskEntity task, String... committedScreenshotBasenames) {
         JulesSessionEntity session = new JulesSessionEntity();
         session.setStatus("pr_opened");
@@ -131,6 +212,28 @@ class DesignExcellenceGateTest {
         String dir = DesignExcellenceGate.designCheckDir(task);
         for (String basename : committedScreenshotBasenames) {
             diff.append("+++ b/").append(dir).append(basename).append("\n");
+        }
+        when(gitHubPullRequestService.fetchDiffText(any(), anyInt())).thenReturn(Optional.of(diff.toString()));
+
+        GitHubPullRequestService.GitHubPullRequest pr =
+                new GitHubPullRequestService.GitHubPullRequest(PR_URL, 42, "title", HEAD_REF, "author", false, "main", false, null);
+        when(gitHubPullRequestService.fetchPullRequestByNumber(any(), anyInt())).thenReturn(Optional.of(pr));
+    }
+
+    private void stubRealPrWithFiles(TaskEntity task, List<String> committedScreenshotBasenames, List<String> otherFiles) {
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setStatus("pr_opened");
+        session.setPrUrl(PR_URL);
+        when(julesSessionRepository.findByTaskId(eq(task.getId()))).thenReturn(List.of(session));
+        when(gitHubPullRequestService.parsePullNumber(anyString())).thenReturn(42);
+
+        StringBuilder diff = new StringBuilder();
+        String dir = DesignExcellenceGate.designCheckDir(task);
+        for (String basename : committedScreenshotBasenames) {
+            diff.append("+++ b/").append(dir).append(basename).append("\n");
+        }
+        for (String file : otherFiles) {
+            diff.append("+++ b/").append(file).append("\n");
         }
         when(gitHubPullRequestService.fetchDiffText(any(), anyInt())).thenReturn(Optional.of(diff.toString()));
 
