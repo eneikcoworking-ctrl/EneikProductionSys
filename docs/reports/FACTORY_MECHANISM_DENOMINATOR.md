@@ -930,3 +930,41 @@ evidence projection plus explicit `qualityGateUnapplied` context in `/api/qualit
 the old 388-as-failed bug.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXIX; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: Stranded Finalizing Sweep Family
+
+Status: documentation-only strict-family replacement for section XL in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `StrandedFinalizingSweepService.sweep`,
+`StrandedFinalizingSweepService.sweepProject`, `StrandedFinalizingSweepService.calculateEffectiveLeaseDuration`,
+`JulesDispatchService.admitWishlistCompilationCompletion`, `JulesDispatchService.renewFinalizingLeases`,
+`JulesDispatchService.releaseUnfinishedClaims`, `JulesDispatchService.recordFinalizingDuration`,
+`WishlistEntity.finalizingSince`, `WishlistStatus.finalizing`, `WishlistRepository.compareAndSetStatus`,
+`WishlistRepository.compareAndSetStatusWithTimestamp`, `WishlistRepository.renewFinalizingLeases`,
+`ProjectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`, `DefectJournalRepository`, migration
+`V139__wishlist_finalizing_since.sql` and `LogScope` as the stranded-finalizing recovery family.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 29 |
+| Sections still missing visible `комментарий для Антигравити` | 34 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section had one family-level Antigravity comment. Section XL now states the ideal
+stranded-finalizing recovery contract and gives per-mechanism comments for every behavior-changing participant.
+Current evidence says the source/test mechanism is ideal: no code change is required.
+
+Remaining non-ideal point for this family: no source/test non-ideality is identified in this tact. The only
+operational caution is that runtime silence must be interpreted with scheduler-alive evidence.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XL; family summary is not a substitute.

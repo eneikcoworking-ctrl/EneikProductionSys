@@ -9045,94 +9045,139 @@ visible unapplied context are still missing.
 
 # XL. Выметающий обход: восстановление, которому не нужен держатель
 
-* **Имена механизма или семейства** — `StrandedFinalizingSweepService`, `JulesDispatchService`,
-  `WishlistEntity`, `WishlistStatus.finalizing`, `WishlistRepository`, `ProjectRepository`,
-  `DefectJournalRepository`, migration `V139__wishlist_finalizing_since.sql`, `LogScope`.
+**Имена механизмов:** `StrandedFinalizingSweepService.sweep`,
+`StrandedFinalizingSweepService.sweepProject`, `StrandedFinalizingSweepService.calculateEffectiveLeaseDuration`,
+`JulesDispatchService.admitWishlistCompilationCompletion`, `JulesDispatchService.renewFinalizingLeases`,
+`JulesDispatchService.releaseUnfinishedClaims`, `JulesDispatchService.recordFinalizingDuration`,
+`WishlistEntity.finalizingSince`, `WishlistStatus.finalizing`, `WishlistRepository.compareAndSetStatus`,
+`WishlistRepository.compareAndSetStatusWithTimestamp`, `WishlistRepository.renewFinalizingLeases`,
+`ProjectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`, `DefectJournalRepository`, migration
+`V139__wishlist_finalizing_since.sql` and `LogScope`.
 
-* **Философский паттерн** — `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, Альва Ноэ, `BARCAN-TAG-03`, publication
-  anchor *Action in Perception*, defect `D013 Runtime drift`: восстановление объясняет причинную цепь
-  trigger -> transient claim -> stuck row -> blocked project -> observable orchestration denial. Также
-  `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`: runtime health is operational silence plus scoped
-  finalizing evidence, not the agent story. `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` applies to the measured
-  lease duration; `ACP-061` is the code-change background.
+**Философский паттерн:** primary `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, Альва Ноэ, `BARCAN-TAG-03`, publication
+anchor *Action in Perception*, defect `D013 Runtime drift`: the repair must explain trigger, transient claim,
+stuck row, blocked project and observable orchestration denial as one causal chain, not as adjacent symptoms.
+Supporting patterns: `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` for proving runtime health by operational
+telemetry rather than agent story; `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for lease duration derived from
+validated `FINALIZING_DURATION` samples; common background `ACP-061 Hoare Triple Review`.
 
-* **Связи** — `JulesDispatchService` moves wishlists into `finalizing` through CAS with timestamp and renews
-  the lease during slow GitHub/parse work. `StrandedFinalizingSweepService.sweep()` runs by scheduled cron
-  and iterates active projects only via `ProjectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`.
-  `sweepProject()` reads `WishlistRepository.findByProjectIdAndStatus(projectId, finalizing)`, initializes
-  historical null `finalizingSince`, and releases only through `WishlistRepository.compareAndSetStatus(finalizing -> pending)`.
-  `DefectJournalRepository` supplies optional `FINALIZING_DURATION` samples for data-driven lease sizing.
+**Описание идеала:** `finalizing` is a transient completion guard, not a durable queue state. The compiler
+completion claims a wishlist into `finalizing` by compare-and-swap and writes the authoritative lease timestamp
+`finalizingSince`. A live compiler renews that lease before slow GitHub/plan operations; a dead compiler leaves
+the timestamp to age. The scheduled sweep looks only at active projects, finds only rows still in
+`WishlistStatus.finalizing`, initializes historical null leases to `now`, and releases only expired leases back
+to `pending` by compare-and-swap. The sweep never needs to discover the old holder: the state plus lease age is
+the referent. A concurrent live holder cannot be robbed, because a row already moved out of `finalizing` makes
+the CAS affect zero rows. Released rows re-enter the ordinary admission path rather than skipping compilation.
 
-* **Идеальная форма** — `finalizing` is a short-lived guard, not a resting state. A live compiler keeps the
-  lease fresh through `finalizingSince`; a dead compiler leaves the timestamp to age; the sweep releases only
-  expired `finalizing` rows back to `pending` with CAS, so a concurrent live completion cannot be robbed.
-  Historical rows without `finalizingSince` receive a fresh bounded lease instead of being swept immediately.
-  Active projects are swept; inactive/historical projects are not used to manufacture current work.
+**Граница механизма:** this family may reclaim expired wishlist completion claims from `finalizing` to
+`pending`; initialize missing `finalizingSince`; size its lease from observed finalizing durations when enough
+samples exist; and log the action under project scope. It must not retry compilation itself, create tasks,
+merge or inspect PRs, decide decomposition completeness, retire persistent workers, infer ownership from
+worker batches, sweep inactive projects as live work, or carry a finite attempt budget.
 
-* **Граница** — this mechanism may only reclaim expired wishlist claims from `finalizing` to `pending`. It
-  does not retry compilation, create tasks, decide decomposition completeness, retire workers, inspect PRs,
-  or infer holder identity from worker batches. It deliberately does not need a reverse pointer to the holder.
+**Связи:** `JulesDispatchService.admitWishlistCompilationCompletion` creates the guarded state through
+`compareAndSetStatusWithTimestamp(compiling|pending -> finalizing)`. `completeWishlistCompilation` renews the
+lease before PR discovery and graph build. `releaseUnfinishedClaims` returns claims to `compiling` when a
+claimed completion does not reach a real converted/dismissed write. `recordFinalizingDuration` writes duration
+samples that `StrandedFinalizingSweepService.calculateEffectiveLeaseDuration` can later use. `sweep()` obtains
+active projects through `ProjectRepository`; `sweepProject()` reads project-scoped finalizing rows through
+`WishlistRepository`, uses `WishlistEntity.finalizingSince` as the only age clock, and releases by CAS only.
+`LogScope` makes the recovery evidence project-readable.
 
-* **Входы** — scheduled cron, active project rows, `WishlistStatus.finalizing`, `WishlistEntity.finalizingSince`,
-  CAS result, optional `FINALIZING_DURATION` metric values, `stranded-finalizing.max-age-minutes`,
-  `stranded-finalizing.min-samples-for-data-driven` and `stranded-finalizing.safety-multiplier` defaults.
+**Входы:** scheduler cron `stranded-finalizing.cron`; active project rows; rows in `WishlistStatus.finalizing`;
+`WishlistEntity.finalizingSince`; CAS affected-row count; optional `FINALIZING_DURATION` metric values;
+configuration `stranded-finalizing.max-age-minutes`, `stranded-finalizing.min-samples-for-data-driven` and
+`stranded-finalizing.safety-multiplier`; migration-backed column `wishlist.finalizing_since`.
 
-* **Выходы** — a stale row is returned to `pending`; a fresh or renewed row is left untouched; a historical
-  null-lease row is saved with `finalizingSince=now`; a lost CAS is logged as concurrent completion; logs are
-  scoped by project and then cleared.
+**Выходы:** expired `finalizing` rows become `pending`; fresh or renewed rows remain untouched; null historical
+leases are initialized to `now` and not immediately swept; CAS losses are logged as concurrent live completion;
+successful releases are logged with age, timestamp, effective lease duration and project; duration observations
+enter `DefectJournalRepository` as `FINALIZING_DURATION`.
 
-* **Владельцы истины и состояния** — `WishlistEntity.status` and `finalizingSince` own the claim state and
-  lease start; `WishlistRepository` owns atomic state transitions and lease renewal; `ProjectRepository`
-  owns active-project scope; `DefectJournalRepository` owns observed duration samples; `JulesDispatchService`
-  owns setting and renewing the lease during real work.
+**Владельцы истины и состояния:** `WishlistEntity.status` owns whether a wishlist is pending, compiling,
+finalizing, converted or dismissed. `WishlistEntity.finalizingSince` owns the only valid lease clock.
+`WishlistRepository` owns atomic state change and renewal primitives. `JulesDispatchService` owns live-worker
+claim creation, renewal, unfinished-claim rollback and finalizing duration observations.
+`StrandedFinalizingSweepService` owns expired-lease recovery. `ProjectRepository` owns active-project scope.
+`DefectJournalRepository` owns observed duration samples. Migration `V139` owns the physical column and index.
 
-* **Инварианты** — no read-then-write release; no release without `status == finalizing`; age is measured
-  from `finalizingSince`, not `createdAt` or `lastCompileDispatchedAt`; null `finalizingSince` is initialized,
-  not swept; a live renewed lease stays protected; every released row re-enters ordinary admission through
-  `pending`; the scheduled sweep has no attempt budget and remains idempotent.
+**Инварианты:**
+- no release by read-then-save;
+- no release unless the row is still `WishlistStatus.finalizing`;
+- age is measured from `finalizingSince`, not `createdAt` or `lastCompileDispatchedAt`;
+- a live worker renews `finalizingSince` before slow external work;
+- null `finalizingSince` is initialized to a fresh lease, not swept immediately;
+- active projects are the scheduled sweep scope;
+- every released wishlist goes to `pending` for ordinary admission;
+- CAS loss means a live holder or another path already moved the row, not a sweep failure;
+- the sweep remains idempotent and unbounded by attempt count.
 
-* **Сильная форма сейчас** — current source is strong. `sweep()` is active-project scoped and never calls
-  `findAll`; `sweepProject()` calculates a lease, uses `finalizingSince`, initializes historical nulls, and
-  releases by CAS only. `StrandedFinalizingSweepServiceTest` covers old-row release, fresh-row non-release,
-  active-project iteration without `findAll`, fresh `finalizingSince` despite old dispatch timestamp,
-  renewed live-worker lease, historical null initialization, data-driven lease from median samples and
-  fallback to the default lease. Migration `V139` adds and indexes `finalizing_since`.
+**Сильная форма сейчас:** current source matches the ideal. `sweep()` uses
+`findByStatusOrderByCreatedAtDesc(ProjectStatus.active)` and does not call `findAll`. `sweepProject()` derives
+the cutoff from `calculateEffectiveLeaseDuration`, reads `finalizingSince`, initializes null leases, skips fresh
+leases and releases only by `compareAndSetStatus(finalizing -> pending)`. `JulesDispatchService` claims by
+timestamped CAS, renews leases in `REQUIRES_NEW`, releases unfinished claims in `REQUIRES_NEW`, and records
+`FINALIZING_DURATION` after successful graph build. `WishlistRepository` clears `finalizingSince` on status
+exit and renews it only for rows still in `finalizing`. `V139` adds and indexes `finalizing_since`.
 
-* **Слабая/неидеальная форма сейчас** — no implementation weakness is identified from current source/test
-  evidence. Runtime silence still has to be interpreted carefully: absence of release logs is healthy only
-  when the scheduler is running and finalizing transitions are otherwise visible.
+**Слабая / неидеальная форма:** no source/test defect is identified for this mechanism in the current evidence.
+The only remaining operational caution is interpretive: absence of release logs means healthy only when the
+scheduler is known to be running and current finalizing transitions are otherwise visible.
 
-* **Что сделать для идеала** — кодить не нужно. Before any future code change, run the focused
-  `StrandedFinalizingSweepServiceTest` and one runtime/log probe that distinguishes "scheduler alive and
-  nothing stranded" from "scheduler not running". If production needs stronger observability, add a cheap
-  heartbeat counter for sweep runs/releases without changing release semantics.
+**Что надо сделать для идеала:** code changes are not required. Before any future code change, run the focused
+`StrandedFinalizingSweepServiceTest` and a live/runtime probe that distinguishes "scheduler alive and nothing
+stranded" from "scheduler absent". If production observability is later considered insufficient, add a cheap
+sweep-run/release counter without changing CAS semantics, lease age semantics or active-project scope.
 
-* **Что не трогать** — do not replace CAS with entity save; do not measure age from `createdAt` or
-  `lastCompileDispatchedAt`; do not sweep null `finalizingSince` immediately; do not add a holder lookup or
-  persistent-worker dependency; do not restrict the sweep by attempt budget; do not include inactive projects
-  unless a separate historical-repair procedure is written.
+**Что не трогать:** do not replace CAS with entity save. Do not measure age from `createdAt` or
+`lastCompileDispatchedAt`. Do not sweep null `finalizingSince` immediately. Do not add holder lookup,
+persistent-worker dependency or `currentBatchIds` inference. Do not give the sweep an attempt budget. Do not
+include inactive projects unless a separate historical repair mechanism is explicitly designed.
 
-* **Опровержение** — a fresh or renewed `finalizing` row is released; an expired `finalizing` row remains
-  stuck; a row that has already left `finalizing` is overwritten; null `finalizingSince` is swept immediately;
-  `sweep()` calls `projectRepository.findAll()`; or a live/log probe shows the scheduled method is not firing
-  while stale finalizing rows exist.
+**Опровержение / проверка:** this record is false if a fresh or renewed `finalizing` row is released; an
+expired `finalizing` row remains stuck while the scheduler runs; a row that already left `finalizing` is
+overwritten; null `finalizingSince` is swept immediately; `sweep()` uses `findAll`; a live-worker renewal is not
+visible before slow work; duration samples are ignored despite meeting sample threshold; or runtime evidence
+shows stale finalizing rows and no scheduled sweep activity.
 
-* **Критерий закрытия** — `StrandedFinalizingSweepServiceTest` remains green for release, non-release,
-  active scope, renewal, null initialization and data-driven lease; repository methods remain CAS-based; a
-  production or fixture probe can show either no stale finalizing rows or a release log returning stale rows
-  to `pending` without concurrent-holder damage.
+**Критерий закрытия:** ideal remains closed while `StrandedFinalizingSweepServiceTest` covers expired release,
+fresh non-release, active-project iteration without `findAll`, fresh `finalizingSince` despite old dispatch
+time, renewed live-worker lease, historical null initialization, data-driven lease and default fallback; while
+`JulesDispatchServiceTest` proves timestamped claims and renewal; and while a production/fixture probe can show
+either no stale finalizing rows or CAS releases returning stale rows to `pending` without concurrent-holder
+damage.
 
-* **Свидетельства записи** — `nl -ba src/main/java/com/eneik/production/services/StrandedFinalizingSweepService.java | sed -n '20,210p'`;
-  `nl -ba src/test/java/com/eneik/production/services/StrandedFinalizingSweepServiceTest.java | sed -n '48,229p'`;
-  `nl -ba src/main/java/com/eneik/production/repositories/WishlistRepository.java | sed -n '29,53p'`;
-  `nl -ba src/main/resources/db/migration/V139__wishlist_finalizing_since.sql | sed -n '1,7p'`;
-  `grep -RIn 'FINALIZING_DURATION\|renewFinalizingLeases\|finalizingSince' src/main/java src/test/java`;
-  philosopher rows `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `ACP-061`.
+**Доказательства:** `StrandedFinalizingSweepService.java:20-210`; `StrandedFinalizingSweepServiceTest.java:48-229`;
+`WishlistRepository.java:29-53`; `WishlistEntity.java:118-123,423-428`;
+`JulesDispatchService.java:2401-2462,2479-2498,2572-2607,2693-2707`;
+`V139__wishlist_finalizing_since.sql:1-7`; `JulesDispatchServiceTest.java` grep hits for
+`compareAndSetStatusWithTimestamp` and `renewFinalizingLeases`; philosopher rows:
+`ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ACP-061`.
 
-* **Текущий статус** — идеален по current source/test contract; no code change is requested.
+**Текущий статус:** считаю механизм идеальным by current source/test contract; only runtime observability must
+be checked operationally before future edits.
 
-* **комментарий для Антигравити:** считаю механизм идеальным.
+**Комментарии для Антигравити по механизмам:**
+- `StrandedFinalizingSweepService.sweep`: считаю механизм идеальным.
+- `StrandedFinalizingSweepService.sweepProject`: считаю механизм идеальным.
+- `StrandedFinalizingSweepService.calculateEffectiveLeaseDuration`: считаю механизм идеальным.
+- `JulesDispatchService.admitWishlistCompilationCompletion`: считаю механизм идеальным.
+- `JulesDispatchService.renewFinalizingLeases`: считаю механизм идеальным.
+- `JulesDispatchService.releaseUnfinishedClaims`: считаю механизм идеальным.
+- `JulesDispatchService.recordFinalizingDuration`: считаю механизм идеальным.
+- `WishlistEntity.finalizingSince`: считаю механизм идеальным.
+- `WishlistStatus.finalizing`: считаю механизм идеальным.
+- `WishlistRepository.compareAndSetStatus`: считаю механизм идеальным.
+- `WishlistRepository.compareAndSetStatusWithTimestamp`: считаю механизм идеальным.
+- `WishlistRepository.renewFinalizingLeases`: считаю механизм идеальным.
+- `ProjectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`: считаю механизм идеальным.
+- `DefectJournalRepository`: считаю механизм идеальным.
+- `V139__wishlist_finalizing_since.sql`: считаю механизм идеальным.
+- `LogScope`: считаю механизм идеальным.
+
+**комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
 # XLI. Заслон качества экрана: проверка предмета, а не отчёта о нём
 
