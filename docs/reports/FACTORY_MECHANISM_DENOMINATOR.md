@@ -168,3 +168,36 @@ Antigravity comments in `docs/FACTORY_MECHANISMS.md`: 38. This still proves stri
 Remaining not-recorded rough-presence names after this pass: services/result carriers `ChessService`, `GeminiProjectObserverService`, `OrchestrationCooldownException`, `JulesDispatchResult`, `CollaboratorProvisioningResult`, `GitHubProvisioningResult`, `LinearProvisioningResult`, `ProjectFactoryResult`, `WorkspaceArtifacts`, `WorkspaceProvisioningResult`; controllers `GreetingController`, `HomeController`, `InternalJulesActivitiesProbeController`, `InternalRepairController`, `LinearSyncController`, `SystemAuditController`, `ClientDeliveryController`, `CommandDashboardController`, `DashboardController`, `OperationalTruthController`, `SystemDriftController`, `SystemStatusController`, `GithubAccessController`, `MarketResearchController`, `JulesMonitorController`, `RoleRulesController`, `InternalSettingsController`, `JulesConfigController`, `SettingsController`; kaizen `KaizenController`, `DefectJournalRepository`, `KaizenProposalRepository`.
 
 комментарий для Антигравити: gate-family documentation is now a whole-family record, but implementation is not ideal. Do not patch one gate or one endpoint separately; keep the three subjects distinct: task specification, implementation-result verification, project-readiness claim. Apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, and `ACP-061 Hoare Triple Review`. First remeasure reachability and denominator, then unify `QualityGateController` with the Six Sigma report-corpus owner, then decide the epistemic absent-evidence rule.
+
+## 2026-09-12 Strict Family Record: Project Factory Provisioning Result Chain
+
+Status: strict family record filled in `docs/FACTORY_MECHANISMS.md` by Codex as a factory-wide documentation tact, with no code change.
+
+Moved from mentioned-only / mechanism-part work:
+
+- `CollaboratorProvisioningResult`: folded into the GitHub collaborator-access outcome contract.
+- `GitHubProvisioningResult`: strict-recorded as GitHub repository identity/status/warnings/collaborator evidence, not a standalone mechanism.
+- `LinearProvisioningResult`: strict-recorded as Linear project id/url/status evidence.
+- `WorkspaceArtifacts`: strict-recorded as the bootstrap file bundle emitted by the workspace factory.
+- `WorkspaceProvisioningResult`: strict-recorded as local workspace path/artifact/status evidence.
+- `ProjectFactoryResult`: strict-recorded as the aggregate returned by `ProjectFactoryService` and persisted by `ProjectFlowService`.
+
+Connected owners named in the same family: `ProjectWorkspaceFactoryService`, `GitHubProjectFactoryClient`, `LinearProjectFactoryClient`, `ProjectFactoryService`, `ProjectFlowService`, `ProjectEntity`, `ProjectDto`, `ProjectHotspotFileRepository`, GitHub API, Linear API and migrations `V5`, `V6`, `V8`.
+
+Updated rough-presence scan after the record:
+
+| Layer | Source files | Rough records | Mentioned only | Missing name |
+| --- | ---: | ---: | ---: | ---: |
+| `src/main/java/com/eneik/production/services` | 139 | 135 | 4 | 0 |
+| `src/main/java/com/eneik/production/controllers` | 35 | 16 | 19 | 0 |
+| `src/main/java/com/eneik/production/kaizen` | 8 | 5 | 3 | 0 |
+| `src/main/java/com/eneik/production/toc` | 10 | 10 | 0 | 0 |
+| `src/main/java/com/eneik/production/config` | 3 | 3 | 0 | 0 |
+
+Exact lowercase `комментарий для Антигравити` grep in `docs/FACTORY_MECHANISMS.md`: 37. This still proves strict completion is false for the whole factory; it only proves this family now has a strict record.
+
+Remaining not-recorded rough-presence names after this pass: services/result carriers `ChessService`, `GeminiProjectObserverService`, `OrchestrationCooldownException`, `JulesDispatchResult`; controllers `GreetingController`, `HomeController`, `InternalJulesActivitiesProbeController`, `InternalRepairController`, `LinearSyncController`, `SystemAuditController`, `ClientDeliveryController`, `CommandDashboardController`, `DashboardController`, `OperationalTruthController`, `SystemDriftController`, `SystemStatusController`, `GithubAccessController`, `MarketResearchController`, `JulesMonitorController`, `RoleRulesController`, `InternalSettingsController`, `JulesConfigController`, `SettingsController`; kaizen `KaizenController`, `DefectJournalRepository`, `KaizenProposalRepository`.
+
+Not complete as implementation: status/result outcomes remain mostly free text; workspace bootstrap text can still render raw `Repository: null`; verified/unverified existing-repository `422` branches need fixture proof; stdout debug token-prefix output should be replaced by a proper log/audit path.
+
+комментарий для Антигравити: project-factory provisioning-result documentation is now a whole-family record, but implementation remains non-ideal. Do not patch one record type or one client branch separately; preserve the whole evidence chain from local workspace to GitHub proof to Linear proof to persisted project fields. Philosophy: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
