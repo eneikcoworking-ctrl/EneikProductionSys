@@ -8571,70 +8571,122 @@ missing-key, unavailable, no-video, write-error and ok statuses plus metadata/me
 
 # XXXIX. Метрики качества: два счёта одного слова, 388 против нуля
 
-**`QualityMetricsController`** (188 строк) — отдаёт наружу меру дефектности слияний и поимённую сводку
-дефектов; только чтение, изменяющих входов нет.
-*Связи:* путь `/api/quality`, два входа — `/conflict-dpmo` и `/defect-summary` | читает пять хранилищ:
-разборы запросов, конфликты задач, сессии, задачи, проекты и находки первичного разбора.
-*Ценность:* без него мера качества считается каждым читающим заново и по-своему.
-*Комментарий:* **периферия по устройству — поток он не держит, — и ядро по тому, что показал живой замер.**
+* **Имена механизма или семейства** — `QualityMetricsController`, `OperationalTruthService`,
+  `OperationalTruthController`, `OperationalTruthDto.EvidenceSummary`, `TaskEntity`,
+  `TaskRepository`, `TaskConflictRepository`, `PrReviewRepository`, `JulesSessionRepository`,
+  `ProjectRepository`, `OnboardingAuditFindingRepository`, `SixSigmaAuditService`.
 
-Сперва поправка к прежнему беглому чтению. Первичная запись по двум `findAll()` в хранилищах утверждала, что мера
-считается без разбивки и без окна. Живой ответ это опровергает: в нём есть и разбивка по проекту, и окно в
-семь дней. Загружается всё, а группируется в памяти — это вопрос цены, а не верности.
+* **Философский паттерн** — `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, Альфред Тарский,
+  `BARCAN-TAG-06`, publication anchor *The Concept of Truth in Formalized Languages*, defect `D012 Policy
+  contradiction`: качество должно говорить, истинно ли проверка провалена, пройдена, не применена или не
+  измерена, а не прятать эти состояния под одним словом. Также применим
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`: каждое число дефектов должно называть источник, окно, критерий и
+  владельца расчёта. `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` нужен для различения check-level defects,
+  task-level delivery evidence and factory-level trust warning; `ACP-061` остаётся фоном перед кодом.
 
-Теперь то, ради чего запись стоит читать. Живой ответ `/defect-summary` даёт **`qualityGate: total 0`** —
-ни одной проваленной проверки заслона качества. А служба операционной правды в тот же час предупреждает:
-**«388 задач имеют свидетельство непройденного заслона качества»** (раздел XXVII).
+* **Связи** — `GET /api/quality/conflict-dpmo` считает DPMO конфликтов слияния из `PrReviewRepository`,
+  `TaskConflictRepository`, `JulesSessionRepository`, `TaskRepository` and `ProjectRepository`.
+  `GET /api/quality/defect-summary` собирает merge conflicts, failed quality-gate checks and onboarding
+  findings. `OperationalTruthService` независимо строит evidence summary для проекта, используя
+  `TaskEntity.isVerifiedForDelivery()`, `isDeliveryVerificationFailed()` and
+  `isDeliveryVerificationAbsent()`. `SixSigmaAuditService.computeQualityGateDefectRate` уже имеет соседний
+  расчёт check-level opportunities/defects/undetermined.
 
-Одно слово, два счёта, разница в 388. Замер обоих:
+* **Идеальная форма** — check-level метрика качества считает только проверки, которые реально существуют в
+  `qualityGateReport.checks`, и defect означает `passed == false`. Task-level operational truth считает
+  задачи в трёх взаимоисключающих состояниях: verified, failed/refuted, absent/unapplied. Factory-level
+  DPMO показывает opportunities/defects/window/source and does not reuse the same label for another level.
+  Отсутствие применимой проверки не называется провалом; проваленная проверка не исчезает как "нет дефектов".
 
-- здесь считаются задачи, у которых в отчёте заслона есть **проверка с признаком „не пройдена“**
-  (`report.has("checks")`, затем `!check.path("passed")`). Итог — ноль.
-- там считаются задачи, у которых отчёт **не пуст** и признак `qualityGatePassed` ложен
-  (`getQualityGateReport() != null` и `!isQualityGatePassed()`). Итог — 388.
+* **Граница** — `QualityMetricsController` имеет право показывать агрегированную сводку качества и дефектов.
+  Он не должен становиться владельцем delivery-readiness, trust score or acceptance verdict. `TaskEntity`
+  owns the delivery-verification partition. `OperationalTruthService` owns project trust evidence wording.
+  `SixSigmaAuditService` owns Six Sigma quality-rate calculation. Эти границы нельзя чинить одной заменой
+  текста в UI или одним булевым полем.
 
-Отсюда следует то, чего ни один из двух механизмов не говорит: **388 задач имеют отчёт заслона, в котором
-нет ни одной проваленной проверки, и при этом помечены непройденными.** То есть заслон отработал и не
-применил ни одной применимой проверки, а его признак записал это как «не пройдено».
+* **Входы** — строки review/conflict/session/task/project/onboarding; `qualityGateReport.checks[*].passed`;
+  `qualityGateReport.applicableChecksByStage.IMPLEMENTATION_RESULT`; `qualityGatePassed`;
+  acceptance criterion verdict fields in `TaskEntity`; project id and recency window in operational truth;
+  seven-day window in conflict DPMO.
 
-Это в точности то, что записано у `TaskEntity` (раздел XXI): массив стадий хранит **запрошенные** стадии, и
-проверка «все пройдены» по пустому списку даёт истину, поэтому отвечать на вопрос о доставке может лишь
-счётчик **применённых** проверок. Здесь видна обратная сторона той же монеты: там пустота давала ложный
-успех, тут — ложную неудачу.
+* **Выходы** — `/api/quality/conflict-dpmo` returns merge-attempt counts, conflicts, DPMO, last-seven-days
+  and by-project breakdown. `/api/quality/defect-summary` returns total defects plus conflict, quality-gate
+  and onboarding lists. `/api/projects/{projectId}/operational-truth` returns evidence counts including
+  `qualityGatePassed`, `qualityGateFailed` and `qualityGateUnapplied`, and warning text only for actual
+  failed quality-gate evidence.
 
-Более точным в этой паре считается счёт этого контроллера: ноль проваленных проверок есть правда, потому что
-проваленных проверок действительно нет. Число 388 само по себе корректно, но подпись к нему неверна: это счёт **отчётов без
-применимых проверок**, названный «свидетельством непройденного заслона».
+* **Владельцы истины и состояния** — `TaskEntity` owns the task truth partition; `TaskRepository` owns scoped
+  acquisition of tasks with quality-gate reports; `PrReviewRepository` and `TaskConflictRepository` own merge
+  attempts/conflicts; `OnboardingAuditFindingRepository` owns onboarding findings; `OperationalTruthDto`
+  owns the external evidence shape; `SixSigmaAuditService` owns quality-rate terminology.
 
-**Задача для кодинга.** Признак `qualityGatePassed` обязан различать три исхода: проверки применялись и
-пройдены, применялись и провалены, **не применялось ни одной**. Место: расчёт `qualityGateFailed` в
-`OperationalTruthService:274-276` и подпись предупреждения в строке 436; на стороне сущности —
-`TaskEntity.isQualityGatePassed` и счётчик применённых проверок, уже существующий там же. Проверка: сумма
-«пройдено» и «провалено» плюс «не применялось» равна числу задач с отчётом, и ни одно предупреждение не
-называет неприменённое проваленным. Опровергнет: предупреждение о непройденном заслоне при нуле проваленных
-проверок в отчётах.
-*Живое, 7 сентября 2026* (`curl -s localhost:8080/api/quality/conflict-dpmo` и `/defect-summary`): мера
-дефектности слияний — 6299 на миллион по всей истории и 13745 за последние семь дней при 635 попытках
-слияния и **четырёх** конфликтах. Конфликтов именно четыре, а не девяносто два: **починка `V123` держится**
-(раздел XXIIз), сироты, вечно считавшиеся дефектами и в числителе, и в знаменателе, из меры ушли. Сводка
-дефектов: всего 4, все — конфликты слияния; заслон качества и первичный разбор дают по нулю.
-*Философия:* `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` (D009) — Дэвид Чалмерс,
-`BARCAN-TAG-02 RIGID-DESIGNATOR`, принцип двумерной семантики, anchor *Two-Dimensional Semantics — primary
-and secondary intensions*. Сильная дословно: «отображаемое имя, сохраняемый идентификатор и сущность в API
-разведены так, что перепутать их нельзя». Слабая: «одно поле служит всем трём». Опровержение: «изменить
-отображаемое имя и посмотреть, не поехали ли ссылки». **Форма: слабая, и по неожиданной причине.** Разведены
-здесь не имя и предмет, а **два разных предмета под одним именем**: «непройденный заслон» означает у одного
-механизма проваленную проверку, у другого — отсутствие применимых. Поле `qualityGatePassed` служит обоим
-смыслам сразу, что и есть слабая форма дословно.
-Второй образец: `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип четырёхзначной логики, anchor *A Useful Four-Valued Logic /
-how a computer should think — many-valued diagnostics*. Сильная дословно: «истинное, ложное, **неизвестное**
-и противоречивое представлены явно, и показано, как каждое хранится, отображается и разрешается. Третий
-исход невозможно проигнорировать на стороне вызывающего». Слабая: «булево плюс `null`, трактуемый по месту».
-Опровержение: «найти вызывающего, который компилируется, не обработав „неизвестно“». **Форма: слабая, и
-опровержение выполнено обоими вызывающими сразу.** Третий исход — «не применялось ни одной проверки» —
-существует в данных и не представлен в типе; один читающий трактует его как ложь, другой не считает вовсе,
-и оба компилируются.
+* **Инварианты** — failed check count is not the same thing as task failed for delivery; zero applicable
+  delivery checks is absent/unapplied, not passed and not failed; `qualityGatePassed=false` cannot be read
+  without `deliveryChecksApplied()` or acceptance verdict context; `qualityGatePassed + qualityGateFailed +
+  qualityGateUnapplied` must partition recent tasks with quality evidence in operational truth; no quality
+  metric may use a stale all-tasks scan when a scoped repository method exists.
+
+* **Сильная форма сейчас** — старое "388 непройденных заслонов" уже нельзя читать как текущий дефект:
+  `TaskEntity` has explicit `isVerifiedForDelivery`, `isDeliveryVerificationFailed`,
+  `isDeliveryVerificationAbsent`, `deliveryChecksApplied` and `qualityGateChecksFailed`; `OperationalTruthDto`
+  exposes `qualityGateUnapplied`; `OperationalTruthService` counts passed/failed/unapplied separately and
+  warns only on `qualityGateFailed`; `OperationalTruthServiceTest` contains the "388 case" fixture proving
+  a task with report and zero delivery checks is unapplied, not failed. `QualityMetricsControllerTest`
+  likewise proves empty `checks` gives `qualityGate.total == 0`, and that `/defect-summary` uses
+  `findByQualityGateReportIsNotNull()` instead of `taskRepository.findAll()`.
+
+* **Слабая/неидеальная форма сейчас** — расчёт качества всё ещё рассыпан по нескольким владельцам:
+  `QualityMetricsController` hand-builds defect summary, `SystemStatusService` has its own quality gate
+  section, and `SixSigmaAuditService` has another check-level defect-rate function with `undetermined`.
+  `/api/quality/defect-summary` does not expose an explicit `qualityGateUnapplied` auxiliary count, so the
+  user sees zero failed checks but not the "not applied" side of the truth table from the same endpoint.
+  `getConflictDpmo()` still materializes projects, sessions, tasks and conflicts for by-project breakdown;
+  that is mainly cost and drift risk, not the old truth bug.
+
+* **Что сделать для идеала** — make one shared quality-evidence projection that is consumed by
+  `QualityMetricsController`, `OperationalTruthService`, `SystemStatusService` and `SixSigmaAuditService`.
+  The projection must return check-level failed/passed/undetermined and task-level verified/failed/unapplied
+  as separate fields. Then expose `qualityGateUnapplied` from `/api/quality/defect-summary` as not-a-defect
+  context, and replace remaining by-project DPMO in-memory joins with scoped repository queries if the
+  endpoint becomes hot.
+
+* **Что не трогать** — do not revert to treating `qualityGatePassed=false` as failed evidence. Do not count
+  empty `checks` or zero `IMPLEMENTATION_RESULT` applicable checks as defects. Do not "fix" the zero in
+  `/defect-summary` by adding the unapplied count into `qualityGate.total`; that would reintroduce the old
+  lie. Do not remove the task-level partition helpers from `TaskEntity` as duplication.
+
+* **Опровержение** — a task with `qualityGateReport` present, `qualityGatePassed=false` and zero
+  `IMPLEMENTATION_RESULT` applicable checks appears under `qualityGateFailed` or under
+  `/api/quality/defect-summary.qualityGate.total`; a failed check with `passed=false` is absent from the
+  quality defect list; the sum of operational truth passed/failed/unapplied no longer partitions the test
+  fixture; or two endpoints publish the same label while using different truth levels without naming the
+  transform.
+
+* **Критерий закрытия** — focused tests for `QualityMetricsController`, `OperationalTruthService`,
+  `TaskEntity` delivery-verification predicates and `SixSigmaAuditService.computeQualityGateDefectRate`
+  prove the four visible categories: passed check, failed check, undetermined check and no applicable
+  delivery check. `/api/quality/defect-summary` and `/api/projects/{id}/operational-truth` must publish
+  compatible labels and must not require a reader to know the old 388 incident to understand the difference.
+
+* **Свидетельства записи** — `nl -ba src/main/java/com/eneik/production/controllers/QualityMetricsController.java | sed -n '38,181p'`;
+  `nl -ba src/test/java/com/eneik/production/controllers/QualityMetricsControllerTest.java | sed -n '34,144p'`;
+  `nl -ba src/main/java/com/eneik/production/models/persistence/TaskEntity.java | sed -n '411,504p'`;
+  `nl -ba src/main/java/com/eneik/production/services/operational/OperationalTruthService.java | sed -n '351,385p'`;
+  `nl -ba src/test/java/com/eneik/production/services/operational/OperationalTruthServiceTest.java | sed -n '540,633p'`;
+  `nl -ba src/main/java/com/eneik/production/services/audit/SixSigmaAuditService.java | sed -n '487,525p'`;
+  `grep -RIn 'qualityGateUnapplied\|isDeliveryVerificationAbsent\|qualityGateChecksFailed\|findByQualityGateReportIsNotNull' src/main/java src/test/java`.
+
+* **Текущий статус** — частично силён: old 388-as-failed defect is fixed in current source/test fixtures, but
+  the quality metrics family is not ideal until one shared projection removes the remaining terminology and
+  owner drift.
+
+* **комментарий для Антигравити:** механизм не идеален. Не правь старый "388 failed quality gates" defect as
+  if it were current: current `TaskEntity` and `OperationalTruthService` already separate passed, failed and
+  unapplied, and `QualityMetricsControllerTest` keeps empty checks at zero defects. Next correct work is to
+  unify quality-evidence projection across `QualityMetricsController`, `OperationalTruthService`,
+  `SystemStatusService` and `SixSigmaAuditService`, expose unapplied as context not defect, and preserve the
+  task-level truth partition. Philosophy: `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`,
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`.
 
 # XL. Выметающий обход: восстановление, которому не нужен держатель
 

@@ -447,3 +447,44 @@ MVC/integration tests, verify fail-closed deploy/runbook behavior for `ENEIK_SEC
 trace for successful AI-resource mutations. Apply `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
 `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple Review`.
+
+## 2026-09-12 Codex Strict Record: Quality Metrics Truth Partition
+
+Status: documentation-only strict-family replacement for section XXXIX in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `QualityMetricsController`, `OperationalTruthService`,
+`OperationalTruthController`, `OperationalTruthDto.EvidenceSummary`, `TaskEntity`, `TaskRepository`,
+`TaskConflictRepository`, `PrReviewRepository`, `JulesSessionRepository`, `ProjectRepository`,
+`OnboardingAuditFindingRepository` and `SixSigmaAuditService` as the quality-metrics truth-partition family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with philosophical
+pattern, ideal form, boundary, inputs, outputs, truth/state owners, invariants, strong/weak form, what to do,
+what not to touch, refutation, closure criterion, evidence, current status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 17 |
+| Sections still missing visible `комментарий для Антигравити` | 46 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old "388 tasks have failed quality-gate evidence" instruction is stale. Current source
+has a three-way task-level partition in `TaskEntity`, exposes `qualityGateUnapplied` in
+`OperationalTruthDto`, counts it separately in `OperationalTruthService`, and has tests that keep zero
+applicable checks out of failed evidence. `QualityMetricsController` counts failed check rows, not absent
+task-level delivery evidence.
+
+Remaining non-ideal point for this family: no code was changed in this tact. The family is not declared
+ideal because quality evidence is still computed in several owners (`QualityMetricsController`,
+`OperationalTruthService`, `SystemStatusService`, `SixSigmaAuditService`) and `/api/quality/defect-summary`
+does not expose unapplied as explicit not-a-defect context.
+
+комментарий для Антигравити: do not repair the old 388 defect as current. First preserve the current
+passed/failed/unapplied task partition, then unify quality-evidence projection across the quality metrics,
+operational truth, system status and Six Sigma surfaces. Expose unapplied as context, not as a defect. Apply
+`ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple Review`.
