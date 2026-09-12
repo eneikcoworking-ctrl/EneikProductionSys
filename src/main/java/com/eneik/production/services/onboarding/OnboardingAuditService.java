@@ -81,6 +81,9 @@ public class OnboardingAuditService {
         // Save default branch & baseline SHA
         project.setDefaultBranch(stackProfile.defaultBranch());
         project.setBaselineCommitSha(stackProfile.baselineCommitSha());
+        if (stackProfile.productNamespace() != null && !stackProfile.productNamespace().isBlank()) {
+            project.setProductNamespace(stackProfile.productNamespace());
+        }
         projectRepository.save(project);
 
         // Clean up previous findings

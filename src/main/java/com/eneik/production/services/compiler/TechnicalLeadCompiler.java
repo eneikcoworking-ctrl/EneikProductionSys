@@ -62,6 +62,142 @@ public class TechnicalLeadCompiler {
         return offending;
     }
 
+    /**
+     * Identifies paths that fall outside the product's declared namespace or stack (Law 26 / D006 / INDEXICAL_CONTEXT_LOCK).
+     * Pure: no I/O, testable directly with mock or literal arguments.
+     */
+    public static java.util.List<String> pathsOutsideProductNamespace(
+            String productNamespace,
+            boolean hasFlyway,
+            boolean isNextJsOrNode,
+            java.util.List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> offending = new java.util.ArrayList<>();
+        String factorySegment = "/" + FACTORY_PACKAGE_ROOT.replace('.', '/') + "/";
+
+        String productPkgDir = null;
+        if (productNamespace != null && !productNamespace.isBlank()) {
+            productPkgDir = productNamespace.trim().replace('.', '/');
+        }
+
+        for (String path : paths) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            String normalized = path.startsWith("/") ? path.substring(1) : path;
+
+            // 1. Factory package root violation (Law 26 core)
+            if (("/" + normalized).contains(factorySegment)) {
+                offending.add(path);
+                continue;
+            }
+
+            // 2. Flyway migration without Flyway support
+            if (!hasFlyway && (normalized.startsWith(FLYWAY_MIGRATION_DIR + "/") || normalized.equals(FLYWAY_MIGRATION_DIR))) {
+                offending.add(path);
+                continue;
+            }
+
+            if (!isNextJsOrNode) {
+                // Java / Spring Boot stack
+                // Next.js App router & Prisma paths are foreign to a Java stack
+                if (normalized.startsWith("src/app/") || normalized.startsWith("prisma/")) {
+                    offending.add(path);
+                    continue;
+                }
+
+                // If product package directory is known, check Java source/test paths
+                if (productPkgDir != null) {
+                    if (normalized.startsWith("src/main/java/") && normalized.endsWith(".java")) {
+                        String prefix = "src/main/java/" + productPkgDir + "/";
+                        if (!normalized.startsWith(prefix)) {
+                            offending.add(path);
+                            continue;
+                        }
+                    } else if (normalized.startsWith("src/test/java/") && normalized.endsWith(".java")) {
+                        String prefix = "src/test/java/" + productPkgDir + "/";
+                        if (!normalized.startsWith(prefix)) {
+                            offending.add(path);
+                            continue;
+                        }
+                    }
+                }
+            } else {
+                // JavaScript / TypeScript (Next.js / Node) stack
+                // Java source/test/resources paths are foreign to a Node/Next.js stack
+                if (normalized.startsWith("src/main/java/") || normalized.startsWith("src/test/java/") || normalized.startsWith("src/main/resources/")) {
+                    offending.add(path);
+                    continue;
+                }
+            }
+        }
+        return offending;
+    }
+
+    public static java.util.List<String> pathsOutsideProductNamespace(ProjectEntity project, java.util.List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            return java.util.List.of();
+        }
+        String productNamespace = project != null ? project.resolveProductNamespace() : null;
+        boolean hasFlyway = isFlywayConfigured(project);
+        boolean isNextJs = isNextJsConfigured(project);
+        return pathsOutsideProductNamespace(productNamespace, hasFlyway, isNextJs, paths);
+    }
+
+    static boolean isFlywayConfigured(ProjectEntity project) {
+        if (project == null) {
+            return false;
+        }
+        if (project.getNextFlywayVersion() != null) {
+            return true;
+        }
+        String workspacePath = project.getWorkspacePath();
+        if (workspacePath != null && !workspacePath.isBlank()) {
+            java.io.File ws = new java.io.File(workspacePath);
+            if (ws.exists()) {
+                if (new java.io.File(ws, "src/main/resources/db/migration").exists()) {
+                    return true;
+                }
+                java.io.File pom = new java.io.File(ws, "pom.xml");
+                if (pom.exists() && fileContainsSubstring(pom, "flyway")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    static boolean isNextJsConfigured(ProjectEntity project) {
+        if (project == null) {
+            return false;
+        }
+        String workspacePath = project.getWorkspacePath();
+        if (workspacePath != null && !workspacePath.isBlank()) {
+            java.io.File ws = new java.io.File(workspacePath);
+            if (ws.exists()) {
+                if (new java.io.File(ws, "next.config.ts").exists()
+                        || new java.io.File(ws, "next.config.js").exists()) {
+                    return true;
+                }
+                java.io.File pkg = new java.io.File(ws, "package.json");
+                if (pkg.exists() && !new java.io.File(ws, "pom.xml").exists() && fileContainsSubstring(pkg, "\"next\"")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static boolean fileContainsSubstring(java.io.File file, String sub) {
+        try {
+            return java.nio.file.Files.readString(file.toPath()).contains(sub);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     private final WishlistRepository wishlistRepository;
     private final TaskRepository taskRepository;
     private final ProjectRepository projectRepository;
@@ -75,6 +211,7 @@ public class TechnicalLeadCompiler {
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final ProjectFileClaimRepository projectFileClaimRepository;
     private final com.eneik.production.services.GeminiContextService geminiContextService;
+    private final com.eneik.production.kaizen.service.DefectJournalService defectJournalService;
 
     private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
     private static final String FLYWAY_MIGRATION_DIR = "src/main/resources/db/migration";
@@ -100,7 +237,8 @@ public class TechnicalLeadCompiler {
                                  FeatureService featureService,
                                  com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
                                  ProjectFileClaimRepository projectFileClaimRepository,
-                                 com.eneik.production.services.GeminiContextService geminiContextService) {
+                                 com.eneik.production.services.GeminiContextService geminiContextService,
+                                 com.eneik.production.kaizen.service.DefectJournalService defectJournalService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
@@ -114,6 +252,7 @@ public class TechnicalLeadCompiler {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.projectFileClaimRepository = projectFileClaimRepository;
         this.geminiContextService = geminiContextService;
+        this.defectJournalService = defectJournalService;
     }
 
     /**
@@ -459,6 +598,10 @@ public class TechnicalLeadCompiler {
         if (fileScopeResult.collisionNotes() != null && !fileScopeResult.collisionNotes().isBlank()) {
             task.setDescription(task.getDescription() + "\n\n" + fileScopeResult.collisionNotes());
         }
+        if (fileScopeResult.namespaceRefusal()) {
+            payload.put("file_scope_status", "REFUSED_PRODUCT_NAMESPACE_VIOLATION");
+            payload.set("refused_paths", objectMapper.valueToTree(fileScopeResult.refusedPaths()));
+        }
 
         TaskEntity saved = taskRepository.save(task);
         recordFileClaims(project, saved, fileScopeResult.finalPaths());
@@ -768,14 +911,8 @@ public class TechnicalLeadCompiler {
         if (relevantPaths.isEmpty()) {
             String featureName = getFeatureName(wishContent);
 
-            // Detect stack based on workspace contents
-            boolean isNextJsOrReact = false;
-            if (workspaceDir != null && workspaceDir.exists()) {
-                isNextJsOrReact = new java.io.File(workspaceDir, "next.config.ts").exists() ||
-                                  new java.io.File(workspaceDir, "next.config.js").exists() ||
-                                  new java.io.File(workspaceDir, "pnpm-workspace.yaml").exists() ||
-                                  new java.io.File(workspaceDir, "package.json").exists() && !new java.io.File(workspaceDir, "pom.xml").exists();
-            }
+            // Detect stack based on workspace contents and project configuration
+            boolean isNextJsOrReact = isNextJsConfigured(project);
 
             if (isNextJsOrReact) {
                 // Next.js/React structure fallback
@@ -803,7 +940,6 @@ public class TechnicalLeadCompiler {
                     paths.add("prisma/schema.prisma");
                     paths.add("src/lib/data/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".ts");
                 } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
-                    // Same reasoning as the Java branch above - the assembly, not a component.
                     paths.add("docs/architecture/adr-002-runtime-contract.md");
                     paths.add("docker-compose.yml");
                     paths.add("Dockerfile");
@@ -816,15 +952,19 @@ public class TechnicalLeadCompiler {
                     paths.add("docs/contracts/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".openapi.yaml");
                 }
             } else {
-                // Default Java Spring Boot structure fallback
+                // Java Spring Boot structure fallback: strictly bound to product's own namespace and stack
+                String productNamespace = project != null ? project.resolveProductNamespace() : "com.eneik.product";
+                String productPkgDir = productNamespace.replace('.', '/');
+                boolean hasFlyway = isFlywayConfigured(project);
+
                 if ("BARCAN-TAG-01".equals(roleTag)) {
                     paths.add("docs/architecture/" + featureName + ".md");
                 } else if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                        paths.add("src/main/java/com/eneik/production/services/ChessService.java");
-                        paths.add("src/main/java/com/eneik/production/services/ChessEngine.java");
+                        paths.add("src/main/java/" + productPkgDir + "/services/ChessService.java");
+                        paths.add("src/main/java/" + productPkgDir + "/services/ChessEngine.java");
                     } else {
-                        paths.add("src/main/java/com/eneik/production/services/" + featureName + "Service.java");
+                        paths.add("src/main/java/" + productPkgDir + "/services/" + featureName + "Service.java");
                     }
                 } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
@@ -833,7 +973,7 @@ public class TechnicalLeadCompiler {
                         paths.add("frontend/src/components/" + featureName + ".svelte");
                     }
                 } else if ("BARCAN-TAG-04".equals(roleTag)) {
-                    paths.add("src/main/java/com/eneik/production/services/" + featureName + "AiService.java");
+                    paths.add("src/main/java/" + productPkgDir + "/services/" + featureName + "AiService.java");
                     paths.add("src/models/ml/" + featureName + "Model.py");
                 } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
@@ -847,24 +987,18 @@ public class TechnicalLeadCompiler {
                     paths.add(".github/workflows/ci.yml");
                 } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                        paths.add("src/test/java/com/eneik/production/services/ChessServiceTest.java");
+                        paths.add("src/test/java/" + productPkgDir + "/services/ChessServiceTest.java");
                     } else {
-                        paths.add("src/test/java/com/eneik/production/services/" + featureName + "ServiceTest.java");
+                        paths.add("src/test/java/" + productPkgDir + "/services/" + featureName + "ServiceTest.java");
                     }
                 } else if ("BARCAN-TAG-07".equals(roleTag)) {
-                    paths.add("src/main/java/com/eneik/production/services/security/" + featureName + "SecurityService.java");
+                    paths.add("src/main/java/" + productPkgDir + "/services/security/" + featureName + "SecurityService.java");
                 } else if ("BARCAN-TAG-08".equals(roleTag)) {
-                    paths.add("src/main/resources/db/migration/V_NEXT__" + featureName.toLowerCase(java.util.Locale.ROOT) + ".sql");
-                    paths.add("src/main/java/com/eneik/production/models/persistence/" + featureName + "Entity.java");
+                    if (hasFlyway) {
+                        paths.add("src/main/resources/db/migration/V_NEXT__" + featureName.toLowerCase(java.util.Locale.ROOT) + ".sql");
+                    }
+                    paths.add("src/main/java/" + productPkgDir + "/models/persistence/" + featureName + "Entity.java");
                 } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
-                    // 2026-08-19: integration is not "write an integration class". This role owns the
-                    // ASSEMBLY: whether the artifacts agree with the runtime contract that declares what
-                    // the product runs against. Scoping it to a new service class meant that even when
-                    // dispatched it would add code rather than reconcile what already exists - which is
-                    // how test-forty-ninth ended up declaring PostgreSQL in compose, H2 in
-                    // application.properties and no PostgreSQL driver in pom.xml, each written correctly
-                    // by a different task twelve minutes apart. These are the files an assembly defect
-                    // actually lives in.
                     paths.add("docs/architecture/adr-002-runtime-contract.md");
                     paths.add("docker-compose.yml");
                     paths.add("Dockerfile");
@@ -895,59 +1029,85 @@ public class TechnicalLeadCompiler {
         CollisionGuardResult guarded = applyCrossEpicCollisionGuard(project, featureId, roleTag, deduped);
 
         try {
-            return new FileScopeResult(objectMapper.writeValueAsString(guarded.paths()), guarded.collisionNotes(), guarded.paths());
+            return new FileScopeResult(
+                    objectMapper.writeValueAsString(guarded.paths()),
+                    guarded.collisionNotes(),
+                    guarded.paths(),
+                    guarded.namespaceRefusal(),
+                    guarded.refusedPaths()
+            );
         } catch (Exception e) {
-            return new FileScopeResult("[]", null, java.util.List.of());
+            return new FileScopeResult("[]", null, java.util.List.of(), false, java.util.List.of());
         }
     }
 
-    private record FileScopeResult(String fileScopeJson, String collisionNotes, java.util.List<String> finalPaths) {
+    public record FileScopeResult(
+            String fileScopeJson,
+            String collisionNotes,
+            java.util.List<String> finalPaths,
+            boolean namespaceRefusal,
+            java.util.List<String> refusedPaths
+    ) {}
+
+    public record CollisionGuardResult(
+            java.util.List<String> paths,
+            String collisionNotes,
+            boolean namespaceRefusal,
+            java.util.List<String> refusedPaths
+    ) {}
+
+    CollisionGuardResult applyCrossEpicCollisionGuardForTest(ProjectEntity project, UUID featureId,
+                                                            String roleTag, java.util.List<String> predictedPaths) {
+        return applyCrossEpicCollisionGuard(project, featureId, roleTag, predictedPaths);
     }
 
-    private record CollisionGuardResult(java.util.List<String> paths, String collisionNotes) {
-    }
-
-    // Cross-epic file-collision guard (smart decomposition v2, 2026-07-31): general, code-enforced
-    // replacement for the earlier same-day attempt at a compiler-prompt "ceiling rule" the operator
-    // correctly rejected as a заплатка (hardcoded to one resource type, relied on the LLM obeying one more
-    // rule in an already-large prompt). This instead checks the live ProjectFileClaimRepository ledger -
-    // populated by every task ever created (see recordFileClaims below) plus the deterministic bootstrap
-    // scaffolds (ProjectFlowService.commitDeterministicJavaScaffoldIfAbsent/
-    // commitDeterministicFrontendScaffoldIfAbsent, which record global claims with featureId=null) - and
-    // strips any predicted path already owned by a DIFFERENT epic, regardless of what any LLM decided.
-    // Generalizes to any future resource type with zero new code: the next collision the operator finds
-    // needs no hand-written special case here.
     private CollisionGuardResult applyCrossEpicCollisionGuard(ProjectEntity project, UUID featureId,
                                                                String roleTag, java.util.List<String> predictedPaths) {
-        // BARCAN-TAG-00 (integration/merge-hygiene) tasks legitimately need to touch files other epics own -
-        // that is their whole job - so they are exempt, mirroring the existing isIntegrationTask distinction
-        // already used above in this same method.
         if ("BARCAN-TAG-00".equals(roleTag) || predictedPaths.isEmpty()) {
-            return new CollisionGuardResult(predictedPaths, null);
+            return new CollisionGuardResult(predictedPaths, null, false, java.util.List.of());
         }
 
-        // Law 26 runs BEFORE the ledger is consulted: a path in the factory's own namespace must never be
-        // able to reach the collision guard, where it would be reconciled as a contested resource rather
-        // than refused as an invalid one. Unlike a collision - where the file exists and someone else owns
-        // it, so shipping a narrowed scope is better than shipping none - a factory-namespace path names
-        // nothing in the client repository at all. An empty scope is therefore the correct outcome here,
-        // and the deliberate exception to "never narrow a fileScope to nothing" stated further down.
-        java.util.List<String> factoryOwned = pathsInFactoryNamespace(predictedPaths);
+        // Law 26 (product namespace & stack lock - INDEXICAL_CONTEXT_LOCK / D006):
+        // Paths outside the product's own namespace or stack are refused BEFORE the collision ledger.
+        // A foreign path names nothing legitimate in this repository and cannot be reconciled as a collision.
+        java.util.List<String> foreignPaths = pathsOutsideProductNamespace(project, predictedPaths);
         java.util.List<String> admissiblePaths = predictedPaths;
         String namespaceNote = null;
-        if (!factoryOwned.isEmpty()) {
+        boolean namespaceRefusal = false;
+        if (!foreignPaths.isEmpty()) {
             admissiblePaths = new java.util.ArrayList<>(predictedPaths);
-            admissiblePaths.removeAll(factoryOwned);
-            log.warn("Law 26 (product namespace) for project {}: featureId={} roleTag={} predicted {} inside "
-                            + "the factory's own package {} - refused before the collision ledger. A path the "
-                            + "factory owns can never be a path of the client product.",
-                    project.getId(), featureId, roleTag, factoryOwned, FACTORY_PACKAGE_ROOT);
-            namespaceNote = "PRODUCT NAMESPACE GUARD: " + String.join(", ", factoryOwned)
-                    + " belong to the factory's own package (" + FACTORY_PACKAGE_ROOT + "), not to this "
-                    + "product. They do not exist in this repository. Do not create them; work only inside "
-                    + "this product's own package.";
+            admissiblePaths.removeAll(foreignPaths);
+            String prodNs = project != null ? project.resolveProductNamespace() : "unknown";
+            log.warn("Law 26 (product namespace) for project {}: featureId={} roleTag={} predicted {} outside "
+                            + "the product namespace ({}) or stack - refused before the collision ledger. A path outside "
+                            + "the product namespace/stack can never be a valid file scope for this product.",
+                    project != null ? project.getId() : null, featureId, roleTag, foreignPaths, prodNs);
+            namespaceNote = "PRODUCT NAMESPACE REFUSAL: " + String.join(", ", foreignPaths)
+                    + " lie outside this product's namespace (" + prodNs + ") or stack. "
+                    + "They do not exist in this repository. Do not create them; work only inside this product's own package/stack.";
+            namespaceRefusal = true;
+
+            // Surface the violation externally via DefectJournal (INDEXICAL_CONTEXT_LOCK, D006)
+            if (defectJournalService != null && project != null) {
+                try {
+                    defectJournalService.recordDefect(
+                            project.getId(),
+                            featureId,
+                            6, // Pattern 6 in ENGINEERING_INVARIANTS_CHARTER: INDEXICAL_CONTEXT_LOCK (D006)
+                            "CRITICAL",
+                            "COMPILER",
+                            "TechnicalLeadCompiler",
+                            "PRODUCT_NAMESPACE_VIOLATION",
+                            "Law 26 violation (INDEXICAL_CONTEXT_LOCK): predicted paths outside product namespace (" + prodNs + ") or stack: " + foreignPaths,
+                            (double) foreignPaths.size()
+                    );
+                } catch (Exception e) {
+                    log.error("Failed to record namespace defect in DefectJournal", e);
+                }
+            }
+
             if (admissiblePaths.isEmpty()) {
-                return new CollisionGuardResult(admissiblePaths, namespaceNote);
+                return new CollisionGuardResult(admissiblePaths, namespaceNote, namespaceRefusal, foreignPaths);
             }
         }
 
@@ -959,20 +1119,15 @@ public class TechnicalLeadCompiler {
         for (com.eneik.production.models.persistence.ProjectFileClaimEntity claim : existingClaims) {
             boolean sameEpic = featureId != null && featureId.equals(claim.getFeatureId());
             if (sameEpic) {
-                // Same epic's own internal dependency graph (buildTaskGraphForOneEpic) already sequences
-                // its own slices - this guard only needs to fire cross-epic.
                 continue;
             }
             if (claim.getTaskId() != null) {
                 TaskEntity owner = taskRepository.findById(claim.getTaskId()).orElse(null);
                 if (owner != null && owner.getStatus() == TaskStatus.failed) {
-                    // Stale/void claim - that work never landed, so it shouldn't permanently block the file.
                     continue;
                 }
             }
             if (narrowed.size() > 1 && narrowed.contains(claim.getFilePath())) {
-                // Never narrow a fileScope to nothing - ship the task with something to do rather than an
-                // empty scope; the collision note below still warns Jules away from the contested path.
                 narrowed.remove(claim.getFilePath());
             }
             if (!collidingPaths.contains(claim.getFilePath())) {
@@ -981,7 +1136,7 @@ public class TechnicalLeadCompiler {
         }
 
         if (collidingPaths.isEmpty()) {
-            return new CollisionGuardResult(narrowed, namespaceNote);
+            return new CollisionGuardResult(narrowed, namespaceNote, namespaceRefusal, foreignPaths);
         }
 
         log.info("Cross-epic file collision guard for project {}: featureId={} roleTag={} stripped {} from predicted fileScope",
@@ -989,7 +1144,8 @@ public class TechnicalLeadCompiler {
         String note = "CROSS-EPIC RESOURCE GUARD: " + String.join(", ", collidingPaths)
                 + " already exist and are owned by other work in this project - do not recreate or rewrite "
                 + "them. Add your own new file(s) for this slice's functionality instead.";
-        return new CollisionGuardResult(narrowed, namespaceNote == null ? note : namespaceNote + "\n\n" + note);
+        String finalNotes = namespaceNote == null ? note : namespaceNote + "\n\n" + note;
+        return new CollisionGuardResult(narrowed, finalNotes, namespaceRefusal, foreignPaths);
     }
 
     private void recordFileClaims(ProjectEntity project, TaskEntity savedTask, java.util.List<String> fileScopePaths) {

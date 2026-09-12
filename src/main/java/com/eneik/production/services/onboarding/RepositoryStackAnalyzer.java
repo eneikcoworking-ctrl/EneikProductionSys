@@ -278,9 +278,46 @@ public class RepositoryStackAnalyzer {
                 }
             }
 
+            // Product namespace detection (INDEXICAL_CONTEXT_LOCK / Law 26)
+            String productNamespace = null;
+            if ("Java/Kotlin".equals(primaryLanguage)) {
+                for (FileEntry f : filesToScan) {
+                    String p = f.path();
+                    if (p.startsWith("src/main/java/") && p.endsWith(".java")) {
+                        String rel = p.substring("src/main/java/".length());
+                        int lastSlash = rel.lastIndexOf('/');
+                        if (lastSlash > 0) {
+                            String dir = rel.substring(0, lastSlash);
+                            String[] segs = dir.split("/");
+                            if (segs.length >= 3) {
+                                productNamespace = segs[0] + "." + segs[1] + "." + segs[2];
+                            } else if (segs.length >= 1) {
+                                productNamespace = String.join(".", segs);
+                            }
+                            break;
+                        }
+                    }
+                }
+                if (productNamespace == null && rootFilePaths.contains("pom.xml")) {
+                    String pomContent = fetchFileContent(repositoryName, effectiveOwner, "pom.xml", token);
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("<groupId>([^<]+)</groupId>").matcher(pomContent);
+                    if (m.find()) {
+                        productNamespace = m.group(1).trim();
+                    }
+                }
+            } else if ("JavaScript/TypeScript".equals(primaryLanguage)) {
+                String packageJsonStr = fetchFileContent(repositoryName, effectiveOwner, "package.json", token);
+                try {
+                    JsonNode pj = objectMapper.readTree(packageJsonStr);
+                    if (pj.has("name") && !pj.path("name").asText().isBlank()) {
+                        productNamespace = pj.path("name").asText().trim();
+                    }
+                } catch (Exception ignored) {}
+            }
+
             StackProfile profile = new StackProfile(primaryLanguage, framework, database,
                     InspectionStatus.of(hasCI), InspectionStatus.of(hasTests), InspectionStatus.of(isMonorepo),
-                    declaredPurpose, defaultBranch, baselineCommitSha, totalFiles, analyzedFiles);
+                    declaredPurpose, defaultBranch, baselineCommitSha, totalFiles, analyzedFiles, productNamespace);
 
             return new AnalysisResult(profile, filesToScan);
 

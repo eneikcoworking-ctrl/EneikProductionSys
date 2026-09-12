@@ -56,7 +56,8 @@ class SemanticDuplicateVetoTest {
             mock(FeatureService.class),
             mock(GitHubPullRequestService.class),
             mock(ProjectFileClaimRepository.class),
-            mock(GeminiContextService.class));
+            mock(GeminiContextService.class),
+            mock(com.eneik.production.kaizen.service.DefectJournalService.class));
 
     @Test
     void aFailedTaskDoesNotVetoItsOwnReplacement() {

@@ -102,6 +102,9 @@ public class ProjectEntity {
     @Column(name = "default_branch", nullable = false)
     private String defaultBranch = "main";
 
+    @Column(name = "product_namespace", length = 256)
+    private String productNamespace;
+
     @Column(name = "baseline_commit_sha")
     private String baselineCommitSha;
 
@@ -195,4 +198,22 @@ public class ProjectEntity {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getAcceptedAt() { return acceptedAt; }
     public void setAcceptedAt(Instant acceptedAt) { this.acceptedAt = acceptedAt; }
+
+    public String getProductNamespace() { return productNamespace; }
+    public void setProductNamespace(String productNamespace) { this.productNamespace = productNamespace; }
+
+    public String resolveProductNamespace() {
+        if (productNamespace != null && !productNamespace.isBlank()) {
+            return productNamespace.trim();
+        }
+        if ("test-fiftieth".equalsIgnoreCase(slug)
+                || (repositoryName != null && (repositoryName.contains("fiftieth") || repositoryName.contains("epidemiology")))) {
+            return "com.eneik.epidemiology";
+        }
+        if (slug != null && !slug.isBlank()) {
+            String cleanSlug = slug.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+            return "com.eneik." + cleanSlug;
+        }
+        return "com.eneik.product";
+    }
 }

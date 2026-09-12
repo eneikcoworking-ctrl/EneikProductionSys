@@ -37,7 +37,8 @@ class IdempotencyTest {
             mock(com.eneik.production.services.FeatureService.class),
             mock(com.eneik.production.services.github.GitHubPullRequestService.class),
             mock(ProjectFileClaimRepository.class),
-            mock(com.eneik.production.services.GeminiContextService.class)
+            mock(com.eneik.production.services.GeminiContextService.class),
+            mock(com.eneik.production.kaizen.service.DefectJournalService.class)
         );
 
         UUID wishlistId = UUID.randomUUID();

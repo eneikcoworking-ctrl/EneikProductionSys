@@ -59,7 +59,8 @@ class TechnicalLeadCompilerTest {
                 mock(FeatureService.class),
                 mock(GitHubPullRequestService.class),
                 mock(ProjectFileClaimRepository.class),
-                geminiContextService);
+                geminiContextService,
+                mock(com.eneik.production.kaizen.service.DefectJournalService.class));
     }
 
     @Test

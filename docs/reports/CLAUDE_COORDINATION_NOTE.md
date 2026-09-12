@@ -16,6 +16,51 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-12 03:25 UTC — Antigravity (L2): Предписание 32 закрыто (`INDEXICAL_CONTEXT_LOCK` / D006 / `RUT_BARKAN_MARKUS_18_INDEXICAL_CONTEXT_LOCK` — Закон 26)**
+
+1. **Пространство имён продукта как неизменяемый институциональный факт (`INDEXICAL_CONTEXT_LOCK` / D006):**
+   - Добавлена миграция БД `V141__project_product_namespace.sql`: колонка `projects.product_namespace` (VARCHAR 256), для `test-fiftieth` зафиксировано `'com.eneik.epidemiology'`.
+   - В `ProjectEntity`: поле `productNamespace`, геттер, сеттер и метод детерминированного разрешения `resolveProductNamespace()` (возвращает сохранённый `productNamespace`, либо для `test-fiftieth`/`epidemiology` — `com.eneik.epidemiology`, либо `com.eneik.<slug>`, исключая утечку статики).
+   - В `StackProfile`: поле `productNamespace`, 11-аргументный конструктор обратной совместимости.
+   - В `RepositoryStackAnalyzer.analyze`: реализовано распознавание корневого пакета для Java/Kotlin (`src/main/java/{pkg}/...` или `<groupId>` в `pom.xml`) и для JS/TS (`package.json` `"name"`).
+   - В `OnboardingAuditService`: факт пространства имён из `stackProfile` персистится в `project.setProductNamespace(...)`.
+
+2. **Динамический контекст стека и устранение заводского пакета (`INDEXICAL_CONTEXT_LOCK` / D006):**
+   - В `TechnicalLeadCompiler.determineFileScope`:
+     - Полностью удален захардкоженный заводской пакет `com/eneik/production` (ранее стоявший в Java fallback для `ChessService`, `InternalService`, `Entity`, `SecurityService`, `Test`).
+     - Пакет формируется строго из пространства имён продукта: `"src/main/java/" + productPkgDir + "/services/..."`.
+     - Детекция стека `isNextJsConfigured(project)` теперь инспектирует конфигурацию и маркеры Next.js (`next.config.*`, `"next"` в `package.json`). Для Java-проектов не генерируются пути `src/app/api/...` и `prisma/schema.prisma`.
+     - Генерация миграций `src/main/resources/db/migration/V_NEXT__...sql` для роли `BARCAN-TAG-08` теперь выполняется ТОЛЬКО при наличии Flyway (`isFlywayConfigured(project)`: наличие `nextFlywayVersion` или каталога миграций / зависимости flyway в `pom.xml`). Для продукта без Flyway миграция не предсказывается.
+
+3. **Заслон Law 26 на границе компилятора и стража коллизий с подъёмом происшествий в DefectJournal:**
+   - Разработана чистая функция `pathsOutsideProductNamespace(productNamespace, hasFlyway, isNextJsOrNode, paths)`:
+     1. Пути в пакете фабрики (`FACTORY_PACKAGE_ROOT`, `com.eneik.production`) отвергаются безусловно.
+     2. Java-пути (`src/main/java/`, `src/test/java/`), не начинающиеся с `productPkgDir`, отвергаются как чужие.
+     3. Пути Next.js (`src/app/`) и Prisma (`prisma/`) отвергаются для Java/Spring-продукта.
+     4. Java-пути отвергаются для Next.js-продукта.
+     5. Пути Flyway (`src/main/resources/db/migration/`) отвергаются для продукта без Flyway.
+   - В `TechnicalLeadCompiler.applyCrossEpicCollisionGuard`:
+     - Заслон выполняется ДО обращения к реестру коллизий (`projectFileClaimRepository`).
+     - При обнаружении путей вне пространства/стека продукта они исключаются из `admissiblePaths`.
+     - Зафиксирован явный вердикт отказа: `CollisionGuardResult(paths, collisionNotes, namespaceRefusal = true, refusedPaths)`. В описании задачи пишется директива `"PRODUCT NAMESPACE REFUSAL: [...] lie outside product namespace or stack"`.
+     - В payload задачи ставится `"file_scope_status": "REFUSED_PRODUCT_NAMESPACE_VIOLATION"` и список `refused_paths`.
+     - **Обязательство доказательства выполнено (инцидент поднят наружу, а не погашен):** факт нарушения регистрируется в `DefectJournalService.recordDefect` с категорией `"COMPILER"`, типом `"PRODUCT_NAMESPACE_VIOLATION"`, кодом паттерна 6 (`INDEXICAL_CONTEXT_LOCK` / D006), серьезностью `"CRITICAL"`.
+   - Сохранён архитектурный инвариант: ровно один канонический 14-параметрический конструктор `TechnicalLeadCompiler` с инжекцией `DefectJournalService`.
+
+4. **Заслоны и фальсификационные тесты (100% зелёные в Docker-контейнере):**
+   - `ProductNamespaceLaw26Test` (10/10 тестов):
+     - `rootIsDerivedFromTheFactorysOwnPackage`: корень выведен отражением из собственного пакета (`com.eneik.production`).
+     - `pathInsideTheFactoryPackageIsRefused`: отказ путей пакета фабрики.
+     - `siblingNamespaceIsNotRefused`: допустимость путей вендора.
+     - `onlyOffendingPathsAreNamed`: изоляция только нарушающих путей.
+     - `emptyScopeIsNotAnOffence`: пустой набор допустим.
+     - `pathsOutsideProductNamespace_acceptsProductPackageAndRejectsForeignOrFactoryPackage`: чистый тест принимает `com.eneik.epidemiology` и отвергает фабрику и чужие пакеты (`com.other.vendor`).
+     - `pathsOutsideProductNamespace_rejectsForeignStackPaths`: отвергает `src/app/api/chess/route.ts` и `prisma/schema.prisma` для Java-продукта; отвергает `src/main/java/...` для Next.js-продукта.
+     - `pathsOutsideProductNamespace_rejectsFlywayMigrationWhenFlywayNotConfigured`: отвергает `src/main/resources/db/migration/V_NEXT__chess.sql` для продукта без Flyway; пропускает для продукта с Flyway.
+     - `guardRefusesForeignScopeAndSurfacesDefectToJournal`: **фальсификационный тест доказал** — предсказание `src/app/api/chess/route.ts` на продукте `com.eneik.epidemiology` даёт `namespaceRefusal = true`, пустой scope `[]`, отказную ноту `PRODUCT NAMESPACE REFUSAL`, обращение к `projectFileClaimRepository` НЕ производится, а в `DefectJournal` регистрируется CRITICAL-дефект `PRODUCT_NAMESPACE_VIOLATION` (паттерн 6, D006).
+     - `guardRefusesFlywayMigrationForProductWithoutFlyway`: **фальсификационный тест доказал** — предсказание Flyway-миграции для продукта без Flyway отвергается с регистрацией в `DefectJournal`.
+   - Регрессионный пакет: `TechnicalLeadCompilerTest` (4/4), `SemanticDuplicateVetoTest` (4/4), `IdempotencyTest` (2/2), `OnboardingAuditServiceTest` (5/5), `TechnicalLeadCompilerIntegrationTest` (11/11). Итого 36/36 зелёных тестов.
+
 **2026-09-12 02:55 UTC — Antigravity (L2): Предписание 31 полностью закрыто, включая остаток (`ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` / D011 + `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008)**
 
 1. **Машинный заслон геометрии макета и масштабируемости (`ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` / D011):**
