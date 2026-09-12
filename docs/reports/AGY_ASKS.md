@@ -644,6 +644,46 @@
   3. Регрессия (92/92 green): `SystemStatusServiceTest`, `TaskCarrierBackfillServiceTest`, `ObservationHostingDemarcationLaw26Test`, `ProductCapabilityServiceTest`, `SixSigmaAuditServiceTest`.
 - **Что берётся следующим:** Предписание 28 в `docs/FACTORY_MECHANISMS.md`.
 
+### 2026-09-12 Antigravity: Предписание 28 — Ликвидация ложного прохождения аудита дизайна и сетевого расхода монитора (`FALSIFICATION_HARNESS` / D008, `LEVEL_OF_ABSTRACTION_LOCK` / D010, `TRUTH_STATUS_TABLE` / D012)
+- **Что сделано:**
+  1. В `DesignDriftMonitorService` внедрён `DesignShopCycleRepository`: при отсутствии зафиксированного эталона сетевая выгрузка HTML не выполняется (`verifyNoInteractions(launcherClient)`), устранив утечку 70 КБ памяти/сети за цикл. Явно логируется отсутствие репозитория или эталона.
+  2. Введён типизированный 3-значный вердикт `AuditVerdict`: `ACCEPTED`, `REJECTED`, `CANNOT_JUDGE` (alias `UNDECIDABLE`).
+  3. В `DesignConsistencyAuditService.audit`: при отсутствии токенов в HTML (оболочка SPA `<div id="root"></div>`) или отсутствии эталона возвращается `CANNOT_JUDGE`, `traceRatio = 0.0`, `traceAccepted = false`.
+  4. В `DesignAssetService`: экраны с вердиктом `CANNOT_JUDGE` пропускаются как неаудированные экраны с записью вердикта в метаданные `.json` и не отвергаются как `aesthetic_drift`.
+- **Чем проверено:**
+  - `DesignConsistencyAuditServiceTest` (13/13 green)
+  - `DesignDriftMonitorServiceTest` (7/7 green)
+  - `DesignAssetServiceTest` (10/10 green)
+  - Сводный прогон: 83/83 green.
+
+### 2026-09-12 Antigravity: Предписание 29 — Разведение сущностей в своде потока (`SENSE_REFERENCE_SPLIT` / D009, `CONVERSATION_MAXIM` / D007)
+- **Что сделано:**
+  1. Разведены понятия в `FlowSpineDto.FlowCounts`:
+     - `failedTasksRecoveryCanResume`: строго число задач, возобновимых решателем (`countFailedTheResolverCanAct`).
+     - `failedTasksTotal`: общее число всех задач проекта со статусом `TaskStatus.failed` (согласовано с `GET /internal/tasks/status-counts`).
+     - `doneTasks`: суммарно `done + spike_completed`.
+     - `doneTasksTotal`: строго `TaskStatus.done`.
+     - `spikeCompletedTasks`: строго `TaskStatus.spike_completed`.
+  2. Jackson-сериализация: `@JsonProperty`, `@JsonAlias`, `@Deprecated @JsonIgnore public long failedTasks()`.
+  3. Ликвидированы устаревшие перегруженные 11- и 12-параметрические конструкторы `FlowCounts`: оставлен строго 1 канонический 14-параметрический конструктор.
+- **Чем проверено:**
+  - `FlowSpineServiceTest`: 27/27 green (включая рефлексивный заслон на единственный 14-параметрический конструктор).
+  - Сводный прогон: 83/83 green.
+
+### 2026-09-12 Antigravity: Предписание 30 — Честный вердикт об отказе внешних сессий, троттлинг на входе и наблюдаемость смертей носителей (`INSTITUTIONAL_FACT_REGISTER` / D007, `INUS_FACTOR_CHECK` / D007)
+- **Что сделано:**
+  1. В `ClaimService` внедрено ограничение повторных попыток при тождественных безымянных отказах (`DEFAULT_IDENTICAL_UNATTRIBUTED_THRESHOLD = 2`, окно отката 15 минут).
+  2. В `ProjectFlowService.dispatchQueuedTasks` и `dispatchToGeneralPool`: задачи с серией одинаковых безымянных отказов получают строго 1 пробу за 15 минут, а внутренняя ротация прерывается.
+  3. Введён вердикт `TaskDispatchVerdict.UNATTRIBUTED_DISPATCH_REFUSAL` («внешняя система отказывает без причины»). Задачи без внутренних ошибок запроса помечаются как возобновимые (`isResumableDispatchRefusal(task)`), защищены от списания в `failed` в `createRecoveryWishlistForOrphanedBlockedTasks`, и возвращаются в `queued` при восстановлении пула аккаунтов через `requeueUntestedTasksOnRestoredCapacity`.
+  4. Смерти носителей фиксируются с меткой `sourceComponent = "carrier"`, считаются через `countCarrierDeathsPast24Hours` и выводятся наружу в `SystemStatusService` (секция `tasks` и блокер `carrier_deaths`) и `OperationalTruthService` (нарратив `activeFlow` и `blockers`).
+- **Чем проверено:**
+  - `DispatchAttemptBudgetTest` (17/17 green)
+  - `ProjectFlowServiceTest` (40/40 green)
+  - `OperationalTruthServiceTest` (17/17 green)
+  - Сводный прогон: 74/74 green.
+- **Что берётся следующим:** Предписание 31 в `docs/FACTORY_MECHANISMS.md` («Экран на телефоне не проверяет никто, и ревьюеру это предписано», `GROUPING_PROXIMITY_GATE` / D011 + `FALSIFICATION_HARNESS` / D008).
+
+
 
 
 
