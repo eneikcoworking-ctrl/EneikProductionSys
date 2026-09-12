@@ -968,3 +968,39 @@ Remaining non-ideal point for this family: no source/test non-ideality is identi
 operational caution is that runtime silence must be interpreted with scheduler-alive evidence.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XL; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: Screen Quality Evidence Gate Family
+
+Status: documentation-only strict-family replacement for section XLI in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `DesignExcellenceGate`, `LayoutGeometryAuditService`,
+`JulesDispatchService.designVerificationInstruction`, `ProjectFlowService.designReviewPrompt`,
+`GateOrchestrator`, `GateCheck.isBuildPhaseExempt`, `DesignConsistencyAuditService`,
+`GitHubPullRequestService` and `JulesSessionRepository` as the screen-quality evidence gate family.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 30 |
+| Sections still missing visible `комментарий для Антигравити` | 33 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section mixed narrative history, prescription and test summary. Section XLI now states
+the exact ideal screen-quality contract: real PR evidence, two screenshots, verifiable geometry, no collision,
+allowed viewport scaling, Gestalt proximity, and machine/human review demarcation. It also gives
+per-mechanism Antigravity comments.
+
+Remaining non-ideal point for this family: no source/test non-ideality is identified in this tact. Runtime gate
+frequency was not remeasured here; that is an operational observability question, not a code defect in this
+mechanism.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XLI; family summary is not a substitute.

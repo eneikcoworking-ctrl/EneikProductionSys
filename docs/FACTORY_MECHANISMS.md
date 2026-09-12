@@ -9181,97 +9181,129 @@ be checked operationally before future edits.
 
 # XLI. Заслон качества экрана: проверка предмета, а не отчёта о нём
 
-**`DesignExcellenceGate`** (154 строки) — проверяет, что задача по внешнему виду действительно дала два
-настоящих снимка экрана, и что они не одинаковы.
-*Связи:* зовут **пятеро** — `ProjectFlowService`, `JulesDispatchService`, `ClientDeliverableReadinessService`,
-`DesignSystemFalsificationService`, `VerificationEvidenceGate` | ходит в GitHub за настоящим содержимым
-изменений и за размером файлов | освобождает от проверки на время сборочной поры (`isBuildPhaseExempt`).
-*Ценность:* без него «экран сделан» есть слово исполнителя о самом себе.
-*Комментарий:* **ядро, и его история — лучший пример заслона, который был хуже, чем отсутствие заслона.**
+**Имена механизмов:** `DesignExcellenceGate`, `LayoutGeometryAuditService`,
+`JulesDispatchService.designVerificationInstruction`, `ProjectFlowService.designReviewPrompt`,
+`GateOrchestrator`, `GateCheck.isBuildPhaseExempt`, `DesignConsistencyAuditService`, `GitHubPullRequestService`
+and `JulesSessionRepository` as the screen-quality evidence gate family.
 
-До 3 августа он читал поле полезной нагрузки, куда исполнитель должен был **сам записать** ссылки на снимки
-и их размеры. Замер, приведённый в самом коде: греп по всему хранилищу **не нашёл ни одного пишущего** в это
-поле, а стандартное задание исполнителю **прямо запрещает** коммитить снимки. То есть заслон требовал
-ровно того, что задание запрещало, и ждал поля, которое никто не заполняет.
+**Философский паттерн:** primary `ENDI_KLARK_02_GROUPING_PROXIMITY_GATE`, Энди Кларк, `BARCAN-TAG-03`,
+publication anchor *The Extended Mind / Supersizing the Mind*, defect `D011 Perception failure`: related screen
+elements must be closer to each other than to unrelated elements and must not overlap. Supporting patterns:
+`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008 because the gate must reject false claims of responsive UI;
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013 because a screenshot or layout claim is not evidence
+until fetched from the real PR; common background `ACP-061 Hoare Triple Review`.
 
-Последствие названо там же и оно хуже обычной дыры: как только проект выходит из сборочной поры, заслон
-**отвергал бы всякую задачу по внешнему виду безусловно и навсегда** — за изъян площадки, а не за
-недоработку исполнителя. Заслон, который всегда красен, не заслон ровно так же, как и тот, что всегда зелен:
-ни тот ни другой ничего не различает.
+**Описание идеала:** a UI task is accepted by the automated screen gate only when the PR itself contains two
+real screenshots at the task-specific record path, those files are fetchable from GitHub at the PR head ref,
+their byte size exceeds the placeholder floor, desktop and mobile screenshots are not identical by size, and
+changed markup or `layout-check.json` gives verifiable geometry with no collisions, allowed viewport zoom and
+Gestalt proximity ratio below `1.0` for related groups. If geometry is absent, the result is not green by
+default: `CANNOT_JUDGE` withholds the responsive score and fails the gate. Human design review remains
+separate: the reviewer judges aesthetics and semantic fit; the machine gate owns geometry and evidence.
 
-Починка сделана по правильному признаку и он назван: «Charter Pattern #12 — independent verification, not
-self-attestation». Задачам по внешнему виду добавили в задание отдельную оговорку — дать два настоящих
-снимка в оговорённое место, — а заслон теперь проверяет, что файлы **действительно попали в изменения**
-(«not a claim»), и берёт их **настоящий размер через API GitHub** («not a number the implementer wrote»).
-Доверия к отчёту исполнителя не осталось нигде.
+**Граница механизма:** this family may decide whether UI implementation evidence is machine-verifiable enough
+for the quality gate. It may read Jules session PR evidence, GitHub diff/file bytes/content and task role tags;
+it may write only the normal gate result through `GateOrchestrator`. It must not trust implementer
+self-attestation, payload screenshot URLs, PR summary prose, non-fetchable diff names, design taste, product
+code review, broad delivery readiness or human reviewer concerns.
 
-Две проверки стоит назвать порознь, потому что вторая умнее первой. Первая — нижний предел размера
-(`MIN_SCREENSHOT_BYTES = 1024`), отсекающий пустую картинку. Вторая — **размеры двух снимков обязаны
-различаться**: одинаковый размер означает, что страница на двух ширинах отрисовалась одинаково, то есть
-отзывчивости нет. Подделать её, приложив один файл дважды, нельзя — именно потому, что размер берётся не со
-слов.
-*Живое, 7 сентября 2026:* прямого замера работы заслона у меня **нет**: собственных строк он в журнал не
-пишет — ноль упоминаний за сутки. Контроль показывает, что это свойство всех заслонов, а не этого одного:
-слово «gate» встречается во всём журнале 48 тысяч строк лишь 38 раз. Косвенно работа по снимкам идёт:
-99 упоминаний снимков экрана. Утверждать по этому, что заслон срабатывал, запись не будет — не мерено.
-*Философия:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн,
-`BARCAN-TAG-00 CODE-GUARDIAN`, принцип языковых игр, anchor *Philosophical Investigations — language-games,
-meaning as use, private-language argument*. Сильная дословно: «утверждение о работе системы опирается на
-логи, метрики, проверки здоровья или состояние свода, и ссылка приведена». Слабая: «утверждение опирается на
-собственный рассказ агента о том, что он сделал». Опровержение: «потребовать команду, которой замер снят;
-её отсутствие и есть нарушение». **Форма: сильная после починки, и до неё она была не слабой, а
-невозможной.** Слабая форма опирается на рассказ агента — а здесь рассказ был о поле, которое агенту прямо
-запретили заполнять, так что опереться было не на что вовсе. После починки источник предъявим: содержимое
-изменений и размер файла, взятые у GitHub.
-Второй образец: `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008) — Альфред Тарский,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип семантической теории истины (T-схема: «P» истинно ⟺ P), anchor
-*The Concept of Truth in Formalized Languages — semantic conception of truth*. Сильная дословно: «проверка,
-способная **опровергнуть** утверждение, написана **до** принятия утверждения, и показано, что она краснеет
-при дефекте». Слабая: «зелёный тест рядом с изменением». Опровержение: «снять правку и прогнать тест; не
-покраснел — не заслон». **Форма: сильная по устройству, не мерена по покраснению.** Проверка способна
-опровергнуть и написана до утверждения; что она краснеет именно при дефекте, показано рассуждением о
-различии размеров, но не прогоном — подкладывать одинаковые снимки на живой фабрике действие не выполнялось. И отмечу
-обратную сторону образца, которой в нём нет прямо: заслон, краснеющий **всегда**, опровергающей силы имеет
-не больше, чем зелёный, — и до 3 августа этот был именно таков.
+**Связи:** `GateOrchestrator` invokes applicable `GateCheck` implementations after `supports()` and build-phase
+filtering. `DesignExcellenceGate.supports()` limits the gate to `UI_TAGS` (`BARCAN-TAG-03`, `BARCAN-TAG-11`).
+`JulesDispatchService.designVerificationInstruction` tells UI implementers to commit `desktop-1440.png`,
+`mobile-375.png` and `layout-check.json` under `DesignExcellenceGate.designCheckDir(task)`. The gate resolves a
+PR through `JulesSessionRepository`, obtains changed paths and head ref through `GitHubPullRequestService`,
+fetches real screenshot bytes and layout/markup content, and delegates geometry to `LayoutGeometryAuditService`.
+`ProjectFlowService.designReviewPrompt` tells the design reviewer that machine layout gates own responsive
+geometry while the human role owns aesthetic and semantic judgment. `DesignConsistencyAuditService` reuses the
+geometry service for viewport-scalability rejection in design-system audits.
 
-*Предписание 31 (2026-09-12): машинная проверка геометрии макета, масштабируемости и демаркация ревьюера.*
-Третий образец: `ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` (D011) — Энди Кларк, `BARCAN-TAG-03 BELIEF-INTENSION`,
-принцип расширенного разума, anchor *The Extended Mind / Supersizing the Mind — cognition extended into artifacts*.
-Обязательство доказательства: показать отношение расстояний между кластерами связанных элементов к расстоянию до
-ближайшего несвязанного элемента (`intraGroupDistance / interGroupDistance < 1.0`), отсутствие пересечений
-(отрицательного расстояния) и соблюдение масштабируемости области просмотра.
-- **Поправка к предписанию по замеру:** Второе разрешение фабрика уже требовала в `JulesDispatchService:684–692`
-  (для ролей `UI_TAGS` требовались `desktop-1440.png` и `mobile-375.png`). Заслон подключён к живому потоку
-  (35 задач TAG-03/TAG-11 из 369). Дефект крылся в критерии: зачёт отзывчивости давался за простое различие
-  размеров файлов (`desktopSize != mobileSize`, вес 40), без анализа разметки и геометрии. Наложение меню
-  (коллизия прямоугольников) проходило заслон по построению.
-- **Реализация:**
-  1. Создан `LayoutGeometryAuditService`: вычисляет геометрию прямоугольников `BoundingBox` (`overlaps`, `overlapArea`,
-     `distanceTo`), проверяет отсутствие пересечений и Gestalt proximity ratio (`intra / inter < 1.0`), проводит аудит
-     масштабируемости viewport (`auditViewportScalability`, запрет `user-scalable=no`, `user-scalable=0`, `maximum-scale=1.0`).
-  2. `DesignExcellenceGate`: проверяет изменённую разметку (`.html`, `.svelte`, `.vue`, `.jsx`, `.tsx`, `layout.json`, `layout-check.json`).
-     При обнаружении наложения элементов или запрета масштабирования сбрасывает проверку отзывчивости (`responsive_ok = false`,
-     вес 40), снижая общий балл до 60 < 70 и отвергая задачу с явной причиной.
-     При отсутствии разметки/файла геометрии (`CANNOT_JUDGE`) 40 баллов за отзывчивость не начисляются, исключая ложную зелёнку.
-     Конструктор класса сведён к строго единственному с аннотацией `@Autowired`.
-  3. `JulesDispatchService`: инструкция `designVerificationInstruction` для UI-задач требует 3 обязательных файла:
-     `desktop-1440.png`, `mobile-375.png` и `layout-check.json` (Playwright getBoundingClientRect).
-  4. `DesignConsistencyAuditService`: отклоняет вердиктом `REJECTED` разметку с `user-scalable=no` / `maximum-scale=1.0`.
-  5. `ProjectFlowService`: текст задания ревьюеру `designReviewPrompt` явно разделяет машинные инварианты геометрии
-     (`DesignExcellenceGate`, `GROUPING_PROXIMITY_GATE`) и эстетическое/семантическое суждение человека. Текст задания
-     закреплен строгим тестом.
-- **Заслоны (89/89 зелёные в тестах):**
-  - `LayoutGeometryAuditServiceTest` (13/13): проверка пересечений, Gestalt proximity ratio, `user-scalable=no`, `maximum-scale=1.0`,
-    `CANNOT_JUDGE` при пустых наборах/разметке без геометрии, парсинг JSON-массивов и multi-resolution JSON.
-  - `DesignExcellenceGateTest` (11/11):
-    - Доказано опровержение: два снимка разного размера БЕЗ файла геометрии отвергаются с баллом 60 < 70 («геометрия не выводима»).
-    - Разметка без атрибутов геометрии (Svelte-компонент) отвергается с баллом 60 < 70.
-    - Пересечения в `layout-check.json` отвергаются с причиной `layout collision detected`.
-    - Валидный `layout-check.json` проходит с баллом 100 >= 70.
-  - `GateOrchestratorIntegrationTest` (9/9): сквозной заслон со стабом `layout-check.json`.
-  - `DesignConsistencyAuditServiceTest` (14/14): `htmlWithUserScalableNoReturnsRejected`.
-  - `ProjectFlowServiceTest` (41/41): `designReviewPrompt_explicitlySeparatesAutomatedMachineGates`.
-- **Форма:** сильная, подтверждена падающими тестами на опровержение. Статус: **СДЕЛАНО (держится)**.
+**Входы:** task id, task role tag, project, current build-phase status, Jules session status and PR URL, pull
+number, PR diff changed paths, PR head ref, screenshot bytes, layout/markup file content, bounding boxes
+(`left`, `top`, `width`, `height`, optional `group`), viewport meta content, `MIN_SCREENSHOT_BYTES`,
+`UI_TAGS`, and gate stage `IMPLEMENTATION_RESULT`.
+
+**Выходы:** `GateResult` for `design_excellence`; failure reasons for missing PR, missing real screenshot,
+too-small image, identical screenshot sizes, missing/non-derivable geometry, layout collision, failed Gestalt
+proximity and forbidden viewport scaling; `qualityGateReport.checks[*]` and `TaskGateLogEntity` through
+`GateOrchestrator`; reviewer prompt text that separates machine and human responsibility.
+
+**Владельцы истины и состояния:** GitHub PR diff/head/file bytes own whether evidence exists. `JulesSessionEntity`
+owns the task-to-PR link. `DesignExcellenceGate` owns UI-task gate scoring and the fixed evidence paths.
+`LayoutGeometryAuditService` owns bounding boxes, collision/proximity/scalability verdicts and the
+`PASSED`/`FAILED`/`CANNOT_JUDGE` distinction. `GateOrchestrator` owns report persistence. `ProjectFlowService`
+owns human-review prompt demarcation. `JulesDispatchService` owns implementer instructions for producing the
+evidence the gate consumes.
+
+**Инварианты:**
+- applicable UI gate evidence must come from the PR, not from implementer payload/self-report;
+- `supports()` decides applicability; a non-applicable check is not a passed check;
+- build-phase exemption belongs to `GateOrchestrator`, not to a silent pass branch inside the gate;
+- both screenshots must be present, fetchable and larger than `MIN_SCREENSHOT_BYTES`;
+- file-size difference is necessary but not sufficient for responsive proof;
+- missing geometry is `CANNOT_JUDGE` and awards zero responsive points;
+- collisions, `user-scalable=no`, `user-scalable=0`, `maximum-scale=1.0` or proximity ratio `>= 1.0` fail the
+  responsive part;
+- human review must not be asked to replace machine geometry proof.
+
+**Сильная форма сейчас:** source and tests show the ideal is implemented. `DesignExcellenceGate` fetches real
+diff paths, head ref, bytes and layout content, then fails no-PR, missing screenshot, identical sizes, missing
+geometry, collisions and viewport restrictions. `LayoutGeometryAuditService` exposes explicit
+`PASSED`/`FAILED`/`CANNOT_JUDGE`, detects overlap area, proximity violations and viewport zoom bans, and handles
+single- and multi-resolution JSON. `JulesDispatchService.designVerificationInstruction` requires all three
+evidence files. `ProjectFlowServiceTest` locks the reviewer prompt demarcation. `GateOrchestrator` records
+applied-check counts by stage instead of treating an empty denominator as delivery evidence.
+
+**Слабая / неидеальная форма:** no code/test non-ideality is identified for this mechanism in the current
+evidence. Runtime gate frequency was not remeasured in this tact; that is an operational observability question,
+not a code defect in the screen-quality gate.
+
+**Что надо сделать для идеала:** no code change is required. Before future edits, run the focused gate tests and
+keep a narrow runtime/log probe if the operator needs proof that the scheduled/live path is exercising the gate.
+If future product work needs richer geometry, extend `layout-check.json` as the evidence carrier rather than
+trusting screenshots or PR prose.
+
+**Что не трогать:** do not restore `task.payload.screenshotUrls`; do not count a changed filename without
+fetchable bytes; do not let two different-size screenshots pass without geometry; do not treat
+`CANNOT_JUDGE` as pass; do not collapse machine geometry into human design review; do not remove build-phase
+exemption or `supports()` filtering; do not broaden `UI_TAGS` without updating implementer instructions and
+readiness readers that share the role set.
+
+**Опровержение / проверка:** this record is false if a UI PR with no PR, one screenshot, missing fetchable
+bytes, two same-size screenshots, no geometry, colliding boxes, blocked viewport zoom or proximity ratio `>= 1`
+passes `design_excellence`; if a non-UI task is reported as having passed this gate; if build-phase exemption is
+encoded as a pass inside `DesignExcellenceGate`; if the reviewer prompt asks the human reviewer to decide
+machine geometry; or if future runtime evidence shows UI tasks reaching delivery without the applicable
+implementation-result gate being applied after build phase.
+
+**Критерий закрытия:** ideal remains closed while `DesignExcellenceGateTest`,
+`LayoutGeometryAuditServiceTest`, `GateOrchestratorIntegrationTest`,
+`DesignConsistencyAuditServiceTest.htmlWithUserScalableNoReturnsRejected` and
+`ProjectFlowServiceTest.designReviewPrompt_explicitlySeparatesAutomatedMachineGates` keep the false-green
+cases red and valid evidence green; the gate report preserves applied stage counts; and real UI implementer
+briefs still require `desktop-1440.png`, `mobile-375.png` and `layout-check.json`.
+
+**Доказательства:** `DesignExcellenceGate.java:15-228`; `LayoutGeometryAuditService.java:13-176,330-495`;
+`JulesDispatchService.java:684-686,5847-5857`; `ProjectFlowService.java:6264-6290`;
+`GateOrchestrator.java:47-128`; `GateCheck.java:14-22`; `DesignConsistencyAuditService.java:35-47,151-159`;
+`DesignExcellenceGateTest.java:46-278`; `LayoutGeometryAuditServiceTest.java:22-249`;
+`GateOrchestratorIntegrationTest.java:295-328`; `ProjectFlowServiceTest.java:1288-1307`; philosopher rows
+`ENDI_KLARK_02_GROUPING_PROXIMITY_GATE`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `ACP-061`.
+
+**Текущий статус:** считаю механизм идеальным by current source/test contract; code was not changed in this tact.
+
+**Комментарии для Антигравити по механизмам:**
+- `DesignExcellenceGate`: считаю механизм идеальным.
+- `LayoutGeometryAuditService`: считаю механизм идеальным.
+- `JulesDispatchService.designVerificationInstruction`: считаю механизм идеальным.
+- `ProjectFlowService.designReviewPrompt`: считаю механизм идеальным.
+- `GateOrchestrator`: считаю механизм идеальным.
+- `GateCheck.isBuildPhaseExempt`: считаю механизм идеальным.
+- `DesignConsistencyAuditService`: считаю механизм идеальным.
+- `GitHubPullRequestService`: считаю механизм идеальным.
+- `JulesSessionRepository`: считаю механизм идеальным.
+
+**комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
 # XLII. Кэш постоянного корпуса: два механизма на одно дело, работает один
 
