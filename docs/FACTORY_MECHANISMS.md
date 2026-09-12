@@ -7819,65 +7819,121 @@ and secondary intensions*. Сильная дословно: «отображае
 
 # XXXIII. Пульт управления: механизм, который сам записал свой изъян
 
-**`CommandDashboardService`** (348 строк) — собирает сводку по проекту и выносит единственное видимое
-человеку суждение: готов продукт к сдаче, не готов или неизвестно.
-*Связи:* зовут `CommandDashboardController`, `ClientDeliveryService` и **`VerdictGate`** | ходит в базу
-напрямую через `JdbcTemplate`, минуя репозитории | наружу — одна дверь `getDashboard(projectId)`.
-*Ценность:* без него нет ни одного места, где разрозненные признаки сходятся в один ответ о готовности.
-*Комментарий:* **ядро, и редкий случай: механизм несёт в себе собственную критику, записанную его же
-автором.**
+**`CommandDashboardService`**, **`CommandDashboardController`**, **`AcceptanceReadinessDto`**,
+**`CommandDashboardDto`**, **`ClientAcceptanceTraversalEntity`**, **`ClientAcceptanceTraversalRepository`**,
+**`VerdictGate`** — семейство операторского пульта готовности, где построенность проекта превращается в
+видимый человеку verdict: `ready`, `not ready` или `unknown`.
 
-Готовность считается по четырём условиям — все задачи сделаны, все заслоны качества пройдены, все запросы
-слиты, доступ к GitHub жив, — и сводятся они **тремя значениями**: неизвестно, если хоть одно неизмеримо;
-не готов, если хоть одно отказало; готов, только если держатся все. Это конъюнкция Клини, и в коде она
-названа своим именем.
+*Философский паттерн:* главный паттерн записи — `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`
+(`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, D010 Data lineage loss): readiness may be trusted
+only when its acquisition path names source tables, freshness and validation. Для разделения
+`built/construction`, `shown/client acceptance`, `unknown` and `refused` применяется
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`. Локальные паттерны из уже закреплённого кода:
+`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` for three-valued UI readiness and `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`
+for success value that cannot be constructed without prerequisites. Перед кодом общий фон:
+`ACP-061 Hoare Triple Review`.
 
-Дальше — сама критика, дословно из кода: «Every one of these four is about CONSTRUCTION — tasks done, gates
-passed, PRs merged, GitHub reachable. **None is about the product running or having been shown to anyone**,
-which is why `ready` could be reached on merge counts alone». То есть механизм прямо объявляет, что его
-собственное «готово» говорит о построенном, а не о работающем, — и это тот же изъян, который отдельно
-записан в `V100` (раздел XXIIк), где сказано, что «доставлено» вычислялось из числа слияний.
+*Связи:* `CommandDashboardController` publishes `/api/projects/{projectId}/command-dashboard` and calls
+`CommandDashboardService.getDashboard(projectId)`. The service reads raw project-scoped rows through
+`JdbcTemplate` for wishlist, tasks, Jules sessions, PR reviews, GitHub access, Linear metadata and feature
+Kano classes; it also calls `ClientAcceptanceTraversalRepository.countByProjectIdAndWalkedByIgnoreCase` or
+falls back to a SQL count over `client_acceptance_traversals`. It hands the construction verdict to
+`VerdictGate.constrain`, emits `AcceptanceReadinessDto`, then wraps it into `CommandDashboardDto`.
+`ClientDeliveryService` is adjacent consumer-facing delivery readout, not the owner of this dashboard verdict.
 
-Второе решение, тоже верное и тоже объяснённое: воздержание отображается словом «неизвестно», и в коде
-сказано, почему это не мелочь оформления — «an unestablished claim is not a refuted one, and the two must
-not be shown the same way to someone deciding whether to keep working or to accept». Неустановленное и
-опровергнутое не должны выглядеть одинаково для того, кто решает, работать дальше или принимать.
+*Идеальная форма:* readiness is a constructive proof object. The dashboard may say `ready` only when five
+conditions are all true: all real-work tasks are done or in review, all real-work quality gates passed, all
+PR reviews are not pending/failing, GitHub access/CI is healthy, and at least one client acceptance traversal
+is witnessed. If any condition is unmeasurable, the result is `unknown`; if any condition is false, the result
+is `not ready`. Construction evidence cannot masquerade as client-seen value.
 
-**Задача для кодинга.** К четырём условиям построения обязано добавиться пятое, о показанном: наличие хотя
-бы одного обхода ценности заказчиком (`client_acceptance_traversals`, `V100`). Место: расчёт `construction`
-в `CommandDashboardService` — четыре проверки `allTasksDone`, `allQualityGatesPassed`, `allPrsMerged`,
-`githubAccessHealthy`. Проверка: проект без единого обхода не достигает «готов». Опровергнет: «готов»,
-выставленный при нуле обходов. Изъян этот механизм осознаёт сам; чего у него нет — так это отказа на его
-основании.
-*Живое, 7 сентября 2026* (`curl -s localhost:8080/api/projects/<id>/command-dashboard`): готовность —
-**«не готов»**. Среди непройденных условий четыре, и две последние пришли **от слоёв решётки вердиктов**:
-«runtime cannot say: the delivered product launches and reports healthy» и «six-sigma cannot say: process
-defect density is within a declared bound — no bound has been…». То есть слои честно воздерживаются, и их
-воздержание блокирует, как и задумано.
+*Граница:* this family may read operational tables and produce a dashboard DTO. It must not mutate project
+state, mark delivery accepted, create client traversals, fix PRs, change quality gates, or override the
+verdict lattice. Its job is visible decision support: show whether the project is ready to accept, what
+condition blocks it, and what Kano recommendation follows from pending classified work.
 
-**Уточнение текущего состояния.** Ранее в документе утверждалось, что заслон вердиктов включён,
-но привязан ни к одному проекту, и потому не применяется. Живая выдача это опровергла: строки от слоёв
-попадают в непройденные условия **только когда решётка применилась**. Перезамер настроек показал
-`verdict_gating_project_slug = 'test-fiftieth'`. Причина ошибки была инструментальной: у строковой настройки
-значение лежит в поле `maskedValue`, а прежний замер читал `enabled`, годное лишь для булевых. Обе прежние записи
-исправлены.
-*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип четырёхзначной логики (True/False/Both/Neither), anchor *A
-Useful Four-Valued Logic / how a computer should think — many-valued diagnostics*. Сильная дословно:
-«истинное, ложное, **неизвестное** и противоречивое представлены явно, и показано, как каждое хранится,
-отображается и разрешается. Третий исход невозможно проигнорировать на стороне вызывающего». Слабая:
-«булево плюс `null`, трактуемый по месту». Опровержение: «найти вызывающего, который компилируется, не
-обработав „неизвестно“». **Форма: сильная.** Показано всё, чего требует образец: как третий исход
-вычисляется (любое неизмеримое условие даёт воздержание), как хранится (значение решётки) и как
-**отображается** — отдельным словом и отдельным цветом, с записанным основанием, почему его нельзя
-показывать как отказ.
-Второй образец: `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` (D007), тот же философ и якорь. Сильная
-дословно: «успешное завершение — **значение**, которое не может существовать без выполненных предусловий, и
-оно несёт свидетельство для следующего шага». Слабая: «статус `done` в поле и запись в лог». Опровержение:
-«сконструировать результат успеха, не имея свидетельства; если это удаётся — форма слабая». **Форма:
-слабая, и признана слабой самим механизмом.** «Готов» достижимо на свидетельствах о построенном, без
-единого свидетельства о показанном. Важно, что опровержение образца записано рядом с самим кодом
-заранее и записано рядом с самим кодом.
+*Входы:* `projectId`; rows from `tasks`, `wishlist`, `jules_sessions` joined through tasks, `pr_reviews`,
+`github_access_status`, `linear_issue_metadata`, `features`; `client_acceptance_traversals` by project and
+`walked_by='client'`; `VerdictGate`; raw JDBC table/column availability; normalized lowercase raw rows; system
+meta task markers in task payload; feature `kano_class`.
+
+*Выходы:* `CommandDashboardDto` with data source status, rows for dashboard tables and
+`AcceptanceReadinessDto`. Readiness output includes nullable booleans for `allTasksDone`,
+`allQualityGatesPassed`, `allPrsMerged`, `githubAccessHealthy`, `clientAcceptanceWitnessed`, plus
+`unmetConditions`, `statusLabel`, `uiColorToken` and `kanoRecommendation`.
+
+*Владельцы истины и состояния:* task completion and quality-gate fields belong to `tasks` and gate
+orchestration; PR/CI truth belongs to `pr_reviews` and GitHub access checks; client-seen value belongs to
+`client_acceptance_traversals` / `ClientAcceptanceTraversalRepository`; Kano class truth belongs to
+`features.kano_class`; verdict-lattice constraints belong to `VerdictGate`; this service owns only the
+read-model conjunction and UI wording.
+
+*Инварианты:* (1) dashboard readiness is five-condition Kleene conjunction, not four-condition construction;
+(2) `clientAcceptanceWitnessed == false` yields `not ready`, not `ready`; (3) `clientAcceptanceWitnessed == null`
+yields `unknown`; (4) system/carrier/meta tasks do not block acceptance readiness as user-facing work; (5)
+raw JDBC column casing is normalized once at the ingestion boundary; (6) a missing data source produces
+`unknown` rather than a false failure; (7) `VerdictGate` may only make a construction/readiness claim stricter,
+not invent readiness.
+
+*Сильная форма сейчас:* the old defect in this section is no longer current. Source now reads
+`clientAcceptanceWitnessed` from `ClientAcceptanceTraversalRepository` or the table fallback, adds an unmet
+condition when it is false, includes it as the fifth construction condition, and returns the field in
+`AcceptanceReadinessDto`. Focused tests pin the falsification case: all four construction conditions true and
+zero client traversals gives `not ready`; one or more traversals gives `ready`; traversal measurement failure
+gives `unknown`; unfinished tasks keep `not ready` even when traversal exists.
+
+*Слабая/неидеальная форма сейчас:* this documentation record was stale and still told a future agent to add
+the fifth condition, although the source and tests already contain it. The family is not declared ideal
+because this tact did not run the test class, did not hit the live endpoint, and did not inspect frontend
+rendering of the new `clientAcceptanceWitnessed` field. Raw JDBC still makes this service sensitive to table
+shape and table/column availability, although the current code names those failure states explicitly.
+
+*Что сделать для идеала:* do not code the old fifth-condition fix again. First run
+`CommandDashboardServiceTest` and a fixture/live endpoint check covering zero traversals, one traversal and
+traversal-store failure. Then verify the frontend/operator surface displays `clientAcceptanceWitnessed` and
+does not compress `unknown` into `not ready` or `ready`. Only after that consider replacing raw SQL reads with
+typed projections, and only if parity fixtures preserve the current readiness result and data-source-status
+semantics.
+
+*Что не трогать:* keep the fifth condition, the nullable readiness booleans, the `unknown` outcome, the
+`clientAcceptanceWitnessed` field in `AcceptanceReadinessDto`, the system-meta-task exclusion, the single
+lowercase-key normalization boundary, and `VerdictGate` monotonic constraint behavior. Do not remove the
+client traversal requirement because other layers already look strict.
+
+*Опровержение:* build or identify a project where all tasks are done/review, all quality gates pass, PRs are
+merged/non-failing and GitHub access is healthy, but `client_acceptance_traversals` has zero client rows. If
+`/api/projects/{projectId}/command-dashboard` returns `readiness="ready"`, the mechanism is false. Make the
+traversal store unavailable; if result is `ready` or `not ready` instead of `unknown`, tri-state readiness is
+false. Add one client traversal with construction true; if readiness is not `ready`, constructive success is
+broken.
+
+*Критерий закрытия:* this family is ideal only when focused tests and live/fixture endpoint evidence prove
+five-condition readiness, tri-state `unknown`, verdict-gate monotonicity, system-meta-task exclusion,
+frontend display of `clientAcceptanceWitnessed`, and read-only endpoint behavior. Until that evidence is
+recorded, the implementation is strong for the old defect but the whole mechanism is not fully closed.
+
+*Свидетельства записи:* `git status --short`; `git log -1 --oneline`; no active Claude process; protocol
+reads from `/home/remotecli/codex-mechanisms-session/SESSION.md`, `docs/HOW_TO_READ_BEFORE_FIXING.md` and
+top `Как читать`; philosopher rows `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`, `RELIABILITY_CHAIN`; current section XXXIII;
+`nl -ba src/main/java/com/eneik/production/services/dashboard/CommandDashboardService.java` around
+`getDashboard`, `fetchJulesSessions`, `lowercaseKeys`, `calculateReadiness` and the five-condition
+construction; `nl -ba src/main/java/com/eneik/production/dto/dashboard/AcceptanceReadinessDto.java`; source
+grep for `clientAcceptanceWitnessed`, `client_acceptance_traversals` and `CommandDashboardService`; focused
+read of `src/test/java/com/eneik/production/services/dashboard/CommandDashboardServiceTest.java`.
+
+*Текущий статус:* strict family record filled. Implementation is strong for the old missing-client-acceptance
+defect; not declared ideal until tests/live endpoint/frontend interpretation are verified in a later tact.
+
+*комментарий для Антигравити:* не кодь старую задачу «добавить пятое условие»: current
+`CommandDashboardService` already requires `clientAcceptanceWitnessed` and tests cover zero traversal,
+positive traversal and traversal-store failure. First verify `CommandDashboardServiceTest` and the live/fixture
+endpoint; if work remains, preserve the five-level meaning: construction facts, client-shown evidence,
+unknown measurement, refused readiness and verdict-gate constraint are different levels. Philosophy:
+`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`;
+local support `NUEL_BELNAP_03_TRUTH_STATUS_TABLE`, `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`; common
+background `ACP-061 Hoare Triple Review`.
 
 # XXXIV. Внутренний вход наблюдателя: запрет, записанный в комментарии
 

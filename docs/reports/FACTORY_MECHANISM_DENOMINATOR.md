@@ -273,3 +273,17 @@ Updated visible counts after this tact: exact lowercase `комментарий 
 Remaining non-ideal point for this family: no code was changed or tests run in this tact. The record says the old trust-base defect is strong in source/tests, but the family is not declared ideal until focused tests and live/fixture endpoint evidence prove consumers keep `undetermined` distinct from `blocked` and `trusted`.
 
 комментарий для Антигравити: do not re-code the stale `score = 1.0` defect in `OperationalTruthService`; first verify the current `computeBaseTrust` / `trustLevel(score, hasPositiveEvidence)` behavior. Apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for source/test evidence, `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` for packet growth and fast demotion, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for `undetermined` vs `blocked` vs `trusted`, and `ACP-061 Hoare Triple Review` before any later code.
+
+## 2026-09-12 Codex Strict Record: Command Dashboard Readiness
+
+Status: documentation-only strict-family replacement for section XXXIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `CommandDashboardService`, `CommandDashboardController`, `AcceptanceReadinessDto`, `CommandDashboardDto`, `ClientAcceptanceTraversalEntity`, `ClientAcceptanceTraversalRepository` and `VerdictGate` as the operator command-dashboard readiness family. The previous section was stale: it still told a future implementer to add client acceptance traversal as the fifth readiness condition, while current source already has `clientAcceptanceWitnessed`, repository/table fallback over `client_acceptance_traversals`, the five-condition construction, and focused tests for zero traversal, positive traversal, traversal-store failure and unfinished tasks.
+
+Denominator effect: `CommandDashboardController` is no longer just a mentioned controller surface in the stale remaining list; it is folded into the command-dashboard readiness family. This does not close all dashboard/operator surfaces and does not prove the factory complete. It removes one stale implementation instruction and makes the current implementation contract visible.
+
+Updated visible counts after this tact: exact lowercase `комментарий для Антигравити` grep in `docs/FACTORY_MECHANISMS.md` is 46. Earlier remaining lists in this report are historical snapshots; the current controller rough denominator should remove both `OperationalTruthController` and `CommandDashboardController` from mentioned-only until the next full denominator regeneration.
+
+Remaining non-ideal point for this family: no code was changed or tests run in this tact. The record says the old missing-client-acceptance defect is strong in source/tests, but the family is not declared ideal until focused tests and live/fixture endpoint evidence prove frontend/operator surfaces keep `unknown`, `not ready`, `ready` and `clientAcceptanceWitnessed` distinct.
+
+комментарий для Антигравити: do not re-code the stale fifth-condition task in `CommandDashboardService`; first verify `CommandDashboardServiceTest` and a live/fixture endpoint. Apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for source/test evidence, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for construction vs client-shown readiness, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` for `unknown`, `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` for ready-as-proof-object, and `ACP-061 Hoare Triple Review` before any later code.
