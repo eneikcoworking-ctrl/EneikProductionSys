@@ -23,6 +23,9 @@
    - Введена постраничная и проектно-сегментированная выборка: параметры `projectId`, `limit` (по умолчанию 50, жесткий потолок `MAX_LIMIT = 200`), `page` и `offset`.
    - При передаче `projectId` запрос выполняется строго в рамках проекта: `taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId, pageable)`.
    - При запросе без `projectId` потолок строк строго ограничен `MAX_LIMIT`: `taskRepository.findAllByOrderByCreatedAtDesc(pageable)`.
+   - **Вывод констант 50 и 200:**
+     - `DEFAULT_LIMIT = 50`: типовой размер порции для диагностических скриптов инспекции (CLI `db_utils.py`, `inspect_tasks.py`) и UI, удерживающий размер HTTP-ответа в пределах ~20–25 КБ.
+     - `MAX_LIMIT = 200`: защитный потолок, рассчитанный по объёму сущности `TaskEntity` в куче JVM (~1.5 КБ на запись = ~300 КБ максимум на ответ). Устраняет риск OOM встроенной H2 (вызванной исторически дампами 21–60 МБ).
 
 2. **Ликвидация сканирования таблицы при точечных запросах (`CATEGORY_ERROR_SCAN` / D002):**
    - `getTaskByLinearId` переведён с `findAll().stream().filter(...)` на прямой репозиторный запрос `taskRepository.findFirstByLinearIssueId(linearIssueId)`.
@@ -32,7 +35,11 @@
 3. **Правдивый Javadoc:**
    - Комментарий класса `InternalTaskController` переписан и честно документирует реальные правила `ApiAuthorizationInterceptor` (доступ по loopback или операторскому токену, изменяющие операции требуют токен независимо от адреса) и потолки запросов.
 
-4. **Заслоны (23/23 зелёные):**
+4. **Демаркация границ и живая фабрика:**
+   - **Живая проверка на Hetzner (образ `a701efe`):** ограничение `/internal/**` уже активно. С хоста без ключа — 403 Forbidden (источник не петлевой через docker port publish), изнутри контейнера по 127.0.0.1 — 200 OK, с хоста с ключом — 200 OK.
+   - **Демаркация соседей:** Пункт 27 закрыт строго на задачах. Тот же род дефекта (`findAll()`) в других контроллерах (`JulesSessionController:46` и `JulesMonitorController:23`, выгружающие 2017 сессий; `LinearSyncController`, `GithubWebhookController`, `QualityMetricsController`) вынесен в отдельное предписание (§39) со своим замером.
+
+5. **Заслоны (23/23 зелёные):**
    - `InternalTaskControllerTest` (6/6):
      - `getAllTasksWithProjectIdReturnsPagedProjectTasksAndNeverCallsFindAll`: фильтрация по проекту, передача limit/page и заслон `never().findAll()`.
      - `getAllTasksWithoutProjectIdClampsLimitToMaxLimitAndNeverCallsFindAll`: ограничение предела строк до `MAX_LIMIT=200` при запросе 10 000 строк и заслон `never().findAll()`.
@@ -41,10 +48,10 @@
      - `getTaskByLinearIdUsesRepositoryLookupAndNeverCallsFindAll`: точечный поиск по linearId без `findAll()`.
      - `updateTaskRejectsOverwritingTerminalStatusWithConflict`: проверка инварианта необратимости терминальных статусов (Закон 20).
    - `ApiAuthorizationInterceptorTest` (17/17):
-     - Внешний запрос без ключа к `/internal/tasks` -> 403 FORBIDDEN.
-     - Localhost-запрос к `/internal/tasks` -> допуск.
-     - Внешний запрос с ключом -> допуск.
-     - Запрос из внутренней сети docker bridge (`172.18.0.1`, `10.0.0.1`) без ключа -> 403 FORBIDDEN.
+     - Relation 5: Внешний запрос без ключа к `/internal/tasks` -> 403 FORBIDDEN (прямое опровержение по имени).
+     - Relation 6: Localhost-запрос к `/internal/tasks` -> допуск (200 OK).
+     - Relation 7: Внешний запрос с ключом -> допуск.
+     - Relation 9: Запрос из внутренней сети docker bridge (`172.18.0.1`, `10.0.0.1`) без ключа -> 403 FORBIDDEN.
 
 **2026-09-12 00:45 UTC — Antigravity (L2): Предписания 25 и 26 закрыты (`INUS_FACTOR_CHECK` / D007, `CATEGORY_ERROR_SCAN` / D002, `TRUTH_STATUS_TABLE` / D012)**
 

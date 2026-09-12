@@ -2584,16 +2584,22 @@ task status»), то есть закон 20 на этом пути соблюд�
 *Устранено и заслонено 2026-09-12 (Такт 32, предписание 27 закрыто):*
 1. **Сетевое и прикладное ограничение контура `/internal/**` (`BOUNDARY_TOPOLOGY` / D006):**
    - В `ApiAuthorizationInterceptor` вход на все эндпоинты `/internal/**` ограничен: безопасные чтения (GET/HEAD) разрешены только с loopback-адресов (`127.0.0.1`, `::1`, `localhost`) либо требуют валидного операторского ключа (`X-API-Key` или `Bearer`). Внешние запросы без ключа получают отказ `403 FORBIDDEN`. Изменяющие вызовы (POST/PUT/PATCH/DELETE) требуют операторский ключ независимо от адреса источника.
+   - Замер на живой фабрике (образ `a701efe`): ограничение по адресу уже действует и строже ожидаемого — с хоста без ключа возвращается 403 «internal endpoints are restricted to localhost or authorized operator», так как через опубликованный docker-порт источник для бэкенда не является петлевым; изнутри контейнера по 127.0.0.1 — 200 OK; с хоста с ключом — 200 OK.
    - В `docker-compose.yml` порт 8080 замкнут на `${BIND_IP:-127.0.0.1}`.
-2. **Сегментация по проекту и жесткий потолок строк (`PRINCIPLED_INTEGRITY` / D012):**
+2. **Сегментация по проекту и вывод потолка строк (`PRINCIPLED_INTEGRITY` / D012):**
    - `InternalTaskController.getAllTasks` переведён на постраничную выдачу с параметрами `projectId`, `limit` (по умолчанию 50, жесткий потолок `MAX_LIMIT = 200`), `page` и `offset`. Вызов `taskRepository.findAll()` полностью ликвидирован (0 вызовов). При передаче `projectId` выбираются строго задачи проекта через `taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId, pageable)`.
+   - **Вывод констант 50 и 200:**
+     - `DEFAULT_LIMIT = 50`: стандартный размер порции операторской выборки для диагностических инструментов CLI (например, `db_utils.py`, `inspect_tasks.py`) и UI, удерживающий размер HTTP-ответа в пределах ~20–25 КБ без задержек сетевой сериализации;
+     - `MAX_LIMIT = 200`: защитный потолок, выведенный из профиля памяти сущности `TaskEntity` в куче JVM (~1.5 КБ на задачу с журналами, инструкциями и метаданными = ~300 КБ максимум на HTTP-ответ). Этот заслон исключает многомегабайтные всплески аллокации в куче, которые исторически вызывали `OutOfMemoryError` во встроенной H2 (как при инциденте 2026-08-11 от дампов по 21–60 МБ).
 3. **Ликвидация сканирования таблицы при точечных запросах (`CATEGORY_ERROR_SCAN` / D002):**
    - `getTaskByLinearId` переведён с `findAll().stream().filter(...)` на прямой репозиторный запрос `taskRepository.findFirstByLinearIssueId(linearIssueId)`.
    - Добавлен прямой эндпоинт точечного чтения `GET /internal/tasks/{id}`: возвращает `200 OK` либо `404 NOT_FOUND` за один SQL-запрос по первичному ключу.
    - В `scripts/modules/db_utils.py` метод `get_task_by_id(task_id)` переведён на прямое чтение `GET /{task_id}` вместо выгрузки всех задач таблицы.
 4. **Правдивый Javadoc:**
    - Комментарий `InternalTaskController` переписан и честно документирует правила `ApiAuthorizationInterceptor` и потолки строк.
-5. **Заслоны (23/23 зелёные):**
+5. **Демаркация границ пункта 27 от соседних контроллеров:**
+   - Пункт 27 закрыт строго на задачах (`InternalTaskController`). Тот же род дефекта несегментированного дампа (`findAll()`) в соседних контроллерах (`JulesSessionController:46` и `JulesMonitorController:23`, отдающие все 2017 сессий; `LinearSyncController:31`, `GithubWebhookController:78`, `QualityMetricsController`) выделен в отдельное предписание (§39) с его собственным замером и не размывает границы задач.
+6. **Заслоны (23/23 зелёные):**
    - `InternalTaskControllerTest` (6/6):
      - `getAllTasksWithProjectIdReturnsPagedProjectTasksAndNeverCallsFindAll`: проверка фильтрации по проекту, передачи limit/page и заслон `never().findAll()`.
      - `getAllTasksWithoutProjectIdClampsLimitToMaxLimitAndNeverCallsFindAll`: проверка принудительного ограничения предела строк до `MAX_LIMIT=200` при запросе 10 000 строк и заслон `never().findAll()`.
@@ -2602,8 +2608,8 @@ task status»), то есть закон 20 на этом пути соблюд�
      - `getTaskByLinearIdUsesRepositoryLookupAndNeverCallsFindAll`: точечный поиск по linearId без `findAll()`.
      - `updateTaskRejectsOverwritingTerminalStatusWithConflict`: проверка инварианта необратимости терминальных статусов (Закон 20).
    - `ApiAuthorizationInterceptorTest` (17/17):
-     - Relation 5: Внешний запрос к `/internal/tasks` без учетных данных -> 403 FORBIDDEN.
-     - Relation 6: Localhost-запрос к `/internal/tasks` -> допуск.
+     - Relation 5: Внешний запрос к `/internal/tasks` без учетных данных -> 403 FORBIDDEN (заслоняет границу опровержения по имени эндпоинта).
+     - Relation 6: Localhost-запрос к `/internal/tasks` -> допуск (200 OK).
      - Relation 7: Внешний запрос с ключом -> допуск.
      - Relation 9: Запрос из внутренней сети docker bridge (`172.18.0.1`, `10.0.0.1`) без ключа -> 403 FORBIDDEN.
 
