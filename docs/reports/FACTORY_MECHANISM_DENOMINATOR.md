@@ -1112,3 +1112,38 @@ Remaining non-ideal point for this family: all three sidecars remain non-ideal i
 was changed in this tact. The record now tells Antigravity exactly what to preserve and what to fix.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XIX; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: Flow-Holding Repositories
+
+Status: documentation-only strict-family replacement for section XX in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `DesignShopCycleRepository` cycle-start lease, `ClaimRepository` task-claim
+cardinality and expiry queries, `ProjectEventLogRepository` durable project log retention,
+`ContextChunkRepository` reindex/source identity, and `GreetingRepository` demo greeting cycle-time metric.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and visible per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 34 |
+| Sections still missing visible `комментарий для Антигравити` | 29 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section was a compact narrative over five repositories. Section XX now separates each
+repository mechanism: design-cycle lease ownership, claim cardinality safety, durable log retention,
+context-chunk identity, and demo-only greeting metrics. Per-mechanism Antigravity comments name which
+repositories are ideal and which must not be promoted or changed without the right philosophy.
+
+Remaining non-ideal point for this family: `DesignShopCycleRepository` still lacks symmetric owner/lease
+checking for release and bounded stale-claim recovery; `GreetingRepository` is not proven harmful, but its
+metric must remain demo-level and not factory-level. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XX; family summary is not a substitute.

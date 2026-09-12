@@ -4587,116 +4587,213 @@ associated with this repo»: это заготовка, а не боевая п�
 
 # XX. Хранилища, которые держат поток
 
-Из 46 хранилищ **10 несут собственные запросы**, остальные — простой CRUD и механизмами не являются по
-демаркации «может ли механизм удержать поток». Замер: `@Query` по каждому файлу каталога `repositories`.
-Пять из десяти уже описаны выше (`AccountRepository`, `TaskRepository`, `JulesSessionRepository`,
-`ProjectRepository`, `WishlistRepository`); ниже — остальные.
+Из 46 repository-хранилищ собственные потоковые запросы несут десять. `AccountRepository`, `TaskRepository`,
+`JulesSessionRepository`, `ProjectRepository` и `WishlistRepository` описаны в соседних разделах; здесь
+зафиксированы остальные пять.
 
-**`DesignShopCycleRepository`** (34 строки) — держит **аренду цикла дизайн-цеха**: взять исключительное право
-запустить цикл и отпустить его.
-*Связи:* зовёт `DesignShopOrchestrationService` (`claimStartCycle` при входе в цикл, `releaseStartCycleClaim`
-при неудаче генерации) | пишет `design_shop_cycle.start_cycle_claimed_at`.
-*Ценность:* без неё два тика оркестрации могут войти в один цикл одновременно и оба потратят вызов Stitch.
+## XX.1. Аренда старта цикла дизайн-цеха
 
-*Комментарий:* **ядро для своего цеха, и взято правильно наполовину.** Притязание — настоящий
-compare-and-swap: `UPDATE … SET start_cycle_claimed_at = :now WHERE project_id = :p AND
-start_cycle_claimed_at IS NULL AND last_was_ready = false`, возвращает число затронутых строк, так что
-вызывающий знает, выиграл он или нет. Условие `last_was_ready = false` перепроверяет решение о фронте
-готовности **против базы** в момент взятия — защита от устаревшего чтения в памяти. Это верно и написано с
-пониманием.
+* **Имена механизма или семейства** — `DesignShopCycleRepository`, `DesignShopCycleEntity.startCycleClaimedAt`,
+  `DesignShopCycleRepository.claimStartCycle`, `DesignShopCycleRepository.releaseStartCycleClaim`,
+  `DesignShopOrchestrationService.claimStartCycle/releaseStartCycleClaim`.
+* **Философский паттерн** — `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004 Concurrency conflict:
+  поле аренды является частью целого дизайн-цикла, поэтому владелец взятия и отпускания должен быть явным.
+* **Связи** — `DesignShopOrchestrationService` берёт claim перед запуском цикла, освобождает его при
+  неудачном Stitch/генерационном проходе; repository пишет `design_shop_cycle.start_cycle_claimed_at` и
+  проверяет `lastWasReady = false` на стороне базы.
+* **Идеальная форма** — взятие и отпускание аренды симметричны: claim атомарен, release проверяет владельца
+  или lease-эпоху, зависшее притязание имеет bounded recovery path по возрасту, и один проект не запускает
+  два цикла одновременно.
+* **Граница** — механизм имеет право решать только exclusive start-cycle claim. Он не решает готовность
+  дизайна, содержимое Stitch-результата или статус проекта.
+* **Входы** — `projectId`, текущее `startCycleClaimedAt`, `lastWasReady`, момент `Instant.now()`, результат
+  генерации и retry-событие orchestration tick.
+* **Выходы** — число затронутых строк при claim, сброшенный claim при release, отказ конкурирующему току
+  войти в тот же цикл.
+* **Владельцы истины и состояния** — состояние хранит `design_shop_cycle.start_cycle_claimed_at`; владелец
+  записи — `DesignShopOrchestrationService` через `DesignShopCycleRepository`.
+* **Инварианты** — только один start-cycle owner на проект; stale in-memory readiness не побеждает состояние
+  базы; transient generation failure не делает проект permanently un-retryable; зависшая аренда не должна
+  вечно блокировать цикл.
+* **Сильная форма сейчас** — `claimStartCycle` является CAS-обновлением: `startCycleClaimedAt IS NULL` и
+  `lastWasReady = false` проверяются в одном UPDATE.
+* **Слабая/неидеальная форма сейчас** — `releaseStartCycleClaim` сбрасывает поле только по `projectId`, без
+  проверки держателя/эпохи; срока аренды и sweep-а зависшего `startCycleClaimedAt` не видно.
+* **Что сделать для идеала** — добавить holder/lease-epoch или другое проверяемое право на release, плюс
+  bounded stale-claim recovery; покрыть гонку claim/release focused-тестом.
+* **Что не трогать** — не ослаблять CAS в `claimStartCycle`, не выносить readiness-проверку из базы в память,
+  не чинить это через увеличение частоты тиков.
+* **Опровержение** — чужой тик может сбросить `startCycleClaimedAt` без владения, или crash после claim
+  оставляет проект без дальнейшего start-cycle навсегда.
+* **Критерий закрытия** — release проверяет владельца или lease-эпоху; stale claim автоматически
+  восстанавливается; тест показывает ровно одного победителя и безопасное восстановление после зависания.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/DesignShopCycleRepository.java`;
+  `grep -R -n -E "claimStartCycle|releaseStartCycleClaim|startCycleClaimedAt" src/main/java`.
+* **Текущий статус** — частично силён, но не идеален.
 
-**Асимметрия в другой половине.** Освобождение безусловно: `UPDATE … SET start_cycle_claimed_at = NULL WHERE
-project_id = :p` — без проверки, кто держит. Взятие защищено, отпускание нет: снять чужое притязание может
-кто угодно.
+## XX.2. Притязания на задачу и их кардинальность
 
-**И у притязания нет срока.** Если процесс умер после взятия и до освобождения, поле остаётся заполненным
-навсегда, а `claimStartCycle` требует `IS NULL` — значит цикл не запустится больше никогда. Замер: слово
-`startCycleClaimedAt` встречается в `src/main` только в самой сущности и в комментарии сервиса; **сторожа,
-чистящего застрявшее притязание по возрасту, нет**. Контрольная проба: для заявок такой сторож
-существует — `StrandedFinalizingSweepService`, 8 упоминаний. То есть фабрика этот урок уже усвоила и здесь
-не применила.
+* **Имена механизма или семейства** — `ClaimRepository`, `ClaimEntity`, `ClaimService`,
+  `findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc`, `expiredCountByAccountSince`,
+  `findByReleasedAtIsNullAndLeaseExpiresAtBefore`.
+* **Философский паттерн** — `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`, D002 Category error: вопрос “есть ли
+  активное притязание” нельзя выражать запросом, который требует “ровно одно притязание”.
+* **Связи** — `ClaimService` создаёт, завершает, fail/release и sweep-ит claims; `ProjectFlowService`,
+  `InternalTaskController`, `DashboardController`/`BottleneckDetectionService` читают активные/истёкшие
+  притязания; `TaskRepository` и `JulesSessionRepository` читают последствия claim-состояния.
+* **Идеальная форма** — repository отвечает на вопрос той же кардинальности, которую задаёт caller:
+  existence -> boolean/first deterministic row, list -> list, aggregate -> count/group. Lease expiry and
+  release semantics remain explicit in `ClaimService`.
+* **Граница** — механизм хранит право агента на задачу, время lease и release/result status. Он не решает
+  качество PR, content задачи или здоровье аккаунта целиком; он только даёт надёжные факты для этих решений.
+* **Входы** — `taskId`, `accountId`, `projectId`, `releasedAt`, `leaseExpiresAt`, `resultStatus`, `claimedAt`,
+  текущий момент для expired sweep.
+* **Выходы** — saved/released/expired claim, deterministic first active claim, account expired count,
+  dashboard/account-health evidence.
+* **Владельцы истины и состояния** — таблица `claims`; доменный владелец записи и release — `ClaimService`;
+  repository владеет только формой запросов.
+* **Инварианты** — duplicate active claims must not crash readers; terminal/release decisions do not depend
+  on accidental derived-query uniqueness; expired counts are aggregates, not materialized full rows.
+* **Сильная форма сейчас** — old single-result query is replaced by
+  `findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc`; repository comment records the live
+  `IncorrectResultSizeDataAccessException` incident and exact category error.
+* **Слабая/неидеальная форма сейчас** — source still allows multiple active claims as data condition; this is
+  handled by deterministic readers, but uniqueness itself is not proven by schema in this record.
+* **Что сделать для идеала** — keep deterministic `findFirst` readers; if business requires uniqueness,
+  enforce it at claim-creation/schema level with migration and race test, not by reverting to Optional
+  cardinality.
+* **Что не трогать** — do not restore `findByTaskIdAndReleasedAtIsNull`; do not make dashboard/reconciler
+  crash on duplicate active claims; do not hide duplicate claims from sweeps.
+* **Опровержение** — two unreleased claims for one task make dashboard/reconciliation throw instead of
+  returning a deterministic active claim or explicit duplicate condition.
+* **Критерий закрытия** — duplicate active claims are either impossible at write time or total/deterministic
+  for every reader; expired-count aggregate remains available for account-health.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/ClaimRepository.java`;
+  `grep -R -n -E "claimRepository\\.|findFirstByTaskIdAndReleasedAtIsNull|expiredCountByAccountSince" src/main/java`.
+* **Текущий статус** — сильная reader form after fix; source uniqueness remains a separate owner-map question.
 
-*Оговорка честности:* застряло ли притязание **сейчас**, замер не проводился — прямого доступа к базе в этом замере нет.
-Утверждаю лишь устройство: взятие с условием, отпускание без условия, срока нет, сторожа нет.
+## XX.3. Долговечный журнал проекта и его удержание
 
-*Философия:* `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` (D004) — Джонатан Шаффер, `BARCAN-TAG-01
-ACTUALIST-OBJECT`, принцип приоритетного монизма, anchor *Monism: The Priority of the Whole*. Сильная форма
-дословно: «**до разделения модулей объявлено, какой агрегат вправе менять каждую часть**». Слабая: «классы
-разделены по размеру или по слоям». Опровержение образца: «**найти поле, которое пишут два сервиса**».
+* **Имена механизма или семейства** — `ProjectEventLogRepository`, `ProjectEventLogService`,
+  `ProjectEventLogRetentionService`, `ProjectEventLogEntity`, `deleteByProjectIdAndCreatedAtBefore`,
+  `findByProjectIdOrderByCreatedAtDesc`.
+* **Философский паттерн** — `KIT_DEROUZ_01_RELIABILITY_CHAIN`, D010 Data lineage loss: журналу можно верить
+  как evidence только когда известны источник, timestamp, freshness rule и путь проверки/удаления.
+* **Связи** — `DurableProjectLogAppender` и `ProjectLogFlushQueue` передают события в
+  `ProjectEventLogService`; `SystemStatusController` читает журнал; `ProjectEventLogRetentionService`
+  чистит по cap/age через repository.
+* **Идеальная форма** — durable log survives container rebuild, every row has project/time/orderable source,
+  and retention is explicit: cap/age trimming removes old rows without destroying recent incident evidence.
+* **Граница** — механизм хранит operational evidence; он не является runtime stdout, audit verdict, PR
+  evidence или механизмом принятия решений.
+* **Входы** — log entries from queue, `projectId`, `createdAt`, retention settings, project status, pageable
+  read requests.
+* **Выходы** — persisted event rows, newest/after-time reads, count by project, deletion count for old rows.
+* **Владельцы истины и состояния** — `project_event_log` is durable state; `ProjectEventLogService` owns
+  append; `ProjectEventLogRetentionService` owns deletion policy.
+* **Инварианты** — append path must not block production logging forever; log must not grow without bound;
+  freshness/age can be named by `createdAt`; retention must preserve recent operational evidence.
+* **Сильная форма сейчас** — repository has timestamped reads, count, oldest-first cutoff selection and
+  `deleteByProjectIdAndCreatedAtBefore`; retention service calls the delete path.
+* **Слабая/неидеальная форма сейчас** — no source non-ideality identified in this tact; exact live row count
+  and configured retention values were not remeasured here.
+* **Что сделать для идеала** — no code change identified from this section; if touching retention, verify cap,
+  age and recent-incident readability together.
+* **Что не трогать** — do not remove delete path or timestamp fields; do not treat container logs as a
+  replacement for durable project evidence.
+* **Опровержение** — a project log row has unknown age/source, or no retention path exists while appends
+  continue.
+* **Критерий закрытия** — append/read/retention are all present; age of any row can be named; retention trim
+  deletes only rows older than policy.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/ProjectEventLogRepository.java`;
+  `grep -R -n -E "ProjectEventLogRepository|deleteByProjectIdAndCreatedAtBefore|ProjectEventLogRetentionService|ProjectEventLogService" src/main/java`.
+* **Текущий статус** — считаю механизм идеальным.
 
-**Форма: слабая по асимметрии.** Взятие объявляет владельца — это делает `WHERE … IS NULL`. Отпускание
-владельца не спрашивает, поэтому право менять поле принадлежит всякому, кто знает `projectId`. По Шафферу
-приоритет принадлежит **целому**, и часть определяется через него; здесь целое (цикл) объявлено при входе и
-забыто при выходе, и часть остаётся без основания.
+## XX.4. Корпус контекста и векторные строки
 
-*Опровержение, назначенное вперёд:* добавить в освобождение условие на того же держателя и посмотреть,
-покраснеет ли хоть один тест. Не покраснеет — владения не было, была привычка.
+* **Имена механизма или семейства** — `ContextChunkRepository`, `ContextChunkEntity`, `VectorRow`,
+  `deleteBySourceRef`, `GeminiContextService.indexDocument/retrieveFiltered`.
+* **Философский паттерн** — `DZHONATAN_SHAFFER_18_PERSISTENCE_SNAPSHOT`, D010 Data lineage loss:
+  long-lived context chunks must preserve identity across reindex snapshots, so stale chunks from an older
+  version do not coexist with current chunks under the same source.
+* **Связи** — `GeminiContextService` deletes/reinserts by `sourceRef`, retrieves vector rows by source type
+  and sourceRef prefix; `MLPredictionServiceClient` supplies embedding sidecar data through that service.
+* **Идеальная форма** — source identity is stable (`sourceRef`, `sourceType`, `contentHash`, vector dims);
+  reindexing one source deletes prior chunks for that source before inserting the current version; retrieval
+  can filter by source level without hydrating unnecessary fields.
+* **Граница** — repository owns persistence/retrieval shape for context chunks. It does not decide prompt
+  truth, model answer quality or sidecar cache policy.
+* **Входы** — `sourceRef`, `sourceType`, content hash, embedding string, embedding dims, source prefix/type
+  filters, reindex command.
+* **Выходы** — vector rows for retrieval, deleted stale chunks for one source, existence result for unchanged
+  source hash.
+* **Владельцы истины и состояния** — table `context_chunks`; `GeminiContextService` owns indexing lifecycle;
+  repository owns query/projection shape.
+* **Инварианты** — one source reindex does not leave old longer-version chunks behind; vector rows carry
+  source identity and dimensions; retrieval filters do not mix sourceRef levels without explicit prefix.
+* **Сильная форма сейчас** — `deleteBySourceRef` is documented as delete-then-insert for reindex; projections
+  expose source identity with embedding/dims; sourceRef prefix filters exist.
+* **Слабая/неидеальная форма сейчас** — no source non-ideality identified in this tact.
+* **Что сделать для идеала** — no code change identified; preserve delete-by-source before insert and the
+  sourceRef/sourceType filters.
+* **Что не трогать** — do not replace `deleteBySourceRef` with append-only reindex; do not remove sourceRef
+  from vector projections.
+* **Опровержение** — editing a shorter source leaves chunks from the old longer source version retrievable
+  under the same `sourceRef`.
+* **Критерий закрытия** — reindex test proves old chunks for one source are gone and current chunks remain
+  retrievable with stable source identity.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/ContextChunkRepository.java`;
+  `grep -R -n -E "ContextChunkRepository|deleteBySourceRef|findVectorRows" src/main/java`.
+* **Текущий статус** — считаю механизм идеальным.
 
----
+## XX.5. Демонстрационный greeting-поток и его метрика цикла
 
-**`ClaimRepository`** (47 строк) — притязания на задачу: кто держит, кто отпустил, сколько истекло.
-*Связи:* зовут пятеро — `ProjectFlowService`, `ClaimService`, `InternalTaskController`, `DashboardController`,
-`BottleneckDetectionService` | пишет `claims`.
-*Ценность:* без счёта истёкших притязаний здоровье аккаунта нечем мерить: `expiredCountByAccountSince`
-группирует истечения по аккаунту за окно.
+* **Имена механизма или семейства** — `GreetingRepository`, `GreetingEntity`, `GreetingController`,
+  `getAverageCycleTimeSeconds`, `countByCurrentStatus`, `findFirstByOrderByCreatedAtDesc`.
+* **Философский паттерн** — `KIT_DEROUZ_13_LEVEL_OF_ABSTRACTION_LOCK`, D010 Data lineage loss:
+  demo greeting cycle time must not be read as factory production cycle time without explicit level
+  transform.
+* **Связи** — `GreetingController` is the only direct repository caller found; `HomeController` points to
+  latest greeting API; `MLPredictionServiceClient` has bottleneck prediction entrypoints but no evidence in
+  this tact that greeting average is a production input.
+* **Идеальная форма** — demo metrics stay labeled as demo/greetings-level facts, or the contour is removed
+  from production dashboards and prediction inputs. Any use as factory metric must name the transform from
+  greetings table to production flow.
+* **Граница** — repository may count and average rows in `greetings`; it may not stand for project/task cycle
+  time or customer delivery metrics.
+* **Входы** — `current_status`, `processing_started_at`, `completed_at`, `createdAt`.
+* **Выходы** — count by status, latest greeting row, average seconds between processing and completion for
+  completed greetings.
+* **Владельцы истины и состояния** — table `greetings`; `GreetingController` owns demo API exposure.
+* **Инварианты** — completed average uses only rows with both timestamps; zero is fallback for no rows;
+  greeting-level metric is not silently promoted to factory-level flow metric.
+* **Сильная форма сейчас** — native query scopes to `current_status = 'COMPLETED'` and non-null timestamps;
+  callers found are demo/home surfaces.
+* **Слабая/неидеальная форма сейчас** — current factory value is not established; the risk is semantic drift,
+  not proven runtime harm.
+* **Что сделать для идеала** — either mark the API/repository as demo-only in code/docs and keep it away from
+  factory metrics, or remove/migrate it when demo contour is retired.
+* **Что не трогать** — do not feed `greetings` average into Lean/TOC/Six Sigma metrics; do not rename it to a
+  factory cycle-time metric without transform evidence.
+* **Опровержение** — any production dashboard, gate, prediction or report consumes `getAverageCycleTimeSeconds`
+  as if it were factory task/project cycle time.
+* **Критерий закрытия** — all callers are demo-only or the demo contour is retired; no production metric
+  depends on `greetings` average without explicit transform.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/GreetingRepository.java`;
+  `grep -R -n -E "GreetingRepository|avgCycleTime|greetings" src/main/java`.
+* **Текущий статус** — не мерен по business value; structurally safe if kept demo-only.
 
-*Комментарий:* **ядро, и несёт в себе разобранное происшествие, которое стоит целого урока.** Запрос
-`findByTaskIdAndReleasedAtIsNull` был выведенным (derived) и потому требовал, чтобы совпала **не более чем
-одна** строка. Схема этого не гарантирует. Замер живьём на `test-fiftieth`: у задачи оказалось два
-неотпущенных притязания, и `IncorrectResultSizeDataAccessException` дошло до `GlobalExceptionHandler`
-**шесть раз за десять минут**, уронив панель оператора и сверщик, который вытаскивает застрявшие
-`pr_opened`. Из десяти вызывающих **ни один** не спрашивал, ровно ли одно; все спрашивали, есть ли активное.
-Правило, записанное в самом коде: **«запрос, чья кардинальность строже вопроса, на который он отвечает,
-превращает обычные данные в аварию»**. Починено на `findFirst` с явным порядком — тотально и
-детерминированно.
+## XX.6. Комментарии для Антигравити по механизмам
 
-*Философия:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) — Гилберт Райл, `BARCAN-TAG-00 CODE-GUARDIAN`,
-принцип различия «знать что» и «знать как», anchor *The Concept of Mind — knowing-how versus knowing-that,
-category mistakes*. Сильная форма дословно: «назван тип, схема или переходник, **удерживающий границу
-рода**». Слабая: «мы понимаем разницу». Опровержение образца: «найти место, где **значение одного рода
-присваивается полю другого без преобразования**».
-**Форма: сильная после починки, и род ошибки назван точно.** Множественность строк присваивалась
-`Optional` — значение одного рода в поле другого, без преобразования, ровно как требует опровержение. Райл
-о том и писал: категориальная ошибка не в том, что утверждение ложно, а в том, что оно принадлежит не тому
-роду. Здесь «сколько строк» подменяло «есть ли строка».
-
-**`ProjectEventLogRepository`** (34 строки) — долговечный журнал проекта, переживающий пересоздание
-контейнера.
-*Связи:* зовут двое — `ProjectEventLogService` (пишет) и `ProjectEventLogRetentionService` (чистит) | пишет
-`project_event_log`.
-*Ценность:* это единственный журнал, по которому можно разобрать вчерашнее происшествие: контейнерный лог
-исчезает при пересборке, а этот нет. Весь разбор семичасового простоя аккаунтов опирался на него.
-
-*Комментарий:* **периферия по потоку, ядро по разбираемости.** В нём записано собственное происшествие:
-таблица **не имела пути удаления вовсе**, писалась каждые 5 секунд пачками по 500 и росла без предела —
-162 тысячи строк. Комментарий честно отделяет причину от совпадения: базу уронило не это (94% из 1,7 ГБ
-файла составляли невозвращённые страницы MVStore из-за незакрытия), но «журнал только на дозапись без
-политики есть вторая, медленная версия того же отказа».
-
-*Философия:* `RELIABILITY_CHAIN` (D010). Сильная форма дословно: «данным верят только когда процесс их
-добычи надёжен для **этого** класса дефекта; названы источник, отметка времени, **правило свежести** и путь
-проверки». Слабая: «данные из базы, значит верны». Опровержение образца: «**назвать возраст значения**;
-неизвестный возраст делает свежесть недоказуемой».
-**Форма: сильная.** Источник назван (`logger`), отметка времени есть у каждой строки, правило свежести
-введено — `deleteByProjectIdAndCreatedAtBefore` с порогом, и есть отдельный механизм, который его применяет.
-Возраст любого значения называется одним запросом. Это редкий в этом файле случай, когда образец держится
-целиком.
-
-**`ContextChunkRepository`** (27 строк) и **`GreetingRepository`** (26 строк) — куски контекста для поиска и
-остатки демонстрационного контура.
-*Связи:* первый зовёт `GeminiContextService`, второй — только `GreetingController`.
-*Ценность:* первый обеспечивает переиндексацию без хвостов: переиндексация есть удаление-и-вставка по
-`sourceRef`, поэтому правка документа не оставляет обрывков прежней, более длинной версии. Второй считает
-среднее время цикла по таблице `greetings` — величина из демонстрационного контура.
-*Комментарий:* **периферия оба.** У первого форма верная и объявлена в комментарии; второй — единственный
-известный мне механизм, чья ценность для нынешней фабрики не установлена: `greetings` к продукту клиента
-отношения не имеет, а средним временем цикла по ней кто-то может воспользоваться как метрикой.
-*Философия:* `PERSISTENCE_SNAPSHOT` (D010) у `ContextChunkRepository` — **сильная**: личность источника
-сохраняется через `sourceRef`, и переиндексация не оставляет двух версий одного документа. У
-`GreetingRepository` — **не мерено**: чтобы назвать форму, надо сперва установить, читает ли кто-нибудь эту
-величину как метрику фабрики.
-
----
+* `DesignShopCycleRepository` — **комментарий для Антигравити:** механизм не идеален: применить
+  `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; сохранить CAS-взятие, добавить owner/lease-epoch проверку на
+  release и bounded stale-claim recovery.
+* `ClaimRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
+* `ProjectEventLogRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
+* `ContextChunkRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
+* `GreetingRepository` — **комментарий для Антигравити:** механизм не идеален как фабричная метрика:
+  применить `KIT_DEROUZ_13_LEVEL_OF_ABSTRACTION_LOCK`; держать demo-only или удалить/переименовать контур,
+  не использовать `greetings` average как production cycle time без явного transform.
 
 # XXI. Сущности, несущие поведение
 
