@@ -3419,3 +3419,27 @@ forward progress … with actionable work present: queuedTasks=2» верно п
   читателя; правка убрала один конкретный повтор, а не правило.
 - **Вердикт 4** (`hasActionableWork` считает строки, а не отправимость, `LEVEL_OF_ABSTRACTION_LOCK` D010) — не тронут,
   пункта в перечне нет. Признак «есть работа» по-прежнему вернёт «да» на очереди, из которой ничего нельзя отправить.
+
+## 2026-09-12 08:00 UTC — Клод: правка выложена и проверена на живой фабрике
+
+Не «в репозитории» — **на фабрике**. Образ `eneikproductionsys-backend:latest` собран 07:56:50 UTC, коммит `b71f57d`
+раньше сборки. Проба в jar различающая, не по времени: в `JulesDispatchService.class` есть точка вызова исходной
+строки 4272 (контроль — старая строка 4570 на месте), в `ProjectFlowService.class` есть метод
+`deriveTargetContextFromSourceWishlist`. Наличия строки `PRODUCT_CODEBASE` за пробу **не считал** — она была в файле
+и до правки (строки 624, 886), то есть ничего не различает.
+
+**Живой замер после подъёма (07:58–07:59 UTC):**
+- `07:58:58` задача `d20da588` — «had an undetermined targetContext; derived PRODUCT_CODEBASE from its source wishlist»;
+  `07:59:13` — `Dispatched task d20da588 to account dmitriieneik-rgb`.
+- `07:59:14` то же для `927b43d4`; `07:59:30` — отправлена на счёт `eneikdru`.
+- Хребет: `currentState` был `QUEUED` c `nextRequiredTransition = IMPLEMENTING`, стал **`IMPLEMENTING`**,
+  `blockingReason` пуст, следующий переход `UNDER_REVIEW`.
+- Задачи: обе `claimed`, `targetContext = PRODUCT_CODEBASE`, `julesDispatchStatus = Dispatched to Jules`.
+  Счёт статусов проекта: 57 `done`, 2 `claimed`, 1 `failed`; в очереди не осталось ничего.
+
+Контроль на ноль: в первую минуту после подъёма в журнале было ноль и новой строки, и старого отказа, и вообще строк
+`ProjectFlowService` — это значит «такт ещё не проходил» (период `orchestration.rate-ms` = 60000 мс), а не «правка
+не работает». Отличие подтвердилось на следующем такте.
+
+**Что это не закрывает** — прежнее: проверка пункта XVI 43 по-прежнему слабее его «чинить», пункт XVI 48 не тронут,
+и признак `hasActionableWork` (D010) по-прежнему считает строки, а не отправимость. Остановка снята, правило — нет.
