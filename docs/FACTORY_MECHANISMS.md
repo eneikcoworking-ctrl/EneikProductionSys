@@ -4428,127 +4428,162 @@ associated with this repo»: это заготовка, а не боевая п�
 
 # XIX. Сайдкары: механизмы вне бэкенда
 
-Три отдельных контейнера со своим кодом. До 2026-09-06 в файле были описаны только **клиенты** к ним со
-стороны бэкенда: про дверь написано, про то, что за дверью, — ничего.
+## XIX.1. Запуск живого продукта клиента
 
-**`launcher.py`** (`runtime-launcher/`, 567 строк, `uvicorn launcher:app`, порт 8091) — поднимает и сносит
-продукт клиента: `POST /launch` клонирует репозиторий и делает `docker compose up --build -d`,
-`POST /teardown` — `docker compose down -v --remove-orphans`, плюс `/healthcheck` и `/fetch`.
-*Связи:* зовёт его один `RuntimeLauncherClient` из бэкенда | держит **docker-сокет хоста**; его собственный
-докстринг: «The **ONLY** component in the whole factory that ever holds the host docker socket».
-*Ценность:* без него продукт клиента негде запустить и не на чем проверить, что он вообще стартует; на нём
-стоит всё наблюдение за живым продуктом.
-*Комментарий:* **ядро по власти, а не по потоку.** Поток он не держит — фабрика работает и без него, — но
-он единственный, кто исполняет чужой код на хосте. Внутри есть аккуратности: `_bound_memory` ограничивает
-память контейнеров клиента, потому что они **соседи** сборщику на том же хосте; `_resolve_topology`
-переносит порты, чтобы продукт не занял 8080, где стоит сама фабрика. Оговорки верные и измеренные.
-*Философия:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци, `BARCAN-TAG-01 ACTUALIST-OBJECT`,
-принцип топологии пространственно-временных границ, anchor *Parts and Places / formal ontology of boundaries
-and spatial parts*. Сильная форма дословно: «**названа точка, где меняется владелец проверки, полномочия или
-сохранения, и на неё есть тест**». Слабая: «граница „понятна из структуры пакетов“». Опровержение образца:
-«**удалить проверку на границе; если ни один тест не покраснел, границы нет**».
-**Форма: нарушена.** Удалять нечего: слов `auth`, `token`, `Authorization`, `verify`, `allowlist` в файле —
-**ноль**. Замер снаружи: `POST http://<хост>:8091/healthcheck` отвечает **422**, то есть запрос **дошёл до
-обработчика** и отвергнут лишь за форму тела, а не за отсутствие полномочий; контрольная проба —
-несуществующий путь даёт **404**, значит прибор различает. Шесть тестов в `test_launcher.py` проверяют
-перенос портов и предел памяти — **ни одного про границу**. То есть точка, где меняется владелец полномочий,
-не названа и не заслонена, а за ней стоит docker-сокет хоста.
-*Опровержение, назначенное вперёд:* закрыть порт 8091 либо ввести общий секрет и посмотреть, покраснеет ли
-хоть один тест. Не покраснеет — границы по-прежнему нет, есть только новая привычка.
+* **Имена механизма или семейства** — `runtime-launcher/launcher.py`, HTTP-поверхности `POST /launch`,
+  `POST /healthcheck`, `POST /fetch`, `POST /teardown`, клиент `RuntimeLauncherClient`.
+* **Философский паттерн** — `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, D006 Authorization ambiguity: механизм
+  является точкой, где фабрика передаёт управление чужому коду и host docker socket. Идеальная граница
+  должна быть названа и проверена, а не подразумеваться тем, что сервис внутренний.
+* **Связи** — backend вызывает sidecar через `RuntimeLauncherClient`; `ClientRuntimeObservabilityService`,
+  `DesignDriftMonitorService` и `ProductCapabilityService` читают результат запуска/health/fetch; sidecar
+  вызывает `git`, `docker compose`, `docker inspect`, `docker logs` и держит host docker socket.
+* **Идеальная форма** — `launcher.py` остаётся единственным владельцем docker-socket власти над клиентским
+  продуктом; каждый изменяющий вход закрыт сетевой границей или общим секретом; тест подтверждает, что
+  запрос без полномочия не доходит до запуска, teardown или fetch с доступом к контейнерам. Портовый remap,
+  resolved topology и memory bound остаются отдельными сильными защитами запуска.
+* **Граница** — механизм имеет право клонировать, собирать, запускать, проверять, читать HTML/logs и сносить
+  клиентский compose-проект. Он не должен решать качество продукта, дизайн-вердикт, бизнес-готовность или
+  статус фабричной задачи.
+* **Входы** — repo/ref/slug, compose-файлы продукта, `CLIENT_STACK_MEM_LIMIT`, HTTP-команды backend-клиента,
+  docker-состояние, health/fetch URL и имя compose-проекта.
+* **Выходы** — поднятый или остановленный compose-проект, remapped URL, health/fetch ответ, logs, error body,
+  release docker resources through teardown.
+* **Владельцы истины и состояния** — фактическое runtime-состояние живёт в Docker; право запускать продукт
+  должно принадлежать только sidecar и его разрешённому backend-клиенту; результат наблюдения получает
+  backend через `RuntimeLauncherClient`.
+* **Инварианты** — клиентский compose не занимает порт backend-фабрики; контейнеры клиента получают memory
+  bound, когда лимит задан; teardown безопасен для повторного вызова; docker-socket не открывается для
+  неавторизованного внешнего запроса.
+* **Сильная форма сейчас** — docstring называет `launcher.py` единственным компонентом с host docker socket;
+  `_resolve_topology` сохраняет override-топологию; `_bound_memory` ограничивает память; `test_launcher.py`
+  покрывает port remap и memory bound.
+* **Слабая/неидеальная форма сейчас** — в `launcher.py` нет `auth`, `token`, `Authorization`, `verify` или
+  `allowlist`; тестов границы полномочий нет. Поэтому при открытом порте механизм не идеален.
+* **Что сделать для идеала** — закрыть порт 8091 сетевой политикой или ввести общий секрет между backend и
+  sidecar; добавить тесты, где `POST /launch`, `/teardown`, `/fetch`, `/healthcheck` без полномочия
+  отвергаются до работы с Docker.
+* **Что не трогать** — не переписывать port remap, `_resolve_topology`, `_bound_memory` и teardown-семантику
+  ради авторизации; не перемещать docker-socket власть в backend.
+* **Опровержение** — запрос без полномочия достигает обработчика запуска/сноса/fetch или тестовая замена
+  проверки полномочий не краснит ни один тест.
+* **Критерий закрытия** — неавторизованный запрос получает отказ до docker/git операций; авторизованный
+  backend-клиент сохраняет текущий launch/health/fetch/teardown контракт; тесты границы и существующие
+  port/memory тесты проходят вместе.
+* **Свидетельства записи** — `grep -n -E "ONLY component|docker|@app\\.post|_bound_memory|_resolve_topology"
+  runtime-launcher/launcher.py`; `grep -n -E "auth|token|Authorization|verify|allowlist"
+  runtime-launcher/launcher.py | wc -l`; `grep -n -E "def test_|memory|port" runtime-launcher/test_launcher.py`.
+* **Текущий статус** — не идеален по границе полномочий; частично силён по runtime-topology и resource-bound.
 
----
+## XIX.2. Прокси суждения с теневым ручным и автономным откатом
 
-**`server.js`** (`judgment-proxy/`, 338 строк, `node server.js`, порт 8093) — посредник, через которого
-фабрика получает **суждение**, когда своего основания у неё нет.
-*Связи:* зовёт его `JudgmentAgentClient` из бэкенда | ходит в Gemini
-(`generativelanguage.googleapis.com`, `temperature 0.1`, предел 300 токенов для схемы и 600 для текста,
-список моделей с откатом), пишет и читает каталог `/shadow`: `inbox`, `verdicts`, `served`.
-*Ценность:* одно место, где решается, чем считать наблюдение, — вместо суждения, размазанного по вызывающим.
+* **Имена механизма или семейства** — `judgment-proxy/server.js`, `handleJudge`, `callGeminiPrimary`,
+  `readVerdict`, `waitForVerdict`, `evaluateAutonomousFallback`, каталоги `/shadow/inbox`,
+  `/shadow/verdicts`, `/shadow/served`, клиент `JudgmentAgentClient`.
+* **Философский паттерн** — `ALONZO_CHERCH_01_SUBSTITUTION_ORACLE`, D009 Substitution proof failure:
+  если Gemini/ручной судья заменяются эвристикой, вызывающий обязан видеть, что это именно замена, и под
+  какими наблюдениями она считается допустимой.
+* **Связи** — `FactoryJudgmentService` и `DeliveredWorkJudgmentService` получают суждение через
+  `JudgmentAgentClient`; proxy ходит в Gemini, читает/пишет `/shadow`, валидирует schema/text verdict и
+  возвращает вызывающему тот же shape ответа независимо от слоя.
+* **Идеальная форма** — каждый ответ несёт provenance слоя: `gemini`, `manual`, `heuristic`, `unavailable`,
+  плюс hash, mode, timestamp и правило свежести. Автономная эвристика допустима только как явно помеченный
+  fallback, а не как неотличимый verdict.
+* **Граница** — механизм имеет право получить или ожидать суждение и вернуть валидный verdict. Он не имеет
+  права скрывать происхождение verdict, подменять evidence текстовым совпадением без маркировки или делать
+  бизнес-решение неотличимым от модельного/ручного суждения.
+* **Входы** — prompt, schema, Gemini API key/model result, shadow-файлы manual verdict, timeout, mode
+  `schema|text`, слова в prompt, hash запроса.
+* **Выходы** — verdict JSON/text, записи `/shadow/inbox`, `/shadow/verdicts`, `/shadow/served`, HTTP status
+  и лог выбранного слоя.
+* **Владельцы истины и состояния** — Gemini или manual verdict являются владельцами внешнего суждения;
+  `/shadow/served` хранит факт обслуживания; `server.js` владеет только маршрутом fallback и обязан
+  указывать его источник.
+* **Инварианты** — неверный manual verdict не должен стать finding; schema verdict проходит validation;
+  heuristic fallback не должен выглядеть как Gemini/manual verdict; served-запись должна позволять
+  восстановить, чем был порождён ответ.
+* **Сильная форма сейчас** — есть request hash, `/shadow/inbox`, `/shadow/verdicts`, `/shadow/served`,
+  validation для schema/text и health-ответ с `primary: 'gemini'`.
+* **Слабая/неидеальная форма сейчас** — `handleJudge` возвращает `valid` без provenance поля; heuristic
+  fallback записывается и возвращается в том же shape, что Gemini/manual. Вызывающий backend не может
+  отличить эвристику от более надёжного суждения по самому ответу.
+* **Что сделать для идеала** — добавить в ответ обязательное поле происхождения (`source`/`provenance`) и
+  сохранить его в `verdicts` и `served`; обновить `JudgmentAgentClient` и downstream-решения, чтобы они могли
+  понижать доверие к heuristic fallback.
+* **Что не трогать** — не удалять manual shadow-путь, request hash, validation и served audit; не заменять
+  ожидание manual verdict новым неотличимым heuristic.
+* **Опровержение** — при отключённом Gemini и пустом `/shadow/verdicts` backend получает ответ, в котором
+  невозможно программно увидеть `heuristic/autonomous` источник.
+* **Критерий закрытия** — все успешные ответы judgment-proxy несут provenance; downstream может отличить
+  Gemini/manual/heuristic; тест отключённого Gemini проверяет, что fallback источник видим.
+* **Свидетельства записи** — `grep -n -E "evaluateAutonomousFallback|shadow|inbox|verdicts|served|ABSTAIN|REASONED_BLOCKER|PROGRESSING"
+  judgment-proxy/server.js`; `sed -n "250,322p" judgment-proxy/server.js`; callers through
+  `grep -R -n -E "JudgmentAgentClient" src/main/java`.
+* **Текущий статус** — не идеален по provenance; частично силён по shadow audit и validation.
 
-*Комментарий:* **ядро по последствиям, и самая опасная вещь из описанных.** У него **три слоя отката**, и
-третий подменяет суждение вычислением.
+## XIX.3. ML prediction, assistant chat and embedding sidecar
 
-Первый слой — Gemini. Второй — **ручной вердикт**: запрос кладётся в `/shadow/inbox` под хешем от промпта и
-схемы, и до **240 секунд** механизм опрашивает `/shadow/verdicts/<хеш>.json`, ожидая, что кто-то положит
-туда ответ. Это честно: человек или иной судья вписывает вердикт, и он помечается временем в `served`.
+* **Имена механизма или семейства** — `src/models/ml/PredictionService.py`, endpoints
+  `/api/v1/predict/bottleneck`, `/api/v1/assistant/chat`, `/api/v1/embed`, `PredictionService.predict_bottleneck`,
+  `PredictionService.predict_bottleneck_logistic`, `ensure_gemini_cache`, `ask_gemini_cached`,
+  `local_embed`, клиент `MLPredictionServiceClient`.
+* **Философский паттерн** — `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`, D007 Belief update without ledger:
+  bottleneck prediction must record which evidence changed the belief and what uncertainty remains. A fixed
+  coefficient or Gemini answer is not a Bayesian update unless the evidence ledger exists.
+* **Связи** — backend callers include `MLPredictionServiceClient`, `ContinuousOrchestrationService`,
+  `OpsAuditorService`, `GeminiContextService`, `JulesDispatchService`, onboarding/runtime/design paths and
+  demo `GreetingController`; sidecar calls Gemini for chat/prediction, local fastembed for embeddings and
+  optional Gemini cached-content for static system instructions.
+* **Идеальная форма** — each endpoint states its evidence level. `assistant/chat` may be model output with
+  optional cache provenance; `/embed` is deterministic local embedding with model name; bottleneck prediction
+  either has an evidence/refit ledger or is named and consumed as an unfitted heuristic, not Bayesian fact.
+* **Граница** — sidecar may transform text to model answer/vector and metrics to risk score. It must not
+  present heuristic/Gemini output as trained Bayesian evidence, and must not silently mix cached, uncached,
+  local embedding and heuristic predictions under one trust level.
+* **Входы** — WIP count, average cycle time, Gemini API key/model tier, prompt, system instruction, cache key,
+  tool contents, text for embedding, mounted role charters, local embedding model.
+* **Выходы** — bottleneck risk score and candidate score, assistant text/function-call/contents, embedding
+  vector, cache resource name in memory, HTTP 502 or fail-open uncached call where applicable.
+* **Владельцы истины и состояния** — Gemini owns model-generated text; `PredictionService.py` owns cache
+  registry and local embedding transform; actual bottleneck outcomes are not currently stored here, so this
+  sidecar does not own a learned posterior.
+* **Инварианты** — cache failure falls back to uncached chat; local embedding failure is visible as 502; the
+  logistic candidate is explicitly unfitted; no caller should treat `/api/v1/predict/bottleneck` as a trained
+  Bayesian predictor until there is outcome evidence and refit history.
+* **Сильная форма сейчас** — `predict_bottleneck_logistic` is explicitly labeled unfitted; assistant cache is
+  opt-in by `cacheKey` and fails open; `/api/v1/embed` uses local embedding instead of Gemini; deleted PR
+  review/refusal endpoints are documented as removed dead code.
+* **Слабая/неидеальная форма сейчас** — file header still says Bayesian predictor; `predict_bottleneck` asks
+  Gemini or falls back to arithmetic without an evidence ledger; coefficients `b0`, `b_wip`, `b_time` are
+  fixed and not updated by observed outcomes.
+* **Что сделать для идеала** — either rename/document the bottleneck endpoint as heuristic-only all the way
+  through Java callers, or add a real belief-update ledger: observed outcome rows, prior/posterior or refit
+  record, timestamp, uncertainty and tests showing score changes only from evidence.
+* **Что не трогать** — do not remove Gemini cache fail-open behavior, local embedding, tool-use separation or
+  the honest “unfitted candidate” label; do not resurrect deleted PR-review endpoints.
+* **Опровержение** — code shows `b0`, `b_wip` or `b_time` updated from observed outcomes with recorded
+  timestamp/evidence, or every caller visibly treats bottleneck prediction as heuristic rather than Bayesian.
+* **Критерий закрытия** — bottleneck prediction has either a complete evidence ledger and refit test, or all
+  names/DTOs/callers say heuristic; cached/uncached/local embedding paths remain distinguishable by contract.
+* **Свидетельства записи** — `grep -n -E "Bayesian|predict_bottleneck|predict_bottleneck_logistic|b0|b_wip|b_time|Gemini|embed|cache"
+  src/models/ml/PredictionService.py`; `grep -R -n -E "MLPredictionServiceClient" src/main/java`; section
+  XLII for static corpus cache ownership.
+* **Текущий статус** — частично силён, но bottleneck-prediction naming/evidence is not ideal.
 
-Третий слой — `evaluateAutonomousFallback`, и здесь **вердикт изготавливается сопоставлением строк**. В
-режиме схемы он всегда возвращает `ABSTAIN` с неизменной причиной: *«The observed status transition is an
-expected consequence of active decomposition and delivery flow»* — готовое объяснение на любой случай. В
-текстовом режиме, для классификатора сессий Jules: если в промпте встречается любое из слов `contradiction`,
-`table`, `schema`, `rejected` — возвращается *«VERDICT: REASONED_BLOCKER — The session identified an
-architectural or spec contradiction with the environment»*; иначе — *«VERDICT: PROGRESSING»*.
+## XIX.4. Комментарии для Антигравити по механизмам
 
-То есть утверждение о том, **что сессия обнаружила**, выводится из того, **какие слова стояли в вопросе**.
-Это ровно тот дефект, который этот файл разыскивает у фабрики повсюду: **надпись принята за данные**, — но
-здесь он стоит в том самом механизме, чья работа — отличать одно от другого.
-
-*Философия:* `ALONZO_CHERCH_01_SUBSTITUTION_ORACLE` (D009) — Алонзо Чёрч, `BARCAN-TAG-05
-SUBSTITUTIVITY-SALVA-VERITATE`, принцип формального лямбда-исчисления, anchor *Lambda calculus and Church's
-thesis*. Сильная форма дословно: «**до замены** кода, зависимости, модели или схемы **доказано сохранение под
-значимыми наблюдениями**». Слабая: «заменили, тесты зелёные». Опровержение образца: «назвать наблюдение, под
-которым доказывалось сохранение».
-
-**Форма: нарушена.** Замена произведена — сопоставление строк подставлено вместо суждения модели, — а
-наблюдения, под которым доказывалось бы сохранение, не назвал никто. Хуже: замена **неотличима**. Слов
-`source`, `provenance`, `origin`, `autonomous` в пути ответа — **ноль**; вердикт третьего слоя приходит
-вызывающему в том же виде, что и вердикт Gemini или человека. Подстановка *salva veritate* требует, чтобы
-замена сохраняла истинность в тех наблюдениях, которые важны; здесь она не сохраняет даже **различимость**.
-
-*Что делать (это не предписание, а часть записи о механизме):* ответ обязан нести имя своего слоя — модель,
-человек или автономный откат. Одно поле закрывает весь класс: тогда всякое суждение, построенное на вердикте,
-сможет спросить, чем оно порождено, и `INSTITUTIONAL_FACT_REGISTER` наверху перестанет опираться на
-неизвестное.
-
-*Опровержение, назначенное вперёд:* остановить Gemini и не класть ручной вердикт, затем найти в фабрике
-место, которое отличит полученный ответ от настоящего. Не найдётся — форма подтверждена окончательно.
-
----
-
-**`PredictionService.py`** (`src/models/ml/`, 576 строк, `uvicorn PredictionService:app`, порт 8000) —
-предсказывает узкое место, отвечает на вопросы помощника и выдаёт векторные представления.
-*Связи:* зовёт его `MLPredictionServiceClient` из бэкенда | ходит в Gemini (73 упоминания в файле), читает
-уставы ролей из смонтированного `/project/BARCAN-TAG-*_*.md` | своего хранилища нет.
-*Ценность:* одно место, где числа о потоке превращаются в оценку риска, и одно — где текст превращается в
-вектор для поиска по корпусу.
-
-*Комментарий:* **периферия по потоку и ядро по доверию.** Поток он не держит: при его падении фабрика
-работает. Но его ответ входит в суждение о заторе, а имя обещает больше, чем механизм делает.
-
-Заголовок файла гласит **«Bayesian predictor»**. Замер: обучения нет — `fit`, `train`, `joblib`, `sklearn`,
-`torch` встречаются дважды и не в предсказании; весов и данных нет вовсе. Внутри три разных вещи под одним
-именем «предсказание»:
-`predict_bottleneck` **спрашивает Gemini** («You are a Lean Six Sigma Delivery Manager AI…») и при любом
-исключении падает на арифметику — `(wip_factor + time_factor) / 2`, порог `0.7`;
-`predict_bottleneck_logistic` — рукописная логистика с коэффициентами `b0 = -2.0, b_wip = 2.0, b_time = 2.0`,
-и комментарий рядом честно называет их оценкой;
-оба возвращаются вызывающему рядом, как «основной» и «кандидат».
-
-Байесовского здесь нет ничего: ни априорного распределения, ни свидетельства, ни пересмотра. Есть мнение
-языковой модели, среднее двух отношений и три назначенные константы.
-
-*Философия:* `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER` (D007) — Айзек Леви, `BARCAN-TAG-04 MODAL-QUANTIFIER`,
-принцип фиксации доксастических состояний, anchor *The Fixation of Belief and Its Undoing / Enterprise of
-Knowledge*. Сильная форма дословно: «**записано, какое свидетельство изменило убеждение и какая
-неопределённость осталась**; приложены уверенность до и после и неразрешённые гипотезы». Слабая: «новое
-убеждение изложено без старого». Опровержение образца: «**спросить, во что агент верил час назад и что
-именно это изменило**».
-
-**Форма: нарушена.** На вопрос «во что верил час назад» ответить нечем: коэффициенты не менялись никогда и
-меняться не могут — их никто не пересматривает по исходу. «Кандидат» рядом с «основным» выглядит как выбор
-модели, но выбирать не из чего: обе величины назначены, ни одна не выведена, и сравнение их между собой
-никакого свидетельства не даёт.
-
-**И это тем заметнее, что в той же фабрике есть правильная форма того же образца.** `BetaPosterior` (112
-строк) выводит предел из накопленного свидетельства и записан в этом файле как «самый чистый пример
-правильной формы во всём коде». Один и тот же образец, две противоположные формы, оба механизма живы.
-Разница ровно в том, что требует Леви: у одного есть запись, какое свидетельство что изменило, у другого —
-константа.
-
-*Опровержение, назначенное вперёд:* найти в фабрике место, где `b0`, `b_wip` или `b_time` меняются по
-наблюдённому исходу. Нет такого — форма подтверждена окончательно.
-
----
+* `launcher.py` — **комментарий для Антигравити:** механизм не идеален: применить
+  `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`; закрыть порт 8091 сетевой границей или shared secret и добавить
+  boundary tests, при этом сохранить `_resolve_topology`, `_bound_memory`, port remap и единоличное владение
+  docker socket.
+* `server.js` — **комментарий для Антигравити:** механизм не идеален: применить
+  `ALONZO_CHERCH_01_SUBSTITUTION_ORACLE`; добавить provenance ответа (`gemini`, `manual`, `heuristic`,
+  `unavailable`) в JSON/served/verdicts и научить backend снижать доверие к heuristic fallback, не удаляя
+  shadow audit.
+* `PredictionService.py` — **комментарий для Антигравити:** механизм не идеален: применить
+  `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`; либо сделать bottleneck prediction явно heuristic-only во всех
+  именах/DTO/callers, либо добавить ledger/refit по реальным исходам. Cache fail-open, local embedding и
+  честную метку unfitted не трогать.
 
 # XX. Хранилища, которые держат поток
 

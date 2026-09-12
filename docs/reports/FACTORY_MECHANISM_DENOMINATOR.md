@@ -1077,3 +1077,38 @@ Remaining non-ideal point for this family: the source has strong local forms (`W
 a complete owner-map for every mutable repository field and transition. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XIII; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: Sidecar Runtime Mechanisms
+
+Status: documentation-only strict-family replacement for section XIX in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `runtime-launcher/launcher.py` launch/health/fetch/teardown surface,
+`judgment-proxy/server.js` Gemini/manual/heuristic judgment proxy, and `src/models/ml/PredictionService.py`
+prediction/chat/embedding/cache sidecar.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and visible per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 33 |
+| Sections still missing visible `комментарий для Антигравити` | 30 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section mixed narrative verdicts with sidecar descriptions. Section XIX now states
+the exact ideal contracts: docker-socket sidecar needs a real authorization boundary; judgment fallback needs
+visible provenance; bottleneck prediction needs either heuristic naming or a belief-update ledger. Existing
+strong pieces are explicitly preserved: launcher topology/memory protections, judgment shadow audit and
+validation, PredictionService cache fail-open and local embedding.
+
+Remaining non-ideal point for this family: all three sidecars remain non-ideal in different ways, but no code
+was changed in this tact. The record now tells Antigravity exactly what to preserve and what to fix.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XIX; family summary is not a substitute.
