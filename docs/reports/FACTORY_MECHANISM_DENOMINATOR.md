@@ -850,3 +850,45 @@ Remaining non-ideal point for this family: no current implementation weakness wa
 evidence in this tact. No code was changed.
 
 комментарий для Антигравити: считаю механизм идеальным
+
+## 2026-09-12 Codex Strict Record: AI Resource Authorization Boundary Family
+
+Status: documentation-only strict-family replacement for section XXXVIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `GoogleAiResourceController`, `ApiAuthorizationInterceptor`, `WebConfig`,
+`GoogleAiResourceService`, `DesignAssetService`, `VideoAssetService`, `ProjectOperationalContextService`,
+`ProjectRepository`, `StitchClient`, `ApiAuthorizationInterceptorTest` and
+`GoogleAiResourceControllerTest` as the AI resource authorization boundary and manual model-command surface.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 27 |
+| Sections still missing visible `комментарий для Антигравити` | 36 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section title still said five model-resource mutations were on an open path. Current
+source/test evidence shows the mutating `/api/**` path is guarded by `ApiAuthorizationInterceptor`, registered
+through `WebConfig`, and fail-closed when the server key is blank. The remaining non-ideal point is proof and
+audit: no focused MVC/integration test for the assembled `GoogleAiResourceController`, no deploy/runbook key
+probe in this record, and no structured audit trace for successful AI-resource mutations.
+
+Remaining non-ideal point for this family: code was not changed in this tact. Ideal work is MVC/integration
+boundary proof plus structured successful-mutation audit, not recreating the interceptor from scratch.
+
+комментарий для Антигравити: механизм не идеален. Применить `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
+`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`: не кодь старую задачу "создать фильтр с нуля".
+Сначала закрепи whole authorization boundary for `GoogleAiResourceController`: MVC/integration denial tests for
+all five mutating endpoints, fail-closed blank-key test, refutation by removing `WebConfig` registration,
+deploy/runbook key probe, and structured audit trace for successful AI-resource mutations. Сохрани safe GET vs
+mutation distinction, path normalization in `listVideoAssets`, and current fail-closed owner-service semantics.

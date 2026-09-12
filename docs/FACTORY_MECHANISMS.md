@@ -8785,117 +8785,122 @@ missing-key, unavailable, no-video, write-error and ok statuses plus metadata/me
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, common background
 `ACP-061 Hoare Triple Review`.
 
-# XXXVIII. Вход к ресурсам модели: пять изменяющих запросов на открытом пути
+# XXXVIII. Вход к ресурсам модели: изменяющие запросы под заслоном
 
-* **Имена механизма или семейства** — `GoogleAiResourceController`, `ApiAuthorizationInterceptor`,
-  `WebConfig`, `GoogleAiResourceService`, `DesignAssetService`, `VideoAssetService`,
-  `ProjectOperationalContextService`, `ProjectRepository`, `StitchClient`.
+## Семейство: AI resource authorization boundary and manual model-command surface
 
-* **Философский паттерн** — `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, Джозеф Раз, `BARCAN-TAG-10`,
-  publication anchor *Practical Reason and Norms / The Authority of Law*, defect `D006 Authorization
-  ambiguity`: пять изменяющих входов к модели должны иметь явную матрицу разрешённого и запрещённого.
-  `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, Ахилле Варци, `BARCAN-TAG-01`, anchor *Parts and Places / formal
-  ontology of boundaries and spatial parts*, также `D006`: граница полномочия должна находиться не в
-  намерении контроллера, а в исполнимой точке смены власти. Фоново применяются
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` и `ACP-061`.
+**Имена механизмов и частей:** `GoogleAiResourceController`, `ApiAuthorizationInterceptor`, `WebConfig`,
+`GoogleAiResourceService`, `DesignAssetService`, `VideoAssetService`, `ProjectOperationalContextService`,
+`ProjectRepository`, `StitchClient`, `ApiAuthorizationInterceptorTest`, `GoogleAiResourceControllerTest`.
 
-* **Связи** — `GoogleAiResourceController` держит HTTP-поверхность `/api/ai/resources`. Изменяющие входы:
-  `POST /design-drafts-cleanup`, `POST /probe-models`, `POST /design-assets`,
-  `POST /stitch-design-system`, `POST /video-assets`. Они вызывают удаление черновиков в
-  `DesignAssetService`, опрос/работу внешней модели через `GoogleAiResourceService`, создание Stitch
-  design system через `StitchClient`, порождение дизайн- и видео-активов через `DesignAssetService` и
-  `VideoAssetService`, а проектную идентичность берут из `ProjectRepository`. `WebConfig` регистрирует
-  `ApiAuthorizationInterceptor` на `/api/**` и `/internal/**`, поэтому прикладная граница стоит перед
-  контроллером.
+**Философский паттерн:** primary `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, defect `D006 Authorization ambiguity`:
+every actor's right/duty around model-spend and destructive AI-resource commands must be executable, not
+implicit. Supporting patterns: `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` for the MVC handoff where authority changes
+hands, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for current source/test evidence over stale live probes,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for safe-read versus mutation levels, and `ACP-061 Hoare Triple
+Review`.
 
-* **Идеальная форма** — любой изменяющий запрос к ресурсам модели исполняется только от оператора с
-  действующим ключом `X-API-Key` или `Authorization: Bearer`. Отсутствующий ключ даёт `401`, неверный ключ
-  даёт `403`, незаданная серверная настройка `ENEIK_SECURITY_API_KEY` закрывает все изменяющие операции
-  fail-closed. Безопасные чтения остаются чтениями и не запускают удаление, платную генерацию или создание
-  внешних ресурсов. Новый изменяющий путь под `/api/**` по умолчанию попадает под тот же запрет.
+**Связи, вызовы и взаимодействия:** `GoogleAiResourceController` exposes `/api/ai/resources`. Mutating endpoints
+are `POST /design-drafts-cleanup`, `POST /probe-models`, `POST /design-assets`,
+`POST /stitch-design-system` and `POST /video-assets`. They call `DesignAssetService`,
+`GoogleAiResourceService`, `StitchClient`, `VideoAssetService`, `ProjectOperationalContextService` and
+`ProjectRepository`. `WebConfig` registers `ApiAuthorizationInterceptor` on `/api/**` and `/internal/**`, so the
+authorization boundary is before controller dispatch. Safe GET endpoints remain read paths, including resources,
+design consistency audit, Stitch tools debug and video asset listing.
 
-* **Граница** — этот механизм решает только допуск к HTTP-командам ресурса модели и передаёт разрешённую
-  команду владельцу действия. Он не решает качество картинки, выбор модели, дизайн-систему, путь хранения
-  видео или судьбу Gemini-переноса; это границы соседних механизмов.
+**Идеальная форма:** every mutating model-resource request is executed only for an operator with valid
+`X-API-Key` or `Authorization: Bearer`. Missing credentials return `401`; wrong credentials return `403`; absent
+server `ENEIK_SECURITY_API_KEY` disables mutating operations fail-closed. Valid credentials allow dispatch to the
+owner service only after MVC interceptor enforcement. Successful mutations leave an audit trace identifying actor
+class, project id, endpoint and outcome. Safe reads do not spend model resources, delete drafts or create external
+state.
 
-* **Входы** — HTTP-метод и URI; заголовки `X-API-Key` и `Authorization`; свойство
-  `eneik.security.api-key`, заполненное из `ENEIK_SECURITY_API_KEY`; `projectId`; тело запроса с basename,
-  brief, asset type, quality, Google Search flag, design-system fields and fonts/colors.
+**Граница:** this family decides HTTP authorization and manual dispatch for AI-resource commands. It does not
+judge model quality, design-system correctness, video-generation semantics, RAG context quality, delivery
+acceptance, or Gemini migration scope. Owner services keep those domains. The controller may map request bodies
+and project ids, but it must not become the owner of external-resource policy.
 
-* **Выходы** — отказ `401/403` с JSON-кодом причины до входа в контроллер; либо вызов соответствующего
-  сервиса и HTTP-ответ контроллера: `404` при неизвестном проекте, `200` с результатом cleanup/probe/generate
-  при разрешённом запросе.
+**Входы:** HTTP method and URI, `X-API-Key`, `Authorization`, configured `eneik.security.api-key`, remote address
+for `/internal/**`, `projectId`, cleanup basenames, design/video brief, asset type, quality, Google Search flag,
+Stitch design-system fields, project slug and filesystem root for video asset listing.
 
-* **Владельцы истины и состояния** — `ApiAuthorizationInterceptor` владеет правилом допуска; `WebConfig`
-  владеет включением правила в MVC chain; `application.properties` и окружение владеют серверным ключом;
-  `ProjectRepository` владеет существованием проекта; `DesignAssetService` владеет черновиками и дизайн-
-  активами; `VideoAssetService` владеет видео-активами; `GoogleAiResourceService` владеет матрицей и probe
-  модели; `StitchClient` владеет внешним Stitch-действием.
+**Выходы:** JSON `401/403` denial before controller entry; allowed dispatch to service methods; `404` for unknown
+project; `200` cleanup/probe/design/stitch/video/list responses; empty list for unsafe or absent video directory;
+security denial logs.
 
-* **Инварианты** — изменяющий `/api/**` не проходит без полномочия; loopback не является обходом для
-  изменяющих операций; пустая серверная настройка не открывает путь, а закрывает его; удаление черновиков
-  и расход внешней модели не запускаются до проверки полномочия; GET-операции не должны тайно становиться
-  мутациями.
+**Владельцы истины и состояния:** `ApiAuthorizationInterceptor` owns allow/deny logic; `WebConfig` owns MVC
+registration; environment/application properties own the server key; `ProjectRepository` owns project identity;
+`DesignAssetService` owns design draft deletion and design assets; `VideoAssetService` owns generated video
+assets; `GoogleAiResourceService` owns model resource matrix/probe/calls; `StitchClient` owns Stitch system
+creation; filesystem under `./data/video-assets` owns listable video assets.
 
-* **Сильная форма сейчас** — старый дефект "фильтра нет" уже не соответствует текущему коду:
-  `ApiAuthorizationInterceptor` реализует `HandlerInterceptor`, `WebConfig.addInterceptors` вешает его на
-  `/api/**` and `/internal/**`, `application.properties` вводит `eneik.security.api-key`, а
-  `ApiAuthorizationInterceptorTest` проверяет все пять AI mutation paths: без ключа `401`, с неверным ключом
-  `403`, с валидным ключом разрешение, с пустой серверной настройкой `403`. Тот же тест сохраняет публичные
-  safe GET для `/api/ai/resources`, `/design-consistency-audit`, `/stitch-tools-debug` and
-  `/video-assets/{projectSlug}`.
+**Инварианты:**
+- mutating `/api/**` cannot pass without valid operator credential;
+- loopback is not an exemption for mutating `/api/**`;
+- blank server key denies, not allows, mutation;
+- safe GET stays read-only and public unless separately proven unsafe;
+- `listVideoAssets` normalizes and rejects paths outside `./data/video-assets`;
+- controller never calls owner services before authorization has passed;
+- project-scoped mutations return `404` when `ProjectRepository` cannot find the project;
+- authorization repair must not rewrite design/video/model generation semantics.
 
-* **Слабая/неидеальная форма сейчас** — доказательство находится на уровне interceptor-unit теста и
-  регистрации `WebConfig`, но в найденных тестах нет `MockMvc`/Spring integration проверки, что именно
-  `GoogleAiResourceController` в собранном приложении недостижим без ключа. Также не предъявлен свежий
-  живой probe текущего deploy: исторический `200` от 7 сентября теперь считается stale evidence, а не
-  текущим дефектом. Успешные мутации допускаются по общему API key, без отдельного audit record
-  actor/project/action для AI-resource commands.
+**Сильная форма сейчас:** the old "five open mutating endpoints" title is stale. Current source has
+`ApiAuthorizationInterceptor` as a `HandlerInterceptor`, `WebConfig.addInterceptors` attaches it to `/api/**`
+and `/internal/**`, and `application.properties` maps `eneik.security.api-key` from `ENEIK_SECURITY_API_KEY`.
+`ApiAuthorizationInterceptorTest` covers the five AI mutation paths with missing credentials `401`, invalid
+credentials `403`, valid key allowed, and blank server key `403`. It also preserves safe read-only GET behavior.
+`GoogleAiResourceControllerTest` covers video asset path traversal by `..` and nested `../../etc`, and the
+controller normalizes the path and checks `startsWith(root)`.
 
-* **Что сделать для идеала** — добавить focused MVC/integration fixture для
-  `POST /api/ai/resources/probe-models`, `/design-drafts-cleanup`, `/design-assets`,
-  `/stitch-design-system`, `/video-assets`: no credentials -> `401`, invalid credentials -> `403`, valid key
-  -> доходит до mocked owner service. Добавить проверку, что удаление `ApiAuthorizationInterceptor` из
-  `WebConfig` краснит этот fixture. Добавить deploy/runbook check, что production задаёт
-  `ENEIK_SECURITY_API_KEY`; если ключ не задан, оператор видит, что mutation path закрыт. Для успешных AI
-  mutations добавить audit trace с actor/key class, project id, endpoint and outcome before changing
-  generation semantics.
+**Слабая / неидеальная форма:** the boundary proof is still mostly interceptor-unit plus registration evidence.
+Current test grep finds no `MockMvc`/Spring integration test proving the assembled `GoogleAiResourceController`
+is unreachable without a key. Successful AI mutations still have no separate audit trace with actor class,
+project id, endpoint and outcome. A deploy/runbook probe proving current `ENEIK_SECURITY_API_KEY` behavior is
+not recorded in this section, so historical unauthenticated `200` probes remain stale history rather than a
+current fact.
 
-* **Что не трогать** — не чинить старую историю добавлением `spring-boot-starter-security` как самоцелью:
-  текущая исполнимая граница уже находится в MVC interceptor. Не делать loopback exception для mutating
-  `/api/**`. Не смешивать authorization fix с поведением `DesignAssetService`, `VideoAssetService`,
-  `GoogleAiResourceService` or `StitchClient`. Не закрывать safe GET только потому, что они лежат рядом с
-  мутациями; сначала отдельно доказать, что конкретный GET раскрывает секрет или меняет состояние.
+**Что надо сделать для идеала:** add focused MVC/integration tests for the five mutating controller endpoints:
+no credentials -> `401`, invalid credentials -> `403`, blank configured server key -> `403`, valid key reaches a
+mocked owner service. Add a refutation variant where removing `ApiAuthorizationInterceptor` registration from
+`WebConfig` makes the boundary test fail. Add an operator-safe deploy/runbook check that proves production
+mutation is either denied without a key or fail-closed when no server key is configured. Add an audit record for
+successful AI-resource mutations before changing generation behavior.
 
-* **Опровержение** — любой текущий `POST/PUT/PATCH/DELETE /api/ai/resources/**` без ключа достигает owner
-  service or returns `2xx`; удаление регистрации interceptor из `WebConfig` не ломает boundary test; пустой
-  `ENEIK_SECURITY_API_KEY` разрешает mutation; живой внешний `POST /api/ai/resources/probe-models` без ключа
-  возвращает не отказ.
+**Что не трогать:** do not rebuild this as a broad Spring Security migration just to look safer; the executable
+boundary currently lives in MVC interceptor and must be preserved until a whole-boundary replacement is proven.
+Do not add loopback exceptions for mutating `/api/**`. Do not close safe GET merely because it shares the
+controller. Do not mix authorization work with `DesignAssetService`, `VideoAssetService`,
+`GoogleAiResourceService` or `StitchClient` semantics. Do not remove path normalization in `listVideoAssets`.
 
-* **Критерий закрытия** — focused interceptor tests, MVC/integration tests and one safe live/fixture probe
-  all show denial for unauthenticated AI-resource mutations, denial for invalid key, fail-closed behavior
-  when server key is absent, and successful dispatch only with valid operator credential; successful mutation
-  leaves an audit trace that identifies actor, project, endpoint and outcome.
+**Опровержение / проверка:** this record is false if any current `POST/PUT/PATCH/DELETE /api/ai/resources/**`
+without key reaches an owner service or returns `2xx`; if blank `ENEIK_SECURITY_API_KEY` allows mutation; if
+removing `WebConfig` interceptor registration does not fail the MVC boundary test; if `listVideoAssets("..")`
+lists outside `./data/video-assets`; or if successful mutation already writes a structured actor/project/
+endpoint/outcome audit trace that this record missed.
 
-* **Свидетельства записи** — `nl -ba src/main/java/com/eneik/production/controllers/ai/GoogleAiResourceController.java | sed -n '27,146p'`;
-  `nl -ba src/main/java/com/eneik/production/security/ApiAuthorizationInterceptor.java | sed -n '21,176p'`;
-  `nl -ba src/main/java/com/eneik/production/config/WebConfig.java | sed -n '55,59p'`;
-  `nl -ba src/main/resources/application.properties | sed -n '146,148p'`;
-  `nl -ba src/test/java/com/eneik/production/security/ApiAuthorizationInterceptorTest.java | sed -n '26,190p'`;
-  `nl -ba src/test/java/com/eneik/production/controllers/ai/GoogleAiResourceControllerTest.java | sed -n '37,52p'`;
-  `grep -RIn 'GoogleAiResourceController\|probe-models\|design-drafts-cleanup\|stitch-design-system\|video-assets\|design-assets\|ApiAuthorizationInterceptor' src/test/java src/main/java`.
+**Критерий закрытия:** the mechanism is ideal when focused MVC/integration tests prove denied/allowed/fail-closed
+behavior on the assembled controller, path traversal stays rejected, production/runbook evidence shows the key
+boundary is configured or fail-closed, and successful mutations leave structured audit trace without weakening
+safe-read behavior.
 
-* **Текущий статус** — механизм частично силён: старое описание "открытый путь без фильтра" устарело, но
-  идеал ещё не закрыт без MVC/deploy probe and audit trail for successful mutations.
+**Доказательства:** `GoogleAiResourceController.java:27-78,80-99,102-145,148-168`;
+`ApiAuthorizationInterceptor.java:21-31,45-80,109-133,136-176`; `WebConfig.java:55-59,71-75`;
+`application.properties:146-148`; `ApiAuthorizationInterceptorTest.java:26-190,192-219`;
+`GoogleAiResourceControllerTest.java:37-52`; grep evidence: no `MockMvc` test for
+`GoogleAiResourceController`, no structured AI-resource audit trace beyond security denial logs, and philosopher
+rows `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
 
-* **комментарий для Антигравити:** механизм не идеален. Не кодь старую задачу "создать фильтр с нуля":
-  current `ApiAuthorizationInterceptor` already guards mutating `/api/**`, including the five AI-resource
-  endpoints. Next correct work is boundary proof, not endpoint rewrite: add MVC/integration denial tests for
-  this controller, prove fail-closed `ENEIK_SECURITY_API_KEY` behavior in deploy/runbook, and add audit trace
-  for successful AI-resource mutations. Preserve safe GET vs mutation distinction and do not weaken
-  `DesignAssetService`/`VideoAssetService` fail-closed semantics. Philosophy:
-  `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`.
+**Текущий статус:** не идеален: the mutating paths are no longer openly unguarded, but the full assembled
+controller boundary and successful-mutation audit trail are not yet proved.
+
+**комментарий для Антигравити:** механизм не идеален. Применить `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
+`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`: не кодь старую задачу "создать фильтр с нуля".
+Сначала закрепи whole authorization boundary for `GoogleAiResourceController`: MVC/integration denial tests for
+all five mutating endpoints, fail-closed blank-key test, refutation by removing `WebConfig` registration,
+deploy/runbook key probe, and structured audit trace for successful AI-resource mutations. Сохрани safe GET vs
+mutation distinction, path normalization in `listVideoAssets`, and current fail-closed owner-service semantics.
 
 # XXXIX. Метрики качества: два счёта одного слова, 388 против нуля
 
