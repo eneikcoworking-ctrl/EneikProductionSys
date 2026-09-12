@@ -101,6 +101,11 @@ public class OperationalTruthService {
                 .filter(d -> "carrier".equalsIgnoreCase(d.getSourceComponent())
                         || (d.getDescription() != null && d.getDescription().contains("carrier=true")))
                 .count();
+        long namespaceRefusals = allRecentDefects.stream()
+                .filter(d -> "COMPILER".equalsIgnoreCase(d.getCategory())
+                        && ("PRODUCT_NAMESPACE_VIOLATION".equals(d.getDefectType())
+                            || "UNKNOWN_PRODUCT_NAMESPACE".equals(d.getDefectType())))
+                .count();
 
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(projectId);
         String systemStatus = systemStallStatus(systemStatusService.getStatus(projectId));
@@ -130,11 +135,11 @@ public class OperationalTruthService {
                 .collect(Collectors.toSet());
 
         OperationalTruthDto.Delivery delivery = delivery(readiness);
-        OperationalTruthDto.ActiveFlow activeFlow = activeFlow(tasks, wishlist, sessions, carrierDeaths);
+        OperationalTruthDto.ActiveFlow activeFlow = activeFlow(tasks, wishlist, sessions, carrierDeaths, namespaceRefusals);
         OperationalTruthDto.EvidenceSummary evidence = evidence(tasks, reviews, liveSessionIds);
         OperationalTruthDto.DefectSummary defects = defects(recentDefects);
         List<OperationalTruthDto.Blocker> blockers = blockers(
-                tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds, carrierDeaths);
+                tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds, carrierDeaths, namespaceRefusals);
         List<OperationalTruthDto.InvariantStatus> invariants = invariants(
                 readiness, tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask,
                 reviewsBySession, recentDefects, evidence);
@@ -285,6 +290,14 @@ public class OperationalTruthService {
                                                       List<WishlistEntity> wishlist,
                                                       List<JulesSessionEntity> sessions,
                                                       long carrierDeaths) {
+        return activeFlow(tasks, wishlist, sessions, carrierDeaths, 0L);
+    }
+
+    private OperationalTruthDto.ActiveFlow activeFlow(List<TaskEntity> tasks,
+                                                      List<WishlistEntity> wishlist,
+                                                      List<JulesSessionEntity> sessions,
+                                                      long carrierDeaths,
+                                                      long namespaceRefusals) {
         long queued = countStatus(tasks, TaskStatus.queued);
         long active = tasks.stream().filter(task -> Set.of(TaskStatus.claimed, TaskStatus.in_progress).contains(task.getStatus())).count();
         long review = tasks.stream().filter(task -> Set.of(TaskStatus.pending_review, TaskStatus.review).contains(task.getStatus())).count();
@@ -305,6 +318,9 @@ public class OperationalTruthService {
         }
         if (carrierDeaths > 0) {
             narrative.add(carrierDeaths + " carrier task(s) exhausted dispatch budget in the last 24h.");
+        }
+        if (namespaceRefusals > 0) {
+            narrative.add(namespaceRefusals + " task(s) have refused file scope due to product namespace violations or unestablished namespace.");
         }
         if (narrative.isEmpty()) {
             narrative.add("No active flow is visible for this project.");
@@ -403,11 +419,29 @@ public class OperationalTruthService {
                                                        Map<UUID, List<PrReviewEntity>> reviewsBySession,
                                                        Set<UUID> liveSessionIds,
                                                        long carrierDeaths) {
+        return blockers(tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds, carrierDeaths, 0L);
+    }
+
+    private List<OperationalTruthDto.Blocker> blockers(List<TaskEntity> tasks,
+                                                       List<WishlistEntity> wishlist,
+                                                       List<PrReviewEntity> reviews,
+                                                       String systemStatus,
+                                                       DuplicateContent duplicateContent,
+                                                       Map<UUID, List<JulesSessionEntity>> sessionsByTask,
+                                                       Map<UUID, List<PrReviewEntity>> reviewsBySession,
+                                                       Set<UUID> liveSessionIds,
+                                                       long carrierDeaths,
+                                                       long namespaceRefusals) {
         List<OperationalTruthDto.Blocker> blockers = new ArrayList<>();
         if (carrierDeaths > 0) {
             blockers.add(new OperationalTruthDto.Blocker(
                     "carrier_deaths", "medium", "carrier", "Carrier tasks exhausted dispatch budget",
                     carrierDeaths + " carrier task(s) exhausted dispatch budget in the last 24h."));
+        }
+        if (namespaceRefusals > 0) {
+            blockers.add(new OperationalTruthDto.Blocker(
+                    "namespace_refusal", "high", "compiler", "Product namespace violation",
+                    namespaceRefusals + " task(s) had file scope refused due to product namespace violations in the last 24h."));
         }
         if (isTrustBlockingSystemStatus(systemStatus)) {
             blockers.add(new OperationalTruthDto.Blocker(

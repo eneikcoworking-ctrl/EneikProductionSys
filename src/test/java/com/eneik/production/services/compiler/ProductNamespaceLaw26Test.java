@@ -287,4 +287,176 @@ class ProductNamespaceLaw26Test {
                 anyString(), eq(1.0)
         );
     }
+
+    @Test
+    @DisplayName("residual 2: unknown namespace produces third outcome UNKNOWN_NAMESPACE, does not pass silently")
+    void unknownNamespace_evaluatesAsUnknownNamespaceThirdOutcome() {
+        String javaPath = "src/main/java/com/foreign/vendor/Service.java";
+
+        // Pure audit check
+        TechnicalLeadCompiler.NamespaceAuditResult result = TechnicalLeadCompiler.auditPathsAgainstNamespace(
+                null, false, false, List.of(javaPath)
+        );
+
+        assertThat(result.status())
+                .as("when product namespace is unconfigured, Java paths must yield UNKNOWN_NAMESPACE outcome")
+                .isEqualTo(TechnicalLeadCompiler.NamespaceAuditStatus.UNKNOWN_NAMESPACE);
+        assertThat(result.offendingPaths())
+                .as("unverified Java paths must be returned as offending, not passed silently")
+                .containsExactly(javaPath);
+        assertThat(result.reason())
+                .contains("Product namespace is not established");
+
+        // pathsOutsideProductNamespace must NOT be empty
+        List<String> offending = TechnicalLeadCompiler.pathsOutsideProductNamespace(
+                null, false, false, List.of(javaPath)
+        );
+        assertThat(offending).containsExactly(javaPath);
+    }
+
+    @Test
+    @DisplayName("residual 2: non-Java paths with unknown product namespace remain admissible")
+    void unknownNamespace_allowsNonJavaPaths() {
+        List<String> nonJavaPaths = List.of(
+                "docs/architecture/adr-001.md",
+                "package.json",
+                "frontend/src/components/View.svelte"
+        );
+
+        TechnicalLeadCompiler.NamespaceAuditResult result = TechnicalLeadCompiler.auditPathsAgainstNamespace(
+                null, false, false, nonJavaPaths
+        );
+
+        assertThat(result.status())
+                .as("non-Java files do not require Java package namespace and are admissible")
+                .isEqualTo(TechnicalLeadCompiler.NamespaceAuditStatus.ADMISSIBLE);
+        assertThat(result.offendingPaths()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("residual 2 & 1: guard refuses unknown namespace, marks blocked and surfaces UNKNOWN_PRODUCT_NAMESPACE")
+    void guardRefusesUnknownNamespaceAndRecordsToJournal() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setSlug("foreign-repo");
+        project.setProductNamespace(null); // Unconfigured
+
+        DefectJournalService defectJournal = mock(DefectJournalService.class);
+        TechnicalLeadCompiler compiler = new TechnicalLeadCompiler(
+                mock(WishlistRepository.class),
+                mock(TaskRepository.class),
+                mock(ProjectRepository.class),
+                mock(RoleRepository.class),
+                mock(ProjectGenerationStateRepository.class),
+                mock(GateOrchestrator.class),
+                mock(BottleneckAwarePriorityService.class),
+                new ObjectMapper(),
+                mock(ProjectHotspotFileRepository.class),
+                mock(FeatureService.class),
+                mock(GitHubPullRequestService.class),
+                mock(ProjectFileClaimRepository.class),
+                mock(GeminiContextService.class),
+                defectJournal
+        );
+
+        UUID featureId = UUID.randomUUID();
+        String javaPath = "src/main/java/io/acme/shop/OrderService.java";
+
+        TechnicalLeadCompiler.CollisionGuardResult result = compiler.applyCrossEpicCollisionGuardForTest(
+                project, featureId, "BARCAN-TAG-02", List.of(javaPath)
+        );
+
+        assertThat(result.namespaceRefusal()).isTrue();
+        assertThat(result.namespaceStatus())
+                .isEqualTo(TechnicalLeadCompiler.NamespaceAuditStatus.UNKNOWN_NAMESPACE);
+        assertThat(result.refusedPaths()).containsExactly(javaPath);
+        assertThat(result.paths()).isEmpty();
+        assertThat(result.collisionNotes()).contains("PRODUCT NAMESPACE UNKNOWN");
+
+        verify(defectJournal).recordDefect(
+                eq(project.getId()),
+                eq(featureId),
+                eq(6),
+                eq("CRITICAL"),
+                eq("COMPILER"),
+                eq("TechnicalLeadCompiler"),
+                eq("UNKNOWN_PRODUCT_NAMESPACE"),
+                anyString(),
+                eq(1.0)
+        );
+    }
+
+    @Test
+    @DisplayName("residual 3: resolveProductNamespace returns null when unconfigured, never invents static com.eneik.<slug>")
+    void resolveProductNamespace_doesNotInventStaticNamespace() {
+        ProjectEntity project = new ProjectEntity();
+        project.setSlug("my-custom-service");
+        project.setRepositoryName("acme/my-custom-service");
+        project.setProductNamespace(null);
+
+        assertThat(project.resolveProductNamespace())
+                .as("must return null rather than fabricating com.eneik.mycustomservice")
+                .isNull();
+
+        project.setProductNamespace("io.acme.custom");
+        assertThat(project.resolveProductNamespace())
+                .isEqualTo("io.acme.custom");
+    }
+
+    @Test
+    @DisplayName("residual 1: determineFileScope refuses scope and marks violation when input contains foreign path")
+    void determineFileScope_refusesForeignScopeAndReturnsEmptyJson() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setSlug("test-fiftieth");
+        project.setProductNamespace("com.eneik.epidemiology");
+
+        ProjectHotspotFileRepository hotspotRepo = mock(ProjectHotspotFileRepository.class);
+        com.eneik.production.models.persistence.ProjectHotspotFileEntity hotspot =
+                new com.eneik.production.models.persistence.ProjectHotspotFileEntity();
+        hotspot.setFilePath("src/main/java/com/eneik/production/services/InternalService.java");
+        when(hotspotRepo.findByProjectId(project.getId())).thenReturn(List.of(hotspot));
+
+        DefectJournalService defectJournal = mock(DefectJournalService.class);
+        TechnicalLeadCompiler compiler = new TechnicalLeadCompiler(
+                mock(WishlistRepository.class),
+                mock(TaskRepository.class),
+                mock(ProjectRepository.class),
+                mock(RoleRepository.class),
+                mock(ProjectGenerationStateRepository.class),
+                mock(GateOrchestrator.class),
+                mock(BottleneckAwarePriorityService.class),
+                new ObjectMapper(),
+                hotspotRepo,
+                mock(FeatureService.class),
+                mock(GitHubPullRequestService.class),
+                mock(ProjectFileClaimRepository.class),
+                mock(GeminiContextService.class),
+                defectJournal
+        );
+
+        TechnicalLeadCompiler.FileScopeResult result = compiler.determineFileScopeForTest(
+                project, "BARCAN-TAG-02", "integration hotspot check", true, false, UUID.randomUUID()
+        );
+
+        assertThat(result.namespaceRefusal()).isTrue();
+        assertThat(result.namespaceStatus()).isEqualTo(TechnicalLeadCompiler.NamespaceAuditStatus.VIOLATION);
+        assertThat(result.finalPaths()).doesNotContain("src/main/java/com/eneik/production/services/InternalService.java");
+    }
+
+    @Test
+    @DisplayName("residual 1: dispatch guard blocks queued tasks whose payload carries refused file_scope_status")
+    void dispatchGuard_blocksTaskWithRefusedScopeStatus() {
+        ObjectMapper mapper = new ObjectMapper();
+        com.fasterxml.jackson.databind.node.ObjectNode payload = mapper.createObjectNode();
+        payload.put("file_scope_status", "REFUSED_PRODUCT_NAMESPACE_VIOLATION");
+
+        com.eneik.production.models.persistence.TaskEntity task = new com.eneik.production.models.persistence.TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.initializeStatus(com.eneik.production.models.persistence.TaskStatus.queued);
+        task.setPayload(payload);
+
+        assertThat(task.getPayload().get("file_scope_status").asText())
+                .isEqualTo("REFUSED_PRODUCT_NAMESPACE_VIOLATION");
+    }
 }

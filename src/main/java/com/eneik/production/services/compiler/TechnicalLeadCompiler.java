@@ -62,25 +62,40 @@ public class TechnicalLeadCompiler {
         return offending;
     }
 
+    public enum NamespaceAuditStatus {
+        ADMISSIBLE,
+        VIOLATION,
+        UNKNOWN_NAMESPACE
+    }
+
+    public record NamespaceAuditResult(
+            NamespaceAuditStatus status,
+            java.util.List<String> offendingPaths,
+            String reason
+    ) {}
+
     /**
-     * Identifies paths that fall outside the product's declared namespace or stack (Law 26 / D006 / INDEXICAL_CONTEXT_LOCK).
+     * Three-outcome audit of paths against the product's declared namespace or stack (Law 26 / D006 / INDEXICAL_CONTEXT_LOCK):
+     * - ADMISSIBLE: all paths lie within the declared product namespace and stack (or are stack-neutral).
+     * - VIOLATION: paths explicitly violate declared namespace/stack (factory package root, foreign stack, Flyway without Flyway, or Java path outside product package).
+     * - UNKNOWN_NAMESPACE: paths require a Java package namespace, but the product namespace has not been established on the project (no silent pass).
      * Pure: no I/O, testable directly with mock or literal arguments.
      */
-    public static java.util.List<String> pathsOutsideProductNamespace(
+    public static NamespaceAuditResult auditPathsAgainstNamespace(
             String productNamespace,
             boolean hasFlyway,
             boolean isNextJsOrNode,
             java.util.List<String> paths) {
         if (paths == null || paths.isEmpty()) {
-            return java.util.List.of();
+            return new NamespaceAuditResult(NamespaceAuditStatus.ADMISSIBLE, java.util.List.of(), "Empty scope is admissible");
         }
-        java.util.List<String> offending = new java.util.ArrayList<>();
-        String factorySegment = "/" + FACTORY_PACKAGE_ROOT.replace('.', '/') + "/";
+        java.util.List<String> violating = new java.util.ArrayList<>();
+        java.util.List<String> unverified = new java.util.ArrayList<>();
 
-        String productPkgDir = null;
-        if (productNamespace != null && !productNamespace.isBlank()) {
-            productPkgDir = productNamespace.trim().replace('.', '/');
-        }
+        String factorySegment = "/" + FACTORY_PACKAGE_ROOT.replace('.', '/') + "/";
+        String productPkgDir = (productNamespace != null && !productNamespace.isBlank())
+                ? productNamespace.trim().replace('.', '/')
+                : null;
 
         for (String path : paths) {
             if (path == null || path.isBlank()) {
@@ -90,13 +105,13 @@ public class TechnicalLeadCompiler {
 
             // 1. Factory package root violation (Law 26 core)
             if (("/" + normalized).contains(factorySegment)) {
-                offending.add(path);
+                violating.add(path);
                 continue;
             }
 
             // 2. Flyway migration without Flyway support
             if (!hasFlyway && (normalized.startsWith(FLYWAY_MIGRATION_DIR + "/") || normalized.equals(FLYWAY_MIGRATION_DIR))) {
-                offending.add(path);
+                violating.add(path);
                 continue;
             }
 
@@ -104,46 +119,82 @@ public class TechnicalLeadCompiler {
                 // Java / Spring Boot stack
                 // Next.js App router & Prisma paths are foreign to a Java stack
                 if (normalized.startsWith("src/app/") || normalized.startsWith("prisma/")) {
-                    offending.add(path);
+                    violating.add(path);
                     continue;
                 }
 
-                // If product package directory is known, check Java source/test paths
-                if (productPkgDir != null) {
-                    if (normalized.startsWith("src/main/java/") && normalized.endsWith(".java")) {
-                        String prefix = "src/main/java/" + productPkgDir + "/";
-                        if (!normalized.startsWith(prefix)) {
-                            offending.add(path);
+                // Java source/test paths: require declared product package
+                boolean isJavaPath = (normalized.startsWith("src/main/java/") || normalized.startsWith("src/test/java/"))
+                        && normalized.endsWith(".java");
+                if (isJavaPath) {
+                    if (productPkgDir != null) {
+                        String prefixMain = "src/main/java/" + productPkgDir + "/";
+                        String prefixTest = "src/test/java/" + productPkgDir + "/";
+                        if (!normalized.startsWith(prefixMain) && !normalized.startsWith(prefixTest)) {
+                            violating.add(path);
                             continue;
                         }
-                    } else if (normalized.startsWith("src/test/java/") && normalized.endsWith(".java")) {
-                        String prefix = "src/test/java/" + productPkgDir + "/";
-                        if (!normalized.startsWith(prefix)) {
-                            offending.add(path);
-                            continue;
-                        }
+                    } else {
+                        // Product namespace is NOT configured / unknown
+                        unverified.add(path);
+                        continue;
                     }
                 }
             } else {
                 // JavaScript / TypeScript (Next.js / Node) stack
                 // Java source/test/resources paths are foreign to a Node/Next.js stack
                 if (normalized.startsWith("src/main/java/") || normalized.startsWith("src/test/java/") || normalized.startsWith("src/main/resources/")) {
-                    offending.add(path);
+                    violating.add(path);
                     continue;
                 }
             }
         }
-        return offending;
+
+        if (!violating.isEmpty()) {
+            java.util.List<String> allOffending = new java.util.ArrayList<>(violating);
+            allOffending.addAll(unverified);
+            return new NamespaceAuditResult(
+                    NamespaceAuditStatus.VIOLATION,
+                    allOffending,
+                    "Paths violate product namespace or stack: " + violating
+            );
+        }
+
+        if (!unverified.isEmpty()) {
+            return new NamespaceAuditResult(
+                    NamespaceAuditStatus.UNKNOWN_NAMESPACE,
+                    unverified,
+                    "Product namespace is not established for project; cannot verify Java file scope: " + unverified
+            );
+        }
+
+        return new NamespaceAuditResult(
+                NamespaceAuditStatus.ADMISSIBLE,
+                java.util.List.of(),
+                "All paths are admissible within product namespace and stack"
+        );
     }
 
-    public static java.util.List<String> pathsOutsideProductNamespace(ProjectEntity project, java.util.List<String> paths) {
+    public static java.util.List<String> pathsOutsideProductNamespace(
+            String productNamespace,
+            boolean hasFlyway,
+            boolean isNextJsOrNode,
+            java.util.List<String> paths) {
+        return auditPathsAgainstNamespace(productNamespace, hasFlyway, isNextJsOrNode, paths).offendingPaths();
+    }
+
+    public static NamespaceAuditResult auditPathsAgainstNamespace(ProjectEntity project, java.util.List<String> paths) {
         if (paths == null || paths.isEmpty()) {
-            return java.util.List.of();
+            return new NamespaceAuditResult(NamespaceAuditStatus.ADMISSIBLE, java.util.List.of(), "Empty scope is admissible");
         }
         String productNamespace = project != null ? project.resolveProductNamespace() : null;
         boolean hasFlyway = isFlywayConfigured(project);
         boolean isNextJs = isNextJsConfigured(project);
-        return pathsOutsideProductNamespace(productNamespace, hasFlyway, isNextJs, paths);
+        return auditPathsAgainstNamespace(productNamespace, hasFlyway, isNextJs, paths);
+    }
+
+    public static java.util.List<String> pathsOutsideProductNamespace(ProjectEntity project, java.util.List<String> paths) {
+        return auditPathsAgainstNamespace(project, paths).offendingPaths();
     }
 
     static boolean isFlywayConfigured(ProjectEntity project) {
@@ -599,8 +650,17 @@ public class TechnicalLeadCompiler {
             task.setDescription(task.getDescription() + "\n\n" + fileScopeResult.collisionNotes());
         }
         if (fileScopeResult.namespaceRefusal()) {
-            payload.put("file_scope_status", "REFUSED_PRODUCT_NAMESPACE_VIOLATION");
+            String statusValue = fileScopeResult.namespaceStatus() == NamespaceAuditStatus.UNKNOWN_NAMESPACE
+                    ? "UNKNOWN_PRODUCT_NAMESPACE"
+                    : "REFUSED_PRODUCT_NAMESPACE_VIOLATION";
+            payload.put("file_scope_status", statusValue);
             payload.set("refused_paths", objectMapper.valueToTree(fileScopeResult.refusedPaths()));
+
+            // Stop task from being queued/dispatched into the factory with an empty or refused scope
+            task.setStatus(TaskStatus.blocked);
+            task.setJulesDispatchStatus("BLOCKED: file scope refused (" + statusValue + ")");
+        } else {
+            payload.put("file_scope_status", "VALID");
         }
 
         TaskEntity saved = taskRepository.save(task);
@@ -953,18 +1013,22 @@ public class TechnicalLeadCompiler {
                 }
             } else {
                 // Java Spring Boot structure fallback: strictly bound to product's own namespace and stack
-                String productNamespace = project != null ? project.resolveProductNamespace() : "com.eneik.product";
-                String productPkgDir = productNamespace.replace('.', '/');
+                String productNamespace = project != null ? project.resolveProductNamespace() : null;
+                String productPkgDir = (productNamespace != null && !productNamespace.isBlank())
+                        ? productNamespace.trim().replace('.', '/')
+                        : null;
                 boolean hasFlyway = isFlywayConfigured(project);
 
                 if ("BARCAN-TAG-01".equals(roleTag)) {
                     paths.add("docs/architecture/" + featureName + ".md");
                 } else if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
-                    if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                        paths.add("src/main/java/" + productPkgDir + "/services/ChessService.java");
-                        paths.add("src/main/java/" + productPkgDir + "/services/ChessEngine.java");
-                    } else {
-                        paths.add("src/main/java/" + productPkgDir + "/services/" + featureName + "Service.java");
+                    if (productPkgDir != null) {
+                        if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
+                            paths.add("src/main/java/" + productPkgDir + "/services/ChessService.java");
+                            paths.add("src/main/java/" + productPkgDir + "/services/ChessEngine.java");
+                        } else {
+                            paths.add("src/main/java/" + productPkgDir + "/services/" + featureName + "Service.java");
+                        }
                     }
                 } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
@@ -973,7 +1037,9 @@ public class TechnicalLeadCompiler {
                         paths.add("frontend/src/components/" + featureName + ".svelte");
                     }
                 } else if ("BARCAN-TAG-04".equals(roleTag)) {
-                    paths.add("src/main/java/" + productPkgDir + "/services/" + featureName + "AiService.java");
+                    if (productPkgDir != null) {
+                        paths.add("src/main/java/" + productPkgDir + "/services/" + featureName + "AiService.java");
+                    }
                     paths.add("src/models/ml/" + featureName + "Model.py");
                 } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
@@ -986,18 +1052,24 @@ public class TechnicalLeadCompiler {
                     paths.add("docker-compose.yml");
                     paths.add(".github/workflows/ci.yml");
                 } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
-                    if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                        paths.add("src/test/java/" + productPkgDir + "/services/ChessServiceTest.java");
-                    } else {
-                        paths.add("src/test/java/" + productPkgDir + "/services/" + featureName + "ServiceTest.java");
+                    if (productPkgDir != null) {
+                        if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
+                            paths.add("src/test/java/" + productPkgDir + "/services/ChessServiceTest.java");
+                        } else {
+                            paths.add("src/test/java/" + productPkgDir + "/services/" + featureName + "ServiceTest.java");
+                        }
                     }
                 } else if ("BARCAN-TAG-07".equals(roleTag)) {
-                    paths.add("src/main/java/" + productPkgDir + "/services/security/" + featureName + "SecurityService.java");
+                    if (productPkgDir != null) {
+                        paths.add("src/main/java/" + productPkgDir + "/services/security/" + featureName + "SecurityService.java");
+                    }
                 } else if ("BARCAN-TAG-08".equals(roleTag)) {
                     if (hasFlyway) {
                         paths.add("src/main/resources/db/migration/V_NEXT__" + featureName.toLowerCase(java.util.Locale.ROOT) + ".sql");
                     }
-                    paths.add("src/main/java/" + productPkgDir + "/models/persistence/" + featureName + "Entity.java");
+                    if (productPkgDir != null) {
+                        paths.add("src/main/java/" + productPkgDir + "/models/persistence/" + featureName + "Entity.java");
+                    }
                 } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
                     paths.add("docs/architecture/adr-002-runtime-contract.md");
                     paths.add("docker-compose.yml");
@@ -1034,10 +1106,11 @@ public class TechnicalLeadCompiler {
                     guarded.collisionNotes(),
                     guarded.paths(),
                     guarded.namespaceRefusal(),
-                    guarded.refusedPaths()
+                    guarded.refusedPaths(),
+                    guarded.namespaceStatus()
             );
         } catch (Exception e) {
-            return new FileScopeResult("[]", null, java.util.List.of(), false, java.util.List.of());
+            return new FileScopeResult("[]", null, java.util.List.of(), false, java.util.List.of(), NamespaceAuditStatus.ADMISSIBLE);
         }
     }
 
@@ -1046,45 +1119,67 @@ public class TechnicalLeadCompiler {
             String collisionNotes,
             java.util.List<String> finalPaths,
             boolean namespaceRefusal,
-            java.util.List<String> refusedPaths
-    ) {}
+            java.util.List<String> refusedPaths,
+            NamespaceAuditStatus namespaceStatus
+    ) {
+        public FileScopeResult(String fileScopeJson, String collisionNotes, java.util.List<String> finalPaths,
+                               boolean namespaceRefusal, java.util.List<String> refusedPaths) {
+            this(fileScopeJson, collisionNotes, finalPaths, namespaceRefusal, refusedPaths,
+                    namespaceRefusal ? NamespaceAuditStatus.VIOLATION : NamespaceAuditStatus.ADMISSIBLE);
+        }
+    }
 
     public record CollisionGuardResult(
             java.util.List<String> paths,
             String collisionNotes,
             boolean namespaceRefusal,
-            java.util.List<String> refusedPaths
-    ) {}
+            java.util.List<String> refusedPaths,
+            NamespaceAuditStatus namespaceStatus
+    ) {
+        public CollisionGuardResult(java.util.List<String> paths, String collisionNotes,
+                                    boolean namespaceRefusal, java.util.List<String> refusedPaths) {
+            this(paths, collisionNotes, namespaceRefusal, refusedPaths,
+                    namespaceRefusal ? NamespaceAuditStatus.VIOLATION : NamespaceAuditStatus.ADMISSIBLE);
+        }
+    }
 
     CollisionGuardResult applyCrossEpicCollisionGuardForTest(ProjectEntity project, UUID featureId,
                                                             String roleTag, java.util.List<String> predictedPaths) {
         return applyCrossEpicCollisionGuard(project, featureId, roleTag, predictedPaths);
     }
 
+    FileScopeResult determineFileScopeForTest(ProjectEntity project, String roleTag, String wishContent,
+                                             boolean isIntegrationTask, boolean hasIntegrationTask, UUID featureId) {
+        return determineFileScope(project, roleTag, wishContent, isIntegrationTask, hasIntegrationTask, featureId);
+    }
+
     private CollisionGuardResult applyCrossEpicCollisionGuard(ProjectEntity project, UUID featureId,
                                                                String roleTag, java.util.List<String> predictedPaths) {
         if ("BARCAN-TAG-00".equals(roleTag) || predictedPaths.isEmpty()) {
-            return new CollisionGuardResult(predictedPaths, null, false, java.util.List.of());
+            return new CollisionGuardResult(predictedPaths, null, false, java.util.List.of(), NamespaceAuditStatus.ADMISSIBLE);
         }
 
         // Law 26 (product namespace & stack lock - INDEXICAL_CONTEXT_LOCK / D006):
         // Paths outside the product's own namespace or stack are refused BEFORE the collision ledger.
         // A foreign path names nothing legitimate in this repository and cannot be reconciled as a collision.
-        java.util.List<String> foreignPaths = pathsOutsideProductNamespace(project, predictedPaths);
+        NamespaceAuditResult auditResult = auditPathsAgainstNamespace(project, predictedPaths);
+        java.util.List<String> foreignPaths = auditResult.offendingPaths();
         java.util.List<String> admissiblePaths = predictedPaths;
         String namespaceNote = null;
         boolean namespaceRefusal = false;
-        if (!foreignPaths.isEmpty()) {
+        NamespaceAuditStatus namespaceStatus = auditResult.status();
+
+        if (auditResult.status() != NamespaceAuditStatus.ADMISSIBLE) {
             admissiblePaths = new java.util.ArrayList<>(predictedPaths);
             admissiblePaths.removeAll(foreignPaths);
-            String prodNs = project != null ? project.resolveProductNamespace() : "unknown";
-            log.warn("Law 26 (product namespace) for project {}: featureId={} roleTag={} predicted {} outside "
-                            + "the product namespace ({}) or stack - refused before the collision ledger. A path outside "
-                            + "the product namespace/stack can never be a valid file scope for this product.",
-                    project != null ? project.getId() : null, featureId, roleTag, foreignPaths, prodNs);
-            namespaceNote = "PRODUCT NAMESPACE REFUSAL: " + String.join(", ", foreignPaths)
-                    + " lie outside this product's namespace (" + prodNs + ") or stack. "
-                    + "They do not exist in this repository. Do not create them; work only inside this product's own package/stack.";
+            String prodNs = project != null ? project.resolveProductNamespace() : null;
+            boolean isUnknown = auditResult.status() == NamespaceAuditStatus.UNKNOWN_NAMESPACE;
+            String defectType = isUnknown ? "UNKNOWN_PRODUCT_NAMESPACE" : "PRODUCT_NAMESPACE_VIOLATION";
+            String notePrefix = isUnknown ? "PRODUCT NAMESPACE UNKNOWN" : "PRODUCT NAMESPACE REFUSAL";
+
+            log.warn("Law 26 (product namespace) for project {}: featureId={} roleTag={} status={} paths={} - refused before the collision ledger. {}",
+                    project != null ? project.getId() : null, featureId, roleTag, auditResult.status(), foreignPaths, auditResult.reason());
+            namespaceNote = notePrefix + ": " + auditResult.reason();
             namespaceRefusal = true;
 
             // Surface the violation externally via DefectJournal (INDEXICAL_CONTEXT_LOCK, D006)
@@ -1097,8 +1192,8 @@ public class TechnicalLeadCompiler {
                             "CRITICAL",
                             "COMPILER",
                             "TechnicalLeadCompiler",
-                            "PRODUCT_NAMESPACE_VIOLATION",
-                            "Law 26 violation (INDEXICAL_CONTEXT_LOCK): predicted paths outside product namespace (" + prodNs + ") or stack: " + foreignPaths,
+                            defectType,
+                            notePrefix + " (role " + roleTag + "): " + auditResult.reason(),
                             (double) foreignPaths.size()
                     );
                 } catch (Exception e) {
@@ -1107,7 +1202,7 @@ public class TechnicalLeadCompiler {
             }
 
             if (admissiblePaths.isEmpty()) {
-                return new CollisionGuardResult(admissiblePaths, namespaceNote, namespaceRefusal, foreignPaths);
+                return new CollisionGuardResult(admissiblePaths, namespaceNote, namespaceRefusal, foreignPaths, namespaceStatus);
             }
         }
 
@@ -1136,7 +1231,7 @@ public class TechnicalLeadCompiler {
         }
 
         if (collidingPaths.isEmpty()) {
-            return new CollisionGuardResult(narrowed, namespaceNote, namespaceRefusal, foreignPaths);
+            return new CollisionGuardResult(narrowed, namespaceNote, namespaceRefusal, foreignPaths, namespaceStatus);
         }
 
         log.info("Cross-epic file collision guard for project {}: featureId={} roleTag={} stripped {} from predicted fileScope",
@@ -1145,7 +1240,7 @@ public class TechnicalLeadCompiler {
                 + " already exist and are owned by other work in this project - do not recreate or rewrite "
                 + "them. Add your own new file(s) for this slice's functionality instead.";
         String finalNotes = namespaceNote == null ? note : namespaceNote + "\n\n" + note;
-        return new CollisionGuardResult(narrowed, finalNotes, namespaceRefusal, foreignPaths);
+        return new CollisionGuardResult(narrowed, finalNotes, namespaceRefusal, foreignPaths, namespaceStatus);
     }
 
     private void recordFileClaims(ProjectEntity project, TaskEntity savedTask, java.util.List<String> fileScopePaths) {

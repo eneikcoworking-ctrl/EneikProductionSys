@@ -595,6 +595,7 @@ public class SystemStatusService {
 
     private Map<String, Object> tasks(UUID projectId, List<TaskEntity> scopedTasks) {
         long carrierDeaths = countCarrierDeathsPast24Hours(projectId);
+        long namespaceRefusals = countNamespaceRefusalsPast24Hours(projectId);
         if (scopedTasks != null) {
             List<TaskEntity> realWorkTasks = scopedTasks.stream().filter(t -> !isSystemMetaTask(t)).toList();
             Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
@@ -604,6 +605,7 @@ public class SystemStatusService {
             Map<String, Object> section = new LinkedHashMap<>();
             counts.forEach((status, count) -> section.put(status.name(), count));
             section.put("carrierDeaths", carrierDeaths);
+            section.put("namespaceRefusals", namespaceRefusals);
             return section;
         }
 
@@ -623,6 +625,7 @@ public class SystemStatusService {
         Map<String, Object> section = new LinkedHashMap<>();
         counts.forEach((status, count) -> section.put(status.name(), count));
         section.put("carrierDeaths", carrierDeaths);
+        section.put("namespaceRefusals", namespaceRefusals);
         return section;
     }
 
@@ -637,6 +640,25 @@ public class SystemStatusService {
             } else {
                 Long count = jdbcTemplate.queryForObject(
                         "SELECT count(*) FROM defect_journal WHERE defect_type = 'DISPATCH_BUDGET_EXHAUSTION_COMPOSITION' AND (source_component = 'carrier' OR description LIKE '%carrier=true%') AND created_at > ?",
+                        Long.class, since);
+                return count != null ? count : 0L;
+            }
+        } catch (Exception ignored) {
+            return 0L;
+        }
+    }
+
+    private long countNamespaceRefusalsPast24Hours(UUID projectId) {
+        try {
+            java.time.Instant since = java.time.Instant.now().minus(java.time.Duration.ofHours(24));
+            if (projectId != null) {
+                Long count = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM defect_journal WHERE project_id = ? AND category = 'COMPILER' AND defect_type IN ('PRODUCT_NAMESPACE_VIOLATION', 'UNKNOWN_PRODUCT_NAMESPACE') AND created_at > ?",
+                        Long.class, projectId, since);
+                return count != null ? count : 0L;
+            } else {
+                Long count = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM defect_journal WHERE category = 'COMPILER' AND defect_type IN ('PRODUCT_NAMESPACE_VIOLATION', 'UNKNOWN_PRODUCT_NAMESPACE') AND created_at > ?",
                         Long.class, since);
                 return count != null ? count : 0L;
             }

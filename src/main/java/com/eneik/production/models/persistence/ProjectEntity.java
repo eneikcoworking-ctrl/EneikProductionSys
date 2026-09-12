@@ -206,14 +206,6 @@ public class ProjectEntity {
         if (productNamespace != null && !productNamespace.isBlank()) {
             return productNamespace.trim();
         }
-        if ("test-fiftieth".equalsIgnoreCase(slug)
-                || (repositoryName != null && (repositoryName.contains("fiftieth") || repositoryName.contains("epidemiology")))) {
-            return "com.eneik.epidemiology";
-        }
-        if (slug != null && !slug.isBlank()) {
-            String cleanSlug = slug.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
-            return "com.eneik." + cleanSlug;
-        }
-        return "com.eneik.product";
+        return null;
     }
 }

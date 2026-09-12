@@ -16,6 +16,36 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-12 03:48 UTC — Antigravity (L2): Все 3 остатка Предписания 32 закрыты (`INDEXICAL_CONTEXT_LOCK` / D006 / `RUT_BARKAN_MARKUS_18_INDEXICAL_CONTEXT_LOCK` — Закон 26)**
+
+1. **Остаток 1: Замыкание цепи отказа (блокировка раздачи и читатели в телеметрии):**
+   - **Блокировка создания задачи с дефектным объёмом (`TechnicalLeadCompiler.createAndSaveTask`):** если `fileScopeResult.namespaceRefusal() == true`, задача создаётся со статусом `TaskStatus.blocked` (вместо утечки в `queued`) и `julesDispatchStatus = "BLOCKED: file scope refused (" + statusValue + ")"`. В `payload` задачи пишется точный статус `"file_scope_status"` (`REFUSED_PRODUCT_NAMESPACE_VIOLATION` или `UNKNOWN_PRODUCT_NAMESPACE`), при валидном объёме — `"VALID"`.
+   - **Заслон на этапе раздачи (`ProjectFlowService.dispatchQueuedTasks`):** добавлен страж перед диспатчем. Задачи с `file_scope_status`, начинающимся с `REFUSED_` или равным `UNKNOWN_PRODUCT_NAMESPACE`, переводятся в `TaskStatus.blocked` и не уходят в раздачу (`continue`).
+   - **Читатели в телеметрии и сводке истины:**
+     - В `SystemStatusService.tasks`: добавлена метрика `namespaceRefusals` (подсчёт за 24 часа через `countNamespaceRefusalsPast24Hours(projectId)` в `defect_journal` дефектов `COMPILER` с типами `PRODUCT_NAMESPACE_VIOLATION` и `UNKNOWN_PRODUCT_NAMESPACE`).
+     - В `OperationalTruthService`: `namespaceRefusals` рассчитывается из `allRecentDefects`, отражается в нарративе `activeFlow` при $> 0$ и порождает блокировщик высокого уровня (`Blocker`, `type="namespace_refusals"`, `severity="high"`) в `blockers`.
+
+2. **Остаток 2: Трёхзначный исход Белнапа для пространства имён (`TRUTH_STATUS_TABLE` / D012):**
+   - Введён `enum NamespaceAuditStatus { ADMISSIBLE, VIOLATION, UNKNOWN_NAMESPACE }` и типизированный результат `NamespaceAuditResult(NamespaceAuditStatus status, List<String> offendingPaths, String reason)`.
+   - Чистая функция `auditPathsAgainstNamespace(productNamespace, hasFlyway, isNextJsOrNode, paths)`:
+     - При неспецифицированном/пустом пространстве имён продукта (`productNamespace == null || isBlank()`) Java-пути (`src/main/java/`, `src/test/java/`) возвращают исход `UNKNOWN_NAMESPACE` и включаются в `offendingPaths` (отвергаются заслоном, тихий пропуск устранён).
+     - Не-Java пути (документация `.md`, конфигурации `package.json`, фронтенд `.svelte`/`.vue`) в отсутствие Java-пакета остаются `ADMISSIBLE`.
+   - При отказе `applyCrossEpicCollisionGuard` регистрирует в `DefectJournalService` дефект с типом `UNKNOWN_PRODUCT_NAMESPACE` (при статусе `UNKNOWN_NAMESPACE`) либо `PRODUCT_NAMESPACE_VIOLATION` (при `VIOLATION`).
+
+3. **Остаток 3: Устранение утечки статического контекста в `resolveProductNamespace`:**
+   - В `ProjectEntity.resolveProductNamespace()` полностью удалены статическая ветка для `test-fiftieth` и синтетический фоллбэк `com.eneik.<slug>`. Метод возвращает строго установленный `productNamespace` (или `null`, если не настроен).
+   - Единовременная привязка для `test-fiftieth` (`com.eneik.epidemiology`) зафиксирована исключительно как строка данных в БД (миграция `V141`).
+
+4. **Заслоны (67/67 зелёные в контейнере Maven с `-m 1500m --cpus=2`):**
+   - `ProductNamespaceLaw26Test` расширен до 16 тестов (16/16):
+     - `unknownNamespace_evaluatesAsUnknownNamespaceThirdOutcome`: проверка трёхзначного исхода `UNKNOWN_NAMESPACE` для Java-путей при неспецифицированном пакете.
+     - `unknownNamespace_allowsNonJavaPaths`: допуск не-Java файлов без пакета продукта.
+     - `guardRefusesUnknownNamespaceAndRecordsToJournal`: заслон компилятора отвергает `UNKNOWN_NAMESPACE`, ставит отказную ноту и пишет `UNKNOWN_PRODUCT_NAMESPACE` в журнал дефектов.
+     - `resolveProductNamespace_doesNotInventStaticNamespace`: проверка строгого `null` без выдумывания статических имен.
+     - `determineFileScope_refusesForeignScopeAndReturnsEmptyJson`: проверка отказа при наличии чужих путей в хотспотах.
+     - `dispatchGuard_blocksTaskWithRefusedScopeStatus`: проверка блокировки задач с отказным `file_scope_status`.
+   - Регрессионный пакет: `TechnicalLeadCompilerTest` (4/4), `SemanticDuplicateVetoTest` (4/4), `IdempotencyTest` (2/2), `OnboardingAuditServiceTest` (5/5), `SystemStatusServiceTest` (19/19), `OperationalTruthServiceTest` (17/17).
+
 **2026-09-12 03:25 UTC — Antigravity (L2): Предписание 32 закрыто (`INDEXICAL_CONTEXT_LOCK` / D006 / `RUT_BARKAN_MARKUS_18_INDEXICAL_CONTEXT_LOCK` — Закон 26)**
 
 1. **Пространство имён продукта как неизменяемый институциональный факт (`INDEXICAL_CONTEXT_LOCK` / D006):**

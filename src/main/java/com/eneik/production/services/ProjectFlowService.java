@@ -6400,6 +6400,23 @@ public class ProjectFlowService {
                 continue;
             }
 
+            // Law 26 / INDEXICAL_CONTEXT_LOCK (D006): do not dispatch tasks whose file scope was refused
+            // due to product namespace or stack violations. A task with an empty or refused file scope cannot
+            // produce valid work and must remain blocked until the compiler produces a valid scope.
+            if (task.getPayload() != null && task.getPayload().has("file_scope_status")) {
+                String scopeStatus = task.getPayload().get("file_scope_status").asText();
+                if ("REFUSED_PRODUCT_NAMESPACE_VIOLATION".equals(scopeStatus)
+                        || "UNKNOWN_PRODUCT_NAMESPACE".equals(scopeStatus)
+                        || scopeStatus.startsWith("REFUSED_")) {
+                    log.warn("ProjectFlowService: task {} has refused file_scope_status={}; blocking dispatch",
+                            task.getId(), scopeStatus);
+                    task.setStatus(TaskStatus.blocked);
+                    task.setJulesDispatchStatus("Dispatch blocked: file scope refused (" + scopeStatus + ")");
+                    taskRepository.save(task);
+                    continue;
+                }
+            }
+
             if (task.getTargetContext() == null || task.getTargetContext() == TargetContext.UNDETERMINED) {
                 log.warn("Task {} has undetermined targetContext; skipping dispatch until target context is resolved", task.getId());
                 task.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
