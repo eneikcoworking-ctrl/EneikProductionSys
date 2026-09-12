@@ -9257,59 +9257,120 @@ Places / formal ontology of boundaries and spatial parts*. Сильная дос
 
 # XLIII. Верёвка: ограничитель выпуска, который не может сработать
 
-**`TocOptimizer`** (144 строки) — выбирает главное ограничение, считает состояние барабана-буфера-верёвки и
-**решает, допускать ли новое исполнение**.
-*Связи:* зовёт его `TocSentinelService` — пересчёт из сторожа раз в две секунды и `shouldAdmit` при каждом
-запуске исполнения (`TocSentinelService:52`) | пишет в `TocNode` загрузку и признак ограничения | наружу
-состояние отдаётся через `DbrStatus` (раздел XXIг).
-*Ценность:* без него граф остаётся набором счётчиков: некому назвать ограничение и некому придержать выпуск.
-*Комментарий:* **ядро по замыслу, и оно замыкает разбор всего графа ограничения.**
+## Семейство: TOC DBR admission rope and flow-control telemetry
 
-Верёвка здесь настоящая, а не декоративная: `shouldAdmit` вызывается **на каждом запуске исполнения**, и
-при затянутой верёвке работа с приоритетом ниже порога обхода (`HIGH_PRIORITY_BYPASS = 80`) получает отказ с
-записью в журнал. Единственный размеченный сценарий идёт с приоритетом 40 (`AutoMergeService:164`), то есть
-**придержать его верёвка вправе**.
+**Имена механизмов и частей:** `TocOptimizer`, `TocSentinelService`, `TocExecutionGraph`, `TocNode`,
+`TocToken`, `DbrStatus`, `TocSentinelController`, `AutoMergeService.processAutoMerge`,
+`KaizenService`, `SixSigmaAuditService`, `SystemAuditController`.
 
-И тем не менее она не срабатывает никогда, и причина устройственная. Верёвка натягивается при переполнении
-буфера у ограничения; предел буфера — 15 (`maxBufferCapacity`), а буфером служит число работ в полёте у
-узла-ограничения. Узел же размечен один, и работа в нём идёт по одной за раз, так что число в полёте не
-превосходит единицы. **Пятнадцать недостижимо при одном шаге.**
+**Философский паттерн:** primary `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, defect `D008 False green`:
+the rope is only a real limiter if a reachable counterexample can make admission turn red. Supporting patterns:
+`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` for signal-to-action coupling,
+`ALONZO_CHERCH_21_DERIVED_CUTOFF` for derived/configured buffer capacity,
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` for cached read telemetry,
+`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` for single ownership of in-flight counters, and
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for not confusing a test graph, the built-in automerge path and
+the whole factory flow.
 
-Отсюда замыкающее суждение по всему графу. Раздел XXIг показал, что ограничение предопределено единственным
-датчиком; здесь видно продолжение: **и ограничитель выпуска предопределён тем же — он не может сработать,
-потому что мерить ему нечего.** Причём если бы он сработал, то придержал бы **ровно тот механизм, который
-единственный и питает граф**: меньше циклов автослияния — меньше наблюдений — меньше оснований судить о
-переполнении. Обратная связь с неверным знаком, того же рода, что записана в `V104` (раздел XXIIв), где
-отказ прибора отодвигал следующую попытку дальше.
+**Связи, вызовы и взаимодействия:** `AutoMergeService.processAutoMerge` starts a TOC execution with scenario
+`AUTOMERGE_CYCLE` and priority `40`; if `TocSentinelService.startExecution` returns a throttled token, the
+automerge cycle stops before work. Otherwise `AutoMergeService` enters and exits the single built-in step
+`AUTOMERGE_PROCESSING`. `TocSentinelController` also exposes HTTP event surfaces that can create tokens and
+enter/exit arbitrary step names. `TocSentinelService` owns token lifecycle and invokes `TocOptimizer` for the
+admission decision and for watchdog/explicit DBR refresh. `TocExecutionGraph` owns active tokens, nodes and
+edges. `TocNode` owns in-flight and duration counters. `DbrStatus` carries the read model. `KaizenService`,
+`SixSigmaAuditService` and `SystemAuditController` consume `DbrStatus`.
 
-**Задача для кодинга.** Разметить шаги потока, чтобы буфер имел смысл, — либо снять предел, выведя его из
-наблюдаемого, а не назначив числом. Место: `TocOptimizer.maxBufferCapacity = 15` и `shouldAdmit`, плюс
-разметка в `AutoMergeService:164-174` как единственный источник наблюдений. Проверка: в журнале появляется
-хотя бы одна запись придержания или обхода при настоящей нагрузке. Опровергнет: наблюдение переполнения
-буфера при одном размеченном шаге — тогда неверен разбор, а не механизм.
+**Идеальная форма:** the rope must throttle only when the factory has a real measured buffer in front of a
+constraint, and it must never report "optimal" when the graph cannot falsify that claim. A low-priority release
+attempt must be denied when the buffer is actually full; a high-priority release may bypass, but the bypass must
+be visible. The buffer limit must be either derived from observed flow capacity or explicitly configured as an
+operator decision. Reads of DBR status must not mutate the graph. The built-in factory path must be instrumented
+at enough meaningful steps or queues for the buffer to represent factory flow, not just one decorative step name.
 
-Отмечу и то, что здесь сделано верно: обход по высокому приоритету **записывается в журнал**, а не молчит,
-и придержание тоже. То есть если бы верёвка дёрнулась, узнать об этом можно было бы сразу.
-*Живое, 7 сентября 2026:* **ноль придержаний и ноль обходов** за сутки (`grep -c 'DBR_THROTTLE'` и
-`DBR_BYPASS`), при контроле в 10402 строки с меткой сторожа — то есть греп видит, механизм работает
-непрерывно, а верёвка не натягивалась ни разу.
-*Философия:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008) — Альфред Тарский,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип семантической теории истины (T-схема: «P» истинно ⟺ P), anchor
-*The Concept of Truth in Formalized Languages — semantic conception of truth*. Сильная дословно: «проверка,
-способная **опровергнуть** утверждение, написана **до** принятия утверждения, и показано, что она краснеет
-при дефекте». Слабая: «зелёный тест рядом с изменением». Опровержение: «снять правку и прогнать тест; не
-покраснел — не заслон». **Форма: слабая.** Проверка написана и вызывается, но покраснеть не может: условие
-её срабатывания недостижимо при нынешней разметке. Это тот же разряд, что заслон качества экрана до
-починки (раздел XLI), только зеркальный: там проверка не могла позеленеть, здесь не может покраснеть, и обе
-одинаково ничего не различают.
-Второй образец: `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011) — Фред Дрецке,
-`BARCAN-TAG-07 SECOND-ORDER-KNOWLEDGE`, принцип информационной пропускной способности каналов, anchor
-*Knowledge and the Flow of Information — informational epistemology*. Сильная дословно: «сигнал признан
-годным лишь если меняет следующее действие и предотвращает ошибочное». Слабая: «сигнал есть и он верен».
-Опровержение: «назвать действие, которое сигнал изменил; сигнал без читателя не есть наблюдение».
-**Форма: слабая, и по обратной причине, чем обычно.** Читатель у сигнала как раз есть — `shouldAdmit`
-спрашивают на каждом запуске. Нет самого сигнала: величина, которую читают, не достигает порога никогда.
-Прежде я находил сигналы без читателя трижды; это первый случай читателя без сигнала.
+**Граница:** this family may admit, throttle or mark a token; update in-memory TOC graph counters; publish DBR
+status; and feed audit/kaizen summaries. It does not decide task status, merge correctness, GitHub truth,
+delivery acceptance or product health. It must not persist fake certainty when the graph is unmeasured.
+
+**Входы:** scenario name, priority, token id, step name, resource waits/releases, configured
+`eneik.toc.max-buffer-capacity`, min/max sentinel cadence settings, active token count, node in-flight count,
+node duration observations, stall flags, explicit controller events, and the automerge scheduled cycle.
+
+**Выходы:** admitted/active token, throttled token, node in-flight increments/decrements, completed/error/duration
+counters, latest `DbrStatus`, controller `429` for throttled HTTP enter events, `DBR_THROTTLE` and `DBR_BYPASS`
+logs, kaizen `DBR_BUFFER_FULL` defect signal, Six Sigma TOC metrics and system audit health fields.
+
+**Владельцы истины и состояния:** `TocExecutionGraph` owns active tokens, nodes and edges; `TocSentinelService`
+is the single writer for token entry/exit and resource telemetry; `TocNode` owns in-flight/duration counters;
+`TocOptimizer` owns current constraint name, buffer capacity, rope state and latest `DbrStatus`; application
+configuration owns explicit buffer/cadence limits; consumers read `DbrStatus` and do not recompute the graph.
+
+**Инварианты:**
+- `shouldAdmit` is checked before a token is registered;
+- low-priority work is denied only when `ropeThrottlingActive=true`;
+- priority `>= 80` bypasses the rope and logs the bypass;
+- reads through `getDbrStatus` return cached status and do not mutate graph state;
+- only `TocSentinelService.enterStep/exitStep` changes node in-flight counters;
+- a single instrumented stage with an unreachable default buffer must report "unmeasured", not "optimal";
+- explicit `refreshDbrStatus` and watchdog evaluation are the only normal paths that recompute DBR state;
+- the automerge fallback without TOC still executes only when `tocSentinelService` is absent.
+
+**Сильная форма сейчас:** the old "false optimal" defect is guarded. `TocOptimizer.computeRecommendation`
+returns "Flow unmeasured" for no stages, `NONE`, or one stage instead of claiming optimal flow. Tests cover the
+initial baseline, empty graph, single-stage automerge-like graph, configurable capacity, throttling when the
+buffer is actually breached, and high-priority bypass. `TocSentinelService` tests show explicit refresh/watchdog
+turning the rope on, low-priority throttling and high-priority bypass. `getDbrStatus` is a cached read, while
+`refreshDbrStatus` is the explicit recomputation path.
+
+**Слабая / неидеальная форма:** the built-in production instrumentation still names only
+`AUTOMERGE_PROCESSING` inside `AutoMergeService`; other built-in factory services are not direct callers of
+`startExecution`, `enterStep`, `exitStep` or `endExecution`. That means the mechanism is real in the TOC engine
+and in tests, but the default factory path can still be only partially measured unless HTTP events or future
+instrumentation add meaningful stages/queues. The default buffer remains an explicit operator/config value, not
+a derived capacity.
+
+**Что надо сделать для идеала:** instrument the real factory flow at meaningful release stages or queues
+(`dispatch`, executor work, review/gate, merge/delivery, or an equivalent measured queue) so the buffer can be
+filled by real concurrent work, not by a synthetic test-only pile. Then either derive `maxBufferCapacity` from
+observed safe concurrency or record the explicit operator decision and its source. Add a focused integration
+test/probe proving that the built-in production path, not only a unit-test graph, can produce one
+`DBR_THROTTLE` and one `DBR_BYPASS` under controlled load while `getDbrStatus` remains a pure read.
+
+**Что не трогать:** do not remove the cached-read separation between `getDbrStatus` and `refreshDbrStatus`; do
+not lower the buffer blindly just to make logs appear; do not remove high-priority bypass; do not make
+`TocOptimizer` write task/project state; do not treat the HTTP event surface as proof that the built-in factory
+path is fully instrumented; do not return to "System flow optimal" for single-stage or empty graphs.
+
+**Опровержение / проверка:** this record is false if grep finds built-in non-test callers that already instrument
+multiple meaningful factory stages; if a single-stage/default-buffer status again contains "System flow optimal";
+if `getDbrStatus` recomputes the graph; if a saturated graph cannot throttle low-priority work; if priority `90`
+cannot bypass; if `AutoMergeService` ignores a throttled token and still runs the cycle; or if `DBR_BUFFER_FULL`
+is emitted while `DbrStatus.ropeThrottlingActive=false`.
+
+**Критерий закрытия:** the mechanism is ideal when current source has a real multi-stage or derived-buffer
+factory path, a focused proof that built-in production admission can both throttle and bypass under controlled
+load, and audit/kaizen surfaces still report the same `DbrStatus` without read-side mutation.
+
+**Доказательства:** `TocOptimizer.java:22-24,28-32,60-131,147-160,181-222`;
+`TocSentinelService.java:28-40,105-123,129-165,217-283,294-318`; `TocExecutionGraph.java:19-31,38-69`;
+`TocNode.java:31-68,118-145`; `DbrStatus.java:8-18`; `AutoMergeService.java:162-175`;
+`TocSentinelController.java:30-57,69-107`; `KaizenService.java:238-249`;
+`SixSigmaAuditService.java:330-336`; `SystemAuditController.java:70-78`;
+`TocOptimizerTest.java:35-89,112-155`; `TocSentinelServiceTest.java:147-169,386-428`;
+caller grep: `startExecution`, `enterStep`, `exitStep` and `endExecution` show the built-in non-test caller is
+`AutoMergeService`, with HTTP controller surfaces as operator/event ingress.
+
+**Текущий статус:** не идеален: engine-level rope is testable and no longer falsely optimal, but built-in
+factory-flow instrumentation and buffer derivation are not yet sufficient to call the release limiter ideal.
+
+**комментарий для Антигравити:** механизм не идеален. Применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
+`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `ALONZO_CHERCH_21_DERIVED_CUTOFF`,
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`: не правь `TocOptimizer` как локальную константу
+буфера; сначала докажи whole release-control contract для реального factory flow. Сохрани cached `getDbrStatus`,
+explicit `refreshDbrStatus`, low-priority throttle, high-priority bypass and single-stage "Flow unmeasured".
+Править надо разметку реальных стадий/очередей или вывести capacity из наблюдаемой пропускной способности,
+потом добавить пробу, где built-in production path дает и `DBR_THROTTLE`, и `DBR_BYPASS`.
 
 # XLIV. Очистка журнала проекта: предел настоящий, срабатывает раз в сутки
 

@@ -771,3 +771,48 @@ Remaining non-ideal point for this family: no current implementation weakness wa
 evidence in this tact. No code was changed.
 
 комментарий для Антигравити: считаю механизм идеальным
+
+## 2026-09-12 Codex Strict Record: TOC DBR Admission Rope Family
+
+Status: documentation-only strict-family replacement for section XLIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `TocOptimizer`, `TocSentinelService`, `TocExecutionGraph`, `TocNode`,
+`TocToken`, `DbrStatus`, `TocSentinelController`, `AutoMergeService.processAutoMerge`, `KaizenService`,
+`SixSigmaAuditService` and `SystemAuditController` as the TOC DBR admission-rope and flow-control telemetry
+family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 25 |
+| Sections still missing visible `комментарий для Антигравити` | 38 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section treated the rope as unable to work at all. Current source/test evidence is more
+specific: the engine-level rope can throttle and bypass when a buffer is actually breached, and it no longer
+claims "optimal" for an empty or single-stage graph. The remaining non-ideal point is that the built-in factory
+path still instruments only `AUTOMERGE_PROCESSING`, so the real production release-control contract is not yet
+proved as multi-stage or derived-capacity flow control.
+
+Remaining non-ideal point for this family: code was not changed in this tact. Ideal implementation requires real
+factory-flow stage/queue instrumentation or derived buffer capacity, plus a focused proof that the built-in
+production path can produce both `DBR_THROTTLE` and `DBR_BYPASS` without making `getDbrStatus` mutate state.
+
+комментарий для Антигравити: механизм не идеален. Применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
+`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `ALONZO_CHERCH_21_DERIVED_CUTOFF`,
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`: не правь `TocOptimizer` как локальную константу
+буфера; сначала докажи whole release-control contract для реального factory flow. Сохрани cached
+`getDbrStatus`, explicit `refreshDbrStatus`, low-priority throttle, high-priority bypass and single-stage
+"Flow unmeasured". Править надо разметку реальных стадий/очередей или вывести capacity из наблюдаемой
+пропускной способности, потом добавить пробу, где built-in production path дает и `DBR_THROTTLE`, и
+`DBR_BYPASS`.
