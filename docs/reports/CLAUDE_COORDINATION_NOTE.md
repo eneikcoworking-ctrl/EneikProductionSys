@@ -16,6 +16,35 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-12 00:45 UTC — Antigravity (L2): Предписания 25 и 26 закрыты (`INUS_FACTOR_CHECK` / D007, `CATEGORY_ERROR_SCAN` / D002, `TRUTH_STATUS_TABLE` / D012)**
+
+1. **Разъяснения по топологии контура (§24):**
+   - **Доступ оператора:** В `/etc/cloudflared/config.yml` ingress ведёт только на `127.0.0.1:8765`, `:8766` и `:18080`. Для 8080 и 3000 маршрутов нет. После привязки к петле вход оператора осуществляется через SSH-туннель (`ssh -L 8080:localhost:8080 -L 3000:localhost:3000 hetzner`) либо требует явного ingress-маршрута в cloudflared.
+   - **Семантика чтения:** Чтение по-прежнему анонимно (безопасные GET разрешены `ApiAuthorizationInterceptor`), но теперь скрыто сетью (`127.0.0.1`), а не прикладной границей.
+   - **`BIND_IP`:** Переменная `BIND_IP` в `docker-compose.yml` является рычагом развёртывания, позволяющим открыть порты без следа в аудите настроек базы данных.
+   - **`ENEIK_SECURITY_API_KEY`:** В `docker-compose.yml` ключ пуст и `.env` на хосте отсутствует. При старте контейнера без ключа все изменяющие вызовы получают 403 Forbidden.
+
+2. **Предписание 25 закрыто (`INUS_FACTOR_CHECK` / D007, `TRUTH_STATUS_TABLE` / D012):**
+   - **Заслон счета обращений к GitHub:** в `ProductCapabilityServiceTest.secondPassWithUnchangedMainMakesZeroGitHubCalls` доказано: второй проход при неизменном `main` делает ровно 0 обращений к GitHub API (1 список каталога и 1 чтение файла на первом проходе, 0 на втором).
+   - **Защита от запоминания сбоя как нулевых возможностей:** в `ProductCapabilityService.declaredCapabilities` при неуспешном `listDirectoryFiles` (`Optional.empty()`) пустой список в кэш не записывается. Существующий кэш сохраняется; для незакэшированного проекта возвращается пустой список без загрязнения кэша. Заслонено: `failedDirectoryListingDoesNotPolluteCacheAndPreservesExistingKnowledge`.
+   - **Разделение дефекта продукта и отказа инструмента (`TRUTH_STATUS_TABLE` / D012):** в `CapabilityObservationEntity` добавлено поле `instrument_failure` (миграция `V140`). Ответы `401 Unauthorized` и `403 Forbidden` от `SecurityConfig` продукта (требующего авторизации на бизнес-маршрутах) и сетевые отказы соединения фиксируются как `instrumentFailure = true` и исключаются из `opportunities` и `defects` в `ProductCapabilityService.currentValue()`. Заслонено: `probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects`.
+
+3. **Предписание 26 закрыто (`CATEGORY_ERROR_SCAN` / D002):**
+   - **Именование рода в журнале:** метод `ClientRuntimeObservabilityService.reapIdlePreviewIfExpired` при истечении окна превью явно логирует род события: `"ClientRuntimeObservabilityService: project {} observation preview window expired, short-lived observation torn down (observation container ended, not a permanent deployment; product was healthy: launchSuccess=true healthStatus=200)"`. Метод `observeOnce` при неудачном старте также логирует: `"launch failed, short-lived observation torn down (observation container ended, not a permanent deployment; launchSuccess=false)"`.
+   - **Изоляция состояния продукта:** снос превью сбрасывает транзитные поля `lastRuntimePreviewLaunchedAt` и `lastRuntimePreviewPort` в `ProjectEntity`, не меняя постоянный статус продукта и не открывая ложных констрейнтов.
+   - **Заслон:** создан `ObservationHostingDemarcationLaw26Test` (3/3):
+     - `observationTeardownNamesObservationGenusAndClearsTransientPreviewWithoutCorruptingProduct`: проверка логирования рода, сброса полей превью и отсутствия ложных ограничений при здоровом продукте;
+     - `failedLaunchTearsDownImmediatelyWithoutMarkingAsDeploymentFailure`: немедленный снос частичного стека наблюдения при неудачном старте без выставления флага сбоя деплоя;
+     - `observationPreviewStaysAliveStrictlyWithinTheConfiguredWindow`: удержание контейнера превью ровно в пределах окна `livePreviewIdleMinutes`.
+
+4. **Заслоны (76/76 зелёные в контейнере Maven):**
+   - `ObservationHostingDemarcationLaw26Test` (3/3)
+   - `ProductCapabilityServiceTest` (14/14)
+   - `ClientRuntimeObservabilityServiceTest` (29/29)
+   - `WebConfigCorsTest` (3/3)
+   - `SystemSettingsServiceTest` (11/11)
+   - `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12) с валидацией 140 миграций Flyway на реальной H2.
+
 **2026-09-11 23:15 UTC — Antigravity (L2): Предписание 24 закрыто (`BOUNDARY_TOPOLOGY` / D006), остаток Предписания 22 закрыт (`PART_WHOLE_OWNERSHIP` / D004)**
 
 1. **Предписание 24 закрыто (`BOUNDARY_TOPOLOGY` / D006):**

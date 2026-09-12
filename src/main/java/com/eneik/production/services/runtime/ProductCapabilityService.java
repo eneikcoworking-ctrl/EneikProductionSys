@@ -135,7 +135,10 @@ public class ProductCapabilityService {
         String branch = project.getDefaultBranch();
         CachedDeclaredCapabilities cached = capabilityCache.get(project.getId());
         if (cached != null && Objects.equals(cached.branch(), branch)) {
-            if (commitSha == null || Objects.equals(cached.commitSha(), commitSha)) {
+            if (commitSha != null && Objects.equals(cached.commitSha(), commitSha)) {
+                return cached.capabilities();
+            }
+            if (commitSha == null && cached.commitSha() == null) {
                 return cached.capabilities();
             }
         }
@@ -143,36 +146,43 @@ public class ProductCapabilityService {
         // INUS_FACTOR_CHECK (D007): Query docs/contracts directory once instead of asking N individual 404 questions
         Optional<Set<String>> filesInDirectory = gitHubPullRequestService.listDirectoryFiles(project, branch, "docs/contracts");
 
+        // If filesInDirectory is empty (API error or directory read failure):
+        // Rule: an unknown is NOT an answer. Never cache a read failure as "zero capabilities".
+        // If a previously cached set exists for this project, preserve it; otherwise return empty without polluting cache.
+        if (filesInDirectory.isEmpty()) {
+            if (cached != null) {
+                log.warn("ProductCapabilityService: contracts directory read failed for project {}, preserving previously cached {} capabilities",
+                        project.getId(), cached.capabilities().size());
+                return cached.capabilities();
+            }
+            return List.of();
+        }
+
         List<DeclaredCapability> declared = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
-
-        if (filesInDirectory.isPresent()) {
-            Set<String> dirFiles = filesInDirectory.get();
-            if (!dirFiles.isEmpty()) {
-                // DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009): Derive capabilities from all contracts in docs/contracts
-                List<String> contractFiles = dirFiles.stream()
-                        .filter(ProductCapabilityService::isContractFile)
-                        .sorted()
-                        .toList();
-                for (String fileName : contractFiles) {
-                    String path = "docs/contracts/" + fileName;
-                    String content = gitHubPullRequestService
-                            .fetchFileContent(project, branch, path)
-                            .orElse(null);
-                    if (content == null) {
-                        continue;
-                    }
-                    for (String route : getRoutesOf(content)) {
-                        String key = "GET " + route;
-                        if (seen.add(key)) {
-                            declared.add(new DeclaredCapability(key, route, path));
-                        }
+        Set<String> dirFiles = filesInDirectory.get();
+        if (!dirFiles.isEmpty()) {
+            // DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009): Derive capabilities from all contracts in docs/contracts
+            List<String> contractFiles = dirFiles.stream()
+                    .filter(ProductCapabilityService::isContractFile)
+                    .sorted()
+                    .toList();
+            for (String fileName : contractFiles) {
+                String path = "docs/contracts/" + fileName;
+                String content = gitHubPullRequestService
+                        .fetchFileContent(project, branch, path)
+                        .orElse(null);
+                if (content == null) {
+                    continue;
+                }
+                for (String route : getRoutesOf(content)) {
+                    String key = "GET " + route;
+                    if (seen.add(key)) {
+                        declared.add(new DeclaredCapability(key, route, path));
                     }
                 }
             }
         }
-        // If filesInDirectory is empty (API error or directory read failure):
-        // Rule: unmeasurable / empty — NEVER guess file names from feature titles.
 
         List<DeclaredCapability> immutableDeclared = List.copyOf(declared);
         capabilityCache.put(project.getId(), new CachedDeclaredCapabilities(branch, commitSha, immutableDeclared));
@@ -262,6 +272,10 @@ public class ProductCapabilityService {
             probed++;
             RuntimeLauncherClient.FetchResult result = launcherClient.fetchHtml(baseUrl + capability.path());
             boolean ok = result.statusCode() != null && result.statusCode() >= 200 && result.statusCode() < 300;
+            // TRUTH_STATUS_TABLE (D012): An unanswered request, connection failure, or authentication denial (401/403)
+            // tells us that the observation instrument could not reach the route without credentials, NOT that the
+            // capability is defective. A 401/403 or null status is an instrument failure, not a product defect.
+            boolean instrumentFailure = result.statusCode() == null || result.statusCode() == 401 || result.statusCode() == 403;
             if (ok) {
                 satisfied++;
             }
@@ -270,6 +284,7 @@ public class ProductCapabilityService {
             row.setCapabilityKey(capability.key());
             row.setSourceContract(capability.sourceContract());
             row.setSatisfied(ok);
+            row.setInstrumentFailure(instrumentFailure);
             row.setStatusCode(result.statusCode());
             row.setDetail(result.error() == null ? null : result.error().substring(0, Math.min(2000, result.error().length())));
             observationRepository.save(row);
@@ -307,6 +322,11 @@ public class ProductCapabilityService {
         long opportunities = 0;
         long defects = 0;
         for (CapabilityObservationEntity row : observationRepository.findByProjectIdOrderByObservedAtDesc(projectId)) {
+            // TRUTH_STATUS_TABLE (D012): Instrument failures (401/403 auth block or connection failure)
+            // are excluded from opportunities and defects so observation obstacles do not fake product defects.
+            if (row.isInstrumentFailure()) {
+                continue;
+            }
             BetaCounts counts = perCapability.computeIfAbsent(row.getCapabilityKey(), key -> new BetaCounts());
             opportunities++;
             if (row.isSatisfied()) {

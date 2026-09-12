@@ -41,6 +41,9 @@ public class CapabilityObservationEntity {
     @Column(nullable = false)
     private boolean satisfied;
 
+    @Column(name = "instrument_failure", nullable = false)
+    private boolean instrumentFailure = false;
+
     @Column(name = "status_code")
     private Integer statusCode;
 
@@ -64,6 +67,9 @@ public class CapabilityObservationEntity {
 
     public boolean isSatisfied() { return satisfied; }
     public void setSatisfied(boolean satisfied) { this.satisfied = satisfied; }
+
+    public boolean isInstrumentFailure() { return instrumentFailure; }
+    public void setInstrumentFailure(boolean instrumentFailure) { this.instrumentFailure = instrumentFailure; }
 
     public Integer getStatusCode() { return statusCode; }
     public void setStatusCode(Integer statusCode) { this.statusCode = statusCode; }

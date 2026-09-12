@@ -2426,6 +2426,12 @@ account has free capacity right now`.
   (eligible, disabled, daily_limit, resting_daily, resting_blocked, retired_decommissioned, retired_offline,
   concurrent_exhausted, capability_mismatch, excluded_names, attempt_excluded, project_mismatch).
 
+*Особые примечания топологии и развертывания (Зафиксировано 2026-09-12):*
+1. **Маршрутизация операторского доступа:** в `/etc/cloudflared/config.yml` ingress настроен только на порты `8765`, `8766` и `18080`. Для портов `8080` (API) и `3000` (UI) маршрутов нет. После привязки к петле `127.0.0.1` вход оператору необходимо называть/настраивать заранее (через SSH-туннель `ssh -L 8080:localhost:8080 -L 3000:localhost:3000 hetzner` либо добавление маршрута в cloudflared), иначе сервисы внешне выглядят недоступными.
+2. **Семантика чтения:** безопасные `GET`-запросы остаются анонимными на прикладном уровне (`ApiAuthorizationInterceptor`). Теперь они скрыты сетью (`127.0.0.1`), а не прикладной авторизацией.
+3. **Рычаг конфигурации `BIND_IP`:** переменная `BIND_IP` в `docker-compose.yml` позволяет одной настройкой снова открыть все пять портов без следа в аудите настроек базы данных.
+4. **Ключ безопасности:** `ENEIK_SECURITY_API_KEY` в `docker-compose.yml` не задан и файла `.env` на хосте нет — при пересборке без заданного ключа все изменяющие вызовы получают 403 Forbidden.
+
 ---
 
 ### 25. Сорок три вопроса в час, ответ на который известен · `INUS_FACTOR_CHECK` (D007) · **расход бюджета**
@@ -2476,6 +2482,11 @@ account has free capacity right now`.
 
 *Устранено 2026-09-11 (Такт 27):* Ликвидирован дефект несовпадения смысла и референта (`DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` / D009). В реальном продукте контракты в `docs/contracts` названы по предметным доменам (`StrainManagement.openapi.yaml`), а фабрика угадывала их через kebab-case фичи (`strain-management-api.openapi.yaml`), из-за чего возможности равнялись нулю. `ProductCapabilityService` теперь извлекает маршруты из всех обнаруженных контрактов каталога `docs/contracts` напрямую.
 
+*Устранено и заслонено 2026-09-12 (Такт 31, предписание 25 закрыто):*
+1. **Заслон счета обращений:** в `ProductCapabilityServiceTest.secondPassWithUnchangedMainMakesZeroGitHubCalls` подтверждено: второй проход при неизменном `main` делает ровно 0 обращений к GitHub API.
+2. **Предотвращение запоминания сбоя как отсутствия возможностей:** в `ProductCapabilityService.declaredCapabilities` при ошибке чтения каталога (`filesInDirectory.isEmpty()`) пустой список в кэш не записывается. Существующий кэш сохраняется; для незакэшированного проекта возвращается пустой список без загрязнения кэша. Заслонено: `failedDirectoryListingDoesNotPolluteCacheAndPreservesExistingKnowledge`.
+3. **Разделение дефекта продукта и отказа инструмента (`TRUTH_STATUS_TABLE` / D012):** добавлено поле `instrument_failure` в `CapabilityObservationEntity` (миграция `V140`). Ответы `401` и `403` (авторизация SecurityConfig продукта) и сбои соединения маркируются как отказ инструмента и исключаются из `opportunities` и `defects` в `currentValue()`, исключая фальсификацию дефектов качества продукта. Заслонено: `probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects`.
+
 ---
 
 ### 26. Хостинг и наблюдение исполняет один механизм · `CATEGORY_ERROR_SCAN` (D002)
@@ -2516,6 +2527,11 @@ account has free capacity right now`.
 
 *Опровержение:* через 20 минут после запуска спросить порт 18080. Ответ есть — значит рода разведены; нет —
 пункт не сделан.
+
+*Устранено и заслонено 2026-09-12 (Предписание 26 закрыто, `CATEGORY_ERROR_SCAN` / D002):*
+1. **Именование рода в журнале:** `ClientRuntimeObservabilityService.reapIdlePreviewIfExpired` при сносе экземпляра предварительного просмотра явно логирует род события: «observation preview window expired, short-lived observation torn down (observation container ended, not a permanent deployment; product was healthy: launchSuccess=true healthStatus=200)». При неудачном старте метод `observeOnce` также логирует «launch failed, short-lived observation torn down (observation container ended, not a permanent deployment; launchSuccess=false)».
+2. **Изоляция состояния продукта:** снос превью сбрасывает временные поля `lastRuntimePreviewLaunchedAt` и `lastRuntimePreviewPort` в `ProjectEntity`, не мутируя статус продукта и не генерируя ошибочных констрейнтов.
+3. **Заслоны:** `ObservationHostingDemarcationLaw26Test` (3/3), `ClientRuntimeObservabilityServiceTest` (29/29).
 
 ---
 

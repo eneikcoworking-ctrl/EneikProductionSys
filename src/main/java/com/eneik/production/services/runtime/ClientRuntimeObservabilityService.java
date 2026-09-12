@@ -154,7 +154,10 @@ public class ClientRuntimeObservabilityService {
     }
 
     /** Tears down a lingering live-preview instance once its bounded window has expired - see the
-     * livePreviewIdleMinutes javadoc above. A no-op when nothing is currently tracked as live. */
+     * livePreviewIdleMinutes javadoc above. A no-op when nothing is currently tracked as live.
+     * CATEGORY_ERROR_SCAN (D002): Distinguishes ephemeral observation containers from permanent deployment hosting.
+     * The teardown names the exact genus: a short-lived observation preview was torn down, not a permanent deployment,
+     * and records whether the product was healthy at observation time. */
     private void reapIdlePreviewIfExpired(ProjectEntity project) {
         Instant launchedAt = project.getLastRuntimePreviewLaunchedAt();
         if (launchedAt == null) {
@@ -163,11 +166,20 @@ public class ClientRuntimeObservabilityService {
         if (Duration.between(launchedAt, Instant.now()).compareTo(Duration.ofMinutes(livePreviewIdleMinutes)) < 0) {
             return; // still within the window - leave it running for the dashboard link / a live-fetch
         }
+
+        List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId());
+        java.util.Optional<ClientRuntimeObservationEntity> lastReal = lastRealObservation(history);
+        String healthStatusText = lastReal.map(obs -> "launchSuccess=" + obs.isLaunchSuccess() + " healthStatus=" + obs.getHealthStatusCode())
+                .orElse("healthStatus=unknown");
+        boolean wasHealthy = lastReal.map(this::isHealthy).orElse(false);
+
         launcherClient.teardown();
         project.setLastRuntimePreviewLaunchedAt(null);
         project.setLastRuntimePreviewPort(null);
         projectRepository.save(project);
-        log.info("ClientRuntimeObservabilityService: project {} live-preview window expired, torn down", project.getId());
+        log.info("ClientRuntimeObservabilityService: project {} observation preview window expired, short-lived observation torn down "
+                + "(observation container ended, not a permanent deployment; {})",
+                project.getId(), wasHealthy ? "product was healthy: " + healthStatusText : "product state: " + healthStatusText);
     }
 
     public ClientRuntimeObservationEntity observeOnce(ProjectEntity project) {
@@ -241,6 +253,8 @@ public class ClientRuntimeObservabilityService {
         } else {
             // Never leak a partial stack from a failed `docker compose up --build`.
             launcherClient.teardown();
+            log.info("ClientRuntimeObservabilityService: project {} launch failed, short-lived observation torn down "
+                    + "(observation container ended, not a permanent deployment; launchSuccess=false)", project.getId());
         }
 
         observation = observationRepository.save(observation);

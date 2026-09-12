@@ -15,7 +15,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import org.mockito.ArgumentCaptor;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -460,5 +463,132 @@ class ProductCapabilityServiceTest {
         assertTrue(declared.isEmpty());
         // Falsification check: ZERO fetchFileContent calls must be made (proves no feature-guessing fallback)
         verify(github, never()).fetchFileContent(any(), any(), any());
+    }
+
+    /**
+     * INUS_FACTOR_CHECK (D007): Second pass at unchanged main makes zero GitHub calls.
+     */
+    @Test
+    void secondPassWithUnchangedMainMakesZeroGitHubCalls() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(feature("Protocols API")));
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of("protocols-api.openapi.yaml")));
+        when(github.fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml"))
+                .thenReturn(Optional.of(CONTRACT));
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        List<ProductCapabilityService.DeclaredCapability> pass1 = service.declaredCapabilities(project);
+        assertEquals(3, pass1.size());
+        verify(github, times(1)).listDirectoryFiles(project, "main", "docs/contracts");
+        verify(github, times(1)).fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml");
+
+        // Second pass: exactly zero GitHub calls
+        List<ProductCapabilityService.DeclaredCapability> pass2 = service.declaredCapabilities(project);
+        assertEquals(3, pass2.size());
+        verifyNoMoreInteractions(github);
+    }
+
+    /**
+     * TRUTH_STATUS_TABLE (D012) / INUS_FACTOR_CHECK (D007):
+     * A failed directory read (Optional.empty()) must NOT be cached as "zero capabilities".
+     * If previous knowledge exists in cache, it must be preserved.
+     */
+    @Test
+    void failedDirectoryListingDoesNotPolluteCacheAndPreservesExistingKnowledge() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(feature("Protocols API")));
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of("protocols-api.openapi.yaml")));
+        when(github.fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml"))
+                .thenReturn(Optional.of(CONTRACT));
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        // Populate cache with successful read
+        List<ProductCapabilityService.DeclaredCapability> pass1 = service.declaredCapabilities(project, "sha-1");
+        assertEquals(3, pass1.size());
+
+        // Now simulate GitHub failure on subsequent pass with different sha
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.empty());
+
+        List<ProductCapabilityService.DeclaredCapability> pass2 = service.declaredCapabilities(project, "sha-2");
+        // Preserves previous cache rather than wiping out to empty
+        assertEquals(3, pass2.size());
+
+        // For a project with no cache, an error yields empty list without polluting cache
+        ProjectEntity uncachedProject = project();
+        List<ProductCapabilityService.DeclaredCapability> passUncached1 = service.declaredCapabilities(uncachedProject);
+        assertTrue(passUncached1.isEmpty());
+
+        // Recover GitHub
+        when(github.listDirectoryFiles(uncachedProject, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of("protocols-api.openapi.yaml")));
+        when(github.fetchFileContent(uncachedProject, "main", "docs/contracts/protocols-api.openapi.yaml"))
+                .thenReturn(Optional.of(CONTRACT));
+
+        // Because error was NOT cached, next call re-queries and succeeds
+        List<ProductCapabilityService.DeclaredCapability> passUncached2 = service.declaredCapabilities(uncachedProject);
+        assertEquals(3, passUncached2.size());
+    }
+
+    /**
+     * TRUTH_STATUS_TABLE (D012):
+     * When the product returns 401 or 403 (unauthenticated access blocked by product SecurityConfig)
+     * or connection failure, the observation must be flagged as instrumentFailure and excluded
+     * from both opportunities and defects in currentValue().
+     */
+    @Test
+    void probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects() {
+        var features = mock(FeatureRepository.class);
+        var github = mock(GitHubPullRequestService.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var observations = mock(CapabilityObservationRepository.class);
+        ProjectEntity project = project();
+
+        when(features.findByProjectId(project.getId())).thenReturn(List.of(feature("Protocols API")));
+        when(github.listDirectoryFiles(project, "main", "docs/contracts"))
+                .thenReturn(Optional.of(Set.of("protocols-api.openapi.yaml")));
+        when(github.fetchFileContent(project, "main", "docs/contracts/protocols-api.openapi.yaml"))
+                .thenReturn(Optional.of(CONTRACT));
+
+        // Product SecurityConfig returns 401 Unauthorized for all routes
+        when(launcher.fetchHtml(any())).thenReturn(new RuntimeLauncherClient.FetchResult(401, "Unauthorized", 10, "Access Denied"));
+
+        ArgumentCaptor<CapabilityObservationEntity> captor = ArgumentCaptor.forClass(CapabilityObservationEntity.class);
+
+        var service = serviceWith(features, github, launcher, observations);
+
+        int satisfied = service.probeAll(project, "http://localhost:18080", "sha-live");
+        assertEquals(0, satisfied);
+
+        verify(observations, times(2)).save(captor.capture());
+        List<CapabilityObservationEntity> savedRows = captor.getAllValues();
+        assertEquals(2, savedRows.size());
+        for (CapabilityObservationEntity row : savedRows) {
+            assertFalse(row.isSatisfied());
+            assertTrue(row.isInstrumentFailure(), "401 must be recorded as instrument failure");
+            assertEquals(401, row.getStatusCode());
+        }
+
+        // When currentValue is evaluated against these observations, instrument failures MUST be excluded
+        when(observations.findByProjectIdOrderByObservedAtDesc(project.getId())).thenReturn(savedRows);
+        ProductCapabilityService.ProductValue value = service.currentValue(project.getId());
+
+        assertEquals(0, value.opportunities(), "Instrument failures must not inflate opportunities");
+        assertEquals(0, value.defects(), "Instrument failures must not be counted as product defects");
+        assertEquals(0, value.workingCapabilities());
     }
 }
