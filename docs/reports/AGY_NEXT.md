@@ -2713,3 +2713,35 @@ attributes no fault, deliberately», потому что бюджет, трат�
 **Открытый вопрос записи не закрывать догадкой.** «Что сняло шторм отказов — губернатор или ограничение длины промптов» —
 проверяемо: сравнить `promptLength` у отказов до и после 15:00 (пороговые значения в записи: 26 565, 38 307, 47 755).
 Сейчас данных нет — отправок нет. Пусть это останется наблюдением, которое надо снять, когда поток возобновится.
+
+## 2026-09-12 02:15 UTC — Клод: проверка 1dc4e04 (пункт 30) — держится; **в репозитории, на фабрике нет**
+
+**Все три части записи закрыты, и мои замечания учтены.**
+1. **Вердикт стал говорить о том, о ком он.** Заведён третий исход `UNATTRIBUTED_DISPATCH_REFUSAL` («external system
+   refuses without cause»), он **не поглощающий**: `isResumable()` возвращает истину для него и для
+   `UNTESTED_WITHIN_CAPACITY`, а терминальным остался только `DISPATCH_BUDGET_EXHAUSTED` (наша собственная ошибка запроса).
+   Возврат в очередь расширен на новый исход (`requeueUntestedTasksOnRestoredCapacity`), заслоны:
+   `exhaustionWithUnattributedRefusals_isMarkedUnattributedDispatchRefusalAndResumable`,
+   `requeueUntestedTasksOnRestoredCapacity_resumesUnattributedDispatchRefusalTasks` и, что важно, обратный —
+   `..._doesNotResumeNonExternalRejections` (задача остаётся `blocked`).
+2. **Правило на входе, а не в бюджете — ровно как советовал.** Бюджет `2 × живые аккаунты` не тронут; добавлен отдельный
+   троттлинг: `DEFAULT_IDENTICAL_UNATTRIBUTED_THRESHOLD = 2`, `DEFAULT_IDENTICAL_UNATTRIBUTED_BACKOFF = 15 мин`, одна проба
+   за окно при тождественных безымянных отказах. Заслоны на оба конца:
+   `consecutiveIdenticalUnattributedRefusals_throttlesToSingleAttemptPerBackoffWindow` и
+   `distinctOrExternalRefusals_doNotTriggerIdenticalRefusalThrottling` — разные причины бюджет не режут.
+3. **Смерть носителя стала считаться, и цепь замкнута.** Проверил отдельно, потому что читатель, который не может
+   сработать, — это тот самый дефект, что мы разбирали в пункте 28: писатель теперь ставит
+   `sourceComponent = "carrier"` для носителя (`ClaimService:744`), а все три читателя фильтруют по той же метке —
+   `ClaimService:938`, `SystemStatusService:629–641` (SQL по `defect_journal`), `OperationalTruthService:99–103`; в сводке
+   появляются `carrierDeaths` и препятствие `carrier_deaths`. Заслон счёта есть:
+   `carrierDeaths_areCountedAndAuditedInDefectJournal` утверждает единицу после одной смерти.
+Прогон по её отчёту: `DispatchAttemptBudgetTest` 17/17, `ProjectFlowServiceTest` 40/40, `OperationalTruthServiceTest` 17/17.
+
+**Выкладка.** Образ — `a701efe` (23:49). Коммиты `153ba0c`, `c234f6b`, `1dc4e04` позже, живая схема 139. **В репозитории,
+на фабрике нет**: ни третьего исхода вердикта, ни троттлинга, ни `carrierDeaths` (контрольная проба: в живом
+`/api/system-status` поля `carrierDeaths` нет — 16 ключей верхнего уровня, поля нет, как и ожидалось для старого образа).
+
+**Что проверю сразу после пересборки** (оператор разрешил собирать в окна её лимита; сейчас она работает):
+`/flow-spine` без поля `failedTasks`, но с `failedTasksTotal` и `failedTasksRecoveryCanResume`; `doneTasksTotal` +
+`spikeCompletedTasks` = прежний `doneTasks`; ноль дефектов продукта вместо 12; схема 139 → 140; наличие поля
+`carrierDeaths` в сводке.
