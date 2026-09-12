@@ -1569,75 +1569,157 @@ permanently inert `GeminiProjectObserverService`.
 
 # X. Дизайн-цех
 
-**`DesignShopOrchestrationService`** — параллельный департамент, вписанный в конвейер **без правки самого
-конвейера**; срабатывает на каждом переходе готовности из «нет» в «да».
-*Связи:* вызывающих нет — по расписанию; зовёт 6; пишет свой цикл и заявки.
-*Ценность:* добавить цех, не тронув поток.
-*Комментарий:* **периферия, и образец того, как расширять фабрику** — прямое исполнение критерия Куайна:
-периферия достраивается правками, ядра не касающимися. Второе тонко и верно: полная готовность здесь
-**недостижима по устройству**, потому что циклы фальсификации добавляют работу, пока проект жив; значит «100%
-готово» означает «готово собрать этот круг». Принять одно за другое было бы категориальной ошибкой о
-собственном устройстве.
-*Философия:* `RUT_BARKAN_MARKUS`-семейство, `ESSENCE_BEFORE_OPTION` (D002) — Рут Баркан Маркус,
-`BARCAN-TAG-01 ACTUALIST-OBJECT`, принцип квантифицированного актуализма, anchor *A Functional Calculus of
-First Order Based on Strict Implication*. Сильная форма дословно: «до добавления настройки назван инвариант,
-истинный во **всех** допустимых режимах, и ветви конфигурации либо его хранят, либо **падают закрыто**».
-Слабая: «настройка добавлена, режимы описаны в README». Опровержение образца: «**найти комбинацию значений,
-при которой инвариант не назван и не проверен**».
+## Семейство: дизайн-цех, дизайн-система и live drift
 
-*Замер 2026-09-06. Первое подозрение опровергнуто.* Настройка `design_shop_readiness_threshold` в живой
-фабрике не имеет значения нигде — `source=none`. Я предположил дефект и ошибся: обе точки применения задают
-инвариант прямо в вызове, `effectiveDouble("design_shop_readiness_threshold", **0.80**)`, и живьём в журнале
-стоит `threshold=0.800`. Порог назван там, где применяется.
+**Имена механизмов и частей:** `DesignShopOrchestrationService`, `DesignShopCycleEntity`,
+`DesignShopCycleRepository`, migrations `V93__design_shop_cycles.sql`,
+`V94__design_shop_cycles_baseline.sql`, `V98__design_shop_start_cycle_claim.sql`,
+`DesignConsistencyAuditService`, `LayoutGeometryAuditService`, `DesignSystemFalsificationService`,
+`DesignDriftMonitorService`, and linked mechanisms `DesignAssetService`, `StitchClient`,
+`ClientDeliverableReadinessService`, `ClientRuntimeObservabilityService`, `ProjectFlowService`,
+`GitHubPullRequestService`, `WishlistRepository`, `ProjectRepository`.
 
-*Комбинация, которой требует опровержение, найдена — и она другая.* `isReadinessReached` начинается с
-жёсткого предусловия: `if (!readiness.decompositionComplete()) return false;`, **до** всякого порога. Живой
-замер: `decompositionComplete=false`, `ratio=0.900` и `0.909` при пороге `0.800`. То есть **фронт готовности
-по доле пройден, а цех стоит**, потому что раньше него сработал булев флаг. За семь часов жизни контейнера
-цех не произвёл ни одного экрана: аудитов согласованности **0**, отказов **0**.
+**Философский паттерн:** primary `RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION`, defect `D002 Invalid state`:
+before design-shop configurability, the invariant must be named in every mode. Supporting:
+`RUT_BARKAN_MARKUS_10_TOKEN_TRACE_UNITY` / `D015 Aesthetic drift` for declared design tokens,
+`LYUDVIG_VITGENSHTEYN_15_CROSS_SCREEN_JACCARD_GATE` / `D015` for sibling-screen consistency,
+`ELVIN_GOLDMAN_20_GROUPING_PROXIMITY_GATE` / `D011 Perception failure` for geometry/viewport checks,
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for live-product
+evidence and abstraction boundaries, plus `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS` / `D008 False green`
+for design-system falsification and `ACP-061 Hoare Triple Review`.
 
-*И это условие модель уже признала недостижимым.* «Опровергнутое», пункт 2: *«Фаза декомпозиции должна
-завершаться». **Не должна и не может**: девять сервисов порождают вишлисты непрерывно, множество открытых
-брифов не опустеет никогда.* Счёт по журналу подтверждает: `decompositionComplete` — **два false на один
-true**, и сейчас `false`.
+**Связи, вызовы и взаимодействия:** `DesignShopOrchestrationService` is a scheduled side department, not a
+patch inside the main flow. It scans active projects, asks `ClientDeliverableReadinessService` for readiness,
+keeps one `DesignShopCycleEntity` per project, atomically claims the readiness edge through
+`DesignShopCycleRepository.claimStartCycle`, requests implementable HTML through `DesignAssetService`, captures
+the first real token baseline from GitHub via `GitHubPullRequestService`, dispatches design review and
+implementation through `ProjectFlowService`, and releases the start claim when generation did not produce a
+usable cycle. `DesignConsistencyAuditService` evaluates generated/live HTML against declared tokens and sibling
+screens; `LayoutGeometryAuditService` supplies viewport, collision and proximity checks. `DesignSystemFalsificationService`
+is scheduled separately; it looks only at epics with merged UI code from `ClientDeliverableReadinessService`,
+uses `StitchClient` to create/apply design systems, and writes a dismissed audit-trail wishlist item so normal
+compiler/orchestrator paths do not pick it up as work. `DesignDriftMonitorService` is called from
+`ClientRuntimeObservabilityService` only while that service already has a healthy live instance window; it uses
+`RuntimeLauncherClient.fetchHtml` indirectly through that open window and does not launch or tear down anything.
 
-*Ирония, которую стоит записать целиком.* Javadoc метода объясняет замысел: оценивать фронт по доле,
-«**rather than stalling on unreachable 1.0**» — чтобы не встать на недостижимой единице. Одно недостижимое
-условие убрали и оставили другое: цех встал на недостижимом **булевом**.
+**Идеальная форма:** design work is additive, edge-triggered and evidence-bound. The main delivery flow should
+not be rewritten to host design work. A design cycle starts only on a false-to-true readiness edge, one project
+can have only one current cycle row, concurrent ticks cannot dispatch two reviews for the same round, and a
+review timeout never blocks product work forever. Generated design must be implementable HTML when the downstream
+review/implementation step requires HTML; an image-only artifact is the wrong kind of object, not a transient
+failure. Design-system truth comes from the project's own captured baseline, not from factory-global colors.
+Live drift is checked only against a real served page while the runtime observation window is already open, and
+static HTML shells without visual tokens produce `CANNOT_JUDGE`, not false green or false red.
 
-*Форма: **слабая**.* Инвариант «цех работает, когда объём перешёл фронт готовности» назван — через долю; но
-комбинация «доля выше порога **и** декомпозиция не завершена» инвариантом не покрыта: фронт объявляется
-пройденным, а прежний флаг молча накладывает вето. Ветвь не хранит инвариант и не падает закрыто — она
-возвращает `false` без объяснения, какое из двух условий не выполнилось.
+**Граница:** this section may create design-review/implementation work and audit design evidence. It must not
+change core readiness semantics, merge gates, runtime launcher ownership, product-code truth, or final delivery
+judgment. `DesignConsistencyAuditService` judges tokens and delegated layout evidence; it does not decide
+business acceptance. `DesignDriftMonitorService` observes the already-running product; it must not open a second
+runtime window. `DesignSystemFalsificationService` records an audit trail only; it must not create normal pending
+wishlist work.
 
-*Что делать:* либо `decompositionComplete` перестаёт быть предусловием и входит в ту же долю, либо сообщение
-о выдержке обязано называть, **какое именно** условие не выполнилось. Сейчас оно печатает оба числа и не
-говорит, что решило.
+**Входы:** `design_shop_enabled`, `design_shop_readiness_threshold`,
+`design_system_falsification_enabled`, Stitch key/settings, active projects, readiness facts, design-shop cycle
+row, Stitch/Google asset result, draft paths, GitHub draft HTML, declared colors/fonts, sibling HTML drafts,
+live root URL, live fetched HTML body, eligible merged UI epics, design-system ids, review approval files and
+review timeout.
 
-*Опровержение, назначенное вперёд:* довести долю до 1.0 при незавершённой декомпозиции. Цех обязан либо
-пойти, либо назвать причину отказа именем.
-*Второго разрешения цех не производит:* задание ревьюеру дизайна (`ProjectFlowService:5688–5700`) прямо говорит «this is a single generated screen, not a desktop/mobile pair — do NOT reject it solely for missing a second resolution». Пока генерируется один экран на одно разрешение, упрекать ревьюера не в чем: вопрос ему не задан. Предписание 31.
+**Выходы:** updated `design_shop_cycles` row, start-cycle claim/release, captured `stitchProjectId`,
+`stitchScreenId`, declared colors/fonts, generated draft path, design-review dispatch, design-implementation
+dispatch, hold log with named readiness facts, dismissed audit-trail wishlist row for design-system
+falsification, token/geometry consistency report, live drift pass/fail/cannot-judge log.
 
-**`DesignConsistencyAuditService`** — язык экрана либо восходит к объявленной дизайн-системе, либо нет.
-*Связи:* вызывает генератор ассетов.
-*Ценность:* три экрана под одним идентификатором пришли в трёх несовместимых цветовых регистрах.
-*Комментарий:* **периферия.** **Передача идентификатора не есть согласованность** — идентификатор принят за
-свойство; снова категориальная ошибка, и снова ловится машиной, а не глазом оператора.
-*Философия:* `CROSS_SCREEN_JACCARD_GATE` (D015) — **сильная**: экраны сверяются между собой, а не только с
-системой. Опровержение: сверить два экрана одной системы и посчитать пересечение словаря.
-*Телефон — не его предмет, и это замер, а не упрёк:* `extractUsedTokens(html)` берёт только hex-цвета, `rgb()` и `font-family`. Геометрии — расстояний, перекрытий, порядка наложения — он не касается вовсе, поэтому наползание меню на узком экране он пропустит при любом качестве работы. Разбор и что делать — предписание 31, образец `GROUPING_PROXIMITY_GATE` (D011), в фабрике не применён ни разу.
+**Владельцы истины и состояния:** readiness truth is `ClientDeliverableReadinessService`; cycle state is
+`DesignShopCycleEntity` through `DesignShopCycleRepository`; implementable artifact truth is the GitHub draft
+HTML fetched by `GitHubPullRequestService`; generated asset truth is `DesignAssetService` plus `StitchClient`;
+design token baseline truth is the first real captured project screen stored on the cycle row; geometry verdict
+truth is `LayoutGeometryAuditService`; live-page truth is the runtime observation window owned by
+`ClientRuntimeObservabilityService`; audit-trail truth for design-system falsification is the dismissed
+`WishlistEntity`.
 
-**`DesignSystemFalsificationService`** — применяет систему к **уже слитому** настоящему UI, а не к догадке.
-*Связи:* вызывающих нет — по расписанию; пишет заявки.
-*Ценность:* фальсификация требует предмета, который уже существует.
-*Комментарий:* **периферия.** Разница между «уточнить реальное» и «предположить будущее» здесь и есть весь смысл.
-*Философия:* `FALSIFICATION_HARNESS` (D008) — **сильная**. Опровержение: найти применение системы к мокапу.
+**Инварианты:**
+- `design_shop_enabled=false` means no design-shop work;
+- readiness is `decompositionComplete` plus ratio/frontier rules, not raw task count alone;
+- cycle start is a rising edge: `isReady && !lastWasReady`;
+- `claimStartCycle` makes overlapping ticks safe by requiring `startCycleClaimedAt IS NULL` and
+  `lastWasReady=false`;
+- transient generation unavailability releases the claim and retries; wrong artifact kind records a concern
+  and does not loop forever;
+- review approval is proven by approved mockup HTML in GitHub, not by the draft existing;
+- first baseline is captured from the project's own generated HTML and reused for later trace checks;
+- token trace has `CANNOT_JUDGE` for empty used tokens or missing baseline, not accepted/rejected by guess;
+- cross-screen similarity checks sibling vocabulary, not only declared token membership;
+- viewport zoom restrictions, overlap and proximity are layout evidence, not token evidence;
+- design-system falsification processes each merged UI epic at most once per source marker;
+- live drift piggybacks on an existing healthy runtime window and skips if no baseline or fetchable body exists.
 
-**`DesignDriftMonitorService`** — дрейф против живого продукта, **в чужом уже открытом окне наблюдения**.
-*Связи:* вызывает наблюдение рантайма; зовёт запускатель.
-*Ценность:* два независимых окна над одним продуктом мешали бы друг другу и удваивали расход.
-*Комментарий:* **периферия; предотвращение помехи.**
-*Философия:* `PLANNING_CONSISTENCY` (D004) — **не мерено; прежняя оценка «сильная» снята замером 2026-09-05 — механизм ни разу не выполнил своё сравнение, см. предписание 28**. Опровержение: найти второй цикл запуска.
+**Сильная форма сейчас:** current source and tests support the family. `DesignShopOrchestrationService` has a
+scheduled independent tick, a visible hold reason, rising-edge readiness, atomic claim/release, baseline capture,
+HTML-kind gate, review promotion and review timeout. `DesignShopOrchestrationServiceLaw15Test` proves the
+threshold rule, custom threshold, rising-edge behavior and reset after readiness drops. `DesignShopOrchestrationServiceTest`
+proves disabled setting, concurrent claim loser, generation success, baseline capture, unavailable generation
+claim release, image-only/no-HTML degradation record, approved mockup dispatch and readable hold logging.
+`DesignConsistencyAuditService` extracts hex/rgb/font tokens, computes trace ratio and Jaccard, rejects off-token
+screens, catches the real cross-screen incident, accepts consistent siblings, and returns `CANNOT_JUDGE` for
+SPA shell/blank/missing baseline. `LayoutGeometryAuditService` now covers viewport scalability, collisions and
+proximity, so the old "phone is not its subject" note is stale. `DesignSystemFalsificationServiceTest` covers
+disabled/missing Stitch, unattached design-system creation when no Stitch project exists, Stitch-project-id use,
+idempotent already-processed epic and create-failure no-record behavior. `DesignDriftMonitorServiceTest` covers
+disabled shop, missing repository, missing baseline, failed fetch, SPA cannot-judge, on-brand pass and off-brand
+fail. `ClientRuntimeObservabilityService` calls `checkLiveInstance` only after 2xx health inside the same open
+runtime window.
+
+**Слабая / неидеальная форма:** no current implementation weakness was identified from source/test evidence in
+this tact. The old section's claimed defects are stale relative to current code: the readiness hold now logs the
+named facts, the single-resolution review instruction is an explicit product of the current prompt contract,
+layout/phone checks are now represented by `LayoutGeometryAuditService`, and live drift has a real caller from
+the runtime observability window.
+
+**Что надо сделать для идеала:** no code change is required from this section record. Future work should only
+extend this family after a counterexample is reproduced: duplicate design review despite `claimStartCycle`,
+HTML-required path accepting image-only output, off-token or unscalable HTML accepted, drift check opening its
+own runtime window, or design-system falsification creating normal pending work instead of an audit trail.
+
+**Что не трогать:** do not wire design shop into `ContinuousOrchestrationService`; do not remove the
+`decompositionComplete` part of readiness without replacing the whole readiness law and tests; do not fall back
+from required HTML to image generation; do not use factory-global design tokens as a client baseline; do not
+turn `CANNOT_JUDGE` SPA/static-shell results into pass/fail; do not let drift monitoring launch or tear down a
+runtime instance; do not make design-system falsification create normal pending wishlist work.
+
+**Опровержение / проверка:** this record is false if two overlapping ticks dispatch two design reviews for one
+readiness edge; if `design_shop_enabled=false` still performs work; if a generated image with no committed
+`mockup.html` starts a review cycle; if an approved review without GitHub approved HTML dispatches
+implementation; if an off-token, unscalable or colliding screen is accepted by the audit; if blank/SPА shell HTML
+is accepted or rejected instead of `CANNOT_JUDGE`; if `DesignDriftMonitorService` calls launch/teardown or runs
+outside a 2xx live observation window; or if design-system falsification creates active/pending wishlist work.
+
+**Критерий закрытия:** closed as an ideal documentation record when the listed source/test evidence remains true
+and no reproduced counterexample above exists. Implementation is ideal for the currently named scope because
+the section has explicit boundaries, state owners, tests for edge/race/fallback/cannot-judge branches, and no
+evidence-backed defect requiring a code change.
+
+**Доказательства:** `DesignShopOrchestrationService.java:44,113,133-190,210-235,317-455`;
+`DesignShopCycleEntity.java:15,28-63,77-110`; `DesignShopCycleRepository.java:14-33`;
+`V93__design_shop_cycles.sql:5-11`; `V98__design_shop_start_cycle_claim.sql:5`;
+`DesignShopOrchestrationServiceTest.java:27,76,89-109,127-181,210-260,306-352`;
+`DesignShopOrchestrationServiceLaw15Test.java:35-39,89-124,136-188`;
+`DesignConsistencyAuditService.java:22-33,49-123,139-275`;
+`DesignConsistencyAuditServiceTest.java:20-60,64-105,115-157`;
+`LayoutGeometryAuditService.java:17-25,153-171,331-347,459-474`;
+`LayoutGeometryAuditServiceTest.java:27-104,112-123,135-174,188-246`;
+`DesignSystemFalsificationService.java:44,86-164`;
+`DesignSystemFalsificationServiceTest.java:64-187`;
+`DesignDriftMonitorService.java:32-120`;
+`DesignDriftMonitorServiceTest.java:48-144`;
+`ClientRuntimeObservabilityService.java:217-223`;
+philosopher rows `RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION`,
+`RUT_BARKAN_MARKUS_10_TOKEN_TRACE_UNITY`, `LYUDVIG_VITGENSHTEYN_15_CROSS_SCREEN_JACCARD_GATE`,
+`ELVIN_GOLDMAN_20_GROUPING_PROXIMITY_GATE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS`.
+
+**Текущий статус:** считаю механизм идеальным.
+
+**комментарий для Антигравити:** считаю механизм идеальным.
 
 ---
 

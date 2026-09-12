@@ -573,6 +573,44 @@ and prove it never calls `findAllVectorRows` for the scoped product-worker path,
 HTML-before-image rule, token-audited GitHub drafts, one runtime-launcher client, policy-gated audited observer
 actions and the permanently inert `GeminiProjectObserverService`.
 
+## 2026-09-12 Codex Strict Record: Design Shop And Live Drift Family
+
+Status: documentation-only strict-family replacement for section X in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `DesignShopOrchestrationService`, `DesignShopCycleEntity`,
+`DesignShopCycleRepository`, migrations `V93__design_shop_cycles.sql`, `V94__design_shop_cycles_baseline.sql`,
+`V98__design_shop_start_cycle_claim.sql`, `DesignConsistencyAuditService`, `LayoutGeometryAuditService`,
+`DesignSystemFalsificationService`, `DesignDriftMonitorService`, and linked mechanisms `DesignAssetService`,
+`StitchClient`, `ClientDeliverableReadinessService`, `ClientRuntimeObservabilityService`, `ProjectFlowService`,
+`GitHubPullRequestService`, `WishlistRepository` and `ProjectRepository` as the design-shop, design-system and
+live-drift family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 23 |
+| Sections still missing visible `комментарий для Антигравити` | 40 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: old section X still carried stale statements from earlier measurements. Current source/test
+evidence shows the readiness hold now logs named facts, `LayoutGeometryAuditService` covers viewport/collision/
+proximity checks, and `DesignDriftMonitorService` has a real caller from `ClientRuntimeObservabilityService`
+inside the live runtime observation window.
+
+Remaining non-ideal point for this family: no current implementation weakness was identified from source/test
+evidence in this tact. No code was changed.
+
+комментарий для Антигравити: считаю механизм идеальным.
+
 ## 2026-09-12 Codex Strict Record: Review Gate Merge Family
 
 Status: documentation-only strict-family replacement for section IV in `docs/FACTORY_MECHANISMS.md`.
