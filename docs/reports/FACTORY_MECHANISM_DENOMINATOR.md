@@ -230,3 +230,13 @@ Remaining not-recorded rough-presence list must be regenerated, not trusted from
 Top-of-file structure repair applied in `docs/FACTORY_MECHANISMS.md`: the old "five fields" instruction was false after strict records began. It now requires visible fields for ideal form, boundary, inputs, outputs, state owners, invariants, strong/weak form, refutation, closure, evidence, current status and `комментарий для Антигравити`.
 
 комментарий для Антигравити: documentation mechanism is not ideal yet, but the critical visibility defect is now named. Do not write implementation code from old narrative paragraphs. Only use a mechanism record after the visible structured fields and Antigravity comment are present. Philosophy: `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for record status vs implementation status, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for evidence commands, and `ACP-061 Hoare Triple Review` before code.
+
+## 2026-09-12 Codex Cleanup: Main File Is Not A Debate Log
+
+Status: cleanup pass started after operator correction that `docs/FACTORY_MECHANISMS.md` must contain mechanisms and coding guidance, not agent disputes.
+
+Applied to the top strict-recorded sections: visible author/tact labels (`Codex`, `Claude`), "previous record was wrong" style commentary, and self-referential correction language were replaced with neutral current facts: measured counts, current strength, open non-ideal points and what to code next. Historical handoff/provenance remains in this report layer, not in the mechanism file.
+
+Rule for future passes: do not add authorship, inter-agent disagreement, blame language, or narrative self-correction to `docs/FACTORY_MECHANISMS.md`. If a stale statement matters, write the current measured fact in the mechanism record and put the audit history here or in another `docs/reports/*` file. The visible mechanism record must include at minimum: philosophical pattern, ideal form, current state, gap to ideal, what to code for the ideal, what not to touch, refutation/check, closure criterion and evidence.
+
+комментарий для Антигравити: documentation mechanism is not ideal until the whole file is cleaned, but the rule is now explicit. Main mechanism records must be usable by an implementation agent without reading agent drama. Apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`: mechanism state, documentation audit history and implementation advice are different levels and must not be mixed.

@@ -12,6 +12,8 @@
 Обязательная структура каждой новой или исправленной записи:
 
 * **Имена механизма или семейства** — одна строка с точными классами/поверхностями/носителями результата.
+* **Философский паттерн** — точный идентификатор из `docs/philosopher-patterns`, код дефекта и почему именно он
+  применим к этому механизму.
 * **Связи** — кто зовёт, кого зовёт механизм, какие хранилища читает и пишет, какие соседние механизмы читают
   его следы. Упоминания имени без вызова не считаются вызовом.
 * **Идеальная форма** — как механизм обязан работать, чтобы не подменять факт, уровень абстракции или владельца.
@@ -23,6 +25,9 @@
 * **Инварианты** — правила, которые должны оставаться верными при любом нормальном ходе фабрики.
 * **Сильная форма сейчас** — что уже удержано кодом, тестом или живым замером.
 * **Слабая/неидеальная форма сейчас** — что ещё не доказано, держится соглашением или реально неидеально.
+* **Что сделать для идеала** — конкретная кодовая или документационная работа, которая приведёт механизм к
+  идеальной форме. Если кодить нельзя до ответа на вопрос, вопрос называется здесь явно.
+* **Что не трогать** — сильные части механизма, которые нельзя переписывать ради локального улучшения.
 * **Опровержение** — конкретная проверка, которая покажет, что описание ложно.
 * **Критерий закрытия** — условие, после которого можно честно сказать, что механизм описан или воплощён идеально.
 * **Свидетельства такта** — команды, файлы, строки и тесты, на которых держится запись.
@@ -33,6 +38,10 @@
 
 Запись без `комментарий для Антигравити` и критерия закрытия не считается завершённой. Запись, где результат
 спрятан в старом повествовании, не считается достаточно видимой для агента, который потом пишет код.
+
+Основной файл не предназначен для споров агентов, авторства тактов, истории взаимных исправлений и эмоциональных
+оценок старого текста. Если такой контекст нужен, он уходит в `docs/reports/`, а здесь остаются только механизмы,
+их идеальная форма, текущее состояние, опровержение, критерий закрытия и что именно кодить или не кодить.
 
 Ссылка на образец даётся идентификатором, а не именем философа: имя — жест, идентификатор проверяем.
 
@@ -71,7 +80,7 @@
 внутри него. Разделять начинать нельзя, пока владение не объявлено — образец требует именно этого порядка.
 
 
-*Живое, 9 сентября 2026, Codex: 10-такт 3/10 — project flow/orchestration cluster, без правки кода.* Третий кластер десятиактного прохода заполнен как lifecycle/orchestration mechanism, not as eight scattered `findAll()` lines. The common subject is the project work loop: `ProjectFlowService` creates and lists work, `ContinuousOrchestrationService` chooses the next tick, `AutoMergeService` reconciles PR truth, `BranchGarbageCollectorService` retires dead branches, and `StrandedFinalizingSweepService` releases a transient claim when the original holder is gone.
+*Строгая запись семейства: project flow/orchestration cluster.* Это lifecycle/orchestration mechanism, not eight scattered `findAll()` lines. The common subject is the project work loop: `ProjectFlowService` creates and lists work, `ContinuousOrchestrationService` chooses the next tick, `AutoMergeService` reconciles PR truth, `BranchGarbageCollectorService` retires dead branches, and `StrandedFinalizingSweepService` releases a transient claim when the original holder is gone.
 
 *Идеальная форма кластера:* every lifecycle decision is made from a named boundary: selected project, selected task set, selected session set, active projects, or PR repository identity. A read may span the factory only when the endpoint is explicitly an operator directory or a maintenance sweep with a named bound/order. Reconciliation mechanisms must preserve the event law: GitHub truth changes review/task/session state only through the owner that owns that transition, and cleanup must never close a live worker's PR or free a live holder's claim.
 
@@ -98,7 +107,7 @@
 
 *Критерий закрытия:* this record is complete when all eight full-table call sites above name owner, boundary, refutation and closure. The implementation becomes ideal only when active-project sweeps use status predicates, task/session reads are project-scoped, branch/PR token matching is project-bound, project directory semantics are explicit, and tests prove GitHub cleanup/stall/watermark decisions unchanged except for acquisition cost.
 
-*Кандидат на будущую реализацию Codex:* after explicit code approval, safe first candidates are `StrandedFinalizingSweepService.sweep()` and `ProjectFlowService.selectBadSession` because existing repository predicates cover their boundaries. `ProjectFlowService.highestMergedPrNumber`, `BranchGarbageCollectorService` and `AutoMergeService.belongsToActiveProject` need fixture protection first; they are not safe as isolated edits because they sit on destructive or spend-guard paths.
+*Что кодить следующим после явного разрешения на код:* safe first candidates are `StrandedFinalizingSweepService.sweep()` and `ProjectFlowService.selectBadSession` because existing repository predicates cover their boundaries. `ProjectFlowService.highestMergedPrNumber`, `BranchGarbageCollectorService` and `AutoMergeService.belongsToActiveProject` need fixture protection first; they are not safe as isolated edits because they sit on destructive or spend-guard paths.
 
 *Текущий статус:* not ideal. The connected lifecycle/orchestration record is now explicit, but implementation still contains eight global acquisitions in this cluster, including destructive cleanup paths and one implicit operator-directory endpoint.
 
@@ -125,8 +134,7 @@
 
 ## Семейство: рыночный корпус, уставный гейт и полевое исследование
 
-*Приведено к строгому виду 12 сентября 2026, Клод, без правки кода. Семейство взято целиком: три механизма,
-одна поверхность и данные, которыми они владеют.*
+*Строгая запись семейства. Семейство взято целиком: три механизма, одна поверхность и данные, которыми они владеют.*
 
 **`MarketCorpusService`**, **`MarketComplianceGate`**, **`MarketResearchService`**, **`MarketResearchController`**,
 данные `market-corpus/` — что продукт данного класса обязан содержать независимо от того, что клиент вспомнил.
@@ -139,7 +147,7 @@
 в `MarketCorpusService` гейт лишь упомянут в комментарии :214, вызова оттуда нет.
 `MarketResearchService` зовёт только `MarketResearchController`. Ни `MarketCorpusService`, ни `MarketComplianceGate`
 не пишут ничего (`grep -oE '[a-zA-Z]+Repository'` по обоим файлам — пусто); `MarketResearchService` пишет `.save(` и держит
-`TaskRepository`, `RoleRepository`, `ProjectRepository` — прежняя запись называла одно хранилище.
+`TaskRepository`, `RoleRepository`, `ProjectRepository`.
 
 *Идеальная форма:* корпус **сообщает** обязательный объём и никогда его не **заказывает** — решает компилятор;
 всякая влияющая запись несёт источник и срок; уставное требование, которого план не покрывает, называется актом,
@@ -179,8 +187,8 @@
 
 *Сильная форма сейчас:* `RELIABILITY_CHAIN` (D010) — корпус дословно: «данным верят только когда процесс их добычи
 надёжен для этого класса дефекта; названы источник, отметка времени, правило свежести и путь проверки»;
-опровержение образца — «назвать возраст значения». **Форма сильная**, и это исправление прежней записи, где стояло
-«не мерено»: её опровержение закрыто заслонами `marketObservationsStopInfluencingOnceTheyExpire`,
+опровержение образца — «назвать возраст значения». **Форма сильная**: её опровержение закрыто заслонами
+`marketObservationsStopInfluencingOnceTheyExpire`,
 `aLawDoesNotLapseBecauseNobodyRevisitedTheFile`, `treatsAnUnreadableShelfLifeAsExpiredRatherThanImmortal`,
 `anObservationWithNoStatedShelfLifeStillCounts`, `everyInfluentialEntryCitesItsSource`,
 `neverLetsUnverifiedEntriesInfluenceAnything` (`MarketCorpusServiceTest`, 19 тестов).
@@ -223,8 +231,7 @@
 
 ## Семейство: brownfield-приём — разбор чужого репозитория
 
-*Приведено к строгому виду 12 сентября 2026, Клод, без правки кода. Семейство взято целиком: три механизма,
-тип-носитель, тип исхода и хранилище находок.*
+*Строгая запись семейства. Семейство взято целиком: три механизма, тип-носитель, тип исхода и хранилище находок.*
 
 **`OnboardingAuditService`**, **`RepositoryStackAnalyzer`**, **`StackProfile`**, **`InspectionStatus`**,
 **`OnboardingAuditFindingRepository`** — то, чем фабрика впервые узнаёт об уже существующем продукте клиента.
@@ -267,7 +274,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 Корпус дословно — сильная: «истинное, ложное, **неизвестное** и противоречивое представлены явно, и показано, как
 каждое хранится, отображается и разрешается. Третий исход невозможно проигнорировать на стороне вызывающего»;
 слабая: «булево плюс `null`, трактуемый по месту»; опровержение: «найти вызывающего, который компилируется, не
-обработав „неизвестно“». **Форма сильная в типе и в чтении, и это исправление прежней записи, где стояло «слабая».**
+обработав „неизвестно“». **Форма сильная в типе и в чтении.**
 Замер 6 сентября описывал булевы поля; сейчас их нет: тип `InspectionStatus` — `YES / NO / UNCHECKED` с
 `isYes() / isNo() / isUnchecked() / displayValue()` и фабрикой `of(boolean)`. Все три точки отката анализатора
 возвращают «не проверено»: `:52` (нет токена), `:99` (дерево не получено), `:326` (ошибка разбора).
@@ -278,7 +285,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 `auditWithInspectedRepositoryAndVerifiedCiAndTestsDoesNotFileCiOrTestFindings` (`OnboardingAuditServiceTest`, 5 тестов).
 Этим же закрыта проверка пункта 10 очереди: «при отсутствии доступа отчёт не содержит ни одной находки о заказчике».
 
-*Слабая/неидеальная форма сейчас:* остаток прежней записи не закрыт — `ProjectFlowService:391` по-прежнему
+*Слабая/неидеальная форма сейчас:* открытый остаток — `ProjectFlowService:391` по-прежнему
 выбрасывает результат аудита: либо он там не нужен, и вызов обязан это объявить, либо нужен, и его надо читать.
 Пока результат выброшен, третий исход на этом пути действительно нечем обработать, и по букве образца этот
 вызывающий — та самая слабая форма. `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) объявлен в javadoc
@@ -310,15 +317,14 @@ production, `:133` непрерывная сборка), а не на «не и�
 
 ## Семейство: компиляция — требование становится задачами
 
-*Приведено к строгому виду 12 сентября 2026, Клод, без правки кода. Семейство взято целиком: девять механизмов
-от заявки до задачи, включая личность эпика, единственные правила чтения класса и стадии, два сличителя
+*Строгая запись семейства. Семейство взято целиком: девять механизмов от заявки до задачи, включая личность эпика, единственные правила чтения класса и стадии, два сличителя
 дубликатов и освобождение застрявшего притязания.*
 
 **`TechnicalLeadCompiler`**, **`FeatureService`**, **`EpistemicMetadataClassifier`**, **`KanoClass`**,
 **`EmsFlowStage`**, **`SelfFalsificationEpicMatcher`**, **`WishlistContentSimilarityMatcher`**,
 **`WishlistService`**, **`StrandedFinalizingSweepService`** — единственная законная дорога от намерения к работе.
 
-*Связи:* `TechnicalLeadCompiler` — **2077** строк (в прежней записи стояло 1758), 20 публичных членов; держит семь
+*Связи:* `TechnicalLeadCompiler` — **2077** строк, 20 публичных членов; держит семь
 хранилищ (`WishlistRepository`, `TaskRepository`, `RoleRepository`, `ProjectRepository`, `ProjectFileClaimRepository`,
 `ProjectGenerationStateRepository`, `ProjectHotspotFileRepository`) и пишет в **четыре**: `taskRepository.save`,
 `wishlistRepository.save`, `projectFileClaimRepository.save`, `projectGenerationStateRepository.save`.
@@ -328,7 +334,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 `FeatureService` (262 строки, 12 публичных) пишет `featureRepository.save` и `wishlistRepository.save`; упоминается
 в 8 файлах. `EpistemicMetadataClassifier` (135 строк) зовёт только `FeatureService`, не пишет ничего.
 `KanoClass` (66 строк) упоминают **трое** — `ProjectFlowService`, `JulesDispatchService`, `CommandDashboardService`
-(в прежней записи стояло «четверо»); не пишет. `EmsFlowStage` (125 строк) упоминают восемь механизмов; не пишет.
+не пишет. `EmsFlowStage` (125 строк) упоминают восемь механизмов; не пишет.
 `SelfFalsificationEpicMatcher` (131 строка, один публичный вход) упоминают четверо; не пишет.
 `WishlistContentSimilarityMatcher` (274 строки) упоминают пятеро; не пишет.
 `WishlistService` (84 строки) идёт от контроллера и пишет только `wishlistRepository.deleteAll`.
@@ -366,8 +372,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 *Сильная форма сейчас:* `INSTITUTIONAL_FACT_REGISTER` (D007; корпус `03_PATTERN_STRENGTH.md`) — дословно: «статус
 создаётся **правилом**, и есть запись аудита о том, что правило применилось»; слабая — «статус присваивается в коде
 там, где показалось уместным»; опровержение — «назвать правило, создающее статус; если названо место, а не правило —
-регистра нет». **Форма сильная целиком, и это исправление прежней записи, где стояло «не держится по ограничению
-области».** Ограничение введено: `NamespaceAuditStatus` с тремя исходами и явным «no silent pass»
+регистра нет». **Форма сильная целиком.** Ограничение введено: `NamespaceAuditStatus` с тремя исходами и явным «no silent pass»
 (`TechnicalLeadCompiler:78–81, 106, 138, 159, 167, 174`), отказ читается при отправке (`:652 namespaceRefusal`).
 Заслон — `ProductNamespaceLaw26Test`, 16 тестов, среди них
 `unknownNamespace_evaluatesAsUnknownNamespaceThirdOutcome`, `unknownNamespace_allowsNonJavaPaths`,
@@ -407,8 +412,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 строках и четырёх пишущих хранилищах это несоразмерно, и **доля путей компиляции без заслона не мерена**.
 `WishlistService` имеет один заслон косвенно (`WishlistControllerIntegrationTest`) при единственной операции
 `deleteAll` — семантика удаления заявки по `ACTUAL_OBJECT_REGISTER` («кто вправе удалить») **не мерена**.
-Утверждение прежней записи «зовёт 9 механизмов» не подтверждено и не опровергнуто: мерены упоминания имени, а не
-вызовы, — **не мерено**.
+Счёт действительных вызовов не подтверждён и не опровергнут: мерены упоминания имени, а не вызовы, — **не мерено**.
 
 *Опровержение:* найти задачу, созданную в обход компиляции эпика; найти эпик, заведённый на заявку, не ставшую
 задачей; найти второй парсер класса Кано или второй источник порядка стадий; подать два описания одного требования
@@ -424,13 +428,12 @@ production, `:133` непрерывная сборка), а не на «не и�
 `grep -n 'namespace\|Law 26' TechnicalLeadCompiler.java`; `grep -oE '\bvoid\s+[a-zA-Z0-9_]+\s*\(' ProductNamespaceLaw26Test.java`;
 `grep -A1 '@Test'` по семи тестовым классам семейства;
 `grep -n '^### .INSTITUTIONAL_FACT_REGISTER\|^### .ACTUAL_OBJECT_REGISTER\|^### .ANCHOR_BOUND_NAME\|^### .SUBSTITUTION_ORACLE\|^### .BELIEF_UPDATE_LEDGER\|^### .CAUSAL_PROCESS_TRACE\|^### .PRINCIPLED_INTEGRITY\|^### .LEVEL_OF_ABSTRACTION_LOCK' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`.
-Контроль на образцы: `FINALIZING_DURATION` и `REQUIRES_NEW`, встречающиеся в прежнем тексте, **в корпусе отсутствуют**
+Контроль на образцы: `FINALIZING_DURATION` и `REQUIRES_NEW` **в корпусе отсутствуют**
 (0 упоминаний) — это идентификаторы кода, а не образцы; `ELVIN_GOLDMAN_06` — строка в файле философа, а не заголовок
 образца (3 упоминания), сам образец называется `CAUSAL_PROCESS_TRACE`.
 
-*Текущий статус:* все названные образцы семейства держатся сильной формы, включая ограничение области, которое
-прежняя запись считала невыполненным. Открыто: несоразмерность заслонов самому компилятору, семантика удаления
-заявки, и счёт действительных вызывающих.
+*Текущий статус:* все названные образцы семейства держатся сильной формы. Открыто: несоразмерность заслонов
+самому компилятору, семантика удаления заявки, и счёт действительных вызывающих.
 
 *комментарий для Антигравити:* семейство не идеально по покрытию, а не по устройству. Не переписывай ленивую чеканку
 эпика, единственные экземпляры `KanoClass` и `EmsFlowStage` и трёхзначный разбор области — это сильные формы,
@@ -444,16 +447,16 @@ production, `:133` непрерывная сборка), а не на «не и�
 
 ## Семейство: отправка — задача уходит в работу
 
-*Приведено к строгому виду 12 сентября 2026, Клод, без правки кода. Кластерная запись Codex от 9 сентября ниже
-сохранена целиком — она уже в строгом виде и описывает восемь полных выборок того же семейства.*
+*Строгая запись семейства. Внутри раздела также сохранена структурированная детализация Jules-operations:
+она описывает восемь полных выборок того же семейства.*
 
 **`JulesDispatchService`** — отправляет задачи, ведёт жизненный цикл сессии, принимает завершения, строит граф
 задач из срезов плана.
-*Связи:* **5861** строка (в прежней записи 5752), 38 публичных членов; держит **13** хранилищ и пишет в **восемь**:
+*Связи:* **5861** строка, 38 публичных членов; держит **13** хранилищ и пишет в **восемь**:
 `taskRepository`, `wishlistRepository`, `julesSessionRepository` (`save` и `delete`), `projectRepository`,
 `defectJournalRepository`, `designShopCycleRepository`, `julesActivityResponseRepository`, `reviewConcernRepository`
-(в прежней записи стояло «пишет 7 хранилищ»). Утверждение «зовёт 27 механизмов» мерено не было и здесь не
-повторяется: измерены упоминания имени — 46 файлов `src/main`.
+Утверждение «зовёт 27 механизмов» мерено не было и здесь не повторяется: измерены упоминания имени — 46 файлов
+`src/main`.
 *Идеальная форма:* отправка знает, **куда** и **чем** отправляет, прежде чем тратить внешний бюджет; неизвестная
 цель либо разрешается из происхождения задачи, либо отказ имеет выход, а не повторяется тактом.
 *Граница:* транспорт и решение об отправке — разные рода; завершение сессии и отправка — разные рода. Отправка не
@@ -483,7 +486,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 `julesSessionRepository` (семь писателей). Применимая философия: `PART_WHOLE_OWNERSHIP` (D004).
 
 
-*Живое, 9 сентября 2026, Codex: 10-такт 4/10 — Jules operations cluster, без правки кода.* Четвёртый кластер десятиактного прохода заполнен как Jules operations surface, not as controller cleanup. Общий предмет: task dispatch spends external Jules capacity, status polling turns external session evidence into local lifecycle, manual/internal endpoints expose session evidence for repair, and GitHub webhooks must be attributed to the right task before they trigger a reviewer.
+*Строгая детализация: Jules operations cluster.* Общий предмет: task dispatch spends external Jules capacity, status polling turns external session evidence into local lifecycle, manual/internal endpoints expose session evidence for repair, and GitHub webhooks must be attributed to the right task before they trigger a reviewer.
 
 *Идеальная форма кластера:* every Jules-facing read declares which contract it serves: exact lookup by session/task/token; bounded operator/admin list; role catalogue for persistent philosophical audit; account API-key owner for dispatch; or webhook PR→task lineage. Exact lookup must never load a full table; operator lists must be explicitly bounded/ordered/masked; external-spend paths must prove the account/key, task, project and branch/PR refer to the same work before dispatching.
 
@@ -510,7 +513,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 
 *Критерий закрытия:* this record is complete when all eight Jules-operation full-table reads name contract, owner and closure. The implementation becomes ideal only when exact lookup/list/admin/webhook contracts have tests or probes, the role catalogue question in `AGY_ASKS.md` is answered, and external-spend paths cannot choose account/task/session evidence outside their declared boundary.
 
-*Кандидат на будущую реализацию Codex:* after explicit code approval, safest first candidates are exact lookup replacement for `InternalJulesActivitiesProbeController.probe` and bounded/read-only DTO work for session/config list surfaces. `GithubWebhookController` and `JulesDispatchService.dispatchAdHocSessionToBranch` need attribution/account-key fixtures first; the role read is blocked by the existing active-role order question.
+*Что кодить следующим после явного разрешения на код:* safest first candidates are exact lookup replacement for `InternalJulesActivitiesProbeController.probe` and bounded/read-only DTO work for session/config list surfaces. `GithubWebhookController` and `JulesDispatchService.dispatchAdHocSessionToBranch` need attribution/account-key fixtures first; the role read is blocked by the existing active-role order question.
 
 *Текущий статус:* not ideal. The connected Jules operations record is now explicit; implementation still has eight full-table acquisitions in the cluster and one pre-existing unresolved role-catalogue contract.
 
@@ -527,8 +530,8 @@ production, `:133` непрерывная сборка), а не на «не и�
 `julesSessionRepository.save`. `PersistentWorkerSessionService` (190 строк, 11 публичных) держит
 `JulesSessionRepository` и `PersistentWorkerSessionRepository` и **не пишет** — учёт ведёт через сущность сессии.
 `ClaimService` (1153 строки, 38 публичных) держит шесть хранилищ и пишет в **пять**: `accountRepository`,
-`claimRepository`, `defectJournalRepository`, `julesSessionRepository`, `taskRepository` (прежняя запись называла
-четыре). `LeaseWatchdogService` — **28** строк (в записи стояло 29), `@Scheduled(fixedRate = 60000)`, зовёт только
+`claimRepository`, `defectJournalRepository`, `julesSessionRepository`, `taskRepository`. `LeaseWatchdogService` —
+**28** строк, `@Scheduled(fixedRate = 60000)`, зовёт только
 `ClaimService`. `AccountHealthService` (887 строк, 20 публичных) держит четыре хранилища, пишет в три.
 `BottleneckAwarePriorityService` (90 строк) и `BottleneckDetectionService` (107 строк) читают задачи, притязания и
 аккаунты и **не пишут ничего**.
@@ -571,8 +574,8 @@ production, `:133` непрерывная сборка), а не на «не и�
 «проследить от объявления к последствию; обрыв цепи и есть дефект». **Сильная** у `SessionLifecycleService`:
 `retireSessionOnlyMarksLocalCancelledAndDeletesRemotely`, `retireSessionOnlyTreats404AsConfirmedDeletion`,
 `retireSessionOnlyLeavesRemoteDeletedAtNullOnRealFailure`, `retireSessionOnlyDoesNotReDeleteWhenAlreadyConfirmedGone`.
-`INSTITUTIONAL_FACT_REGISTER` (D007) — **сильная целиком, и это исправление прежней записи**, где стояло «слабая по
-последствию исчерпания». Замер: бюджет выведен, а не выбран (`ClaimService:640` — «A_max = 2 × live accounts.
+`INSTITUTIONAL_FACT_REGISTER` (D007) — **сильная целиком**. Замер: бюджет выведен, а не выбран
+(`ClaimService:640` — «A_max = 2 × live accounts.
 Derived rather than picked»), и в коде прямо объявлено, что бюджет **намеренно не приписывает вины** (`:651–653`);
 исход разделён типом `TaskDispatchVerdict` на `UNTESTED_WITHIN_CAPACITY`, `UNATTRIBUTED_DISPATCH_REFUSAL`
 (возобновляемые, `isResumable()`) и `DISPATCH_BUDGET_EXHAUSTED` (терминальный). Заслоны:
@@ -727,7 +730,7 @@ Law*. Сильная форма дословно: «до реализации п
 *Философия:* `DECISION_EXPECTED_LOSS` (D005) — **сильная**. Опровержение: найти порог, заданный константой.
 
 **`PrReviewPipelineService`** — конвейер ревью PR.
-*Связи:* зовёт оценку риска; **вызывающих трое, замер 2026-09-06**: `GithubWebhookController:74`, `JulesDispatchService:4011`, `AutoMergeService`. Прежняя запись «вызывающих в коде нет» — ложь.
+*Связи:* зовёт оценку риска; **вызывающих трое, замер 2026-09-06**: `GithubWebhookController:74`, `JulesDispatchService:4011`, `AutoMergeService`.
 *Ценность:* последовательность ревью PR: без неё вердикт о коде выносился бы вне порядка и без общего состояния.
 *Комментарий:* **ядро по демаркации**, заслонов не видел. **Осторожно с утверждениями «вызывающих нет» во всём этом файле.** Два проверенных поимённо оказались ложными: этот и `EpistemicLayerInvariantGate` (он `@Service`, а оркестратор внедряет `List<GateCheck>`). Оба служили основанием для формы образца «слабая», то есть **ложная посылка порождала ложный статус**. Остальные подобные утверждения **не проверены**: беглый греп по именам рядом с такой строкой подхватывает имена из `Связи` и предметом утверждения не является. Прежде чем опираться на любое «вызывающих нет» — перепроверить поимённо.
 *Философия:* `ELIZABET_ENSKOM_02_PLANNING_CONSISTENCY` (D004) — Элизабет Энском, `BARCAN-TAG-12
@@ -947,7 +950,7 @@ API, а план обещал «плоскую цену». **Замена одн
 
 *Критерий закрытия:* this record is complete when the three not-yet-clustered full-table call sites above are classified and tied to the existing QualityMetrics/SixSigma registries. The implementation becomes ideal only when ProcessControl uses scoped quality evidence packets, QualityGate delegates to or matches the SixSigma owner, detail-list contracts are answered, active-project fallback is answered, and fixture tests prove no denominator/scope drift between API, audit, dashboard, Kaizen and u-chart outputs.
 
-*Кандидат на будущую реализацию Codex:* after explicit code approval, `QualityGateController` is a candidate only if delegated to the shared Six Sigma owner with fixture parity. `ProcessControlService` should not be touched as a tiny read replacement until the project/feature review-conflict evidence packet is specified; `QualityMetricsController` detail lists and `SixSigmaAuditService.getActiveProjectId` remain blocked by existing questions.
+*Что кодить следующим после явного разрешения на код:* `QualityGateController` is a candidate only if delegated to the shared Six Sigma owner with fixture parity. `ProcessControlService` should not be touched as a tiny read replacement until the project/feature review-conflict evidence packet is specified; `QualityMetricsController` detail lists and `SixSigmaAuditService.getActiveProjectId` remain blocked by existing questions.
 
 *Текущий статус:* not ideal. The connected quality/process-control record is now explicit; implementation still contains the three unclustered full-table acquisitions plus the already-recorded QualityMetrics and SixSigma acquisition defects/questions.
 
@@ -8739,4 +8742,3 @@ and Its Undoing / Enterprise of Knowledge — doxastic commitment*. Сильна
 *Текущий статус:* strict family record filled. The core phantom repository-address invariant is now strong; the whole mechanism is still not ideal because status/result vocabulary and workspace artifact unknown-value semantics remain weaker than the ideal form.
 
 *комментарий для Антигравити:* механизм не идеален. Не возвращайся к старой правке phantom URL as if it were still open: that part is already strong. Next implementation should preserve `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` by keeping repository URL/id tied to GitHub evidence, apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` so local workspace text, GitHub identity, Linear identity and aggregate factory status do not masquerade as one another, and use `ACP-061 Hoare Triple Review` before code. Править надо только whole provisioning-result contract: type or exhaustively specify status outcomes, cover verified/unverified `422`, replace raw `Repository: null` with explicit unknown/absent semantics, and remove stdout debug token-prefix leakage into a proper audit/log path.
-
