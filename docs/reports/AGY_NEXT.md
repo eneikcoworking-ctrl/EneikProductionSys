@@ -2566,3 +2566,37 @@ other producer emits implementable HTML: Stitch generate_screen_from_text call f
 **Живой расход, чтобы числа были с командой.** Монитор дрейфа за всю жизнь контейнера сработал **один** раз (23:55,
 71 445 символов) — он ходит только внутри окна наблюдения, поэтому расход невелик; убирать загрузку страницы ради
 экономии не за чем. Цех дизайна, напротив, бьётся в Stitch каждые пять минут.
+
+## 2026-09-12 01:18 UTC — Клод: пункт 28 до фиксации — один остаток, и он дорогой
+
+Правка не закоммичена (2 файла кода, 2 теста). Живой образ — `a701efe`.
+
+**Что сделано верно, не трогать.** Третий исход заведён как тип: `AuditVerdict.ACCEPTED / REJECTED / CANNOT_JUDGE`,
+`traceRatio` при пустом наборе больше не возвращает 1.0, и «не могу судить» не притворяется ни принятием, ни отказом —
+это и есть сильная форма `TRUTH_STATUS_TABLE`, применённая к аудиту. Заслоны написаны на оба конца:
+`spaShellWithoutStylesReturnsCannotJudgeVerdictAndNeverClaimsAccepted`, `emptyHtmlReturnsCannotJudge…`,
+`auditWithoutDeclaredBaselineReturnsCannotJudgeVerdict`. Монитор дрейфа получил источник эталона
+(`DesignShopCycleRepository`) и теперь **не грузит живую страницу**, когда эталона нет, — расход убран по
+`FALSIFICATION_HARNESS` (D008): проверка, не способная сработать, перестала притворяться работой.
+**Проверено и снято моё же опасение:** `findByProjectId` возвращает `Optional` безопасно — `project_id UUID NOT NULL UNIQUE`
+(`V93__design_shop_cycles.sql:3`), а `ensureCycleRow` — идемпотентное «прочитать или создать» с перехватом гонки.
+
+**Остаток — потребитель не знает о третьем исходе, и цена этого измерена историей самого пункта.**
+`DesignAssetService:495`: `if (!consistencyReport.traceAccepted()) return new DesignAssetResult(false, "aesthetic_drift", …
+"Screen rejected: token_trace_ratio=%.3f below required %.2f")`. Этот путь смотрит **только** на булево
+`traceAccepted()` и про `verdict()` не знает. До правки экран без токенов давал `traceRatio = 1.0` и проходил; после правки
+он даёт `0.0`, `traceAccepted = false` — и будет **отвергнут как дрейф**. То есть ложная зелёнка заменяется ложной
+краснотой, а по записи этого же файла (`DesignShopOrchestrationService:330–333`) отказ такого рода уже однажды сжигал
+генерации: «The rejection was correct and the generation was wasted, every time, by construction».
+*Совет:* в потребителе различать три исхода, а не два: при `report.isCannotJudge()` — не отвергать и не принимать, а
+вернуть неаудированный результат тем же путём, каким идёт первая генерация без эталона (`hasBaseline == false`), и сказать
+это в причине. Отказ «aesthetic_drift» оставить только для настоящего `REJECTED`.
+*Заслон, которого нет:* ни один тест не проверяет поведение `DesignAssetService` при `traceAccepted = false` — все
+утверждения живут в тесте самого аудита (grep по `src/test`: `traceAccepted` встречается только в
+`DesignConsistencyAuditServiceTest`). Пока его нет, смена смысла нуля меняет поведение там, где оно стоит денег, без
+единого заслона. *Опровергнет:* подать в `generateAsset` оболочку без стилей при объявленных токенах — если вернулся
+`aesthetic_drift`, третий исход до места решения не дошёл.
+
+**Мелочь.** Старый конструктор `DesignDriftMonitorService` оставлен с `null` вместо репозитория — это законная совместимость
+для тестов, но тогда при `null` монитор молча ведёт себя как «эталона нет». Пусть это будет сказано в журнале один раз,
+иначе «не настроен» снова станет неотличим от «нет эталона».
