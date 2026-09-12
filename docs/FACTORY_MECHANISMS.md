@@ -8063,59 +8063,121 @@ local support `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`; common background `ACP-061 H
 
 # XXXV. Выбор аккаунта: наказание порядком, а не исключением
 
-**`AccountRepository`** (306 строк) — хранилище аккаунтов, и в нём же живёт запрос, которым фабрика решает,
-кому отдать следующую работу.
-*Связи:* `lockNextJulesAccountWithCapacity` берёт строку с настоящей блокировкой — `FOR UPDATE SKIP LOCKED`,
-то есть два раздатчика не возьмут один аккаунт | рядом лежат изменяющие запросы: сброс дневных счётчиков,
-возврат из дневного предела и из блокировки со стороны службы | зовут `ProjectFlowService`,
-`AccountHealthService` и раздача задач.
-*Ценность:* без него пул аккаунтов не пул, а список: некому решить, чья очередь.
-*Комментарий:* **ядро, и это сильное место кода по записанному ходу мысли — не по устройству, а по тому, как
-в нём записан ход мысли.**
+**`AccountRepository`**, **`AccountEntity`**, **`ProjectFlowService`**, **`JulesDispatchService`**,
+**`AccountHealthService`**, **`InternalGeminiObserverController`** — семейство выбора Jules-аккаунта для
+следующей работы, где пул становится очередью с атомарным взятием строки, capacity filters and refusal-aware
+ordering.
 
-Порядок выбора состоит из трёх ключей: сперва счёт отказов аккаунта с момента его последней **принятой**
-сессии, затем число открытых сессий, затем давность отклика. И к первому ключу приложен разбор двух
-измеренных происшествий.
+*Философский паттерн:* главный паттерн записи — `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`
+(`BARCAN-TAG-10 DEONTIC-PROHIBITION`, Джозеф Раз, local factory-derived pattern): взыскание должно быть
+порядком, а не исключением; снять его может только событие, которого наказанный не производит сам.
+Для проверки, что порядок основан на реальных accepted/refused sessions, применяется
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; для разделения eligibility filters, ordering keys, health belief,
+diagnostic mirror and named-account bypass применяется `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
+Общий фон перед кодом: `ACP-061 Hoare Triple Review`.
 
-Первое: **отказ ничего не создаёт**, поэтому аккаунт, отказывающий на всё, держит ноль открытых сессий и
-сортируется **первым** — «preferred for carrying nothing». Замер того дня приведён поимённо: один аккаунт
-свободен, ноль открытых сессий, потолок 15, **206 отказов подряд** и ни одной принятой сессии с 28 августа
-21:36, тогда как шесть работавших аккаунтов имели по сессии-другой и потолок 3.
+*Связи:* `ProjectFlowService` вызывает `AccountRepository.lockNextJulesAccountWithCapacity(...)` из единой
+general-pool dispatch path; reserved compiler account идёт через отдельный
+`lockAccountByNameWithCapacity(...)`. `JulesDispatchService` and claim/session flow produce accepted or
+refused Jules sessions. `AccountHealthService` revises estimated daily/concurrent capacity from real Jules
+evidence. `InternalGeminiObserverController` exposes dispatch-capacity and dispatch-eligibility diagnostics;
+it is a diagnostic surface, not owner of selection.
 
-Второе: сначала признак был **одним битом**, и бит насытился. Под нагрузкой — 10 раздач против 37 отказов —
-свежий отказ оказался у каждого, бит сравнялся у всех, и решать стал следующий ключ, то есть снова «меньше
-всего открытых сессий», то есть снова тот, кто ничего не несёт. Итог замерен: этот аккаунт выбирали
-**первым одиннадцать раз за пятнадцать минут** при нуле принятых из пятнадцати. Бит заменили счётом.
+*Идеальная форма:* account selection is one database decision. A general-pool dispatch may lock only an
+enabled account with API key, dispatchable status, compatible project, compatible role capability, not
+reserved/excluded for this attempt, within learned daily capacity, and within learned concurrent capacity.
+Among eligible accounts it orders by refusal run since the account's last accepted session, then by open
+work-bearing sessions, then by least-recent heartbeat. The selected row is locked with
+`FOR UPDATE SKIP LOCKED`, so concurrent dispatchers cannot take the same account. Refusal never improves the
+account's position; acceptance resets the penalty; a penalty never becomes an exclusion.
 
-Принцип механизма: он сформулирован в самом коде и лучше, чем сформулировал
-бы я. Ведущий ключ выбран так, что **отказом его улучшить нельзя**: отказ пишет строку без внешнего
-идентификатора, а это поднимает счёт и двигает аккаунт **назад**. Обнулить его можно ровно одним событием —
-принятой сессией, — «an event Jules produces and the factory cannot». То есть снять с себя наказание
-наказанный не может, и подделать его фабрика тоже не может.
+*Граница:* this family owns admission and ordering of Jules accounts for dispatch. It does not own task
+selection, request construction, Jules API behavior, health classification policy, project readiness, or
+observer authorization. Named reserved-account selection is allowed as a different admission path only when
+the caller already names the configured account; it must not become a hidden general-pool shortcut.
 
-При этом: «**It is an ordering, never an exclusion** — if every account is in a refusal run the order is the
-previous one and work still goes out. It attributes no fault: it touches neither the status of the account
-nor its health counters». Никто не выбывает, никому не приписывается вина, и при поголовном отказе поток не
-встаёт.
+*Входы:* `projectId`, role `tag`, `maxSessions`, `maxDailySessions`, `reservedName`, `excludedNamesCsv`;
+`accounts.enabled`, `api_key`, `status`, `current_project_id`, `capabilities`, `sessions_dispatched_today`,
+`estimated_daily_capacity`, `estimated_concurrent_capacity`, `max_concurrent_sessions`, `last_heartbeat`;
+`jules_sessions` rows with status, external session id, task id and created time; joined `tasks.status`.
 
-Третье, мелкое и поучительное: в комментариях внутри этого запроса **намеренно нет ни одного апострофа** —
-Spring Data просматривает всё содержимое аннотации на предмет кавычек, не исключая комментарии SQL, и один
-апостроф стоил **сорока трёх перезапусков подряд** 29 августа.
-*Живое, 7 сентября 2026:* пул из пяти действующих аккаунтов, четыре свободны, один занят, у всех признак
-включённости истинен (`curl -s localhost:8080/api/accounts`). Выбор работает: слияния идут, а раздача
-отказывает с объяснимым основанием «раздавать нечего» (раздел XXIII), а не по недостатку аккаунтов.
-*Философия:* `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` (D006) — Джозеф Раз,
-`BARCAN-TAG-10 DEONTIC-PROHIBITION`, принцип исключающих причин, anchor *Practical Reason and Norms / The
-Authority of Law*. Сильная дословно: «до реализации полномочий составлена матрица прав, обязанностей,
-привилегий и власти, и на каждое отношение есть тест разрешённого и запрещённого». Слабая: «роли
-перечислены, проверки написаны по месту». Опровержение: «найти отношение, у которого нет теста запрета».
-**Форма: не мерено.** Права здесь выражены порядком, а не разрешениями, и тестов запрета отдельная проверка не проводилась.
-**Реализация сильнее всех образцов корпуса в одном: ни один из них не говорит, какой ФОРМЫ должно быть
-взыскание и кто вправе его снять.** По этому случаю заведён новый образец —
-`DZHOZEF_RAZ_21_PENALTY_AS_ORDERING` в `docs/philosopher-patterns/04_FACTORY_DERIVED_PATTERNS.md`.
-По нему **форма: сильная**: взыскание есть порядок, а не исключение; снимается событием, которого
-наказанный не производит и фабрика не подделывает; вины не приписывает; при поголовном взыскании
-вырождается в прежний порядок и поток не останавливает.
+*Выходы:* optional locked `AccountEntity` for the general pool; optional locked named `AccountEntity` for the
+reserved path; count helpers for open sessions and live accounts; daily/session reset and recovery update
+methods used by orchestration and health recovery; diagnostic admission reason through
+`ProjectFlowService.evaluateGeneralPoolAdmissionDecision`.
+
+*Владельцы истины и состояния:* account eligibility fields live in `accounts`; current work-bearing load
+lives in `jules_sessions` joined to non-terminal `tasks`; refusal/acceptance evidence lives in
+`jules_sessions.external_session_id` plus status and timestamps; daily/concurrent learned ceilings are
+written by account-health logic; dispatch unification belongs to `ProjectFlowService`; diagnostics may mirror
+the decision but must not fork it.
+
+*Инварианты:* (1) general-pool selection is a single native SQL query ending in `LIMIT 1 FOR UPDATE SKIP LOCKED`;
+(2) refusal-run count is the first ordering key and is not a WHERE filter; (3) one accepted session resets the
+refusal-run count for that account; (4) open sessions count only sessions whose task is not
+`done`, `failed` or `blocked`; (5) learned daily capacity outranks the global default when present; (6) learned
+concurrent capacity outranks per-account/default ceilings when present; (7) capability, project, reserved and
+attempt-exclusion filters are admission conditions, not later comments; (8) multi-row selectors order least
+recently touched first; (9) SQL comments inside the native query must not introduce quoting that breaks
+Spring Data parsing.
+
+*Сильная форма сейчас:* the core selector matches the ideal form in source. The query filters enabled/keyed
+accounts, non-dispatchable statuses, project compatibility, capability, reserved/excluded names, daily
+capacity and concurrent capacity; then orders by refusal run count since last accepted session, open sessions
+and `last_heartbeat ASC`; then locks with `FOR UPDATE SKIP LOCKED`. Structural and integration tests pin the
+fairness direction, refusal-run ordering as ordering-not-filter, unchanged fitness filters, blocked-task
+capacity exclusion, learned daily capacity override, and SQL/Java diagnostic coherence for disabled,
+daily-limited, api-blocked, decommissioned/offline, sessions-exhausted, capability-mismatch,
+excluded-account and project-mismatch cases.
+
+*Слабая/неидеальная форма сейчас:* no implementation defect is identified in the selector itself. The open
+risk is operational proof, not a known code gap: this tact did not run the focused tests, did not perform a
+live concurrent-dispatch probe, and did not prove every observer diagnostic uses the same bounded predicate
+without adding its own truth. Therefore code changes are not prescribed from this record.
+
+*Что сделать для идеала:* do not rewrite the selector. To close the record operationally, run
+`AccountSelectionFairnessTest`, `AccountRepositoryIntegrationTest`,
+`GeneralPoolAdmissionCoherenceIntegrationTest` and `ProjectFlowServiceLaw1JulesDispatchTest`, then perform a
+fixture or live probe with two concurrent dispatch attempts proving that one eligible account cannot be
+double-locked. If future behavior must change, first add a falsifying test that states which invariant above
+is false.
+
+*Что не трогать:* keep `FOR UPDATE SKIP LOCKED`, refusal-run count as the leading `ORDER BY` term, the
+accepted-session reset, `last_heartbeat ASC`, the exclusion of task status `blocked` from active capacity,
+learned capacity precedence, capability/project/reserved/excluded filters, the single general-pool call site,
+and the no-apostrophe discipline inside this native query's SQL comments.
+
+*Опровержение:* create two eligible accounts where one has many refused sessions after its last accepted
+session and the other has fewer; if the refusing account is selected first, penalty-as-ordering is false.
+Create an account at learned daily or concurrent capacity; if it locks, admission is false. Run two concurrent
+dispatches against a single eligible account; if both lock the same row, atomic selection is false. Create a
+role-capability mismatch or project mismatch; if it locks, eligibility boundaries are false.
+
+*Критерий закрытия:* this family is ideal when focused tests and a concurrent-dispatch fixture prove the
+selector's filters, ordering, accepted-session reset, blocked-task capacity exclusion, learned-capacity
+precedence, one-call-site dispatch path, diagnostic mirror coherence and row-lock behavior. Until those
+checks are recorded, the source contract is strong and no code change is advised.
+
+*Свидетельства записи:* `git status --short`; `git log -1 --oneline`; current section XXXV;
+`nl -ba src/main/java/com/eneik/production/repositories/AccountRepository.java` around
+`lockNextJulesAccountWithCapacity`, `lockAccountByNameWithCapacity`, capacity counters and reset methods;
+source grep for `lockNextJulesAccountWithCapacity`, `lockAccountByNameWithCapacity` and
+`sessionsDispatchedToday`; focused reads of `AccountSelectionFairnessTest`,
+`AccountRepositoryIntegrationTest`, `GeneralPoolAdmissionCoherenceIntegrationTest`, and related
+`ProjectFlowServiceLaw1JulesDispatchTest` references; philosopher rows for
+`DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`.
+
+*Текущий статус:* strict family record filled. The core account-selection mechanism is treated as strong and
+not a coding target; only verification evidence remains to close it as ideal in operation.
+
+*комментарий для Антигравити:* считаю ядро механизма выбора аккаунта идеальным по текущему source/test
+contract; не правь `AccountRepository.lockNextJulesAccountWithCapacity` как isolated cleanup. Сначала докажи
+дефект тестом against the invariants above. Preserve penalty as ordering, not exclusion; preserve
+accepted-session reset; preserve row locking; preserve eligibility filters. Philosophy:
+`BARCAN-TAG-10 DEONTIC-PROHIBITION`, Джозеф Раз, `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`;
+`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`;
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
 
 # XXXVI. Хранилище задач: запрет, стоящий на обоих уровнях
 

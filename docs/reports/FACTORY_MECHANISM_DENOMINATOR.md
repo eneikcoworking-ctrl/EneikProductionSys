@@ -301,3 +301,32 @@ Updated visible counts after this tact: exact lowercase `комментарий 
 Remaining non-ideal point for this family: no code was changed or tests run in this tact. The record says the old comment-only internal-guard defect is strong in source/tests, but the family is not declared ideal until focused tests and live/fixture probes prove the boundary, and until the remaining broad diagnostics (`dispatchEligibilityDetail`, `accountCapacity`) are either bounded or explicitly accepted as secured diagnostics.
 
 комментарий для Антигравити: do not re-code the stale `/internal/**` guard as missing; first verify `ApiAuthorizationInterceptorTest`, `InternalGeminiObserverControllerTest` and a live/fixture probe. Apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for source/test evidence, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for safe-read vs mutating internal operations, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` for executable denial, and `ACP-061 Hoare Triple Review` before any later code.
+
+## 2026-09-12 Codex Strict Record: Account Selection / Dispatch Capacity
+
+Status: documentation-only strict-family replacement for section XXXV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `AccountRepository`, `AccountEntity`, `ProjectFlowService`,
+`JulesDispatchService`, `AccountHealthService` and observer diagnostics as the Jules account-selection and
+dispatch-capacity family. The record now states the exact contract: general-pool selection is one native SQL
+decision with eligibility filters, refusal-run ordering, open-session ordering, least-recent heartbeat
+rotation and `FOR UPDATE SKIP LOCKED`.
+
+Denominator effect: the old narrative account-selection section is now a strict mechanism record with
+philosophical pattern, ideal form, boundary, inputs, outputs, truth owners, invariants, strong/weak form,
+what to do, what not to touch, refutation, closure criterion, evidence, status and Antigravity comment. This
+does not prove the whole factory complete and does not authorize code changes.
+
+Updated visible counts after this tact: exact lowercase `комментарий для Антигравити` grep in
+`docs/FACTORY_MECHANISMS.md` is 48. Earlier remaining lists in this report are historical snapshots; the
+current account-selection family should be treated as recorded until the next full denominator regeneration.
+
+Remaining non-ideal point for this family: no code was changed or tests run in this tact. The source contract
+is strong and no implementation defect is identified in the selector itself; closure still needs focused test
+execution and a concurrent-dispatch fixture/live probe.
+
+комментарий для Антигравити: account-selection core is considered ideal by the current source/test contract;
+do not patch `AccountRepository.lockNextJulesAccountWithCapacity` as cleanup. Preserve penalty as ordering,
+not exclusion; preserve accepted-session reset, row locking, learned-capacity precedence and eligibility
+filters. Apply `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple Review` before any later code.
