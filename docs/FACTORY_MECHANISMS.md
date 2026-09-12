@@ -8181,58 +8181,99 @@ accepted-session reset; preserve row locking; preserve eligibility filters. Phil
 
 # XXXVI. Хранилище задач: запрет, стоящий на обоих уровнях
 
-**`TaskRepository`** (270 строк) — хранилище задач, и в нём же атомарные переходы состояния, которыми
-единственно разрешено оживлять и закрывать задачу.
-*Связи:* восемь собственных запросов, из них два изменяющих | `compareAndSetStatus` — сравнение-с-обменом:
-запись ложится, только если строка **в тот же миг** ещё в ожидаемом состоянии | `writeStatusUnlessTerminal`
-— то же для тех, кто знает лишь «не конечное» | зовут `ClaimService` (`fail`, `releaseClaimToQueue`,
-`reopenWithAmendedBrief`, `closeTaskAsFailed`, `closeTaskAsBlocked`), `PlannedWorkRecoveryService`, самолечение
-и истечение аренды.
-*Ценность:* без этих двух запросов оживление задачи есть чтение с последующей записью, между которыми
-помещается чужая транзакция.
-*Комментарий:* **ядро, и здесь редкий для этой фабрики случай: один и тот же запрет исполнен дважды, на
-разных уровнях, и оба раза по-настоящему.**
+**`TaskRepository`**, **`TaskEntity`**, **`TaskStatus`**, **`ClaimService`**, **`PlannedWorkRecoveryService`**,
+**`BranchGarbageCollectorService`**, **`JulesDispatchService`**, **`ProjectFlowService`** — семейство
+атомарных переходов задачи, которое запрещает воскресить или перезаписать terminal task через stale read.
 
-В сущности `TaskEntity.setStatus` бросает исключение при перезаписи конечного состояния (раздел XXIз). Но
-массовое обновление **минует жизненный цикл сущности по определению**, и никакой перехватчик тут не
-сработает, — поэтому тот же инвариант вписан прямо в условие SQL: строка обновляется, только если её
-состояние **не входит** в множество конечных. Запись становится пустой операцией в тот самый миг, когда
-другая транзакция уже увела строку в конечное. Отсюда прямое следствие, сформулированное в коде: конечную
-задачу **нельзя ни воскресить, ни перезаписать**, кто бы ни успел раньше.
+*Философский паттерн:* главный паттерн — `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`
+(`BARCAN-TAG-10_DEONTIC-PROHIBITION`, Джозеф Раз, D006 Authorization ambiguity): запрет должен быть
+исполняемым путём отказа, а не комментарием. Для причинной истории движения применяется
+`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` (`BARCAN-TAG-03_BELIEF-INTENSION`, Альва Ноэ, D013 Runtime drift):
+state-change timestamp must trace the same causal write that changed the state. Общий фон перед кодом:
+`ACP-061 Hoare Triple Review`.
 
-Причина заведения названа и она про гонку: самолечение, истечение аренды и восстановление плана — все трое
-читали состояние в Java, а писали новое **позже, без повторной проверки**, и в этот промежуток чужая
-транзакция успевала сделать задачу конечной. Закрыто на уровне движка базы, а не доверием к устаревшему
-чтению в памяти. И там же правило для будущих: всякое место, оживляющее задачу, обязано пользоваться этим
-запросом, а не сеттером с сохранением.
+*Связи:* `TaskEntity.setStatus` enforces the entity-level Law 20 guard. `TaskRepository` exposes
+`compareAndSetStatusAt/compareAndSetStatus` for exact expected-state transitions and
+`writeStatusUnlessTerminalAt/writeStatusUnlessTerminal` for stale-read callers that only know the row was
+non-terminal when they read it. `ClaimService` uses the guard for release, fail, blocked and amended-brief
+paths; `PlannedWorkRecoveryService` uses the exact CAS for failed-to-queued recovery; `ProjectFlowService`
+uses it for dependency blocking; `BranchGarbageCollectorService` and `JulesDispatchService` use the
+unless-terminal write around repair/failure paths.
 
-Второе, и оно из тех находок, что переворачивают доверие к целому семейству проверок. Отметка движения
-пишется **той же атомарной записью**, что и состояние. Раньше не писалась — и не могла: массовое обновление
-минует жизненный цикл, так что и хук бы не помог. Замер того дня: **271 задача из 412 несла отметку
-изменения, в точности равную отметке создания**, включая 257 из 375 завершённых. Значит всякий предикат вида
-«не двигалась дольше стольких-то часов» читал **возраст, а не движение**. Половина застойных проверок фабрики
-меряла не то, и обнаружилось это только когда посчитали.
-*Живое, 7 сентября 2026:* хранилище работает — в базе 665 задач (замер `db-table-sizes`), и живой свод
-потока печатает разбор доставки по ним: 394 проверено, 45 отвергнуто, 244 не проверено (раздел XXV). Отказов
-на перезаписи конечного состояния в журнале за сутки нет, что согласуется с тем, что запрет исполняется
-тихо: он не бросает, а просто не меняет ни одной строки.
-*Философия:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз,
-`BARCAN-TAG-10 DEONTIC-PROHIBITION`, принцип исключающих причин, anchor *Practical Reason and Norms / The
-Authority of Law*. Сильная дословно: «запрет — **исполнимый путь отказа** с объяснимой причиной, и на него
-есть тест». Слабая: «запрет записан в документе или комментарии». Опровержение: «совершить запрещённое
-действие; если оно прошло — запрета нет, есть пожелание». **Форма: сильная, и вдвойне.** Запрещённое
-действие исполнимо ровно в двух местах — через сеттер и через массовое обновление, — и оба закрыты: первое
-исключением, второе условием запроса. Тесты названы в разделе XXIз (`TaskEntityLaw20Test` и соседние).
-Сравнить с разделом XXXIV, где запрет был записан в комментарии и опровергался одним запросом: здесь тот же
-философ, противоположный исход.
-Второй образец: `ALVA_NOE_17_CAUSAL_PROCESS_TRACE` (D013) — Альва Ноэ,
-`BARCAN-TAG-03 BELIEF-INTENSION`, принцип энактивизма, anchor *Action in Perception — enactive perception*.
-Сильная дословно: «происшествие объяснено причинной цепью: спусковой крючок, механизм, смена состояния,
-наблюдаемое следствие». Слабая: «назван соседний симптом». Опровержение: «попросить показать звено между
-названной причиной и следствием; разрыв означает, что названо совпадение». **Форма: сильная.** Цепь
-приведена целиком и без разрывов: массовое обновление минует жизненный цикл — отметка движения не пишется —
-271 задача из 412 несёт отметку изменения, равную созданию, — предикаты застоя читают возраст вместо
-движения. Каждое звено названо и измерено, и починка приложена к первому звену, а не к последнему.
+*Идеальная форма:* every task status mutation that can race with completion is a database-level conditional
+write. If the caller knows the expected state, the write must include that expected state. If the caller only
+knows "non-terminal", the write must refuse once the row is already in `{done, failed, spike_completed}`.
+The same atomic statement must update `updatedAt`, so stalled-task predicates measure movement, not age.
+Entity setters protect ordinary in-memory mutation; repository updates protect bulk JPQL paths that bypass
+entity lifecycle hooks.
+
+*Граница:* this family owns task-row status transition safety and the movement mark. It does not decide
+whether a task should be blocked, failed, reopened, recovered or delivered; those decisions belong to the
+caller services. It also does not own session status, wishlist status, PR review terminalization or project
+status; those adjacent state machines may call into this guard but must not redefine terminal task semantics.
+
+*Входы:* task id; expected `TaskStatus` when known; target `TaskStatus`; supplied movement instant; current
+`tasks.status`; current `tasks.updated_at`; caller intent from claim/recovery/dispatch/garbage-collection
+paths; terminal set from `TaskStatus.isTerminal()`.
+
+*Выходы:* affected-row count `1` when the transition lands, `0` when the guard refuses; changed
+`tasks.status`; changed `tasks.updated_at`; entity-level `IllegalStateException` when an already-terminal
+task is assigned a different status through `TaskEntity.setStatus`.
+
+*Владельцы истины и состояния:* terminal status vocabulary belongs to `TaskStatus`; task row state and
+movement mark belong to `tasks.status` and `tasks.updated_at`; entity-level mutation belongs to
+`TaskEntity`; atomic bulk mutation belongs to `TaskRepository`; caller services own only the reason for
+asking, not the race-safety primitive.
+
+*Инварианты:* (1) `done`, `failed` and `spike_completed` are terminal; (2) `blocked` is recoverable, not
+terminal; (3) an already-terminal entity cannot be assigned a different status; (4)
+`compareAndSetStatusAt` writes only if the row is still in the exact expected status; (5)
+`writeStatusUnlessTerminalAt` writes only while the row is not terminal; (6) guarded status writes update
+`updatedAt` in the same statement; (7) a `0` affected-row result means another transition won and follow-up
+reason/description writes must not proceed as if the status changed.
+
+*Сильная форма сейчас:* the mechanism matches the ideal form in source and tests. `TaskEntity.setStatus`
+throws on terminal overwrite; `TaskRepository` has exact-CAS and unless-terminal JPQL writes, both stamping
+`updatedAt`; `TaskRepositoryIntegrationTest` proves the movement mark changes and can be supplied exactly;
+`TaskClaimServiceTest` proves a late failure/blocked/retry callback cannot reopen a `done` task and that
+`writeStatusUnlessTerminal` returns `0` after terminalization; `ClaimServiceRaceGuardTest` proves callers
+skip follow-up writes when the atomic guard loses the race.
+
+*Слабая/неидеальная форма сейчас:* no implementation defect is identified in this family. The only open
+verification gap in this tact is that focused tests were read, not run. Wider adjacent repository methods
+such as queue candidate selection, file-scope conflict checks and Linear lookup are separate mechanisms and
+are not declared ideal by this record.
+
+*Что сделать для идеала:* do not change code. To close operational evidence, run `TaskEntityLaw20Test`,
+`TaskRepositoryIntegrationTest`, `TaskClaimServiceTest` and `ClaimServiceRaceGuardTest`. If a future change
+is required, first add a falsifying test that proves one invariant above is false.
+
+*Что не трогать:* keep the entity guard, exact-state CAS, unless-terminal guard, `updatedAt` write in the same
+JPQL statement, `blocked` as non-terminal, `0` affected rows as a real refusal, and the caller behavior that
+skips reason/description side effects after a refused guarded write.
+
+*Опровержение:* set a task to `done`, then call `writeStatusUnlessTerminal(id, queued)`; if affected rows is
+`1` or status becomes `queued`, the guard is false. Set a task to `done`, then call `TaskEntity.setStatus`
+with `queued`; if no exception is thrown, the entity guard is false. Call `compareAndSetStatusAt` with a
+known `movedAt`; if `updatedAt` does not equal that instant, movement tracing is false.
+
+*Критерий закрытия:* the family is closed when the focused tests above pass and a current evidence note
+records that all task-reopening/terminal-writing callers use `compareAndSetStatus` or
+`writeStatusUnlessTerminal` rather than stale read plus save.
+
+*Свидетельства записи:* `git status --short`; `git log -1 --oneline`; section XXXVI; `nl -ba` on
+`TaskRepository`, `TaskEntity`, `TaskEntityLaw20Test`, `TaskRepositoryIntegrationTest`,
+`TaskClaimServiceTest`, `ClaimServiceRaceGuardTest`; source grep for `compareAndSetStatus` and
+`writeStatusUnlessTerminal`; philosopher rows `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`,
+`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` and `ACP-061`.
+
+*Текущий статус:* strict family record filled. The task-status transition guard is considered ideal by the
+current source/test contract; only test execution remains for fresh operational evidence.
+
+*комментарий для Антигравити:* считаю механизм идеальным. Do not rewrite `TaskRepository` status guards as
+ordinary `save()` logic, and do not remove the apparent duplicate protection between `TaskEntity` and
+`TaskRepository`: entity lifecycle and bulk JPQL are different execution levels. Applicable philosophy:
+`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, `ACP-061 Hoare Triple Review`.
 
 # XXXVII. Сторож ТОС: чтение, которое пересчитывает
 

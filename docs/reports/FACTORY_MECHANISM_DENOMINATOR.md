@@ -330,3 +330,38 @@ do not patch `AccountRepository.lockNextJulesAccountWithCapacity` as cleanup. Pr
 not exclusion; preserve accepted-session reset, row locking, learned-capacity precedence and eligibility
 filters. Apply `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple Review` before any later code.
+
+## 2026-09-12 Codex Strict Record: Task Repository Terminal-State Guard
+
+Status: documentation-only strict-family replacement for section XXXVI in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `TaskRepository`, `TaskEntity`, `TaskStatus`, `ClaimService`,
+`PlannedWorkRecoveryService`, `BranchGarbageCollectorService`, `JulesDispatchService` and
+`ProjectFlowService` as the task status transition guard family. The record now states the exact contract:
+entity-level terminal overwrite denial plus repository-level exact-CAS / unless-terminal writes for bulk JPQL
+paths that bypass entity lifecycle hooks.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with philosophical
+pattern, ideal form, boundary, inputs, outputs, truth owners, invariants, strong/weak form, what to do, what
+not to touch, refutation, closure criterion, evidence, status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 14 |
+| Sections still missing visible `комментарий для Антигравити` | 49 |
+
+This is a section denominator, not a mechanism count. It proves the document is not yet complete by the
+operator's visible-comment rule; it does not pretend to know the exact number of remaining mechanisms before
+the full source-denominator regeneration.
+
+Remaining non-ideal point for this family: no code was changed or tests run in this tact. The source/test
+contract is ideal for the task-status guard; fresh closure evidence requires running `TaskEntityLaw20Test`,
+`TaskRepositoryIntegrationTest`, `TaskClaimServiceTest` and `ClaimServiceRaceGuardTest`.
+
+комментарий для Антигравити: считаю механизм идеальным. Do not rewrite `TaskRepository` status guards as
+ordinary save logic; preserve the entity guard, exact-state CAS, unless-terminal guard, same-statement
+`updatedAt` write and `0` affected-row refusal semantics. Apply `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`,
+`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` and `ACP-061 Hoare Triple Review` before any later code.
