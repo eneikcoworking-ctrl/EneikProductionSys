@@ -109,9 +109,42 @@ class DesignConsistencyAuditServiceTest {
     }
 
     @Test
-    void emptyHtmlTrivializesToAcceptedWithNoTokens() {
+    void spaShellWithoutStylesReturnsCannotJudgeVerdictAndNeverClaimsAccepted() {
+        // Prescription 28 (FALSIFICATION_HARNESS / D008 + LEVEL_OF_ABSTRACTION_LOCK / D010):
+        // Raw served HTML from an SPA container with no inlined visual styles must NOT return
+        // a false green (traceAccepted=true, traceRatio=1.0) or a category error ("0 tokens / rejected").
+        // The truth status is strictly CANNOT_JUDGE ("не могу судить").
+        String spaShell = "<!DOCTYPE html><html><head><title>Client SPA</title></head>"
+                + "<body><div id=\"root\"></div><script src=\"/static/js/main.js\"></script></body></html>";
+
+        var report = service.audit(spaShell, VERDANT_FLOW_TOKENS, List.of());
+
+        assertThat(report.verdict()).isEqualTo(DesignConsistencyAuditService.AuditVerdict.CANNOT_JUDGE);
+        assertThat(report.displayVerdict()).isEqualTo("не могу судить");
+        assertThat(report.isCannotJudge()).isTrue();
+        assertThat(report.traceAccepted()).isFalse();
+        assertThat(report.traceRatio()).isZero();
+    }
+
+    @Test
+    void emptyHtmlReturnsCannotJudgeVerdictAndNeverClaimsAccepted() {
         var report = service.audit("", VERDANT_FLOW_TOKENS, List.of());
-        assertThat(report.traceRatio()).isEqualTo(1.0);
-        assertThat(report.traceAccepted()).isTrue();
+
+        assertThat(report.verdict()).isEqualTo(DesignConsistencyAuditService.AuditVerdict.CANNOT_JUDGE);
+        assertThat(report.displayVerdict()).isEqualTo("не могу судить");
+        assertThat(report.isCannotJudge()).isTrue();
+        assertThat(report.traceAccepted()).isFalse();
+        assertThat(report.traceRatio()).isZero();
+    }
+
+    @Test
+    void auditWithoutDeclaredBaselineReturnsCannotJudgeVerdict() {
+        String html = "<style>body{background:#fbf9f1;color:#7d8570;}</style>";
+        var report = service.audit(html, DesignConsistencyAuditService.TokenSet.of(List.of(), List.of()), List.of());
+
+        assertThat(report.verdict()).isEqualTo(DesignConsistencyAuditService.AuditVerdict.CANNOT_JUDGE);
+        assertThat(report.displayVerdict()).isEqualTo("не могу судить");
+        assertThat(report.isCannotJudge()).isTrue();
+        assertThat(report.traceAccepted()).isFalse();
     }
 }

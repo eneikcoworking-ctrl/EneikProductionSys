@@ -36,15 +36,26 @@ public class DesignDriftMonitorService {
     private final DesignConsistencyAuditService auditService;
     private final SystemSettingsService settingsService;
     private final KaizenService kaizenService;
+    private final com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DesignDriftMonitorService(RuntimeLauncherClient launcherClient,
+                                      DesignConsistencyAuditService auditService,
+                                      SystemSettingsService settingsService,
+                                      KaizenService kaizenService,
+                                      com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository) {
+        this.launcherClient = launcherClient;
+        this.auditService = auditService;
+        this.settingsService = settingsService;
+        this.kaizenService = kaizenService;
+        this.designShopCycleRepository = designShopCycleRepository;
+    }
 
     public DesignDriftMonitorService(RuntimeLauncherClient launcherClient,
                                       DesignConsistencyAuditService auditService,
                                       SystemSettingsService settingsService,
                                       KaizenService kaizenService) {
-        this.launcherClient = launcherClient;
-        this.auditService = auditService;
-        this.settingsService = settingsService;
-        this.kaizenService = kaizenService;
+        this(launcherClient, auditService, settingsService, kaizenService, null);
     }
 
     /** Called only while the caller's own live instance window is genuinely open - never launches or
@@ -53,17 +64,47 @@ public class DesignDriftMonitorService {
         if (!settingsService.effectiveBoolean("design_shop_enabled")) {
             return;
         }
+
+        // Falsification Harness / Level of Abstraction (Prescription 28: FALSIFICATION_HARNESS / D008 + LEVEL_OF_ABSTRACTION_LOCK / D010):
+        // Drift comparison requires an established per-project design-system baseline (captured by
+        // DesignShopOrchestrationService.captureBaseline into DesignShopCycleEntity).
+        // If no baseline exists, fetching the 70KB live HTML body every cycle is pure unexecutable waste (muda).
+        java.util.Optional<com.eneik.production.models.persistence.DesignShopCycleEntity> cycleOpt =
+                designShopCycleRepository != null && project != null && project.getId() != null
+                        ? designShopCycleRepository.findByProjectId(project.getId())
+                        : java.util.Optional.empty();
+
+        if (cycleOpt.isEmpty() || cycleOpt.get().getDeclaredColors() == null || cycleOpt.get().getDeclaredColors().isBlank()) {
+            log.info("DesignDriftMonitorService: project {} has no established per-project design-system baseline yet; skipping live page fetch and drift comparison",
+                    project != null ? project.getId() : "null");
+            return;
+        }
+
         RuntimeLauncherClient.FetchResult fetched = launcherClient.fetchHtml(rootUrl);
         if (fetched.body() == null || fetched.body().isBlank()) {
             log.info("DesignDriftMonitorService: no fetchable body from {} for project {} ({}); skipping drift check",
                     rootUrl, project.getId(), fetched.error());
             return;
         }
-        // No per-project canonical palette to audit against yet (see class javadoc) - the fetch above
-        // already proves the live page is reachable and serving real content; the token-drift comparison
-        // itself is intentionally not run until a real per-project baseline exists.
-        log.info("DesignDriftMonitorService: fetched live page for project {} ({} chars) - drift comparison "
-                        + "skipped, no established per-project design-system baseline yet",
-                project.getId(), fetched.body().length());
+
+        com.eneik.production.models.persistence.DesignShopCycleEntity cycle = cycleOpt.get();
+        var declaredTokens = DesignConsistencyAuditService.TokenSet.of(cycle.declaredColorsList(), cycle.declaredFontsList());
+        DesignConsistencyAuditService.ConsistencyReport report = auditService.audit(fetched.body(), declaredTokens, java.util.List.of());
+
+        if (report.isCannotJudge()) {
+            log.info("DesignDriftMonitorService: fetched live page for project {} ({} chars) - verdict: {} ({}); "
+                            + "raw server response contains no extractable CSS tokens (SPA shell/client-rendered); cannot judge drift at this abstraction layer",
+                    project.getId(), fetched.body().length(), report.verdict(), report.displayVerdict());
+            return;
+        }
+
+        if (report.traceAccepted()) {
+            log.info("DesignDriftMonitorService: drift comparison PASSED for project {} (traceRatio={}, declaredTokens={})",
+                    project.getId(), report.traceRatio(), report.declaredTokens());
+        } else {
+            log.warn("DesignDriftMonitorService: drift comparison FAILED for project {} (traceRatio={}, required>={}, offTokens={}, declaredTokens={})",
+                    project.getId(), report.traceRatio(), DesignConsistencyAuditService.MIN_TRACE_RATIO,
+                    report.offTokenValues(), report.declaredTokens());
+        }
     }
 }

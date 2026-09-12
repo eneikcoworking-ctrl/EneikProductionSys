@@ -44,15 +44,81 @@ public class DesignConsistencyAuditService {
         }
     }
 
+    public enum AuditVerdict {
+        ACCEPTED("accepted", "принято"),
+        REJECTED("rejected", "отвергнуто"),
+        CANNOT_JUDGE("cannot_judge", "не могу судить");
+
+        public static final AuditVerdict UNDECIDABLE = CANNOT_JUDGE;
+
+        private final String code;
+        private final String displayName;
+
+        AuditVerdict(String code, String displayName) {
+            this.code = code;
+            this.displayName = displayName;
+        }
+
+        public String getCode() {
+            return code;
+        }
+
+        public String getDisplayName() {
+            return displayName;
+        }
+
+        public boolean isAccepted() {
+            return this == ACCEPTED;
+        }
+
+        public boolean isRejected() {
+            return this == REJECTED;
+        }
+
+        public boolean isCannotJudge() {
+            return this == CANNOT_JUDGE;
+        }
+
+        public boolean isUndecidable() {
+            return this == CANNOT_JUDGE;
+        }
+    }
+
     public record ConsistencyReport(double traceRatio, boolean traceAccepted,
                                      double avgCrossScreenJaccard, boolean crossScreenAccepted,
                                      Set<String> offTokenValues,
                                      Set<String> declaredTokens,
-                                     Set<String> producerTokens) {
+                                     Set<String> producerTokens,
+                                     AuditVerdict verdict,
+                                     String verdictReason) {
         public ConsistencyReport(double traceRatio, boolean traceAccepted,
                                  double avgCrossScreenJaccard, boolean crossScreenAccepted,
                                  Set<String> offTokenValues) {
-            this(traceRatio, traceAccepted, avgCrossScreenJaccard, crossScreenAccepted, offTokenValues, Set.of(), Set.of());
+            this(traceRatio, traceAccepted, avgCrossScreenJaccard, crossScreenAccepted, offTokenValues, Set.of(), Set.of(),
+                    traceAccepted ? AuditVerdict.ACCEPTED : AuditVerdict.REJECTED,
+                    traceAccepted ? "принято" : "отвергнуто: token_trace_ratio ниже требуемого");
+        }
+
+        public ConsistencyReport(double traceRatio, boolean traceAccepted,
+                                 double avgCrossScreenJaccard, boolean crossScreenAccepted,
+                                 Set<String> offTokenValues,
+                                 Set<String> declaredTokens,
+                                 Set<String> producerTokens) {
+            this(traceRatio, traceAccepted, avgCrossScreenJaccard, crossScreenAccepted, offTokenValues, declaredTokens, producerTokens,
+                    traceAccepted ? AuditVerdict.ACCEPTED : AuditVerdict.REJECTED,
+                    traceAccepted ? "принято" : "отвергнуто: token_trace_ratio ниже требуемого");
+        }
+
+        public boolean isCannotJudge() {
+            return verdict == AuditVerdict.CANNOT_JUDGE;
+        }
+
+        public boolean isUndecidable() {
+            return isCannotJudge();
+        }
+
+        public String displayVerdict() {
+            return verdict != null ? verdict.getDisplayName() : (traceAccepted ? "принято" : "отвергнуто");
         }
     }
 
@@ -80,13 +146,23 @@ public class DesignConsistencyAuditService {
         return new TokenSet(colors, fonts);
     }
 
-    /** E(f): TraceRatio(f) = |Used(f) ∩ Tokens(f)| / |Used(f)|. Empty Used(f) trivially traces (ratio 1.0). */
+    /**
+     * E(f): TraceRatio(f) = |Used(f) ∩ Tokens(f)| / |Used(f)|.
+     * Empty Used(f) or empty Tokens(f) yields 0.0 - cannot judge / no tokens trace back.
+     * See Prescription 28 (FALSIFICATION_HARNESS / D008 + LEVEL_OF_ABSTRACTION_LOCK / D010).
+     */
     public double traceRatio(TokenSet used, TokenSet declared) {
-        Set<String> usedAll = used.all();
+        Set<String> usedAll = used != null ? used.all() : Set.of();
         if (usedAll.isEmpty()) {
-            return 1.0;
+            return 0.0;
+        }
+        if (declared == null) {
+            return 0.0;
         }
         Set<String> declaredAll = declared.all();
+        if (declaredAll.isEmpty()) {
+            return 0.0;
+        }
         long intersecting = usedAll.stream().filter(declaredAll::contains).count();
         return (double) intersecting / usedAll.size();
     }
@@ -114,11 +190,36 @@ public class DesignConsistencyAuditService {
 
     public ConsistencyReport audit(String html, TokenSet declaredTokens, List<String> siblingHtmlDrafts, TokenSet producerTokens) {
         TokenSet used = extractUsedTokens(html);
+        Set<String> declaredAll = declaredTokens != null ? declaredTokens.all() : Set.of();
+        Set<String> producerAll = producerTokens != null ? producerTokens.all() : Set.of();
+
+        // Level of Abstraction / Truth Status Table (Prescription 28: D010 + D012):
+        // 1. If the delivered HTML has no visual tokens (e.g. SPA skeleton/shell without inline styles),
+        //    the static server response cannot be judged against the design system at this abstraction layer.
+        //    Returning 1.0 or true would be a false green (D008); returning "0 tokens / rejected" would be a category error (D002).
+        //    The outcome is strictly CANNOT_JUDGE ("не могу судить").
+        if (used.all().isEmpty()) {
+            return new ConsistencyReport(
+                    0.0, false, 0.0, false,
+                    Set.of(), declaredAll, producerAll,
+                    AuditVerdict.CANNOT_JUDGE,
+                    "не могу судить: нет визуальных токенов в HTML/CSS (HTML-оболочка SPA без стилей)"
+            );
+        }
+
+        // 2. If no design system baseline was declared, no comparison can take place.
+        if (declaredAll.isEmpty()) {
+            return new ConsistencyReport(
+                    0.0, false, 0.0, false,
+                    Set.of(), declaredAll, producerAll,
+                    AuditVerdict.CANNOT_JUDGE,
+                    "не могу судить: отсутствует эталон дизайн-системы"
+            );
+        }
+
         double trace = traceRatio(used, declaredTokens);
         Set<String> offToken = new LinkedHashSet<>(used.all());
-        if (declaredTokens != null) {
-            offToken.removeAll(declaredTokens.all());
-        }
+        offToken.removeAll(declaredAll);
 
         double avgJaccard = 1.0;
         if (siblingHtmlDrafts != null && !siblingHtmlDrafts.isEmpty()) {
@@ -129,11 +230,19 @@ public class DesignConsistencyAuditService {
             avgJaccard = sum / siblingHtmlDrafts.size();
         }
 
-        Set<String> declaredAll = declaredTokens != null ? declaredTokens.all() : Set.of();
-        Set<String> producerAll = producerTokens != null ? producerTokens.all() : Set.of();
+        boolean traceAccepted = trace >= MIN_TRACE_RATIO;
+        boolean crossScreenAccepted = avgJaccard >= MIN_CROSS_SCREEN_JACCARD;
+        AuditVerdict verdict = traceAccepted ? AuditVerdict.ACCEPTED : AuditVerdict.REJECTED;
+        String reason = traceAccepted
+                ? "принято: visual language traces to declared tokens (traceRatio=" + trace + ")"
+                : "отвергнуто: token_trace_ratio=" + trace + " below required " + MIN_TRACE_RATIO;
 
-        return new ConsistencyReport(trace, trace >= MIN_TRACE_RATIO, avgJaccard,
-                avgJaccard >= MIN_CROSS_SCREEN_JACCARD, offToken, declaredAll, producerAll);
+        return new ConsistencyReport(
+                trace, traceAccepted,
+                avgJaccard, crossScreenAccepted,
+                offToken, declaredAll, producerAll,
+                verdict, reason
+        );
     }
 
     private static String normalizeColor(String raw) {

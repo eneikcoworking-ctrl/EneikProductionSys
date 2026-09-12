@@ -2615,7 +2615,7 @@ task status»), то есть закон 20 на этом пути соблюд�
 
 ---
 
-### 28. Два механизма дизайна числятся сильными: один ни разу не сработал, другой читает не то · `FALSIFICATION_HARNESS` (D008) + `LEVEL_OF_ABSTRACTION_LOCK` (D010)
+### 28. Два механизма дизайна числятся сильными: один ни разу не сработал, другой читает не то · `FALSIFICATION_HARNESS` (D008) + `LEVEL_OF_ABSTRACTION_LOCK` (D010) · **СДЕЛАНО (держится)**
 
 *Повод.* Оператор: «лично мне не нравятся механизмы дизайна и фронтенда… может они и хорошие, я сужу очень
 поверхностно по результатам проекта». Судить по результату — верный критерий, и он измерим.
@@ -2664,6 +2664,27 @@ HTML продукта и потому видит пустоту. **Он его �
 «ноль токенов».
 
 *Опровержение:* найти в журнале хоть одно сравнение дрейфа, которое **состоялось**. Есть — пункт снимается.
+
+*Устранено и заслонено 2026-09-12 (Такт 33, предписание 28 закрыто):*
+1. **Связь монитора дрейфа с эталоном и ликвидация холостого расхода (`FALSIFICATION_HARNESS` / D008):**
+   - В `DesignDriftMonitorService` внедрена зависимость от `DesignShopCycleRepository`. Производителем эталона выступает `DesignShopOrchestrationService.captureBaseline`, фиксирующий `declaredColors` и `declaredFonts` в `DesignShopCycleEntity` на первом проходе дизайна.
+   - Если эталон для проекта ещё не зафиксирован (нет записи в `design_shop_cycles` либо `declaredColors` пуст), сервис **не вызывает сетевой запрос загрузки HTML** (`launcherClient.fetchHtml`), устранив паразитный расход памяти и сети (~70 КБ на каждом такте наблюдения).
+   - Если эталон зафиксирован, сервис загружает живой HTML и выполняет аудит против объявленных токенов проекта (`DesignConsistencyAuditService.TokenSet.of(cycle.declaredColorsList(), cycle.declaredFontsList())`). Сравнение дрейфа переведено из фиктивного статуса в реально исполняемый.
+2. **Трёхзначный статус и преодоление разрыва уровней абстракции (`LEVEL_OF_ABSTRACTION_LOCK` / D010 + `TRUTH_STATUS_TABLE` / D012):**
+   - Устранена категориальная ошибка и ложно-зелёный статус (`emptyHtmlTrivializesToAcceptedWithNoTokens`), при котором пустой HTML или оболочка SPA без стилей тривиально получали `traceRatio = 1.0` и `traceAccepted = true`.
+   - Введён типизированный вердикт `AuditVerdict`: `ACCEPTED` («принято»), `REJECTED` («отвергнуто»), `CANNOT_JUDGE` («не могу судить»).
+   - В `DesignConsistencyAuditService.audit`: если переданный HTML не содержит визуальных токенов в CSS (`used.all().isEmpty()`, например, серверная оболочка SPA `<!DOCTYPE html><html><body><div id="root"></div><script src="..."></script></body></html>` без inline-стилей), сервис возвращает вердикт `CANNOT_JUDGE` с пояснением `"не могу судить: нет визуальных токенов в HTML/CSS (HTML-оболочка SPA без стилей)"`, `displayVerdict = "не могу судить"`, `traceAccepted = false`, `traceRatio = 0.0`.
+   - Аналогично, при отсутствии объявленного эталона аудит возвращает `CANNOT_JUDGE` («не могу судить: отсутствует эталон дизайн-системы»).
+3. **Заслоны (19/19 зелёные, расширенный регрессионный прогон 92/92):**
+   - `DesignConsistencyAuditServiceTest` (13/13):
+     - `spaShellWithoutStylesReturnsCannotJudgeVerdictAndNeverClaimsAccepted`: оболочка SPA без инлайн-стилей даёт вердикт `CANNOT_JUDGE`, `displayVerdict = "не могу судить"`, `isCannotJudge() = true`, `traceAccepted = false`, `traceRatio = 0.0`.
+     - `emptyHtmlReturnsCannotJudgeVerdictAndNeverClaimsAccepted`: пустой HTML возвращает `CANNOT_JUDGE`, `displayVerdict = "не могу судить"`.
+     - `auditWithoutDeclaredBaselineReturnsCannotJudgeVerdict`: отсутствие эталона возвращает `CANNOT_JUDGE`.
+   - `DesignDriftMonitorServiceTest` (6/6):
+     - `skipsFetchAndComparisonWhenProjectHasNoEstablishedBaseline`: при отсутствии эталона сетевой `fetchHtml` не вызывается вовсе (`verifyNoInteractions(launcherClient)`), ликвидируя муду.
+     - `whenBaselineExistsAndLivePageIsSpaShellDriftComparisonCannotBeJudgedWithoutFalseFailure`: при наличии эталона и оболочке SPA без стилей аудит возвращает `CANNOT_JUDGE` без ложного срабатывания дефекта и без ложного успеха.
+     - `whenBaselineExistsAndLivePageHasMatchingTokensComparisonSucceeds`: успешное сравнение дрейфа при наличии эталона и совпадении токенов.
+     - `whenBaselineExistsAndLivePageDriftsLogsWarning`: обнаружение дрейфа при несовпадении токенов.
 
 ---
 

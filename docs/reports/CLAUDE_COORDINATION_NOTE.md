@@ -16,6 +16,30 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-12 01:18 UTC — Antigravity (L2): Предписание 28 закрыто (`FALSIFICATION_HARNESS` / D008, `LEVEL_OF_ABSTRACTION_LOCK` / D010, `TRUTH_STATUS_TABLE` / D012)**
+
+1. **Ликвидация холостого расхода сетевых ресурсов в `DesignDriftMonitorService` (`FALSIFICATION_HARNESS` / D008):**
+   - В `DesignDriftMonitorService` внедрен репозиторий `DesignShopCycleRepository`. Эталон дизайн-системы фиксируется в `DesignShopCycleEntity` (`declaredColors`, `declaredFonts`) фабричным этапом `DesignShopOrchestrationService.captureBaseline`.
+   - Если эталон для проекта ещё не создан (отсутствует запись либо `declaredColors` пуст), сервис **не выполняет сетевую загрузку HTML** (`launcherClient.fetchHtml`), устранив паразитный расход памяти и сети (~70 КБ на каждом цикле наблюдения).
+   - Если эталон зафиксирован, сервис загружает HTML страницы и выполняет аудит против объявленных токенов (`declaredColorsList()`, `declaredFontsList()`). Фиктивный пропуск («drift comparison skipped») заменён на реальное исполнение.
+
+2. **Трёхзначный статус и преодоление разрыва уровней абстракции (`LEVEL_OF_ABSTRACTION_LOCK` / D010 + `TRUTH_STATUS_TABLE` / D012):**
+   - Устранён ложно-зелёный статус (`emptyHtmlTrivializesToAcceptedWithNoTokens`), когда пустой HTML или серверная HTML-оболочка SPA без стилей ошибочно получали `traceRatio = 1.0` и `traceAccepted = true`.
+   - Введён типизированный вердикт `AuditVerdict`: `ACCEPTED` («принято»), `REJECTED` («отвергнуто»), `CANNOT_JUDGE` («не могу судить»).
+   - В `DesignConsistencyAuditService.audit`: при отсутствии визуальных токенов в HTML (`used.all().isEmpty()`, серверная оболочка SPA `<!DOCTYPE html><html><body><div id="root"></div><script src="..."></script></body></html>` без inline-стилей) сервис возвращает вердикт `CANNOT_JUDGE`, `displayVerdict = "не могу судить"`, `traceAccepted = false`, `traceRatio = 0.0`.
+   - При отсутствии объявленного эталона аудит также возвращает `CANNOT_JUDGE` («не могу судить: отсутствует эталон дизайн-системы»).
+
+3. **Заслоны (19/19 зелёные, расширенный регрессионный прогон 92/92):**
+   - `DesignConsistencyAuditServiceTest` (13/13):
+     - `spaShellWithoutStylesReturnsCannotJudgeVerdictAndNeverClaimsAccepted`: оболочка SPA без стилей даёт вердикт `CANNOT_JUDGE`, `displayVerdict = "не могу судить"`, `isCannotJudge() = true`, `traceAccepted = false`, `traceRatio = 0.0`.
+     - `emptyHtmlReturnsCannotJudgeVerdictAndNeverClaimsAccepted`: пустой HTML возвращает `CANNOT_JUDGE`.
+     - `auditWithoutDeclaredBaselineReturnsCannotJudgeVerdict`: отсутствие эталона возвращает `CANNOT_JUDGE`.
+   - `DesignDriftMonitorServiceTest` (6/6):
+     - `skipsFetchAndComparisonWhenProjectHasNoEstablishedBaseline`: при отсутствии эталона сетевой `fetchHtml` не вызывается вовсе (`verifyNoInteractions(launcherClient)`).
+     - `whenBaselineExistsAndLivePageIsSpaShellDriftComparisonCannotBeJudgedWithoutFalseFailure`: при наличии эталона и оболочке SPA без стилей аудит возвращает `CANNOT_JUDGE` без ложного сбоя и без ложного успеха.
+     - `whenBaselineExistsAndLivePageHasMatchingTokensComparisonSucceeds`: успешное сравнение дрейфа при наличии эталона и совпадении токенов.
+     - `whenBaselineExistsAndLivePageDriftsLogsWarning`: обнаружение дрейфа при несовпадении токенов.
+
 **2026-09-12 01:05 UTC — Antigravity (L2): Предписание 27 закрыто (`PRINCIPLED_INTEGRITY` / D012, `CATEGORY_ERROR_SCAN` / D002)**
 
 1. **Ликвидация несегментированного и неограниченного дампа задач (`GET /internal/tasks`):**
