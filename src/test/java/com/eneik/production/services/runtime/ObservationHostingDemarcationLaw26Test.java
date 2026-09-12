@@ -79,19 +79,34 @@ class ObservationHostingDemarcationLaw26Test {
         ReflectionTestUtils.setField(service, "baseDelayHours", 24L);
         ReflectionTestUtils.setField(service, "minimumDelayHours", 1L);
 
-        // Execute reap
-        service.maybeObserve(proj);
+        Logs logs = Logs.capture(ClientRuntimeObservabilityService.class);
+        try {
+            // Execute reap
+            service.maybeObserve(proj);
 
-        // Teardown must be invoked to reap the expired observation container
-        verify(launcher, times(1)).teardown();
-        verify(projects, times(1)).save(proj);
+            // Teardown must be invoked to reap the expired observation container
+            verify(launcher, times(1)).teardown();
+            verify(projects, times(1)).save(proj);
 
-        // Preview ports and timestamps must be reset
-        assertNull(proj.getLastRuntimePreviewLaunchedAt());
-        assertNull(proj.getLastRuntimePreviewPort());
+            // Preview ports and timestamps must be reset
+            assertNull(proj.getLastRuntimePreviewLaunchedAt());
+            assertNull(proj.getLastRuntimePreviewPort());
 
-        // Launchability constraint must NEVER be opened for an expired observation whose product was healthy
-        verify(constraints, never()).ensureOpen(any(), any());
+            // Launchability constraint must NEVER be opened for an expired observation whose product was healthy
+            verify(constraints, never()).ensureOpen(any(), any());
+
+            // CATEGORY_ERROR_SCAN (D002): Assert log message names the exact genus
+            assertTrue(logs.contains("observation preview window expired, short-lived observation torn down"),
+                    "Log must name that it is a short-lived observation preview being torn down");
+            assertTrue(logs.contains("not a permanent deployment"),
+                    "Log must explicitly state that this observation preview is not a permanent deployment");
+            assertTrue(logs.contains("product was healthy: launchSuccess=true healthStatus=200"),
+                    "Log must state that the product was healthy at observation time (launchSuccess=true healthStatus=200)");
+            assertFalse(logs.contains("live-preview window expired, torn down"),
+                    "Old ambiguous log string that omitted genus must not be used");
+        } finally {
+            logs.stop();
+        }
     }
 
     @Test
@@ -118,12 +133,50 @@ class ObservationHostingDemarcationLaw26Test {
                 mock(com.eneik.production.services.design.DesignDriftMonitorService.class),
                 projects, tasks, productCapabilities, constraints);
 
-        service.observeOnce(proj);
+        Logs logs = Logs.capture(ClientRuntimeObservabilityService.class);
+        try {
+            service.observeOnce(proj);
 
-        // Teardown is called immediately so partial observation stacks do not linger
-        verify(launcher, times(1)).teardown();
-        assertNull(proj.getLastRuntimePreviewLaunchedAt());
-        assertNull(proj.getLastRuntimePreviewPort());
+            // Teardown is called immediately so partial observation stacks do not linger
+            verify(launcher, times(1)).teardown();
+            assertNull(proj.getLastRuntimePreviewLaunchedAt());
+            assertNull(proj.getLastRuntimePreviewPort());
+
+            // CATEGORY_ERROR_SCAN (D002): Log must name observation genus
+            assertTrue(logs.contains("launch failed, short-lived observation torn down"),
+                    "Log must name that a short-lived observation container was torn down");
+            assertTrue(logs.contains("not a permanent deployment"),
+                    "Log must explicitly state that it is not a permanent deployment");
+            assertTrue(logs.contains("launchSuccess=false"),
+                    "Log must record launchSuccess=false");
+        } finally {
+            logs.stop();
+        }
+    }
+
+    private static final class Logs {
+        private final ch.qos.logback.classic.Logger logger;
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        private Logs(Class<?> type) {
+            logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(type);
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        static Logs capture(Class<?> type) {
+            return new Logs(type);
+        }
+
+        boolean contains(String fragment) {
+            return appender.list.stream().anyMatch(event -> event.getFormattedMessage().contains(fragment));
+        }
+
+        void stop() {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     @Test

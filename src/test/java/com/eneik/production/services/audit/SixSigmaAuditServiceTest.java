@@ -1,8 +1,10 @@
 package com.eneik.production.services.audit;
 
+import com.eneik.production.models.persistence.CapabilityObservationEntity;
 import com.eneik.production.models.persistence.CodeIntegrityFindingEntity;
 import com.eneik.production.models.persistence.FalsificationRunEntity;
 import com.eneik.production.models.persistence.FeatureEntity;
+import com.eneik.production.repositories.CapabilityObservationRepository;
 import com.eneik.production.repositories.CodeIntegrityFindingRepository;
 import com.eneik.production.repositories.FalsificationRunRepository;
 import com.eneik.production.repositories.FeatureRepository;
@@ -12,6 +14,9 @@ import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.github.GitHubPullRequestService;
+import com.eneik.production.services.runtime.ProductCapabilityService;
+import com.eneik.production.services.runtime.RuntimeLauncherClient;
 import com.eneik.production.toc.engine.TocAnomalyDetector;
 import com.eneik.production.toc.engine.TocExecutionGraph;
 import com.eneik.production.toc.engine.TocOptimizer;
@@ -44,6 +49,7 @@ public class SixSigmaAuditServiceTest {
     private com.eneik.production.services.lever.LeverPromotionService leverPromotionService;
     private ProjectRepository projectRepository;
     private JulesSessionRepository julesSessionRepository;
+    private com.eneik.production.repositories.CapabilityObservationRepository capabilityObservationRepository;
 
     private SixSigmaAuditService auditService;
 
@@ -53,6 +59,7 @@ public class SixSigmaAuditServiceTest {
         taskConflictRepository = mock(TaskConflictRepository.class);
         taskRepository = mock(TaskRepository.class);
         onboardingAuditFindingRepository = mock(OnboardingAuditFindingRepository.class);
+        capabilityObservationRepository = mock(com.eneik.production.repositories.CapabilityObservationRepository.class);
         featureRepository = mock(FeatureRepository.class);
         codeIntegrityFindingRepository = mock(CodeIntegrityFindingRepository.class);
         falsificationRunRepository = mock(FalsificationRunRepository.class);
@@ -92,7 +99,7 @@ public class SixSigmaAuditServiceTest {
                 taskConflictRepository,
                 taskRepository,
                 onboardingAuditFindingRepository,
-                mock(com.eneik.production.repositories.CapabilityObservationRepository.class),
+                capabilityObservationRepository,
                 projectRepository,
                 julesSessionRepository,
                 tocSentinelService,
@@ -639,5 +646,78 @@ public class SixSigmaAuditServiceTest {
         assertThat(deliveryReport.totalOpportunities()).isEqualTo(0L);
         assertThat(factoryReport.projectName()).isEqualTo("FACTORY_WIDE_ALL_PROJECTS");
         assertThat(deliveryReport.projectName()).isNotEqualTo(factoryReport.projectName());
+    }
+
+    /**
+     * TRUTH_STATUS_TABLE (D012) & PART_WHOLE_OWNERSHIP (D004):
+     * Coherence barrier: SixSigmaAuditService.computeCapabilityObservationCounts and
+     * ProductCapabilityService.currentValue must agree on the exact same numbers of opportunities
+     * and defects for any mixture of observation rows (successes, legitimate product defects, and
+     * instrument failures such as 401/403 auth blocks or connection timeouts).
+     */
+    @Test
+    void capabilityObservationCountsAgreesWithProductCapabilityServiceOnAnyMixtureOfRows() {
+        UUID projectId = UUID.randomUUID();
+
+        // 1. Success (200 OK): opportunity=1, defect=0
+        CapabilityObservationEntity ok200 = new CapabilityObservationEntity();
+        ok200.setProjectId(projectId);
+        ok200.setCapabilityKey("GET /api/v1/health");
+        ok200.setSatisfied(true);
+        ok200.setInstrumentFailure(false);
+        ok200.setStatusCode(200);
+
+        // 2. Product defect (500 Server Error): opportunity=1, defect=1
+        CapabilityObservationEntity err500 = new CapabilityObservationEntity();
+        err500.setProjectId(projectId);
+        err500.setCapabilityKey("GET /api/v1/protocols");
+        err500.setSatisfied(false);
+        err500.setInstrumentFailure(false);
+        err500.setStatusCode(500);
+
+        // 3. Instrument failure (401 Unauthorized): excluded by both
+        CapabilityObservationEntity err401 = new CapabilityObservationEntity();
+        err401.setProjectId(projectId);
+        err401.setCapabilityKey("GET /api/v1/orders");
+        err401.setSatisfied(false);
+        err401.setInstrumentFailure(true);
+        err401.setStatusCode(401);
+
+        // 4. Instrument failure (403 Forbidden): excluded by both
+        CapabilityObservationEntity err403 = new CapabilityObservationEntity();
+        err403.setProjectId(projectId);
+        err403.setCapabilityKey("GET /api/v1/admin");
+        err403.setSatisfied(false);
+        err403.setInstrumentFailure(true);
+        err403.setStatusCode(403);
+
+        // 5. Instrument failure (null Connection Timeout): excluded by both
+        CapabilityObservationEntity connDrop = new CapabilityObservationEntity();
+        connDrop.setProjectId(projectId);
+        connDrop.setCapabilityKey("GET /api/v1/stream");
+        connDrop.setSatisfied(false);
+        connDrop.setInstrumentFailure(true);
+        connDrop.setStatusCode(null);
+
+        List<CapabilityObservationEntity> mixedRows = List.of(ok200, err500, err401, err403, connDrop);
+        when(capabilityObservationRepository.findByProjectIdOrderByObservedAtDesc(projectId)).thenReturn(mixedRows);
+
+        var auditCounts = auditService.computeCapabilityObservationCounts(projectId);
+
+        var productCapabilityService = new ProductCapabilityService(
+                mock(FeatureRepository.class),
+                mock(GitHubPullRequestService.class),
+                mock(RuntimeLauncherClient.class),
+                capabilityObservationRepository
+        );
+        var productValue = productCapabilityService.currentValue(projectId);
+
+        // Assert exact numbers: 2 opportunities, 1 defect
+        assertThat(auditCounts.opportunities()).isEqualTo(2L);
+        assertThat(auditCounts.defects()).isEqualTo(1L);
+
+        // Assert exact agreement between SixSigmaAuditService and ProductCapabilityService
+        assertThat(auditCounts.opportunities()).isEqualTo(productValue.opportunities());
+        assertThat(auditCounts.defects()).isEqualTo(productValue.defects());
     }
 }

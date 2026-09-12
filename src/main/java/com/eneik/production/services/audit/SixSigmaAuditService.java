@@ -392,6 +392,11 @@ public class SixSigmaAuditService {
         long opportunities = 0;
         long defects = 0;
         for (var row : capabilityObservationRepository.findByProjectIdOrderByObservedAtDesc(projectId)) {
+            // TRUTH_STATUS_TABLE (D012): Instrument failures (401/403 unauthenticated or connection failure)
+            // are not product defects. Excluded from opportunities and defects, consistent with ProductCapabilityService.
+            if (row.isInstrumentFailure()) {
+                continue;
+            }
             opportunities++;
             if (!row.isSatisfied()) {
                 defects++;

@@ -27,23 +27,26 @@
 2. **Предписание 25 закрыто (`INUS_FACTOR_CHECK` / D007, `TRUTH_STATUS_TABLE` / D012):**
    - **Заслон счета обращений к GitHub:** в `ProductCapabilityServiceTest.secondPassWithUnchangedMainMakesZeroGitHubCalls` доказано: второй проход при неизменном `main` делает ровно 0 обращений к GitHub API (1 список каталога и 1 чтение файла на первом проходе, 0 на втором).
    - **Защита от запоминания сбоя как нулевых возможностей:** в `ProductCapabilityService.declaredCapabilities` при неуспешном `listDirectoryFiles` (`Optional.empty()`) пустой список в кэш не записывается. Существующий кэш сохраняется; для незакэшированного проекта возвращается пустой список без загрязнения кэша. Заслонено: `failedDirectoryListingDoesNotPolluteCacheAndPreservesExistingKnowledge`.
-   - **Разделение дефекта продукта и отказа инструмента (`TRUTH_STATUS_TABLE` / D012):** в `CapabilityObservationEntity` добавлено поле `instrument_failure` (миграция `V140`). Ответы `401 Unauthorized` и `403 Forbidden` от `SecurityConfig` продукта (требующего авторизации на бизнес-маршрутах) и сетевые отказы соединения фиксируются как `instrumentFailure = true` и исключаются из `opportunities` и `defects` в `ProductCapabilityService.currentValue()`. Заслонено: `probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects`.
+    - **Разделение дефекта продукта и отказа инструмента (`TRUTH_STATUS_TABLE` / D012):** в `CapabilityObservationEntity` добавлено поле `instrument_failure` (миграция `V140`). Ответы `401 Unauthorized` и `403 Forbidden` от `SecurityConfig` продукта (требующего авторизации на бизнес-маршрутах) и сетевые отказы соединения фиксируются как `instrumentFailure = true` и исключаются из `opportunities` и `defects` в `ProductCapabilityService.currentValue()`. Заслонено: `probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects`.
+    - **Согласование счета Six Sigma (`PART_WHOLE_OWNERSHIP` / D004):** в `SixSigmaAuditService.computeCapabilityObservationCounts` внедрен пропуск строк с `isInstrumentFailure()`, устранив расхождение между DPMO уровня продукта и счетчиками возможностей. Полная идентичность подсчета opportunities и defects доказана на любой смеси строк (успех 200, дефект 500, отказ инструмента 401, 403, null timeout). Заслонено: `capabilityObservationCountsAgreesWithProductCapabilityServiceOnAnyMixtureOfRows` (в `SixSigmaAuditServiceTest`, 26/26).
 
 3. **Предписание 26 закрыто (`CATEGORY_ERROR_SCAN` / D002):**
    - **Именование рода в журнале:** метод `ClientRuntimeObservabilityService.reapIdlePreviewIfExpired` при истечении окна превью явно логирует род события: `"ClientRuntimeObservabilityService: project {} observation preview window expired, short-lived observation torn down (observation container ended, not a permanent deployment; product was healthy: launchSuccess=true healthStatus=200)"`. Метод `observeOnce` при неудачном старте также логирует: `"launch failed, short-lived observation torn down (observation container ended, not a permanent deployment; launchSuccess=false)"`.
    - **Изоляция состояния продукта:** снос превью сбрасывает транзитные поля `lastRuntimePreviewLaunchedAt` и `lastRuntimePreviewPort` в `ProjectEntity`, не меняя постоянный статус продукта и не открывая ложных констрейнтов.
-   - **Заслон:** создан `ObservationHostingDemarcationLaw26Test` (3/3):
-     - `observationTeardownNamesObservationGenusAndClearsTransientPreviewWithoutCorruptingProduct`: проверка логирования рода, сброса полей превью и отсутствия ложных ограничений при здоровом продукте;
-     - `failedLaunchTearsDownImmediatelyWithoutMarkingAsDeploymentFailure`: немедленный снос частичного стека наблюдения при неудачном старте без выставления флага сбоя деплоя;
+   - **Заслон:** обновлен `ObservationHostingDemarcationLaw26Test` (3/3):
+     - `observationTeardownNamesObservationGenusAndClearsTransientPreviewWithoutCorruptingProduct`: проверка логирования рода через Logback `ListAppender` (наличие `observation`, `not a permanent deployment`, `launchSuccess=true healthStatus=200` и отсутствие старой строки `live-preview window expired, torn down`), сброса полей превью и отсутствия ложных ограничений при здоровом продукте;
+     - `failedLaunchTearsDownImmediatelyWithoutMarkingAsDeploymentFailure`: немедленный снос частичного стека наблюдения при неудачном старте без выставления флага сбоя деплоя с верификацией лога;
      - `observationPreviewStaysAliveStrictlyWithinTheConfiguredWindow`: удержание контейнера превью ровно в пределах окна `livePreviewIdleMinutes`.
 
-4. **Заслоны (76/76 зелёные в контейнере Maven):**
+4. **Заслоны (102/102 зелёные в контейнере Maven):**
    - `ObservationHostingDemarcationLaw26Test` (3/3)
    - `ProductCapabilityServiceTest` (14/14)
+   - `SixSigmaAuditServiceTest` (26/26)
    - `ClientRuntimeObservabilityServiceTest` (29/29)
    - `WebConfigCorsTest` (3/3)
    - `SystemSettingsServiceTest` (11/11)
    - `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12) с валидацией 140 миграций Flyway на реальной H2.
+   - Миграция Flyway: `V140__capability_observations_instrument_failure.sql`.
 
 **2026-09-11 23:15 UTC — Antigravity (L2): Предписание 24 закрыто (`BOUNDARY_TOPOLOGY` / D006), остаток Предписания 22 закрыт (`PART_WHOLE_OWNERSHIP` / D004)**
 

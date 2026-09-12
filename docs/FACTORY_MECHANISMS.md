@@ -2485,7 +2485,8 @@ account has free capacity right now`.
 *Устранено и заслонено 2026-09-12 (Такт 31, предписание 25 закрыто):*
 1. **Заслон счета обращений:** в `ProductCapabilityServiceTest.secondPassWithUnchangedMainMakesZeroGitHubCalls` подтверждено: второй проход при неизменном `main` делает ровно 0 обращений к GitHub API.
 2. **Предотвращение запоминания сбоя как отсутствия возможностей:** в `ProductCapabilityService.declaredCapabilities` при ошибке чтения каталога (`filesInDirectory.isEmpty()`) пустой список в кэш не записывается. Существующий кэш сохраняется; для незакэшированного проекта возвращается пустой список без загрязнения кэша. Заслонено: `failedDirectoryListingDoesNotPolluteCacheAndPreservesExistingKnowledge`.
-3. **Разделение дефекта продукта и отказа инструмента (`TRUTH_STATUS_TABLE` / D012):** добавлено поле `instrument_failure` в `CapabilityObservationEntity` (миграция `V140`). Ответы `401` и `403` (авторизация SecurityConfig продукта) и сбои соединения маркируются как отказ инструмента и исключаются из `opportunities` и `defects` в `currentValue()`, исключая фальсификацию дефектов качества продукта. Заслонено: `probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects`.
+3. **Разделение дефекта продукта и отказа инструмента (`TRUTH_STATUS_TABLE` / D012):** добавлено поле `instrument_failure` в `CapabilityObservationEntity` (миграция `V140`). Ответы `401` и `403` (авторизация SecurityConfig продукта) и сбои соединения маркируются как отказ инструмента и исключаются из `opportunities` и `defects` в `ProductCapabilityService.currentValue()`, исключая фальсификацию дефектов качества продукта. Заслонено: `probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects`.
+4. **Согласование счета дефектов Six Sigma (`PART_WHOLE_OWNERSHIP` / D004):** в `SixSigmaAuditService.computeCapabilityObservationCounts` внедрен пропуск строк с `isInstrumentFailure()`, устранив параллельную правду между расчетом DPMO слоя продукта и `ProductCapabilityService.currentValue()`. Заслонено: `SixSigmaAuditServiceTest.capabilityObservationCountsAgreesWithProductCapabilityServiceOnAnyMixtureOfRows`.
 
 ---
 
@@ -2531,7 +2532,7 @@ account has free capacity right now`.
 *Устранено и заслонено 2026-09-12 (Предписание 26 закрыто, `CATEGORY_ERROR_SCAN` / D002):*
 1. **Именование рода в журнале:** `ClientRuntimeObservabilityService.reapIdlePreviewIfExpired` при сносе экземпляра предварительного просмотра явно логирует род события: «observation preview window expired, short-lived observation torn down (observation container ended, not a permanent deployment; product was healthy: launchSuccess=true healthStatus=200)». При неудачном старте метод `observeOnce` также логирует «launch failed, short-lived observation torn down (observation container ended, not a permanent deployment; launchSuccess=false)».
 2. **Изоляция состояния продукта:** снос превью сбрасывает временные поля `lastRuntimePreviewLaunchedAt` и `lastRuntimePreviewPort` в `ProjectEntity`, не мутируя статус продукта и не генерируя ошибочных констрейнтов.
-3. **Заслоны:** `ObservationHostingDemarcationLaw26Test` (3/3), `ClientRuntimeObservabilityServiceTest` (29/29).
+3. **Заслоны:** `ObservationHostingDemarcationLaw26Test` (3/3 с перехватом журнала через Logback `ListAppender` и проверкой наличия точных формулировок рода и запретом устаревшей строки «live-preview window expired, torn down»), `ClientRuntimeObservabilityServiceTest` (29/29).
 
 ---
 
