@@ -47,10 +47,9 @@ class Database:
         return tasks if tasks else []
 
     def get_task_by_id(self, task_id):
-        tasks = self.get_tasks_for_sync()
-        for task in tasks:
-            if task.get("id") == task_id:
-                return task
+        task = self._api_call(f"/{task_id}")
+        if task and isinstance(task, dict) and task.get("id"):
+            return task
         return None
 
     def get_task_metadata(self, task_id):

@@ -3,6 +3,7 @@ package com.eneik.production.repositories;
 import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -17,6 +18,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<TaskEntity> findByStatus(TaskStatus status);
     List<TaskEntity> findByStatusAndRoleTag(TaskStatus status, String tag);
     List<TaskEntity> findByLinearIssueIdIsNotNull();
+    Optional<TaskEntity> findFirstByLinearIssueId(String linearIssueId);
     List<TaskEntity> findByProjectIdAndLinearIssueIdIsNotNull(UUID projectId);
     List<TaskEntity> findByQualityGateReportIsNotNull();
     List<TaskEntity> findByProjectIdAndQualityGateReportIsNotNull(UUID projectId);
@@ -33,6 +35,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     java.util.Optional<TaskEntity> findFirstByProjectId(UUID projectId);
     long countByProjectIdAndStatus(UUID projectId, TaskStatus status);
     List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
+    List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId, Pageable pageable);
     List<TaskEntity> findByProjectIdAndCreatedAtAfter(UUID projectId, java.time.Instant createdAfter);
     List<TaskEntity> findByProjectIdAndContentKeyStartingWith(UUID projectId, String prefix);
     Optional<TaskEntity> findByProjectIdAndDescription(UUID projectId, String description);
@@ -274,6 +277,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     long countByProjectIdAndDescriptionAndStatusNotIn(UUID projectId, String description, List<TaskStatus> excludedStatuses);
 
     List<TaskEntity> findAllByOrderByCreatedAtDesc();
+    List<TaskEntity> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     @Query("SELECT t.status, COUNT(t) FROM TaskEntity t WHERE t.carrier = false GROUP BY t.status")
     List<Object[]> countNonCarrierTasksByStatus();

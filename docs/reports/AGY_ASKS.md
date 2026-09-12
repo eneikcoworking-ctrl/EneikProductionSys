@@ -617,7 +617,33 @@
   4. `AccountLifecycleInvariantTest`: проверка удаления аккаунта с `ACCOUNT_DELETION_RULE`, субъектом и причиной.
   5. `AccountControllerIntegrationTest`: сквозной HTTP DELETE с проверкой удаления сущности и появления факта в `defect_journal`.
   6. `ProjectFlowServiceLaw1JulesDispatchTest`: структурный инвариант единственного вызова `lockAccountByNameWithCapacity` соблюдён.
-- **Что берётся следующим:** Предписание 22 в `docs/FACTORY_MECHANISMS.md` («Резервирование единственного аккаунта опустошает общий пул», `PART_WHOLE_OWNERSHIP` / D004).
+- **Что берётся следующим:** Предписание 28 в `docs/FACTORY_MECHANISMS.md` («Два механизма дизайна числятся сильными», `FALSIFICATION_HARNESS` / D008 + `LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+### 2026-09-12 Antigravity: Предписание 27 — Ликвидация несегментированного дампа задач и сканирования таблицы (`PRINCIPLED_INTEGRITY` / D012, `CATEGORY_ERROR_SCAN` / D002)
+- **Что сделано:**
+  1. **Ликвидация full-table dump (`GET /internal/tasks`):**
+     - Вызов `taskRepository.findAll()` полностью удалён из `InternalTaskController` (0 вызовов).
+     - Введена постраничная и проектно-сегментированная выборка с параметрами `projectId`, `limit` (по умолчанию 50, жесткий потолок `MAX_LIMIT = 200`), `page` и `offset`.
+     - При указании `projectId` читаются строго задачи проекта: `taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId, pageable)`.
+     - При отсутствии `projectId` выборка строго ограничена потолком `MAX_LIMIT`: `taskRepository.findAllByOrderByCreatedAtDesc(pageable)`.
+  2. **Ликвидация сканирования таблицы при точечных запросах (`CATEGORY_ERROR_SCAN` / D002):**
+     - `getTaskByLinearId` переведён с `findAll().stream().filter(...)` на прямой точечный репозиторный запрос `taskRepository.findFirstByLinearIssueId(linearIssueId)`.
+     - Добавлен прямой эндпоинт точечного чтения `GET /internal/tasks/{id}` (`taskRepository.findById(id)`).
+     - В `scripts/modules/db_utils.py` метод `get_task_by_id(task_id)` переведён на прямое чтение `GET /{task_id}` вместо скачивания всей таблицы.
+  3. **Правдивый Javadoc:**
+     - Javadoc класса `InternalTaskController` переписан и честно документирует реальные правила `ApiAuthorizationInterceptor` (доступ по loopback или операторскому токену, изменяющие операции требуют токен) и ограничения на объём выборки.
+- **Чем проверено:**
+  1. `InternalTaskControllerTest` (6/6 green):
+     - `getAllTasksWithProjectIdReturnsPagedProjectTasksAndNeverCallsFindAll`
+     - `getAllTasksWithoutProjectIdClampsLimitToMaxLimitAndNeverCallsFindAll`
+     - `getAllTasksCalculatesPageNumberCorrectlyWhenOffsetIsProvided`
+     - `getTaskByIdReturnsTaskWhenFoundAnd404WhenAbsent`
+     - `getTaskByLinearIdUsesRepositoryLookupAndNeverCallsFindAll`
+     - `updateTaskRejectsOverwritingTerminalStatusWithConflict`
+  2. `ApiAuthorizationInterceptorTest` (17/17 green): защита контура `/internal/**`.
+  3. Регрессия (92/92 green): `SystemStatusServiceTest`, `TaskCarrierBackfillServiceTest`, `ObservationHostingDemarcationLaw26Test`, `ProductCapabilityServiceTest`, `SixSigmaAuditServiceTest`.
+- **Что берётся следующим:** Предписание 28 в `docs/FACTORY_MECHANISMS.md`.
+
 
 
 

@@ -16,6 +16,36 @@
 
 # 🗣 СЛОВО ANTIGRAVITY — этот раздел я не трогаю
 
+**2026-09-12 01:05 UTC — Antigravity (L2): Предписание 27 закрыто (`PRINCIPLED_INTEGRITY` / D012, `CATEGORY_ERROR_SCAN` / D002)**
+
+1. **Ликвидация несегментированного и неограниченного дампа задач (`GET /internal/tasks`):**
+   - В `InternalTaskController.getAllTasks` вызов `taskRepository.findAll()` полностью удалён (0 вызовов).
+   - Введена постраничная и проектно-сегментированная выборка: параметры `projectId`, `limit` (по умолчанию 50, жесткий потолок `MAX_LIMIT = 200`), `page` и `offset`.
+   - При передаче `projectId` запрос выполняется строго в рамках проекта: `taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId, pageable)`.
+   - При запросе без `projectId` потолок строк строго ограничен `MAX_LIMIT`: `taskRepository.findAllByOrderByCreatedAtDesc(pageable)`.
+
+2. **Ликвидация сканирования таблицы при точечных запросах (`CATEGORY_ERROR_SCAN` / D002):**
+   - `getTaskByLinearId` переведён с `findAll().stream().filter(...)` на прямой репозиторный запрос `taskRepository.findFirstByLinearIssueId(linearIssueId)`.
+   - Добавлен прямой эндпоинт точечного чтения `GET /internal/tasks/{id}`: возвращает `200 OK` либо `404 NOT_FOUND` за один SQL-запрос по первичному ключу (`findById`).
+   - В `scripts/modules/db_utils.py` метод `get_task_by_id(task_id)` переведён на прямое чтение `GET /{task_id}` вместо выгрузки всех задач таблицы.
+
+3. **Правдивый Javadoc:**
+   - Комментарий класса `InternalTaskController` переписан и честно документирует реальные правила `ApiAuthorizationInterceptor` (доступ по loopback или операторскому токену, изменяющие операции требуют токен независимо от адреса) и потолки запросов.
+
+4. **Заслоны (23/23 зелёные):**
+   - `InternalTaskControllerTest` (6/6):
+     - `getAllTasksWithProjectIdReturnsPagedProjectTasksAndNeverCallsFindAll`: фильтрация по проекту, передача limit/page и заслон `never().findAll()`.
+     - `getAllTasksWithoutProjectIdClampsLimitToMaxLimitAndNeverCallsFindAll`: ограничение предела строк до `MAX_LIMIT=200` при запросе 10 000 строк и заслон `never().findAll()`.
+     - `getAllTasksCalculatesPageNumberCorrectlyWhenOffsetIsProvided`: расчет страницы по offset.
+     - `getTaskByIdReturnsTaskWhenFoundAnd404WhenAbsent`: чтение по id без полного сканирования таблицы.
+     - `getTaskByLinearIdUsesRepositoryLookupAndNeverCallsFindAll`: точечный поиск по linearId без `findAll()`.
+     - `updateTaskRejectsOverwritingTerminalStatusWithConflict`: проверка инварианта необратимости терминальных статусов (Закон 20).
+   - `ApiAuthorizationInterceptorTest` (17/17):
+     - Внешний запрос без ключа к `/internal/tasks` -> 403 FORBIDDEN.
+     - Localhost-запрос к `/internal/tasks` -> допуск.
+     - Внешний запрос с ключом -> допуск.
+     - Запрос из внутренней сети docker bridge (`172.18.0.1`, `10.0.0.1`) без ключа -> 403 FORBIDDEN.
+
 **2026-09-12 00:45 UTC — Antigravity (L2): Предписания 25 и 26 закрыты (`INUS_FACTOR_CHECK` / D007, `CATEGORY_ERROR_SCAN` / D002, `TRUTH_STATUS_TABLE` / D012)**
 
 1. **Разъяснения по топологии контура (§24):**

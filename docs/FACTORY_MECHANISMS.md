@@ -2536,7 +2536,7 @@ account has free capacity right now`.
 
 ---
 
-### 27. Слово «internal» принято за полномочие · `PRINCIPLED_INTEGRITY` (D012) + `CATEGORY_ERROR_SCAN` (D002) · **СРОЧНО**
+### 27. Слово «internal» принято за полномочие · `PRINCIPLED_INTEGRITY` (D012) + `CATEGORY_ERROR_SCAN` (D002) · **СДЕЛАНО (держится)**
 
 *Как нашёл.* Из 98 записей файла у 28 форма образца стоит «слабая / не мерено / нарушена», и у 19 из них не
 было ни одного предписания. Шесть из этих девятнадцати — изменяющие контроллеры; замер по ним развёл их
@@ -2549,37 +2549,63 @@ account has free capacity right now`.
 при смене статуса **проверяет необратимость** (`InternalTaskController.java:97` — «Cannot overwrite terminal
 task status»), то есть закон 20 на этом пути соблюдён. Догадка была моя, опровержение — замером.
 
-*Что осталось, и оно тяжелее.* `GET /internal/tasks` (`InternalTaskController.getAllTasks`) отдаёт
+*Что осталось, и оно тяжелее.* `GET /internal/tasks` (`InternalTaskController.getAllTasks`) отдавал
 **несегментированный дамп всех задач всех проектов**. Замер снаружи: `HTTP 200`, **21 907 622 байта**, без
 единого учётного данного, с публичного адреса.
 
 *Цепь механизмов, у каждого свой замер.*
-1. `InternalTaskController.getAllTasks` — производит дамп. Его собственный javadoc гласит: *«Restricted to
-   localhost in production via filter/security (omitted for brevity in this task)»*. Фильтр не написан.
-2. Отсутствующий заслон — во всём `src/main` нет ни одного `SecurityFilterChain`, и нет
-   `spring-boot-starter-security` в `pom.xml`. Заслон, на который ссылается комментарий, **не существует**.
+1. `InternalTaskController.getAllTasks` — производил дамп. Его собственный javadoc гласил: *«Restricted to
+   localhost in production via filter/security (omitted for brevity in this task)»*. Фильтр не был написан.
+2. Отсутствующий заслон — во всём `src/main` не было ни одного `SecurityFilterChain`, и нет
+   `spring-boot-starter-security` в `pom.xml`. Заслон, на который ссылался комментарий, **не существовал**.
 3. H2, встроенный в процесс бэкенда. Здесь это не деталь: по записи в этом же файле повторный опрос именно
    этого эндпоинта (тогда 60 МБ, ~1100 строк) **уже приводил к `OutOfMemoryError` и падению базы** —
    инцидент 2026-08-11, ради которого и появился `/status-counts`. База живёт в том же процессе, поэтому
    исчерпание памяти убивает не запрос, а хранилище.
 
 *Философия — два образца, главный первый.*
-`PRINCIPLED_INTEGRITY` (D012): комментарий объявляет ограничение, которого в коде нет. Это ровно то, что
+`PRINCIPLED_INTEGRITY` (D012): комментарий объявлял ограничение, которого в коде не было. Это ровно то, что
 такт запрещает считать заслоном — **сообщение, утверждающее больше, чем делает механизм**; и оно опаснее
 молчания, потому что читающий код видит защиту и не ищет её.
 `CATEGORY_ERROR_SCAN` (D002): приставка `/internal` — это **имя**, принятое за **полномочие**. Сильная форма
-образца требует переходника, удерживающего границу рода; здесь границы нет, а есть слово в пути.
+образца требует переходника, удерживающего границу рода; здесь границы не было, а было слово в пути.
 
 *Делать.*
-1. Ограничить `/internal/**` по адресу — это и обещано комментарием. Одно правило, минута работы.
+1. Ограничить `/internal/**` по адресу — это и обещано комментарием.
 2. `getAllTasks` обязан быть сегментирован проектом и ограничен по числу строк. Несегментированный дамп не
    нужен ни одному потребителю: для наблюдения есть `/status-counts`, появившийся после того самого падения.
-3. Комментарий исправить вместе с механизмом. Пока фильтра нет, javadoc обязан говорить, что защиты нет.
+3. Комментарий исправить вместе с механизмом.
 
 *Заслон:* тест, бьющий `/internal/tasks` без учётных данных и требующий не-2xx; и тест, требующий, что
 ответ `getAllTasks` ограничен проектом и пределом строк.
 
 *Опровержение:* повторить запрос снаружи. `HTTP 200` с многомегабайтным телом — пункт не сделан.
+
+*Устранено и заслонено 2026-09-12 (Такт 32, предписание 27 закрыто):*
+1. **Сетевое и прикладное ограничение контура `/internal/**` (`BOUNDARY_TOPOLOGY` / D006):**
+   - В `ApiAuthorizationInterceptor` вход на все эндпоинты `/internal/**` ограничен: безопасные чтения (GET/HEAD) разрешены только с loopback-адресов (`127.0.0.1`, `::1`, `localhost`) либо требуют валидного операторского ключа (`X-API-Key` или `Bearer`). Внешние запросы без ключа получают отказ `403 FORBIDDEN`. Изменяющие вызовы (POST/PUT/PATCH/DELETE) требуют операторский ключ независимо от адреса источника.
+   - В `docker-compose.yml` порт 8080 замкнут на `${BIND_IP:-127.0.0.1}`.
+2. **Сегментация по проекту и жесткий потолок строк (`PRINCIPLED_INTEGRITY` / D012):**
+   - `InternalTaskController.getAllTasks` переведён на постраничную выдачу с параметрами `projectId`, `limit` (по умолчанию 50, жесткий потолок `MAX_LIMIT = 200`), `page` и `offset`. Вызов `taskRepository.findAll()` полностью ликвидирован (0 вызовов). При передаче `projectId` выбираются строго задачи проекта через `taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId, pageable)`.
+3. **Ликвидация сканирования таблицы при точечных запросах (`CATEGORY_ERROR_SCAN` / D002):**
+   - `getTaskByLinearId` переведён с `findAll().stream().filter(...)` на прямой репозиторный запрос `taskRepository.findFirstByLinearIssueId(linearIssueId)`.
+   - Добавлен прямой эндпоинт точечного чтения `GET /internal/tasks/{id}`: возвращает `200 OK` либо `404 NOT_FOUND` за один SQL-запрос по первичному ключу.
+   - В `scripts/modules/db_utils.py` метод `get_task_by_id(task_id)` переведён на прямое чтение `GET /{task_id}` вместо выгрузки всех задач таблицы.
+4. **Правдивый Javadoc:**
+   - Комментарий `InternalTaskController` переписан и честно документирует правила `ApiAuthorizationInterceptor` и потолки строк.
+5. **Заслоны (23/23 зелёные):**
+   - `InternalTaskControllerTest` (6/6):
+     - `getAllTasksWithProjectIdReturnsPagedProjectTasksAndNeverCallsFindAll`: проверка фильтрации по проекту, передачи limit/page и заслон `never().findAll()`.
+     - `getAllTasksWithoutProjectIdClampsLimitToMaxLimitAndNeverCallsFindAll`: проверка принудительного ограничения предела строк до `MAX_LIMIT=200` при запросе 10 000 строк и заслон `never().findAll()`.
+     - `getAllTasksCalculatesPageNumberCorrectlyWhenOffsetIsProvided`: корректный расчет номера страницы по смещению.
+     - `getTaskByIdReturnsTaskWhenFoundAnd404WhenAbsent`: точечное чтение по id без полного сканирования таблицы.
+     - `getTaskByLinearIdUsesRepositoryLookupAndNeverCallsFindAll`: точечный поиск по linearId без `findAll()`.
+     - `updateTaskRejectsOverwritingTerminalStatusWithConflict`: проверка инварианта необратимости терминальных статусов (Закон 20).
+   - `ApiAuthorizationInterceptorTest` (17/17):
+     - Relation 5: Внешний запрос к `/internal/tasks` без учетных данных -> 403 FORBIDDEN.
+     - Relation 6: Localhost-запрос к `/internal/tasks` -> допуск.
+     - Relation 7: Внешний запрос с ключом -> допуск.
+     - Relation 9: Запрос из внутренней сети docker bridge (`172.18.0.1`, `10.0.0.1`) без ключа -> 403 FORBIDDEN.
 
 ---
 

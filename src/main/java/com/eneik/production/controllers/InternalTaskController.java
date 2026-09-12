@@ -9,6 +9,8 @@ import com.eneik.production.repositories.LinearIssueMetadataRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,12 +22,24 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Internal API for synchronization scripts.
- * Restricted to localhost in production via filter/security (omitted for brevity in this task).
+ * Internal API for administrative synchronization scripts and diagnostic inspection.
+ *
+ * <p>Enforced by {@link com.eneik.production.security.ApiAuthorizationInterceptor}:
+ * <ul>
+ *   <li>Safe reads (GET) are restricted to localhost/loopback or require an authorized operator token/API key.</li>
+ *   <li>Mutating calls (POST, PUT, PATCH, DELETE) require a valid operator token/API key regardless of source IP.</li>
+ * </ul>
+ *
+ * <p>Bounded Queries (PRINCIPLED_INTEGRITY / D012, CATEGORY_ERROR_SCAN / D002):
+ * All listing operations are project-scoped and strictly bounded by row ceilings to prevent
+ * OutOfMemoryError and database exhaustion (incident 2026-08-11).
  */
 @RestController
 @RequestMapping("/internal/tasks")
 public class InternalTaskController {
+
+    public static final int DEFAULT_LIMIT = 50;
+    public static final int MAX_LIMIT = 200;
 
     private final TaskRepository taskRepository;
     private final LinearIssueMetadataRepository metadataRepository;
@@ -45,9 +59,31 @@ public class InternalTaskController {
         this.objectMapper = objectMapper;
     }
 
+    /**
+     * Bounded and project-scoped task list (PRINCIPLED_INTEGRITY / D012).
+     * Prevents unbounded full-table dumps that previously caused OOM crashes.
+     */
     @GetMapping
-    public List<TaskEntity> getAllTasks() {
-        return taskRepository.findAll();
+    public List<TaskEntity> getAllTasks(
+            @RequestParam(required = false) UUID projectId,
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(required = false) Integer offset) {
+        int boundedLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
+        int effectivePage = offset != null ? Math.max(0, offset / boundedLimit) : Math.max(0, page);
+        Pageable pageable = PageRequest.of(effectivePage, boundedLimit);
+        if (projectId != null) {
+            return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId, pageable);
+        }
+        return taskRepository.findAllByOrderByCreatedAtDesc(pageable);
+    }
+
+    /** Single-task direct lookup by ID - O(1) query instead of full-table scanning. */
+    @GetMapping("/{id}")
+    public ResponseEntity<TaskEntity> getTaskById(@PathVariable UUID id) {
+        return taskRepository.findById(id)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     /** Lightweight, project-scoped status counts - COUNT queries only, no task bodies serialized.
@@ -144,10 +180,7 @@ public class InternalTaskController {
 
     @GetMapping("/by-linear-id/{linearIssueId}")
     public ResponseEntity<TaskEntity> getTaskByLinearId(@PathVariable String linearIssueId) {
-        // Simple scan for demo purposes, could add a repo method
-        return taskRepository.findAll().stream()
-                .filter(t -> linearIssueId.equals(t.getLinearIssueId()))
-                .findFirst()
+        return taskRepository.findFirstByLinearIssueId(linearIssueId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
