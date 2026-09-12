@@ -109,31 +109,103 @@
 *Философия:* `INTENSION_COMPATIBILITY` (D001) — **сильная**. Опровержение: найти случай, где исходный текст
 клиента не дошёл до промпта целиком.
 
-**`MarketCorpusService`** — что продукт данного класса обязан содержать независимо от того, что клиент вспомнил.
-*Связи:* вызывают четверо, включая слой приёмки; ничего не пишет.
-*Ценность:* компилятор строит только описанное в брифе; корпус закрывает разрыв между «что просили» и «что
-обязано быть».
-*Комментарий:* **периферия.** Риск, которого он пока избегает: корпус — чужое убеждение о классе продуктов, и
-если он начнёт **заказывать** объём, а не сообщать о нём, фабрика примется строить не то, что просил клиент.
-Граница выдержана: корпус читают, решает компилятор.
-*Философия:* `RELIABILITY_CHAIN` (D010) — **не мерено**. Опровержение: назвать возраст записи корпуса и
-правило её свежести.
+## Семейство: рыночный корпус, уставный гейт и полевое исследование
 
-**`MarketComplianceGate`** — называет **уставные** требования, которых план не покрывает.
-*Связи:* вызывает `ProjectFlowService`; зовёт `MarketCorpusService`.
-*Ценность:* начинать надо там, где ошибиться нельзя.
-*Комментарий:* **периферия, образцовое самоограничение.** Он мог бы судить о полноте вообще и стал бы
-источником бесконечного шума. Ограничение законом выбрано потому, что это единственная область, где «не
-покрыто» есть факт, а не мнение.
-*Философия:* `PROHIBITION_AS_CODE` (D006) — **сильная**. Опровержение: найти пункт, где гейт судит о вкусе.
+*Приведено к строгому виду 12 сентября 2026, Клод, без правки кода. Семейство взято целиком: три механизма,
+одна поверхность и данные, которыми они владеют.*
 
-**`MarketResearchService`** — превращает непроверенные записи корпуса в измеренные: сессия смотрит на реально
-существующие продукты и коммитит найденное файлом.
-*Связи:* вызывающих нет — идёт от контроллера; пишет `TaskRepository`.
-*Ценность:* ответ модели в чате — свидетельство слуха.
-*Комментарий:* **периферия; философски один из лучших механизмов системы.** Он воплощает главное правило всей
-модели — разницу между «кто-то написал» и «так устроено».
-*Философия:* `RAG_GROUNDING_CAPSULE` (D014) — **сильная**. Опровержение: найти запись корпуса без источника.
+**`MarketCorpusService`**, **`MarketComplianceGate`**, **`MarketResearchService`**, **`MarketResearchController`**,
+данные `market-corpus/` — что продукт данного класса обязан содержать независимо от того, что клиент вспомнил.
+
+*Связи:* `MarketCorpusService` читают пятеро: `ProjectFlowService` (:4443 `profiles()`, охраны на `null` :4440, :4492),
+`FalsificationCycleService` (:865 `isAvailable()`, :897 `profilesInEvidence`, :901 `influentialExpectations`, :913 `mentions`),
+`AcceptanceVerdictLayer` (:91 `profilesInEvidence`, :117 `profiles()`), `MarketComplianceGate`, `MarketResearchController`.
+Прежняя запись называла четверых — замер даёт пять (`grep -rl MarketCorpusService src/main --include=*.java`).
+`MarketComplianceGate` зовёт только `ProjectFlowService` (поле :91, конструктор :201, применение :4368–4391);
+в `MarketCorpusService` гейт лишь упомянут в комментарии :214, вызова оттуда нет.
+`MarketResearchService` зовёт только `MarketResearchController`. Ни `MarketCorpusService`, ни `MarketComplianceGate`
+не пишут ничего (`grep -oE '[a-zA-Z]+Repository'` по обоим файлам — пусто); `MarketResearchService` пишет `.save(` и держит
+`TaskRepository`, `RoleRepository`, `ProjectRepository` — прежняя запись называла одно хранилище.
+
+*Идеальная форма:* корпус **сообщает** обязательный объём и никогда его не **заказывает** — решает компилятор;
+всякая влияющая запись несёт источник и срок; уставное требование, которого план не покрывает, называется актом,
+а не мнением; непроверенная запись становится влияющей только после полевого наблюдения с методом и выборкой.
+
+*Граница:* семейство не создаёт задач продукта, не блокирует поток и не правит клиентский бриф.
+`MarketComplianceGate` намеренно не порождает работу и не блокирует: проверка ключевыми словами приблизительна,
+и доля ложных срабатываний не измерена — ограничение объявлено в самом коде (`ProjectFlowService:4378–4390`).
+Отказ гейта не останавливает план: `log.warn` и продолжение.
+
+*Входы:* каталог из `market-corpus.root` (умолчание `market-corpus`; контроль: ключа в `application*.yml` нет —
+`grep -rn market-corpus src/main/resources/application*` пусто, действует умолчание);
+`influentialExpectations(market)`, `detectionKeywords(capabilityId)`, `profilesInEvidence(text)`, `profiles()`,
+`acceptanceRule()`, `isAvailable()`, статический `mentions(haystack, keyword)`;
+`uncoveredStatutoryRequirements(planText, markets)` — текст плана и рынки (при пустом списке берётся `CORPUS_MARKETS`);
+`createResearchTask(profileId, market, sampleSize)`.
+
+*Выходы:* записи `Expectation(capabilityId, requirement, kano, market)`; находки `Finding(capabilityId, requirement, source, market)`
+→ предупреждение в журнал и строка в `project.factoryReport`, причём пустой результат пишется явной строкой
+«проверено, ничего не найдено» — «проверено и пусто» и «не проверялось» остаются различимы;
+идентификатор заведённой задачи исследования.
+
+*Владельцы истины и состояния:* `market-corpus/capabilities.json` — `schemaVersion` 2, `updatedAt` 2026-08-15,
+13 способностей, 26 ожиданий, **у всех 26 есть `source`**; `status` ожиданий: `statutory` 17, `derived` 5, `observed` 3,
+`standard` 1. `market-corpus/profiles.json` — `updatedAt` 2026-08-16, 17 профилей, у всех `status: derived` и `source`;
+там же `acceptanceRule` (`status: derived`). `market-corpus/observations/` — три наблюдения
+(`booking-DE-2026-08-15`, `shop-DE-2026-08-14`, `site-enquiry-response-2026-08-15`), каждое несёт `observedAt`,
+`method`, `methodLimitations`, `sampleSize`. Владелец срока годности — сама запись наблюдения, не читающий.
+Задача исследования принадлежит `TaskRepository`; запись о проверке плана — полю `factoryReport` проекта.
+
+*Инварианты:* (1) непроверенная запись не влияет ни на что; (2) всякая влияющая запись называет источник;
+(3) правила одного рынка не протекают в другой; (4) нечитаемый срок годности значит «протухло», а не «вечно»;
+(5) план, который гейт не смог классифицировать, не получает освобождения; (6) пустой результат проверки
+записывается явно; (7) поверхность `/internal/market-corpus` закрыта не собственной проверкой, а перехватчиком
+`ApiAuthorizationInterceptor` на `/api/**` и `/internal/**` (`WebConfig:58`): не-локальный запрос к `/internal/**`
+получает отказ, изменяющая операция требует `X-API-Key` или `Authorization: Bearer`.
+
+*Сильная форма сейчас:* `RELIABILITY_CHAIN` (D010) — корпус дословно: «данным верят только когда процесс их добычи
+надёжен для этого класса дефекта; названы источник, отметка времени, правило свежести и путь проверки»;
+опровержение образца — «назвать возраст значения». **Форма сильная**, и это исправление прежней записи, где стояло
+«не мерено»: её опровержение закрыто заслонами `marketObservationsStopInfluencingOnceTheyExpire`,
+`aLawDoesNotLapseBecauseNobodyRevisitedTheFile`, `treatsAnUnreadableShelfLifeAsExpiredRatherThanImmortal`,
+`anObservationWithNoStatedShelfLifeStillCounts`, `everyInfluentialEntryCitesItsSource`,
+`neverLetsUnverifiedEntriesInfluenceAnything` (`MarketCorpusServiceTest`, 19 тестов).
+`PROHIBITION_AS_CODE` (D006) — корпус дословно: «запрет — исполнимый путь отказа с объяснимой причиной, и на него
+есть тест»; опровержение — «совершить запрещённое действие; если оно прошло — запрета нет, есть пожелание».
+**Форма сильная**: `neverReportsAnythingUnverified`, `doesNotExemptAPlanItCannotClassify`,
+`staysSilentWhenThePlanDoesAddressTheDuties`, `everyFindingCarriesTheActItComesFrom` (`MarketComplianceGateTest`, 12 тестов).
+
+*Слабая/неидеальная форма сейчас:* `RAG_GROUNDING_CAPSULE` (D014) — корпус дословно: «правило хранится извлекаемым
+куском с источником, оценкой и классом дефекта, и цитируется идентификатором»; опровержение — «потребовать
+идентификатор образца; отсутствие ссылки и есть галлюцинация». У `MarketResearchService` форма **не мерена**:
+заслон, закрывающий это опровержение, стоит не здесь, а в `MarketCorpusServiceTest.everyInfluentialEntryCitesItsSource`.
+Своих тестов у механизма нет — контроль: `grep -rln 'MarketResearch' src/test --include=*.java` даёт 0 файлов,
+обратная проба `grep -rln 'MarketCorpus' src/test` даёт 3 файла, значит ноль настоящий.
+Правило пополнения корпуса (кто и в какой срок обязан обновлять `capabilities.json` и `profiles.json`) — **не мерено**.
+Доля ложных срабатываний гейта — **не мерено**.
+
+*Опровержение:* найти влияющую запись корпуса без `source`; найти запись с истёкшим сроком, всё ещё влияющую на
+решение; найти вывод гейта, где он судит о вкусе, а не об уставном требовании; завести исследование и показать путь,
+на котором его результат попадает в корпус без источника.
+
+*Критерий закрытия:* семейство идеально, когда (1) у пополнения корпуса назван владелец и срок и это закреплено
+заслоном; (2) доля ложных срабатываний гейта измерена на живых планах и решение «сообщать или блокировать» принято
+по этому числу; (3) у `MarketResearchService` есть собственный заслон на создание задачи исследования и на то, что
+результат без источника в корпус не попадает.
+
+*Свидетельства такта:* `grep -rl MarketCorpusService src/main --include=*.java`; `grep -n 'MarketCorpus\|marketCorpus'`
+по `ProjectFlowService`, `FalsificationCycleService`, `AcceptanceVerdictLayer`; `sed -n '4368,4400p' ProjectFlowService.java`;
+`python3` разбор `market-corpus/*.json` и `market-corpus/observations/*.json`; `grep -A1 '@Test'` по
+`MarketCorpusServiceTest`, `MarketComplianceGateTest`; `grep -rln 'MarketResearch' src/test`;
+`grep -n addPathPatterns src/main/java/com/eneik/production/config/WebConfig.java`;
+`grep -n '^### .RELIABILITY_CHAIN\|^### .PROHIBITION_AS_CODE\|^### .RAG_GROUNDING_CAPSULE' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`.
+
+*Текущий статус:* две формы из трёх сильные и подтверждены заслонами; `MarketResearchService` без единого своего
+заслона; пополнение корпуса и доля ложных срабатываний не мерены.
+
+*комментарий для Антигравити:* семейство не идеально. Не трогай границу «корпус сообщает, а не заказывает» и
+самоограничение гейта — это и есть его сильные формы. Первый такт здесь — заслон на `MarketResearchService`, а не
+правка кода. Применимая философия: `RELIABILITY_CHAIN` (D010), `PROHIBITION_AS_CODE` (D006), `RAG_GROUNDING_CAPSULE` (D014).
 
 **`OnboardingAuditService`**, **`RepositoryStackAnalyzer`**, **`StackProfile`** — разбор чужого репозитория при
 brownfield-приёме.
