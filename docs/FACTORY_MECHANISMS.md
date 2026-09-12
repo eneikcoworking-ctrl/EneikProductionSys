@@ -611,163 +611,68 @@ Derived rather than picked»), и в коде прямо объявлено, ч�
 
 # IV. Ревью, гейт, слияние
 
-**`AutoMergeService`** (2967 строк) — привратник слияния; единственный, кому позволено решить, что
-продуктовый код едет в main.
-*Связи:* вызывающих нет — идёт по расписанию; **зовёт 18 механизмов; пишет 8 хранилищ**.
-*Ценность:* всякий путь к main проходит здесь.
-*Комментарий:* **ядро.** Его заслон — **образец правильного рода во всей системе**, и на него следует
-равняться остальным: не список запретных имён, а **множество** мест слияния, ломающееся на любом новом, как
-бы то ни называлось. Первая версия была списком имён и зеленела бы, стоило написать тот же обход под другим
-названием. Разница между этими версиями и есть разница между заслоном и его видимостью. Но восемнадцать
-вызываемых и восемь хранилищ — третий по тяжести случай нераспределённого владения.
-*Вытягивание, внесено 2026-09-06 по указанию оператора (предписание 41, пункт 1 — сделан).* Здесь, в `recordSuccessfulMerge`, стоит **единственная точка потребления во всей фабрике**: PR с продуктовым кодом лёг в `main`, и задача помечается сделанной именно поэтому. По Lean карточка возвращается ровно тут — не на провале задачи и не на закрытии носителя, это фабрика разговаривает сама с собой. Возврат карточки есть право произвести следующее, то есть немедленный `projectFlowService.dispatchQueuedTasks(projectId)` без ожидания тика. **И слияние здесь не по смыслу, а по тексту запроса — вопрос оператора «при чём тут автомерж».** Занятость слота
-считается так: сессия в `queued/running/revising/stuck` **И** задача **не** в `done/failed/blocked`
-(`AccountRepository`, подзапрос ёмкости). То есть слот держится **терминальностью задачи**, а не жизнью
-сессии. `recordSuccessfulMerge` ставит `task.setStatus(done)` — значит именно здесь карточка и освобождается.
-Потребление клиентом и освобождение ёмкости совпадают в одной точке, и это проверяемо по тексту запроса, а не
-по рассуждению. **Нового предела намеренно не введено:** число карточек уже задано ёмкостью аккаунта и
-блюдётся `lockNextJulesAccountWithCapacity` — не хватало не ограничения, а возврата. Тик в 60 секунд остаётся страховкой, а не источником выпуска. Вызов обёрнут так же, как соседний цикл советов: слияние — настоящая работа, и её следствие не имеет права ей навредить. *Проверено живым событием 2026-09-06 06:11:12, и оно поправило мою же обработку.* Слияние PR 992 дошло до
-точки потребления, возврат карточки **сработал**, и политика его отвергла: «DISPATCH_QUEUED_TASKS … there is
-nothing for it to act on right now» — очередь была пуста. Это верный исход возврата, а не сбой; мой первый
-перехват объявил его «failed» и тем самым сделал работающий механизм похожим на сломанный. Отказ политики
-теперь ловится отдельно и пишется как «карточка вернулась, отправлять нечего». **Отдельный вывод для потока:**
-в момент потребления очередь пуста, потому что наполняет её компиляция, а она сама на таймере — тянущий
-контур длиной в одно звено.
+**Имена механизма или семейства:** `AutoMergeService`, `GitHubPullRequestService`, `GitHubApiBudgetService`, `GithubAccessService`, `CodeChangeClassifier`, `GateOrchestrator`, `GateCheck`, `BaseQualityGate.BusinessValueGate`, `BaseQualityGate.DoDGate`, `BaseQualityGate.AcceptanceCriteriaGate`, `BaseQualityGate.RepoUrlGate`, `BaseQualityGate.ActiveRoleGate`, `BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate`, `EpistemicLayerInvariantGate`, `BranchGarbageCollectorService`, `PrReviewPipelineService`, `RiskLevelCalculator`, `PrReviewRepository`, `TaskGateLogRepository`, `TaskRepository`, `JulesSessionRepository`, `TaskConflictRepository`, `FeatureThreadRepository`, `GithubWebhookController` and `JulesDispatchService` as the review/gate/merge family.
 
-*Заслон:* `LeanPullReleaseTest` — счётное утверждение по множеству точек потребления, а не поиск одного вызова: закрепляет множество на единице, требует, чтобы возврат стоял **внутри** точки потребления, чтобы он не достигался только из метода по расписанию, и запрещает второй самостоятельный предел. Красный без правки проверен: `dispatchQueuedTasks` встречался в этом классе **ноль раз**.
-*Философия:* `FALSIFICATION_HARNESS` (D008) — **сильная**, заслон `AutoMergeLaw20InvariantS4Test`.
-Опровержение: добавить место слияния и посмотреть, покраснел ли счётный инвариант.
+**Механизмы внутри секции:**
+- merge arbiter: `AutoMergeService` decides whether a PR may land, records successful merge, marks the task terminal, releases the terminal claim and returns the next pull card through `ProjectFlowService.dispatchQueuedTasks`.
+- GitHub transport: `GitHubPullRequestService` owns PR snapshots, diff/file/branch operations, record-PR merge/close paths, branch deletion and real-byte reads from GitHub.
+- GitHub API budget: `GitHubApiBudgetService` owns per-token rate-limit state, cooldown decisions, response accounting and operation spend attribution.
+- GitHub access probe: `GithubAccessService` probes repo access, branch protection, PR permissions, webhooks and CI status, then persists `github_access_status` evidence.
+- product-code classifier: `CodeChangeClassifier` decides whether a diff contains client product code by denying known factory/process artifacts rather than allowing known stacks.
+- quality gates: `GateOrchestrator`, `GateCheck`, `BaseQualityGate.*`, `BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate` and `EpistemicLayerInvariantGate` decide which staged checks applied, which failed and what evidence was recorded.
+- branch garbage collection: `BranchGarbageCollectorService` closes stale/orphan PRs, deletes retired branches, supersedes conflicts, retires tied sessions and requeues the work from clean `main`.
+- PR review pipeline: `PrReviewPipelineService` creates or updates `PrReviewEntity` from webhook/dispatch PR data and risk calculation.
 
-**`GitHubPullRequestService`** (2108 строк) — транспорт к GitHub: PR, файлы, ветки, слияния.
-*Связи:* **вызывают 17 механизмов**; зовёт `CodeChangeClassifier`, `GitHubApiBudgetService`; **не пишет** — у
-него нет своего состояния, только чужой репозиторий.
-*Ценность:* четыре точки записи отвергают заводские записи на месте.
-*Комментарий:* **ядро.** До сегодня разбиение обеспечивалось **уборкой на выходе**, и это надо назвать прямо:
-**уборка есть свидетельство нарушения, а не его отсутствия.** К моменту снятия работа на порождение файла уже
-потрачена, diff испорчен, окно с заводской записью в PR клиента состоялось. Заслон, удаляющий файл, и канал,
-неспособный его пронести, — разные вещи.
-*Философия:* `PROHIBITION_AS_CODE` (D006) и `TRUTH_STATUS_TABLE` (D012) — **сильная**, заслон
-`DeliveryRealityLaw2CarrierChannelTest` и `GitHubPullRequestServiceTest`. Отсутствие классификатора переведено в третий исход (отказ записи fail-closed / UNVERIFIED). Опровержение: убрать бин и проверить поведение точек записи.
+**Философский паттерн:** primary `KARL_POPPER_01_FALSIFICATION_HARNESS`, family `FALSIFICATION_HARNESS`, defect `D008 False green`: this family must reject the false statement "work is reviewed, gated or merged" when the refuting evidence is missing. Supporting patterns: `ROBERT_BRENDOM_09_PROHIBITION_AS_CODE` / `D006 Authorization ambiguity` for forbidden merge/write paths, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / `D006` for access and authority, `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` / `D002 Invalid state` for product-code versus factory-record files, `ELIZABET_ENSKOM_02_PLANNING_CONSISTENCY` / `D004 Concurrency conflict` for PR-set naming, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / `D010 Data lineage loss` and `ACP-061 Hoare Triple Review` as common evidence discipline.
 
-**`GitHubApiBudgetService`** — бюджет обращений к GitHub.
-*Связи:* вызывают 4; ничего не зовёт и не пишет.
-*Ценность:* исчерпание лимита однажды остановило фабрику на часы.
-*Комментарий:* **ядро (бюджет).** Формулировка, ради которой он переписан, стоит того, чтобы её помнить:
-**цена обхода ограничена остатком работы, а не историей.** Опрашивать терминальные записи вечно — платить за
-прошлое.
-*Философия:* `RELIABILITY_CHAIN` (D010) — **сильная**. Опровержение: посчитать обращения на терминальные PR.
+**Связи:** `AutoMergeService.processAutoMerge` is scheduled, checks `github_enabled`, asks `GitHubApiBudgetService.guard`, consults operational policy for `MERGE_PR`, uses `GitHubPullRequestService` for GitHub truth, writes `PrReviewRepository`, `TaskRepository` and claim/task follow-up state, and calls `ProjectFlowService.dispatchQueuedTasks` only after a successful product-code merge. `GitHubPullRequestService` is called by automerge, gates, branch GC, dispatch and webhook/reconciliation paths; it uses `GitHubApiBudgetService` before/after HTTP calls. `GateOrchestrator` receives Spring's `List<GateCheck>`, filters by `GateStage`, `supports` and build-phase exemption, writes `TaskEntity.qualityGatePassed`, `TaskEntity.qualityGateReport` and `TaskGateLogEntity`. `BackendContractGate`, `DesignExcellenceGate` and `VerificationEvidenceGate` resolve a real implementer session and read the PR diff/files through `GitHubPullRequestService`. `EpistemicLayerInvariantGate` is registered as `@Service` and participates through the same `List<GateCheck>`. `BranchGarbageCollectorService` uses GitHub PR truth plus Jules session/task/conflict repositories and `SessionLifecycleService`. `PrReviewPipelineService` is called by `GithubWebhookController`, `JulesDispatchService` and automerge-adjacent review paths and writes `PrReviewRepository`.
 
-**`GithubAccessService`** — доступы и приглашения соавторов.
-*Связи:* вызывающих нет — идёт от контроллера; зовёт бюджет GitHub.
-*Ценность:* без доступа не поедет ничто.
-*Комментарий:* **ядро по демаркации**, заслонов не видел.
-*Философия:* `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` (D006) — Джозеф Раз, `BARCAN-TAG-10
-DEONTIC-PROHIBITION`, принцип **исключающих причин**, anchor *Practical Reason and Norms / The Authority of
-Law*. Сильная форма дословно: «до реализации полномочий составлена матрица прав, обязанностей, привилегий и
-власти, и **на каждое отношение есть тест разрешённого и запрещённого**». Слабая: «роли перечислены,
-**проверки написаны по месту**». Опровержение образца: «**найти отношение, у которого нет теста запрета**».
+**Идеальная форма:** a client PR can be merged only when the factory has independent, named evidence for the question being decided: merge permission, product-code presence, real PR/diff/head-ref, applicable gate denominator, check failures, review risk and branch/session ownership. No self-report may substitute for GitHub bytes, no empty set may pass as checked work, no factory carrier/record artifact may be counted as delivered product code, and no PR count may be reported without naming its set and source.
 
-*Замер 2026-09-06.* Механизм объявляет **11 действий**: `abandonConflict`, `boostPriority`,
-`collapseDuplicateTask`, `dismissWishlist`, `nudgeStuckSession`, `resolveOrphanedPr`, `retireStuckWorker`,
-`retryAbandonedCloseout`, `reviveFailedTask`, `triggerCodeDefectFalsificationRun`, `triggerFalsificationRun`.
-Заслон `GeminiObserverActionServiceTest` (463 строки) упоминает восемь из них. **Три не упоминаются вовсе:**
-`boostPriority`, `nudgeStuckSession`, `triggerCodeDefectFalsificationRun`. Контрольная проба встроена в сам
-счёт: восемь ненулевых значений в той же колонке доказывают, что ноль означает отсутствие, а не поломку
-грепа.
+**Граница:** the family may decide review/gate/merge/cleanup facts for PRs, tasks, branches and gate logs. It must not decide client delivery readiness without the delivery mechanisms, must not infer product work from factory records, must not delete branches outside the explicit retired/no-code/orphan/stale cases, and must not turn access probes or budget state into business acceptance.
 
-*Уточнение, без которого вывод был бы вдвое резче, чем факт.* Все три бесстестовых действия проходят через
-общий `execute(action, OperationalAction.…, project, targetId, reason, …)`, то есть **полномочие у них
-опосредовано операционной политикой**, а `boostPriority` вдобавок сам проверяет неверный идентификатор и
-чужой проект. Значит отсутствует **тест** запрета, а не запрет. Это ровно слабая форма образца: «проверки
-написаны по месту».
+**Входы:** scheduled automerge ticks, GitHub webhook/dispatch PR data, `PrReviewEntity`, `JulesSessionEntity.prUrl/status/externalSessionId/lastProgressAt`, `TaskEntity` status/role/payload/fileScope/feature/project, GitHub PR diff/head ref/files/bytes/branch list/API headers, system settings `github_enabled`, `github_token`, `github_pr_snapshot_ttl_seconds`, operational policy decisions, build-phase state, feature epistemic layer, task conflicts and risk inputs.
 
-*По Разу это и есть суть.* Власть работает **исключающими причинами**: она не перевешивает доводы, а
-запрещает их учитывать. Полномочие, у которого не показан запрещённый случай, исключающей причиной не
-является — оно остаётся доводом среди прочих, и различить «разрешено» от «не проверено» снаружи нельзя.
+**Выходы:** merged/closed/deleted GitHub PR or branch actions, invalidated PR snapshot cache, updated review merge status/risk/CI data, task status `done` after product-code merge, released terminal claim, possible immediate dispatch pull, gate report JSON with per-stage applicable counts and check failures, persisted `TaskGateLogEntity`, persisted `github_access_status`, superseded task conflict, retired session, requeued task and branch-GC log evidence.
 
-*Что делать:* три теста запрета, по одному на действие, на тот случай, который политика обязана отвергнуть.
-Не список имён — утверждение о свойстве: действие, поданное вне своего проекта либо при отсутствующей цели,
-обязано вернуть отказ.
+**Владельцы истины и состояния:** GitHub owns PR existence, diff, head ref, files, branch existence and API budget headers; `GitHubApiBudgetService` owns local token-budget/cooldown/spend projection; `PrReviewRepository` owns factory review records; `JulesSessionRepository` owns session-to-task/PR lineage; `TaskRepository` owns task terminality and gate report state; `TaskGateLogRepository` owns historical gate evidence; `GithubAccessService` owns `github_access_status`; `TaskConflictRepository` owns conflict supersession; `FeatureRepository` owns epistemic layer; `CodeChangeClassifier` owns the local predicate separating product code from factory/process artifacts.
 
-*Опровержение, назначенное вперёд:* добавить действие двенадцатым и посмотреть, упадёт ли что-нибудь. Не
-упало — матрицы по-прежнему нет, есть перечень.
-**`CodeChangeClassifier`** — детерминированный, не-ИИ ответ на вопрос «есть ли здесь настоящий продуктовый
-код». Список-запрет, а не список-разрешение.
-*Связи:* вызывают гейт слияния и транспорт; ничего не зовёт.
-*Ценность:* перечень расширений устаревал бы с каждым новым стеком клиента.
-*Комментарий:* **ядро; самое аккуратное рассуждение об асимметрии ошибок во всём коде.** Ложное «это не код»
-удалило бы настоящую работу; ложное «это код» безвредно. Поэтому запрет, а не разрешение — **сторона ошибки
-выбрана по цене ошибки, а не по удобству.** Ровно этого не хватало многим механизмам, разрешавшим себе
-оптимистичный исход.
-*Философия:* `CATEGORY_ERROR_SCAN` (D002) — **сильная**. Опровержение: подать процессный файл нового стека и
-посмотреть, признан ли он кодом.
+**Инварианты:**
+- exactly one product-consumption path returns the next pull card: successful product-code merge bookkeeping in `AutoMergeService.recordSuccessfulMerge`.
+- `projectFlowService.dispatchQueuedTasks` inside merge bookkeeping is a consequence of consumption and must not introduce a second capacity limit.
+- GitHub API calls are guarded and booked through `GitHubApiBudgetService`; token fingerprints are irreversible and rate-limit cooldown is explicit.
+- no-code/factory-record branches may be deleted only after classification and GitHub head-ref evidence.
+- gate success carries a denominator: `applicableChecksByStage` and `stages` must say which question was answered.
+- build-phase exemption is per gate, not a global pass; `VerificationEvidenceGate` remains non-exempt because it is the QA evidence itself.
+- UI/design and QA gates read real PR diff/head-ref/files, not payload self-attestation.
+- branch GC must retire only the PR/session/branch it can connect by session token or explicit orphan evidence.
+- PR review numbers must name the counted set: product review PRs, all open repository PRs, record/carrier PRs or delivery links.
 
-**`GateOrchestrator`**, **`BaseQualityGate`**, **`BackendContractGate`**, **`DesignExcellenceGate`**,
-**`VerificationEvidenceGate`**, **`EpistemicLayerInvariantGate`** — гейты качества по стадиям.
-*Связи:* оркестратор пишет `TaskGateLogRepository` и `TaskRepository`; отдельные гейты вызываются из
-`ClientDeliverableReadinessService` и `JulesDispatchService`. **Прежнее утверждение «`BaseQualityGate` и
-`EpistemicLayerInvariantGate` не вызывает никто» замером снято:** `EpistemicLayerInvariantGate` помечен
-`@Service` и реализует `GateCheck`, а оркестратор внедряет `List<GateCheck>` — Spring собирает его вместе со
-всеми. Вызывающий есть. Верно другое, и оно хуже: путь, на котором он стоит, не достигается — предписание 33.
-Без `@Service` остаётся только `BaseQualityGate`.
-*Ценность:* стадийная проверка перед признанием работы сделанной.
-*Комментарий:* **ядро.** `EpistemicLayerInvariantGate` — единственное место, где куайновская демаркация
-**исполняется машиной**: периферии запрещено менять файлы ядра. И его никто не зовёт. `DesignExcellenceGate` —
-уже исправленный случай, который стоит помнить: он читал поле, которого никто в продакшене не писал, то есть
-был зелен всегда.
-*Пустой квантор, уже исправленный, но обязательный к памяти:* `allMatch` на пустом списке истинна, а у
-восьми ролей из тринадцати нет ни одной применимой проверки — такая задача записывалась как прошедшая **все**
-проверки, не пройдя ни одной. Знаменатель обязан называться и у булевых величин, не только у долей.
-*Философия:* `FALSIFICATION_HARNESS` (D008) — **слабая**: два гейта из шести без вызывающих. Опровержение:
-нарушить инвариант эпистемического слоя и посмотреть, остановил ли кто-нибудь работу.
+**Сильная форма:** `AutoMergeService` has the real consumption point: `recordSuccessfulMerge` marks review merged, marks task `done`, releases the terminal claim and calls `dispatchQueuedTasks` inside guarded consequence handling. `GitHubPullRequestService` and `CodeChangeClassifier` choose the safer error direction: unknown client stack remains product code, known factory/process artifacts are excluded, and branch deletion is tied to explicit no-code/record/orphan paths. `GitHubApiBudgetService` isolates budget by token fingerprint and records response headers/spend. `GateOrchestrator` no longer hides zero applicable checks: it records per-stage denominators and check-level failures. `BackendContractGate`, `DesignExcellenceGate` and `VerificationEvidenceGate` use PR diff/head-ref/file content rather than agent payload claims. `BranchGarbageCollectorService` uses session-token ownership and session progress before destructive cleanup.
 
-**`BranchGarbageCollectorService`** — не более одной живой ветки на задачу.
-*Связи:* вызывают трое; зовёт 5; пишет `TaskConflictRepository`, `TaskRepository`.
-*Ценность:* грязная или застоявшаяся ветка — работа, которая никогда не доедет.
-*Комментарий:* **периферия** по демаркации, но решение суровое: закрыть PR, удалить ветку, поставить задачу
-заново. Оправдание верное — переделать от чистого main дешевле, чем чинить мёртвое, — и порог динамический,
-по трём сигмам, а не назначенный. Это правильная форма.
-*Философия:* `DECISION_EXPECTED_LOSS` (D005) — **сильная**. Опровержение: найти порог, заданный константой.
+**Слабая или неидеальная форма:** the family is not fully ideal. `EpistemicLayerInvariantGate` is registered, but its core-file violation check still relies on `TaskEntity.fileScope` text and does not read the real PR diff even though it already has `GitHubPullRequestService`; this can miss a periphery task that mutates a core file without a truthful scope string. `GithubAccessService` persists useful access evidence, but the section evidence did not establish an explicit rights/duties denial-test matrix around who may trigger or consume those probes. `PrReviewPipelineService` records PR review rows, but the broader system still needs named PR-set projections so dashboard/GitHub/runtime counts cannot be compared as if they counted the same thing.
 
-**`PrReviewPipelineService`** — конвейер ревью PR.
-*Связи:* зовёт оценку риска; **вызывающих трое, замер 2026-09-06**: `GithubWebhookController:74`, `JulesDispatchService:4011`, `AutoMergeService`.
-*Ценность:* последовательность ревью PR: без неё вердикт о коде выносился бы вне порядка и без общего состояния.
-*Комментарий:* **ядро по демаркации**, заслонов не видел. **Осторожно с утверждениями «вызывающих нет» во всём этом файле.** Два проверенных поимённо оказались ложными: этот и `EpistemicLayerInvariantGate` (он `@Service`, а оркестратор внедряет `List<GateCheck>`). Оба служили основанием для формы образца «слабая», то есть **ложная посылка порождала ложный статус**. Остальные подобные утверждения **не проверены**: беглый греп по именам рядом с такой строкой подхватывает имена из `Связи` и предметом утверждения не является. Прежде чем опираться на любое «вызывающих нет» — перепроверить поимённо.
-*Философия:* `ELIZABET_ENSKOM_02_PLANNING_CONSISTENCY` (D004) — Элизабет Энском, `BARCAN-TAG-12
-SOCIAL-CONTRACT`, интенциональное действие **«под описанием»**, anchor *Intention*. Сильная форма дословно:
-«планы задач, PR, ветки и притязания складываются в **одно** состояние плана; дашборд, GitHub и рантайм
-согласны о следующем действии». Слабая: «**каждый источник согласован сам с собой**». Опровержение образца:
-«спросить у трёх источников следующее действие и сравнить ответы» — оно и стало планом замера.
+**Что надо сделать для идеала:**
+1. Move `EpistemicLayerInvariantGate` from `task.fileScope` text evidence to the same PR-diff/head-ref acquisition model used by `BackendContractGate`, `DesignExcellenceGate` and `VerificationEvidenceGate`; keep `fileScope` only as advisory context.
+2. Add a focused falsification test where a periphery role changes a core path in the real PR diff and the gate fails even when `fileScope` is absent or misleading.
+3. Add the corresponding allowed case: periphery role changes only periphery paths and the gate passes with a non-empty applicable-check denominator.
+4. For `GithubAccessService`, define and test the rights/duties matrix for triggering access probes and reading latest access status: at least one allowed and one denied relation per exposed caller.
+5. For PR review projections, name every count by set and source: product-review PRs, all open repo PRs, record/carrier PRs, delivery links. A summary may compare them only after it names them.
+6. Preserve the existing product-code deny-list classifier and merge-card return; do not redesign those while fixing PR-set and epistemic-diff evidence.
 
-*Опыт 2026-09-06, 11:28:32 UTC, три источника в один момент.* Свод: `openReviews = 2`, `reviewTasks = 2`,
-следующее действие — «Produce a PR or terminal failure evidence». Сводка доставки: `prLinks = 0`. GitHub, как
-его видит сама фабрика (`[BRANCH-GC] Found N open PR(s)`): **3**. Три ответа на один вопрос: 2, 0, 3. И
-названное действие — «произвести PR» — противоречит тому, что три PR уже открыты.
+**Что не трогать:** do not add another merge-consumption point; do not add another capacity limit beside account/session capacity; do not turn `CodeChangeClassifier` into an allow-list of file extensions; do not count `.eneik/*`, runner scripts or design records as product code; do not remove `GitHubApiBudgetService` from transport call sites; do not make `allMatch` over an empty gate list mean verified delivery; do not let design/QA gates return to payload self-report; do not let branch GC close/delete a PR merely because a task is not `done`; do not collapse all PR counts into one unnamed `openPrs` number.
 
-*Контроль, чтобы расхождение не оказалось временем.* Между замерами прошла только отправка задачи: ни один
-PR не открывался, не закрывался и не сливался. Свод опрошен дважды подряд — оба раза 2. Расхождение
-устойчиво.
+**Опровержение:** create a periphery task whose real PR diff touches `src/main/resources/db/migration/*` or security configuration while `task.fileScope` is blank; if `EpistemicLayerInvariantGate` passes, the record is false. Remove or bypass `GitHubApiBudgetService` from a GitHub HTTP path; if the operation still spends without budget accounting, the budget invariant is false. Add a second independent product-merge bookkeeping path; if `LeanPullReleaseTest` does not fail, the merge-card invariant is false. Present three PR counts from dashboard, GitHub and runtime without set names; if a caller can treat them as the same fact, the planning-consistency invariant is false.
 
-*Две версии, и предпочитаемая названа.* **Первая:** источники считают разные множества — BRANCH-GC берёт все
-открытые PR репозитория, включая **носители**, а свод считает только продуктовые задачи с ревью. Замер её
-поддерживает: за полчаса фабрика слила два **record PR** (1016 и 1018, «reason=wishlist compiler plan
-parsed» и «reason=PR review fallback verdict»), то есть носители в репозитории есть и их считает только
-GitHub. **Вторая:** один из источников устарел. Различающее наблюдение: перечислить три открытых PR поимённо
-и проверить, есть ли среди них record PR. Не выполнено — **версия поддержана, но не установлена**.
+**Закрытие:** the section is ideal only when the PR diff itself falsifies periphery-to-core mutations, access probing has explicit allowed/denied authority tests, every PR count names its set and source, and focused tests prove the existing merge-card, budget, classifier, gate-denominator, real-evidence and branch-GC invariants still hold.
 
-*Форма: **слабая**, и подтверждена именно в том виде, как её описывает образец.* Дефект не в том, что число
-неверно, а в том, что **каждый источник согласован сам с собой** и ни один не говорит, какое множество он
-считает. По Энском: действие существует **под описанием**, и здесь одно и то же положение дел описано тремя
-способами без судьи между ними. Оператор указывал мне на Энском отдельно — образец назван его именем не для
-украшения: «следующее действие» тут не одно, их три.
+**Свидетельства записи:** `nl -ba src/main/java/com/eneik/production/services/AutoMergeService.java | sed -n "150,185p;1068,1090p;1268,1370p;1528,1542p"`; `nl -ba src/main/java/com/eneik/production/services/github/GitHubPullRequestService.java | sed -n "1,80p;180,260p;430,520p;1180,1255p"`; `nl -ba src/main/java/com/eneik/production/services/github/GitHubApiBudgetService.java | sed -n "1,220p"`; `nl -ba src/main/java/com/eneik/production/services/github/GithubAccessService.java | sed -n "1,220p"`; `nl -ba src/main/java/com/eneik/production/services/CodeChangeClassifier.java | sed -n "1,180p"`; `nl -ba src/main/java/com/eneik/production/services/gate/GateOrchestrator.java | sed -n "1,130p"`; `nl -ba src/main/java/com/eneik/production/services/gate/GateCheck.java | sed -n "1,90p"`; `nl -ba src/main/java/com/eneik/production/services/gate/BackendContractGate.java | sed -n "1,190p"`; `nl -ba src/main/java/com/eneik/production/services/gate/DesignExcellenceGate.java | sed -n "1,230p"`; `nl -ba src/main/java/com/eneik/production/services/gate/VerificationEvidenceGate.java | sed -n "1,210p"`; `nl -ba src/main/java/com/eneik/production/services/gate/EpistemicLayerInvariantGate.java | sed -n "1,170p"`; `nl -ba src/main/java/com/eneik/production/services/orchestration/BranchGarbageCollectorService.java | sed -n "1,140p;250,330p;350,390p"`; `nl -ba src/main/java/com/eneik/production/services/monitor/PrReviewPipelineService.java | sed -n "1,220p"`; `grep -RIn "ACP-061" docs/philosopher-patterns docs | head -n 20`; `grep -nE "FALSIFICATION_HARNESS|PROHIBITION_AS_CODE|RIGHTS_DUTIES_MATRIX|PLANNING_CONSISTENCY|CATEGORY_ERROR_SCAN" docs/philosopher-patterns/philosophers/*.md`.
 
-*Что делать:* каждое число о PR обязано нести имя множества — «открытых продуктовых ревью», «всех открытых
-PR репозитория», — и свод обязан называть источник, из которого взял. Пока имени нет, согласие трёх
-источников проверить нельзя даже в принципе.
-рантайма следующее действие по одному PR и сравнить ответы.
+**Текущий статус:** механизм секции описан цельно и пригоден для реализации, но не признан идеальным. Код в этом такте не менялся.
+
+**комментарий для Антигравити:** механизм не идеален. Применить `KARL_POPPER_01_FALSIFICATION_HARNESS`, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `ELIZABET_ENSKOM_02_PLANNING_CONSISTENCY`, `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `ACP-061`: сначала перевести `EpistemicLayerInvariantGate` на реальный PR diff, затем закрепить allowed/denied authority tests для `GithubAccessService` и явные имена множеств PR для сводов; `AutoMergeService`, `CodeChangeClassifier`, `GitHubApiBudgetService`, real-evidence gates and branch-GC cleanup policy сохранять как опорные инварианты.
 
 ---
-
 # V. Свидетельство доставки
 
 **`ClientDeliverableReadinessService`** (1626 строк) — меряет сданный объём по настоящей иерархии: корневая

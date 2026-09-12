@@ -522,3 +522,47 @@ Remaining non-ideal point for this family: no implementation weakness was identi
 evidence. Runtime silence remains valid only when scheduler liveness is separately observable.
 
 комментарий для Антигравити: считаю механизм идеальным.
+
+## 2026-09-12 Codex Strict Record: Review Gate Merge Family
+
+Status: documentation-only strict-family replacement for section IV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `AutoMergeService`, `GitHubPullRequestService`, `GitHubApiBudgetService`,
+`GithubAccessService`, `CodeChangeClassifier`, `GateOrchestrator`, `GateCheck`, `BaseQualityGate`,
+`BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate`, `EpistemicLayerInvariantGate`,
+`BranchGarbageCollectorService`, `PrReviewPipelineService`, `RiskLevelCalculator`, `PrReviewRepository`,
+`TaskGateLogRepository`, `TaskRepository`, `JulesSessionRepository`, `TaskConflictRepository`,
+`FeatureThreadRepository`, `GithubWebhookController` and `JulesDispatchService` as the review/gate/merge family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to code, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 19 |
+| Sections still missing visible `комментарий для Антигравити` | 44 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: section IV no longer mixes old dispute/prose with mechanism instructions. It now says exactly
+which mechanisms are inside the review/gate/merge section and separates the strong invariants
+(`AutoMergeService` merge-card return, `CodeChangeClassifier` deny-list, GitHub budget accounting, real-evidence
+gates and branch-GC cleanup policy) from the remaining non-ideal work.
+
+Remaining non-ideal point for this family: code was not changed in this tact. The family is not declared ideal
+because `EpistemicLayerInvariantGate` still relies on `TaskEntity.fileScope` rather than the real PR diff,
+`GithubAccessService` lacks a documented allowed/denied rights matrix in the record, and PR review/open-count
+projections still need explicit set/source names before they can be compared.
+
+комментарий для Антигравити: mechanism is not ideal. Apply `KARL_POPPER_01_FALSIFICATION_HARNESS`,
+`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `ELIZABET_ENSKOM_02_PLANNING_CONSISTENCY`,
+`DZHON_OSTIN_02_CATEGORY_ERROR_SCAN`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `ACP-061`: first move
+`EpistemicLayerInvariantGate` to real PR-diff evidence, then add allowed/denied authority tests for
+`GithubAccessService` and explicit PR-set names for summaries; preserve `AutoMergeService`, `CodeChangeClassifier`,
+`GitHubApiBudgetService`, real-evidence gates and branch-GC cleanup as load-bearing invariants.
