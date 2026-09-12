@@ -523,6 +523,56 @@ evidence. Runtime silence remains valid only when scheduler liveness is separate
 
 комментарий для Антигравити: считаю механизм идеальным.
 
+## 2026-09-12 Codex Strict Record: External AI RAG Runtime Boundary Family
+
+Status: documentation-only strict-family replacement for section IX in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `GoogleAiResourceController`, `GoogleAiResourceService`,
+`GeminiContextService`, `ContextChunkRepository`, `ContextChunkEntity`, removed/stale
+`GeminiContextCacheManager`, `EmbeddingSimilarityUtil`, `StitchClient`, `DesignAssetService`,
+`DesignConsistencyAuditService`, `VideoAssetService`, `RuntimeLauncherClient`,
+`GeminiObserverActionService`, `GeminiObserverActionEntity`, `InternalGeminiObserverController`,
+`GeminiProjectObserverService` and `V111__permanently_disable_gemini_project_observer.sql` as the external
+AI/RAG/runtime boundary family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 22 |
+| Sections still missing visible `комментарий для Антигравити` | 41 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section mixed live mechanisms with stale history. It still named `GeminiContextCacheManager`
+even though source/test grep no longer finds that class or `cachedContents`, and it said `GeminiObserverActionService`
+had no callers even though `InternalGeminiObserverController` now reaches it through the manual/internal
+`retire-stuck-worker-now` surface. The strict record now treats the whole section as one external boundary:
+Google AI, RAG, Stitch/Nano Banana/Veo assets, runtime launcher, audited observer powers and the permanently inert
+project observer.
+
+Remaining non-ideal point for this family: code was not changed in this tact. `GeminiContextService`
+`buildProductWorkerContextBlock` still reaches `retrieveFiltered(query, DEFAULT_TOP_K, predicate)`, whose supplier
+is `repository::findAllVectorRows`, before the product-worker predicate is applied. `VideoAssetService` also lacks
+a focused branch-test file for disabled flag, missing key, unavailable interaction, `no_video` metadata and
+`write_error` behavior.
+
+комментарий для Антигравити: mechanism is not ideal. Apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
+`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `RICHARD_DZHEFFRI_02_DECISION_EXPECTED_LOSS` and `ACP-061`: treat the
+section as one external boundary, first move `buildProductWorkerContextBlock` to repository-scoped acquisition
+and prove it never calls `findAllVectorRows` for the scoped product-worker path, then add focused
+`VideoAssetService` branch tests; preserve redacted/fail-closed Google calls, removed prompt cache, Stitch
+HTML-before-image rule, token-audited GitHub drafts, one runtime-launcher client, policy-gated audited observer
+actions and the permanently inert `GeminiProjectObserverService`.
+
 ## 2026-09-12 Codex Strict Record: Review Gate Merge Family
 
 Status: documentation-only strict-family replacement for section IV in `docs/FACTORY_MECHANISMS.md`.

@@ -1407,55 +1407,163 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 
 # IX. Внешние системы
 
-**`GoogleAiResourceService`**, **`GeminiContextService`**, **`GeminiContextCacheManager`** — модели, RAG-слой,
-кэш статичного корпуса.
-*Связи:* контекстный слой **вызывают 8 механизмов** — самый востребованный в разделе; кэш не вызывает никто.
-*Ценность:* постоянное знание индексируется один раз, а не пересылается сырым текстом на каждый вызов; кэш дал
-время до первого токена с ~4.5 с до ~0.8 с и входную цену −76%.
-*Комментарий:* **периферия.** Решение не строить дообучение и векторную базу принято по размеру корпуса, а не
-по моде — верный порядок рассуждения. **Замер до и после — то, чем оптимизация отличается от веры в неё.**
-*Философия:* `RAG_GROUNDING_CAPSULE` (D014) — **сильная**. Опровержение: найти вызов, пересылающий корпус
-сырым текстом.
+## Семейство: внешняя AI/RAG/Runtime-граница фабрики
 
-*Статус записи, 8 сентября 2026:* начат срез очереди по `GeminiContextService.retrieveFiltered`: если query embedding не построился, retrieval теперь возвращает пустой результат до подъёма корпуса через `repository.findAll()`. Следующим тактом успешный путь перестал поднимать `content` всех chunks: similarity считается по projection `findAllVectorRows()` (`id/sourceType/sourceRef/embedding/embeddingDims`), а полный `content` читается только через `findAllById(...)` для выбранных top-k. Срез source-type retrieval больше не читает vector rows всего корпуса: `retrieveRelevantContextBySourceTypes(...)` использует `findVectorRowsBySourceTypeIn(...)`. Срез простого sourceRef-prefix retrieval теперь использует `findVectorRowsBySourceRefStartingWith(...)`. Срез `buildPhilosopherPatternContext` теперь использует projection query `findVectorRowsBySourceTypeAndSourceRefStartingWith(...)` по `philosopher_pattern` и тегу роли. Это не закрывает весь дефект: unscoped retrieval и более сложный product-worker фильтр всё ещё читают все embeddings. Проверка: `docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 maven:3.9-eclipse-temurin-17 mvn -q -Dtest=GeminiContextServiceTest test` — пройдена.
+**Имена механизмов и частей:** `GoogleAiResourceController`, `GoogleAiResourceService`,
+`GeminiContextService`, `ContextChunkRepository`, `ContextChunkEntity`, удаленный
+`GeminiContextCacheManager`, `EmbeddingSimilarityUtil`, `StitchClient`, `DesignAssetService`,
+`DesignConsistencyAuditService`, `VideoAssetService`, `RuntimeLauncherClient`,
+`GeminiObserverActionService`, `GeminiObserverActionEntity`, `InternalGeminiObserverController`,
+`GeminiProjectObserverService`, `V111__permanently_disable_gemini_project_observer.sql`.
 
-**`EmbeddingSimilarityUtil`** (31 строка) — общий дом для векторной арифметики.
-*Связи:* вызывают ровно двое — и это весь смысл.
-*Ценность:* два независимо поддерживаемых экземпляра одного вычисления запрещены уставом.
-*Комментарий:* **периферия; предотвращение помехи в чистом виде.** Третье подтверждение одного правила после
-`KanoClass` и `EmsFlowStage`: **дублированное правило расходится, вопрос лишь во времени.**
-*Философия:* `ANCHOR_BOUND_NAME` (D001) — **сильная**. Опровержение: найти вторую копию косинуса.
+**Философский паттерн:** primary `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family
+`RELIABILITY_CHAIN`, defect `D010 Data lineage loss`: внешний факт можно пускать в фабрику только через
+известный способ получения, freshness/setting/key-gate и проверяемую запись результата. Supporting:
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` для запрета смешивать raw corpus, vector projection,
+selected content, asset path и runtime observation; `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` для одной
+точки знания о внешнем сайдкаре/AI-провайдере; `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` для
+полномочий observer action; `RICHARD_DZHEFFRI_02_DECISION_EXPECTED_LOSS` для выбора дешевого/дорогого
+генератора; `ACP-061 Hoare Triple Review` as common evidence discipline.
 
-**`StitchClient`**, **`DesignAssetService`**, **`VideoAssetService`** — генерация экранов, ассетов, видео.
-*Связи:* `StitchClient` вызывают трое; наружу не зовёт никого.
-*Ценность:* Stitch тарифицируется отдельно от основного баланса и используется как бесплатная замена дорогой
-генерации.
-*Комментарий:* **периферия.** **Знание о том, из какого кармана платится вызов, — часть инженерного решения, а
-не бухгалтерии.**
-*Философия:* `DECISION_EXPECTED_LOSS` (D005) — **сильная**. Опровержение: найти генерацию, идущую по дорогому
-пути без причины.
+**Связи, вызовы и взаимодействия:** `GoogleAiResourceController` открывает internal/API surface для
+матрицы ресурсов, model probe, research/design/video operations и списка video assets. Он делегирует
+в `GoogleAiResourceService`, `DesignAssetService` и `VideoAssetService` и должен держать path traversal
+за пределами `./data/video-assets`. `GoogleAiResourceService` является единственной typed-границей к
+Google AI interactions/models: ресурсная матрица, `probeModels`, grounded research, URL-context research,
+общий `callInteraction`, key-gate и model setting. `GeminiContextService` строит standing-knowledge RAG,
+индексирует документы в `ContextChunkEntity`, выбирает vector rows через `ContextChunkRepository`,
+считает similarity через `EmbeddingSimilarityUtil`, а полный `content` поднимает только для выбранных
+id. `GeminiContextCacheManager` больше не является механизмом: source/test grep не находит класса или
+`cachedContents`, поэтому старое упоминание считается stale historical text и не должно быть
+восстановлено. `StitchClient` знает только JSON-RPC контракт Stitch MCP и download URL. `DesignAssetService`
+оркестрирует Stitch/Nano Banana, design token audit, локальные draft-файлы и commit в реальный GitHub repo.
+`VideoAssetService` оркестрирует Veo-вызов, metadata и video artifact. `RuntimeLauncherClient` является
+единственной backend-точкой знания о runtime-launcher sidecar: `launch`, `healthcheck`, `fetchHtml`,
+`teardown`. `GeminiObserverActionService` выполняет только некодовые операционные действия, всегда через
+`OperationalPolicyService.authorize`, и пишет `GeminiObserverActionEntity`; reachability есть через
+`InternalGeminiObserverController` manual/internal routes, включая `retire-stuck-worker-now`.
+`GeminiProjectObserverService` является постоянной inert-заглушкой, закрепленной миграцией `V111`.
 
-**`RuntimeLauncherClient`** — единственное в бэкенде, что знает о существовании сайдкара.
-*Связи:* вызывают 4; наружу не зовёт.
-*Ценность:* бэкенд **никогда не трогает Docker сам**, только узкий контракт «запусти / проверь / погаси».
-*Комментарий:* **периферия по предмету, ядро по последствиям.** Одна точка знания о внешнем — то же правило,
-что один транспорт к Jules и один к GitHub.
-*Философия:* `BOUNDARY_TOPOLOGY` (D006) — **сильная**. Опровержение: найти второе место, знающее о сайдкаре.
+**Идеальная форма:** вся внешняя граница фабрики должна быть typed, fail-closed, redacted and scoped.
+Ни один внешний provider, corpus, media artifact, sidecar или observer action не должен превращаться в
+"просто строку" внутри бизнес-логики. RAG обязан сначала сузить множество projection rows по source/scope,
+затем считать similarity, затем читать content только для выбранных chunks. Генерация экрана обязана
+сначала пытаться получить implementable HTML через Stitch, не заменять HTML картинкой, когда caller требует
+HTML, и не коммитить off-token результат. Видео обязано сохранять metadata даже для `no_video`, чтобы факт
+внешнего ответа не терялся. Runtime launcher обязан отделять failure of product от failure of instrument.
+Observer action обязан оставаться властью без кода: same-project, policy-gated, audited, no direct git/code.
+Decommissioned observer обязан оставаться inert.
 
-**`GeminiObserverActionService`** — настоящие некодовые полномочия наблюдателя.
-*Связи:* вызывающих нет — наблюдатель выведен; **зовёт 10 механизмов и пишет 4 хранилища**.
-*Ценность:* каждый метод — безопасная дверь к уже существующей операции, ничего нового.
-*Комментарий:* **периферия, но с оговоркой, которую надо назвать:** механизм без вызывающих, зовущий десять
-других и пишущий четыре хранилища, есть **заряженное ружьё на стене**. Полномочий он не потерял, потерял
-только того, кто их применял.
-*Философия:* `RIGHTS_DUTIES_MATRIX` (D006) — **слабая**: полномочия живы, владелец отсутствует. Опровержение:
-назвать, кто сегодня вправе их применить.
+**Граница:** эта секция не владеет истиной о product readiness, PR merge, wishlist/task lifecycle или final
+judgment. Она владеет только внешними IO-contracts, RAG acquisition, generated asset artifacts, runtime
+sidecar observations and audited observer powers. Google/Stitch/Veo/runtime-launcher не получают права
+менять factory state напрямую. `GeminiObserverActionService` не создает новые coding sessions and does not
+write code; он вызывает только уже существующие operations после `OperationalPolicyService`.
 
-**`GeminiProjectObserverService`** — выведен навсегда как муда, заперт миграцией; заглушка ради контрактов.
-*Комментарий:* **правильно похоронен, и правильно оставлен след.** Заглушка вместо удаления хранит запись о
-том, что здесь было и почему ушло; молча исчезнувший механизм оставляет вопрос, на который через месяц никто
-не ответит.
-*Философия:* `DEFEASIBLE_EXCEPTION_LEDGER` (D012) — **сильная**: вечное исключение объявлено правилом.
+**Входы:** settings (`google_ai_api_key`, `gemini_model`, `stitch_enabled`, `stitch_api_key`,
+`nano_banana_enabled`, `veo_enabled`, runtime launcher URL, RAG feature flags), prompts/questions/URLs,
+repo root and standing-knowledge files, existing `context_chunks`, embedding dimensions, project/task/wishlist
+ids, design-system tokens, asset root paths, generated download URLs, operational policy decision.
+
+**Выходы:** resource matrix, model probe result, `InteractionResult`, `RetrievedChunk` and context blocks,
+`context_chunks` rows with source type/ref/hash/embedding dims, design drafts and metadata, GitHub draft
+paths, Stitch project/screen/design-system ids, video files and metadata, `RuntimeLauncherClient` launch/
+health/fetch/teardown results with `observed`, `GeminiObserverActionEntity` audit rows, and no-op result from
+the decommissioned observer.
+
+**Владельцы истины и состояния:** API keys/settings live in `SystemSettingsService`; vector corpus state is
+`ContextChunkRepository`/`ContextChunkEntity`; generated design/video evidence lives in asset roots plus GitHub
+draft commits; runtime truth is the sidecar response wrapped by `RuntimeLauncherClient`; observer-action truth
+is `GeminiObserverActionEntity`; project/task/wishlist truth remains in their own repositories; disabled
+observer truth is the migration and inert service/test.
+
+**Инварианты:**
+- missing external key or disabled flag returns unavailable/empty result, not partial hidden mutation;
+- external response bodies, API keys and download URLs are redacted in logs/results where the client logs them;
+- `GeminiContextService` never treats a failed query embedding as permission to load the whole corpus;
+- vector retrieval compares only rows with compatible `embeddingDims`;
+- selected content is fetched after vector selection with `findAllById`, not before ranking;
+- `GeminiContextCacheManager` and Google cached-content prompt cache must not be resurrected;
+- product-worker RAG must stay scoped to product-worker source types and role/common refs before content read;
+- Stitch result that lacks HTML may be polled through `getScreen`; screen id must be preserved;
+- when implementable HTML is required, Nano Banana image fallback is forbidden;
+- off-token Stitch output must not be committed;
+- `RuntimeLauncherClient.LaunchResult.observed=false` means instrument did not answer, not product failed;
+- observer actions must be authorized before repository mutation and must persist success/skipped/failed/denied;
+- `GeminiProjectObserverService.runObserverCycle()` must remain inert.
+
+**Сильная форма сейчас:** `GoogleAiResourceService` centralizes Google resource matrix/probe/research/
+interaction calls and key/model gates. `GeminiContextService` already has projection-only paths for source-ref,
+source-type and philosopher-pattern retrieval, content hash idempotence, embedding-dimension filtering and
+safe empty returns when disabled/unavailable. `EmbeddingSimilarityUtil` is the single pure cosine helper.
+`StitchClient` preserves screen id when HTML is not ready, supports screen edit/get/download and design-system
+operations. `DesignAssetService` commits drafts to GitHub when possible, rejects off-token Stitch screens,
+passes declared tokens, and does not fall back to image generation when HTML is mandatory. `RuntimeLauncherClient`
+separates observed product result from unobserved instrument failure. `GeminiObserverActionService` now has a real
+manual/internal caller and policy/audit tests. `GeminiProjectObserverService` is locked inert by migration and
+test.
+
+**Слабая / неидеальная форма:** section is not ideal yet. `GeminiContextService.buildProductWorkerContextBlock`
+still enters `retrieveFiltered(query, DEFAULT_TOP_K, predicate)` when a role exists; that overload supplies
+`repository::findAllVectorRows` before in-memory filtering. Это нарушает идеал scoped acquisition: product-worker
+path should not read all vector rows. `VideoAssetService` has no focused test file under `src/test/java` for
+disabled flag, missing key, unavailable interaction, `no_video` metadata and `write_error` branches. This is a
+test gap, not proof that runtime behavior is broken.
+
+**Что надо сделать для идеала:** add repository-level query for product-worker context, likely source-type plus
+role/common source-ref predicate, and a regression test proving `buildProductWorkerContextBlock` does not call
+`findAllVectorRows` on the role-scoped path. Add focused `VideoAssetServiceTest` covering disabled Veo,
+missing Google key, unavailable Google interaction, successful metadata/video write, `no_video` metadata and
+write failure. If Antigravity extends external AI controls, it must first write the authority/boundary matrix:
+which controller route, which service, which state owner, which audit record, which refuting test.
+
+**Что не трогать:** do not resurrect `GeminiContextCacheManager` or Google cached-content prompt cache; do not
+move Docker/runtime-launcher knowledge out of `RuntimeLauncherClient`; do not let observer actions bypass
+`OperationalPolicyService` or write code/git; do not convert the inert observer back into a scheduler; do not
+replace required Stitch HTML with Nano Banana image output; do not commit off-token design assets; do not solve
+RAG cost by deleting standing knowledge or weakening source-type/ref boundaries.
+
+**Опровержение / проверка:** this record is false if grep finds a live `GeminiContextCacheManager` or
+`cachedContents`; if any required-HTML path falls back to image output; if `RuntimeLauncherClient` callers treat
+`observed=false` as a product failure; if an observer action can mutate repositories after policy denial; if
+`GeminiProjectObserverService.runObserverCycle()` does work; or if the role-scoped product-worker context path is
+proved to use repository-level scope rather than `findAllVectorRows`.
+
+**Критерий закрытия:** ideal closure requires a green targeted RAG regression where product-worker context uses
+repository-scoped acquisition and never all-vector acquisition, plus green focused `VideoAssetService` branch
+tests. Until then the section is a correct mechanism record with a concrete implementation/test queue, but not
+an ideal mechanism.
+
+**Доказательства:** `GoogleAiResourceService.java:26,51,136,191,209,230,299,307`;
+`GoogleAiResourceController.java:29,70,76,149-152`; `GoogleAiResourceControllerTest.java:38-49`;
+`GeminiContextService.java:45,96,135,240,338-363,501-522,616-650`;
+`ContextChunkRepository.java:15,22-40,56-57`; `ContextChunkEntity.java:15,21,24,33-44`;
+`GeminiContextServiceTest.java:39-54,107,134,158-175,199-214`; no source/test hits for
+`GeminiContextCacheManager` or `cachedContents`; `EmbeddingSimilarityUtil.java:10,15`;
+`StitchClient.java:27,63,97,139,174,269,295,315`; `StitchClientTest.java:128-151,160-187,224-268`;
+`DesignAssetService.java:27,82,127,176,255-316,375,395,485-534`;
+`DesignAssetServiceTest.java:53-77,81-104,124-168,174-189,195-303`;
+`VideoAssetService.java:26,48,54,59,69,86-138`; `find src/test/java -iname '*video*'` returned no hits;
+`RuntimeLauncherClient.java:13-18,44-56,66-84,88-129`;
+`GeminiObserverActionService.java:39,82,100,128,156,181,211,229,248,264,295,335,418-466`;
+`InternalGeminiObserverController.java:44,56,157-162,422-450`;
+`GeminiObserverActionServiceTest.java:81-100,149-179,189-221,235-284,388-455`;
+`GeminiProjectObserverService.java:8-27`;
+`V111__permanently_disable_gemini_project_observer.sql:1`;
+`GeminiProjectObserverServiceTest.java:19-39`.
+
+**Текущий статус:** mechanism record is complete; mechanism is not ideal because product-worker RAG acquisition
+and video branch tests still need the specific work above. Code was not changed in this tact.
+
+**комментарий для Антигравити:** механизм не идеален. Применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
+`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `RICHARD_DZHEFFRI_02_DECISION_EXPECTED_LOSS` and `ACP-061`.
+Править надо как единую внешнюю границу, не отдельными мелкими чистками: сначала перевести
+`buildProductWorkerContextBlock` на repository-scoped acquisition and prove it never calls `findAllVectorRows`
+for the scoped product-worker path; then add focused `VideoAssetService` branch tests. Сохранять как несущие
+инварианты: redacted/fail-closed Google calls, удаленный prompt cache, Stitch HTML-before-image rule,
+token-audited GitHub draft commits, one runtime-launcher client, policy-gated audited observer actions and
+permanently inert `GeminiProjectObserverService`.
 
 ---
 
