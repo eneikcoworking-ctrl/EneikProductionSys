@@ -2297,118 +2297,142 @@ updated_at = CURRENT_TIMESTAMP`, и при нуле затронутых стр�
 
 # XIV. Сверка с корпусом философских образцов
 
-Всё выше — суд по модели. Здесь тот же разбор ведётся по **собственному корпусу фабрики**:
-`docs/philosopher-patterns` — 86 философов, **1720 образцов**, у каждого назван предотвращаемый дефект из
-таксономии D001–D015 и обязательство доказательства. Корпус читается прямо, а не через RAG-выборку: цитируя
-образец, регламент требует назвать его идентификатор, чтобы утверждение можно было проверить.
+## XIV.1. Корпус философских паттернов как внешний словарь дефектов
 
-Ценность этой сверки в том, что корпус даёт **чужой словарь**. Когда собственная модель и внешняя
-таксономия называют один и тот же дефект независимо — это не совпадение слов, а подтверждение по широте.
+* **Имена механизма или семейства** — `docs/philosopher-patterns`, `docs/philosopher-patterns/philosophers/*.md`,
+  defect taxonomy `D001`–`D015`, pattern rows such as `*_CATEGORY_ERROR_SCAN`,
+  `*_PART_WHOLE_OWNERSHIP`, `*_FALSIFICATION_HARNESS`, `*_SUBSTITUTION_ORACLE`,
+  `*_TRUTH_STATUS_TABLE`, `*_ANTI_MIRROR_TELEMETRY`, `*_RAG_GROUNDING_CAPSULE`.
+* **Философский паттерн** — `KIT_DEROUZ_01_RELIABILITY_CHAIN`, D010 Data lineage loss: записи механизмов
+  имеют право ссылаться на философский образец только когда назван источник, идентификатор, defect class,
+  proof obligation и путь проверки.
+* **Связи** — корпус читает агент перед тактом; `docs/FACTORY_MECHANISMS.md` использует его как внешний
+  словарь для описания дефектов; `docs/HOW_TO_READ_BEFORE_FIXING.md` требует не чинить по образцу без
+  проверки опровержения; `docs/reports/*` сохраняют provenance тактов.
+* **Идеальная форма** — каждая ссылка на философию в механизме указывает точный pattern id, defect code,
+  смысл применимости и проверяемое обязательство доказательства. Корпус не подменяется свободным пересказом
+  и не используется как RAG-магия без исходной строки.
+* **Граница** — корпус задаёт вопрос и obligation, но не является приказом на правку кода. Он не решает
+  product priority, не заменяет живой замер и не доказывает дефект без локального свидетельства.
+* **Входы** — philosopher files, deterministic pattern rows, defect codes, section evidence, source grep,
+  runtime evidence and refutation observations.
+* **Выходы** — выбранный pattern id, defect family, obligation, refutation check and Antigravity advice for
+  each mechanism record.
+* **Владельцы истины и состояния** — source rows live in `docs/philosopher-patterns`; current factory facts
+  live in source/runtime evidence; mechanism records in `docs/FACTORY_MECHANISMS.md` own the mapping between
+  pattern and local mechanism.
+* **Инварианты** — no unnamed philosophy; no uncited class/mechanism claim; no code fix merely because a
+  pattern exists; old narrative must not hide the selected pattern and closure condition.
+* **Сильная форма сейчас** — corpus has 86 philosopher files, 1720 pattern rows and 15 defect codes; this
+  section names the exact corpus path and the selected defect families.
+* **Слабая/неидеальная форма сейчас** — old sections were not uniformly strict; automatic validation that
+  every cited pattern id exists is not present in this tact.
+* **Что сделать для идеала** — preserve exact pattern ids in every mechanism record; later add a doc check
+  that fails on an unknown pattern id or defect code in `FACTORY_MECHANISMS.md`.
+* **Что не трогать** — do not collapse philosopher rows into generic labels like “философия применима”; do
+  not treat `форма: не мерено` as a defect; do not let the corpus override stronger source/runtime evidence.
+* **Опровержение** — a mechanism record cites a philosophy without a pattern id, cites an id absent from
+  `docs/philosopher-patterns`, or uses a pattern to justify a code change before its local refutation is
+  reproduced.
+* **Критерий закрытия** — every new strict mechanism section has exact pattern id, local evidence and
+  refutation; a check can list all pattern ids used by the document and resolve them to corpus rows.
+* **Свидетельства записи** — `find docs/philosopher-patterns/philosophers -type f -name "*.md" | wc -l`;
+  `grep -R -h -E "^\\| [0-9]+ \\|" docs/philosopher-patterns/philosophers | wc -l`;
+  `grep -R -h -o -E "D0[0-9][0-9]" docs/philosopher-patterns | sort -u`.
+* **Текущий статус** — частично силён; corpus itself is strong, document-wide validation remains not automated.
 
-### D002 — Invalid state · образец `*_CATEGORY_ERROR_SCAN`
+## XIV.2. Defect-family application map for factory mechanisms
 
-> Отвергать код, который принимает процесс за объект, наблюдение за полномочие, а политику за данные без
-> переходника. Обязательство: указать тип, схему или переходник, удерживающий границу рода.
+* **Имена механизма или семейства** — section XIV application map over defect families:
+  `D002/CATEGORY_ERROR_SCAN`, `D004/PART_WHOLE_OWNERSHIP`, `D007/CONSTRUCTIVE_PROOF_OBJECT` and
+  `INSTITUTIONAL_FACT_REGISTER`, `D008/FALSIFICATION_HARNESS`, `D009/SUBSTITUTION_ORACLE`,
+  `D012/TRUTH_STATUS_TABLE` and `PRINCIPLED_INTEGRITY`, `D013/ANTI_MIRROR_TELEMETRY`, `D014/RAG_GROUNDING_CAPSULE`.
+* **Философский паттерн** — `KIT_DEROUZ_13_LEVEL_OF_ABSTRACTION_LOCK`, D010 Data lineage loss: the section
+  must keep pattern-level claims, source-level evidence and runtime-level facts at their declared levels
+  until a named transform connects them.
+* **Связи** — the map points agents from corpus vocabulary to mechanism sections: state ownership in sections
+  XIII/XX, judgment/evidence mechanisms in VI/XXVII/XXXIX, runtime mechanisms in XI/XIX, screen gates in
+  X/XLI, and delivery-vs-done metrics in VII/XXV.
+* **Идеальная форма** — every defect family entry says what it guards, which local mechanisms already embody
+  it, which obligations remain open, and which observation would refute the mapping.
+* **Граница** — the map summarizes obligations; it must not become a second task queue, an authorship log or
+  an emotional self-report. Historical examples belong only as evidence when they identify a current
+  mechanism boundary.
+* **Входы** — mechanism records, code grep, runtime logs, pattern corpus rows, denominator reports and
+  Antigravity comments.
+* **Выходы** — a short, checkable guide for the next code-writing agent: category, ownership, evidence,
+  falsification, substitution, truth status, runtime drift and grounding duties.
+* **Владельцы истины и состояния** — local mechanism records own current source facts; corpus rows own
+  pattern definitions; reports own history/provenance.
+* **Инварианты** — D002 is about category boundary, not style; D004 is about ownership before split, not
+  “large class bad”; D007 requires evidence-bearing completion; D008 requires refutation before acceptance;
+  D009 requires substitution evidence; D012 requires explicit unknown/conflict; D013 requires runtime
+  telemetry; D014 requires exact grounding.
+* **Сильная форма сейчас** — the section keeps the core families visible and names the principal local
+  mechanisms they guard.
+* **Слабая/неидеальная форма сейчас** — old prose mixed examples, current obligations and agent self-audit;
+  this was readable to a human but not a clean mechanism record for Antigravity.
+* **Что сделать для идеала** — keep this section as a compact map only; when a family becomes actionable,
+  the concrete work must live in the corresponding mechanism section with per-mechanism comment and closure
+  criterion.
+* **Что не трогать** — do not move debates or blame language back here; do not add a code TODO unless it is
+  tied to a specific mechanism section and refutation.
+* **Опровержение** — a future agent can read section XIV and still cannot tell whether a named obligation is
+  a current defect, a historical incident, or a corpus-only concept.
+* **Критерий закрытия** — each family entry in section XIV maps to exact mechanism sections and no longer
+  carries unscoped narrative instructions.
+* **Свидетельства записи** — section XIV source text; `grep -R -n -E
+  "CATEGORY_ERROR_SCAN|PART_WHOLE_OWNERSHIP|CONSTRUCTIVE_PROOF_OBJECT|FALSIFICATION_HARNESS|SUBSTITUTION_ORACLE|TRUTH_STATUS_TABLE|ANTI_MIRROR_TELEMETRY|RAG"
+  docs/philosopher-patterns`.
+* **Текущий статус** — partially strong after this replacement; not an executable checker.
 
-Прямое имя того, что оператор назвал главной опасностью. **Стерегут:** `PlatformSelfReferenceDetector`
-(заводская находка не есть требование клиента), `CodeChangeClassifier` (процессный файл не есть код),
-`EmsFlowStage` и `KanoClass` (одно правило — один дом).
-**Нарушали, замерено сегодня:** уборка мета-задач в `PlannedWorkRecoveryService` принимала **статус задачи за
-свидетельство доставки**; `AccountHealthService` принимал **неопознанный отказ за отсутствие события**.
-Оба закрыты, оба заслонены.
+## XIV.3. Grounding guard against hallucinated mechanism records
 
-### D004 — Concurrency conflict · образец `*_PART_WHOLE_OWNERSHIP`
+* **Имена механизма или семейства** — section XIV grounding rule, `docs/FACTORY_MECHANISMS.md`, source grep
+  commands, `docs/HOW_TO_READ_BEFORE_FIXING.md`, and denominator report categories recorded in
+  `docs/reports/FACTORY_MECHANISM_DENOMINATOR.md`.
+* **Философский паттерн** — `DZHUDA_PERL_15_RAG_GROUNDING_CAPSULE`, D014 RAG hallucination: a retrieved or
+  remembered rule is valid only when the exact source row, publication anchor and selected defect taxonomy
+  item are cited.
+* **Связи** — grounding rule constrains all mechanism records; it is consumed by Antigravity/Codex before
+  coding; it interacts with denominator counts so “mentioned” is not confused with “recorded”.
+* **Идеальная форма** — every mechanism name, class, endpoint, query or count in the mechanism document is
+  grounded by source path, grep command, runtime query or explicit exclusion reason. If grounding is absent,
+  the section must ask a question instead of pretending closure.
+* **Граница** — this guard checks documentation truth. It does not prove code correctness and does not run
+  production tests by itself.
+* **Входы** — source paths, grep output, runtime status, git commits, denominator report, AGY asks, exact
+  philosopher rows.
+* **Выходы** — grounded mechanism record, blocker question, or refusal to count the section complete.
+* **Владельцы истины и состояния** — source/runtime own facts; `FACTORY_MECHANISMS.md` owns the current
+  structured record; reports own audit trail and denominator.
+* **Инварианты** — no invented counts; no unnamed class; no “all mechanisms covered” claim without denominator
+  evidence; per-mechanism Antigravity comment required for new sections.
+* **Сильная форма сейчас** — current autonomous tact protocol requires compact source evidence, denominator
+  update and per-mechanism comments before commit.
+* **Слабая/неидеальная форма сейчас** — evidence collection is still manual; no CI check blocks unsupported
+  additions to `FACTORY_MECHANISMS.md`.
+* **Что сделать для идеала** — add a documentation checker that verifies section structure, Antigravity
+  comments, pattern id resolution and at least one evidence line per strict record.
+* **Что не трогать** — do not count old narrative, family-level comments or source-name mentions as completed
+  mechanism records.
+* **Опровержение** — an invented class/pattern/count can be committed to the document without failing any
+  check or being caught by denominator review.
+* **Критерий закрытия** — unsupported mechanism claims fail the checker, and missing evidence sends the work
+  to `docs/reports/AGY_ASKS.md` instead of the main mechanism section.
+* **Свидетельства записи** — `docs/HOW_TO_READ_BEFORE_FIXING.md`; `/home/remotecli/codex-mechanisms-session/SESSION.md`;
+  denominator updates in `docs/reports/FACTORY_MECHANISM_DENOMINATOR.md`; current grep/count commands.
+* **Текущий статус** — не идеален as automation; strong as written protocol.
 
-> Сделать владение частями явным до разделения модулей, таблиц или сервисов. Обязательство: показать, какой
-> агрегат вправе менять каждую часть.
+## XIV.4. Комментарии для Антигравити по механизмам
 
-Точное имя того, что здесь названо **помехой**. **Стерегут:** `AccountHealthService` (единственный владелец
-здоровья аккаунта), `SessionLifecycleService` (единственный владелец вопроса о чужом состоянии),
-`ClaimService`, `SystemSettingsService`, `ContinuousOrchestrationService` (единственный распорядитель
-очерёдности).
-**Нарушалось:** четыре писателя статуса аккаунта; два парсера класса Кано; три `switch` о порядке стадий;
-восстановление и завершение, разошедшиеся в том, из какого состояния брать заявку.
-**Замечание:** самые большие классы — `ProjectFlowService` (6809 строк) и `JulesDispatchService` (5752) —
-владения не объявляют вовсе. Образец требует объявить его **до** разделения; здесь оно не объявлено и не
-разделено, и потому всякая правка ядра рискует стать помехой.
-
-### D007 — Evidence gap · образцы `*_CONSTRUCTIVE_PROOF_OBJECT`, `*_INSTITUTIONAL_FACT_REGISTER`
-
-> Успешное завершение представлять значением, несущим свидетельство для следующего шага. — И: статусы вроде
-> «одобрено», «слито», «готово» считать институциональными фактами, подкреплёнными правилом. Обязательство:
-> показать правило, создающее статус, и запись аудита.
-
-**Стерегут:** `ClientDeliverableReadinessService` (статус эпика создаётся правилом о слияниях, а не
-объявлением), `CriteriaEvidenceSelector` (пропущенное названо), `Judgement` (для всего, кроме «разрешаю»,
-причина обязательна: *отказ, который человек не может проверить, есть обвинение, а не свидетельство*),
-`DeliveryRealityProducerService`.
-**Нарушалось сегодня:** сообщение уборки утверждало «продукт готов на 100% и слит в main», не имея под собой
-ни одного факта о доставке. По образцу это ровно отсутствие правила, создающего статус.
-
-### D008 — False green · образец `*_FALSIFICATION_HARNESS`
-
-> Написать проверку, которая опровергла бы утверждение агента, **прежде чем** утверждение принято.
-
-Это в точности то, чем я занят каждый такт, и корпус называет это раньше меня. **Стерегут:**
-`FalsificationCycleService`, `FactoryJudgmentService`, счётный инвариант мест слияния.
-**Нарушалось:** `DesignExcellenceGate` читал поле, которого никто в продакшене не писал, — зелен всегда;
-заслон закона 14 утверждал сверх своего закона и **удерживал слепоту**. Отсюда же моё сегодняшнее правило:
-прежде чем чинить продукт по красному структурному тесту, проверь, что тест смотрит туда, куда думает —
-фантом стоит столько же, сколько пропуск.
-
-### D009 — Substitution failure · образец `*_SUBSTITUTION_ORACLE`
-
-> Прежде чем заменить код, зависимость, модель или схему, доказать сохранение под значимыми наблюдениями.
-
-**Стережёт:** `ClientDeliverableReadinessService` — слияние от посторонней задачи в том же эпике пункт не
-закрывает. Это отказ от подстановки в самой строгой форме.
-**Стоит открытым:** отношение 427 сделанных задач к 20 сдачам. Подстановка `сделано → доставлено` не
-совершается механизмами, но продолжает жить в **числах, которыми фабрика себя описывает**, и `FlowSpineService`
-честно помечает это предупреждением `done_is_not_delivery`.
-
-### D012 — Policy contradiction · образцы `*_TRUTH_STATUS_TABLE`, `*_PRINCIPLED_INTEGRITY`
-
-> Представлять истинное, ложное, неизвестное и противоречивое явно в статусе оркестрации. — И: отвергать
-> местные починки, удовлетворяющие букве правила и нарушающие объявленный принцип системы.
-
-Трёхзначность, к которой я приходил сегодня трижды, в корпусе стоит как отдельный образец, повторённый у
-десятков философов. **Стерегут:** `Verdict` (три значения в типе), `LeverAgreement` (четыре, по Белнапу),
-`SixSigmaVerdictLayer` (воздержание вместо числа).
-**Нарушалось:** `JulesApiClient` до сегодня (`UNKNOWN` проходил как `VISIBLE`), `AccountHealthService` до
-сегодня. Оба теперь несут третий исход явно.
-Второй образец — про букву против принципа — описывает мою же ошибку прошлого такта: заслон удовлетворял
-букве закона 14 и нарушал его принцип.
-
-### D013 — Runtime drift · образец `*_ANTI_MIRROR_TELEMETRY`
-
-> Предпочитать операционную телеметрию внутреннему рассказу агента о том, что делает система. Обязательство:
-> сослаться на логи, метрики, проверки здоровья или состояние дашборда для **действительного** рантайма.
-
-**Стерегут:** `FlowSpineService`, `SystemProgressTracker`, `AiHealthTracker`,
-`ClientRuntimeObservabilityService`, `FactorySelfHealthService`.
-**Нарушалось:** `RuntimeVerdictLayer` держал сохранённое «упало» как текущий факт. И — **мной**: за смену я
-трижды выдал вывод за замер (застрявшие в `finalizing` заявки, причина отказов Jules, отсутствие счётчика
-квоты). Каждый раз опровержение приходило одним запросом к живой системе. Образец адресован агенту прямо, и
-я — тот самый агент.
-
-### D014 — RAG hallucination
-
-Относится к этому файлу в первую очередь. Поэтому каждое имя класса здесь сверено с исходниками
-программно, а каждый образец корпуса цитируется с идентификатором. **Утверждение без проверяемой ссылки в
-таком документе есть не описание, а рассказ о нём.**
-
-### Чего корпус требует, а фабрика ещё не делает
-
-* **`*_PART_WHOLE_OWNERSHIP`** — объявить владение частями **до** разделения. Два шеститысячных класса ядра
-  владения не объявляют; это самая крупная невыполненная обязанность перед корпусом.
-* **`*_CONSTRUCTIVE_PROOF_OBJECT`** — успешное завершение как значение, несущее свидетельство. Сегодня
-  «готово» — это статус, а не носитель доказательства; отсюда и вся история с `done ≠ delivered`.
-* **`*_INUS_FACTOR_CHECK`** — считать подозреваемую причину одним фактором достаточного набора, пока
-  альтернативы не исключены. Это Таггард в формулировке корпуса, и это правило я нарушал чаще всего.
-
----
-
----
+* `docs/philosopher-patterns` — **комментарий для Антигравити:** считаю механизм идеальным.
+* `section XIV defect-family application map` — **комментарий для Антигравити:** механизм не идеален как
+  machine-readable checker: применить `KIT_DEROUZ_13_LEVEL_OF_ABSTRACTION_LOCK`; keep the map compact and
+  move actionable coding work to the concrete mechanism section with evidence and closure.
+* `FACTORY_MECHANISMS grounding guard` — **комментарий для Антигравити:** механизм не идеален as automation:
+  применить `DZHUDA_PERL_15_RAG_GROUNDING_CAPSULE`; add a doc checker only after preserving current protocol:
+  exact source row, evidence command, denominator update and per-mechanism comment.
 
 # XV. Класс дефекта «тихое размножение задач»: подпись, замер, случаи
 

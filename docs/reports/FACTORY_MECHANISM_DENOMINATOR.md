@@ -1147,3 +1147,38 @@ checking for release and bounded stale-claim recovery; `GreetingRepository` is n
 metric must remain demo-level and not factory-level. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XX; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: Philosopher Corpus Cross-Check
+
+Status: documentation-only strict-family replacement for section XIV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `docs/philosopher-patterns` as the external defect-pattern corpus, the
+section XIV defect-family application map, and the grounding guard that prevents hallucinated mechanism
+records in `docs/FACTORY_MECHANISMS.md`.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and visible per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 35 |
+| Sections still missing visible `комментарий для Антигравити` | 28 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section mixed corpus summary, examples, current obligations and agent self-audit.
+Section XIV now separates the corpus, the application map and the grounding guard. It keeps exact evidence
+counts for the corpus (`86` philosopher files, `1720` pattern rows, `15` defect codes) and states which parts
+are ideal versus merely protocol-level and not yet automated.
+
+Remaining non-ideal point for this family: the corpus itself is treated as ideal, but the document-wide
+grounding guard is still manual/protocol-level. A future ideal form is a doc checker for pattern ids,
+evidence lines, closure criteria and per-mechanism Antigravity comments. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XIV; family summary is not a substitute.
