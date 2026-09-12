@@ -730,3 +730,44 @@ The only remaining work before broader runtime use is operational verification o
 deployment and live refusal observation.
 
 комментарий для Антигравити: считаю механизм идеальным.
+
+## 2026-09-12 Codex Strict Record: Runtime Observation And Product Capability Family
+
+Status: documentation-only strict-family replacement for section XI in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `ClientRuntimeObservabilityService`, `ClientRuntimeObservationEntity`,
+`ClientRuntimeObservationRepository`, migrations `V92__client_runtime_observations.sql`,
+`V95__runtime_preview_window.sql`, `V104__observation_instrument_failure.sql`,
+`V109__observation_artifact_identity.sql`, `BetaPosterior`, `RuntimeHealthShiftDetector`,
+`ProductCapabilityService`, `CapabilityObservationEntity`, `CapabilityObservationRepository`,
+migrations `V107__capability_observations.sql`, `V140__capability_observations_instrument_failure.sql`,
+and linked mechanisms `RuntimeLauncherClient`, `DesignDriftMonitorService`, `LaunchabilityConstraintService`,
+`KaizenService`, `GitHubPullRequestService`, `ProjectController`, `ContinuousOrchestrationService`,
+`FalsificationCycleService`, `DeliveryRealityProducerService` and `RuntimeVerdictLayer` as the live runtime
+observation and product capability family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 24 |
+| Sections still missing visible `комментарий для Антигравити` | 39 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: section XI now explicitly separates launch attempt, product health, instrument outage, artifact
+identity and capability evidence. It records that runtime observation has no separate cron, product posterior skips
+instrument failures and duplicate unchanged artifacts, capability denominator comes from OpenAPI contracts, and
+401/403/null capability fetches are instrument barriers rather than product defects.
+
+Remaining non-ideal point for this family: no current implementation weakness was identified from source/test
+evidence in this tact. No code was changed.
+
+комментарий для Антигравити: считаю механизм идеальным

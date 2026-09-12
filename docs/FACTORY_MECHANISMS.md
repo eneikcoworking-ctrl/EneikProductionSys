@@ -1717,48 +1717,154 @@ philosopher rows `RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION`,
 `ELVIN_GOLDMAN_20_GROUPING_PROXIMITY_GATE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS`.
 
-**Текущий статус:** считаю механизм идеальным.
+**Текущий статус:** считаю механизм идеальным
 
-**комментарий для Антигравити:** считаю механизм идеальным.
+**комментарий для Антигравити:** считаю механизм идеальным
 
 ---
 
 # XI. Наблюдение за живым продуктом клиента
 
-**`ClientRuntimeObservabilityService`** — решает на общем тике, пора ли потратить один настоящий цикл
-«запустить и проверить».
-*Связи:* вызывают двое; зовёт 8; пишет `ProjectRepository`.
-*Ценность:* момент проверки выводится из накопленного свидетельства, а не из расписания.
-*Комментарий:* **периферия.** Дважды оговорено и дважды верно: никогда не новый крон, и **не притворяться
-сравнением там, где сравнивать не с чем** — прямо объяснено, почему это не решатель на лестнице продвижения.
-Редкая аккуратность.
-*Философия:* `SELF_MODEL_SANITY` (D013) — **сильная**. Опровержение: найти у него собственный крон.
+## Семейство: live runtime observation, posterior cadence and product capability evidence
 
-**`BetaPosterior`** (112 строк) — вера в вероятность успешного запуска как бета-апостериор; следующая проверка
-выводится из ширины доверительного интервала.
-*Связи:* вызывает наблюдение рантайма; ничего не зовёт.
-*Ценность:* **предел выводится, а не назначается.**
-*Комментарий:* **периферия; самый чистый пример правильной формы во всём коде.** Ровно то, чего не хватало
-сегодняшним константам: там число взяли из воздуха, здесь оно следует из накопленного свидетельства. Сто
-двенадцать строк, показывающие, как надо.
-*Философия:* `BELIEF_UPDATE_LEDGER` (D007) — **сильная**. Опровержение: найти в нём назначенную константу срока.
+**Имена механизмов и частей:** `ClientRuntimeObservabilityService`, `ClientRuntimeObservationEntity`,
+`ClientRuntimeObservationRepository`, migrations `V92__client_runtime_observations.sql`,
+`V95__runtime_preview_window.sql`, `V104__observation_instrument_failure.sql`,
+`V109__observation_artifact_identity.sql`, `BetaPosterior`, `RuntimeHealthShiftDetector`,
+`ProductCapabilityService`, `CapabilityObservationEntity`, `CapabilityObservationRepository`,
+migrations `V107__capability_observations.sql`, `V140__capability_observations_instrument_failure.sql`,
+and linked mechanisms `RuntimeLauncherClient`, `DesignDriftMonitorService`, `LaunchabilityConstraintService`,
+`KaizenService`, `GitHubPullRequestService`, `ProjectController`, `ContinuousOrchestrationService`,
+`FalsificationCycleService`, `DeliveryRealityProducerService`, `RuntimeVerdictLayer`.
 
-**`RuntimeHealthShiftDetector`** — «настоящий сдвиг или невезение» — математически другой вопрос, чем оценка
-стабильной доли.
-*Связи:* вызывает наблюдение рантайма.
-*Ценность:* попытка переиспользовать u-карты здесь была бы ошибкой рода.
-*Комментарий:* **периферия; прямой отказ от категориальной ошибки.** Там подгруппа эпик, здесь временной ряд
-наблюдений. **Разные роды единиц нельзя вести одной машинерией только потому, что обе называются «контроль
-качества».**
-*Философия:* `CATEGORY_ERROR_SCAN` (D002) — **сильная**. Опровержение: найти общий код с u-картами.
+**Философский паттерн:** primary `ELVIN_GOLDMAN_07_SELF_MODEL_SANITY`, defect `D013 Runtime drift`: before the
+factory treats a product as live, healthy or broken, the decision record must carry project id, observed
+artifact, runtime status and instrument/product distinction. Supporting patterns: `ELVIN_GOLDMAN_03_BELIEF_UPDATE_LEDGER`
+for Beta posterior cadence, `ELVIN_GOLDMAN_13_TRUTH_STATUS_TABLE` for instrument failure versus product defect,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for attempt/product/artifact/capability levels,
+`LYUDVIG_VITGENSHTEYN_02_CATEGORY_ERROR_SCAN` for not reusing epic u-charts on runtime time series,
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for source/freshness/validation, and `ACP-061 Hoare Triple Review`.
 
-**`ProductCapabilityService`** — ценность продукта, сделанная счётной: число возможностей, **которые продукт
-сам о себе заявляет** в контракте OpenAPI и которые подтверждены нижней доверительной границей.
-*Связи:* вызывает наблюдение рантайма; зовёт транспорт GitHub и запускатель.
-*Ценность:* знаменатель берётся из утверждений продукта, а не из нашей декомпозиции.
-*Комментарий:* **периферия по месту, ядро по смыслу.** Считать по собственной декомпозиции значит мерить свою
-работу своей же меркой. **Внешний знаменатель — единственная защита от самоаттестации.**
-*Философия:* `SUBSTITUTION_ORACLE` (D009) — **сильная**. Опровержение: найти знаменатель, взятый из графа задач.
+**Связи, вызовы и взаимодействия:** `ContinuousOrchestrationService` calls
+`ClientRuntimeObservabilityService.maybeObserve` on the existing orchestration tick; there is no separate runtime
+cron. `ProjectController` exposes `summarize` and product capability value. `FalsificationCycleService`,
+`DeliveryRealityProducerService` and `RuntimeVerdictLayer` consume the runtime summary and product observations.
+`ClientRuntimeObservabilityService` calls `RuntimeLauncherClient.launch`, `healthcheck` and `teardown`, calls
+`DesignDriftMonitorService` only inside a healthy live window, probes declared capabilities through
+`ProductCapabilityService`, opens launchability constraints only for real product failures, reports repeated
+instrument outages to `KaizenService`, and stores rows in `ClientRuntimeObservationRepository`. `BetaPosterior`
+is the pure cadence/value math for product observations. `RuntimeHealthShiftDetector` is the pure exact-binomial
+shift detector. `ProductCapabilityService` reads OpenAPI contracts from GitHub, probes declared routes through
+the runtime launcher fetch path, stores `CapabilityObservationEntity` rows and computes current product value
+from recorded observations.
+
+**Идеальная форма:** live observation must spend a real launch only when evidence says the check is due, and the
+row must say what it is about: product, instrument, artifact and capability cannot be collapsed. Instrument
+failure is not a product defect. One unchanged artifact contributes one posterior draw. A new commit or completed
+task can pull a check forward only to the floor, never past the rate limit. A bounded live-preview window may stay
+open briefly for dashboard/live-fetch use, then it must be reaped. Runtime health shift uses time-ordered runtime
+observations, not epic u-chart machinery. Product value is counted only from capabilities the product declares in
+contracts and only when repeated evidence clears the lower confidence bound.
+
+**Граница:** this family observes and summarizes runtime truth; it does not deploy, host permanently, merge PRs,
+decide delivery acceptance, or invent product capabilities from factory tasks. `RuntimeLauncherClient` owns the
+sidecar contract. `ClientRuntimeObservabilityService` owns attempt cadence, observation rows, preview-window
+bookkeeping and live-summary projection. `ProductCapabilityService` owns declared capability discovery and
+capability observation rows, not Six Sigma sigma math. Capability auth/connect failures are instrument barriers,
+not product defects.
+
+**Входы:** project repository URL, branch, slug, launchability checked timestamp, last preview timestamp and
+port, observation history, `client_runtime_observability_enabled`, base delay, minimum delay, preview idle window,
+instrument outage threshold, runtime launcher response, health response, launcher commit SHA, live URL, design
+drift result, OpenAPI contract directory and files, fetched route responses, capability confidence threshold,
+recorded capability observations and task update timestamps after last real observation.
+
+**Выходы:** `client_runtime_observations` rows with launch result, health result, instrument-failure flag and
+commit SHA; updated preview-window fields on `ProjectEntity`; teardown calls for failed/expired preview stacks;
+runtime summary with attempts, product observations, posterior mean, credible width, last real product health and
+current live URL; launchability constraint signal for real product failure; systemic factory defect signal for
+repeated launcher outage; product runtime Kaizen proposal for real health shift; `capability_observations` rows;
+`ProductValue` with declared/working/opportunity/defect counts.
+
+**Владельцы истины и состояния:** product runtime observation state is `ClientRuntimeObservationEntity` and
+`ClientRuntimeObservationRepository`; preview-window state lives on `ProjectEntity`; artifact identity is
+`commitSha`; capability evidence is `CapabilityObservationEntity` and `CapabilityObservationRepository`;
+declared capability source is GitHub `docs/contracts/*.openapi.{yaml,yml,json}`; posterior and shift math are pure
+functions in `BetaPosterior` and `RuntimeHealthShiftDetector`; runtime sidecar truth is `RuntimeLauncherClient`;
+downstream dashboard/proof consumers read projections, not live probes.
+
+**Инварианты:**
+- no separate runtime cron; observation piggybacks on the main orchestration tick;
+- no observation before launchability has been checked;
+- every launch attempt is rate-limited by attempt time, but product posterior ignores instrument failures;
+- `instrumentFailure=true` rows never open client launchability constraints and never count as product health;
+- launch success with failed health is a real product observation and can open the launchability constraint;
+- failed launch tears down any partial stack; successful launch leaves only a bounded preview window;
+- `DesignDriftMonitorService` and capability probing happen only while a launch already exists;
+- posterior folds over oldest-first, one real product observation per artifact, skipping instrument rows;
+- current live URL exists only inside the bounded preview window;
+- capability denominator comes from product contracts, not factory feature/task graph;
+- failed contract directory read is unknown, not zero capabilities, and must not poison the cache;
+- templated paths are skipped rather than probed with invented ids;
+- 401/403/null capability fetches are instrument failures and excluded from opportunities/defects.
+
+**Сильная форма сейчас:** current source and tests support the family. `ClientRuntimeObservabilityService` has no
+own scheduler, distinguishes attempt cadence from product posterior, records `instrumentFailure` and `commitSha`,
+leaves/reaps bounded preview windows, probes capabilities during the already-paid launch, surfaces real product
+failures and repeated instrument outages separately, and summarizes product observations without treating launcher
+outages as product health. `BetaPosterior` uses the real Beta distribution, rejects invalid parameters, samples
+uncertainty soon, grants longer silence only to evidence of health, and keeps repeated failures at the minimum
+floor. `RuntimeHealthShiftDetector` uses exact binomial tests, refuses insufficient baseline, detects both
+regression and improvement relative shifts, and has an absolute below-expected-rate test for projects that never
+worked. `ProductCapabilityService` discovers capabilities from real contract files, caches by branch/commit,
+does not cache directory-read failure as zero, skips templated paths, marks 401/403/null as instrument failures
+and computes product value from recorded observations only.
+
+**Слабая / неидеальная форма:** no current implementation weakness was identified from source/test evidence in
+this tact. The old section's claims still hold after stricter inspection: runtime observation has no separate
+cron, Beta cadence is evidence-derived, health shift uses a runtime time-series detector instead of u-chart reuse,
+and product capability denominator comes from product contracts rather than the factory task graph.
+
+**Что надо сделать для идеала:** no code change is required from this section record. Future changes must first
+produce one of the refutations below, because otherwise changing this family risks reintroducing the exact
+category errors it prevents.
+
+**Что не трогать:** do not add a runtime-observation cron; do not count launcher outages as product failures; do
+not fold repeated observations of the same commit into the posterior as multiple independent draws; do not remove
+the bounded preview reaper; do not make capability value probe live state on read; do not infer capabilities from
+features/tasks; do not treat directory-read failure as zero capabilities; do not mark 401/403 capability responses
+as product defects.
+
+**Опровержение / проверка:** this record is false if grep finds `@Scheduled` on `ClientRuntimeObservabilityService`;
+if an instrument failure opens `LaunchabilityConstraintService.ensureOpen`; if `posteriorFrom` counts
+`instrumentFailure` rows or duplicate `commitSha` runs as independent product observations; if failed launch does
+not call `teardown`; if an expired preview still returns a live URL; if runtime shift detection reuses u-chart code;
+if `ProductCapabilityService` fetches routes not present in `docs/contracts`; if templated route values are
+invented; or if 401/403/null capability observations enter opportunities/defects.
+
+**Критерий закрытия:** closed as an ideal documentation record when the evidence above remains true and no
+refutation scenario reproduces. Implementation is ideal for the named scope because the current code and tests
+separate attempt/product/instrument/artifact/capability truth, keep cadence evidence-derived, and prevent live
+reads from mutating value.
+
+**Доказательства:** `ClientRuntimeObservabilityService.java:24-25,37,103-153,159-185,193-274,288-385,398-477,504-542`;
+`ClientRuntimeObservabilityServiceTest.java:33,100,224-225,347-399,469-548,664-866`;
+`ObservationHostingDemarcationLaw26Test.java:30-32,84-88,141,214-216`;
+`FailureDemarcationLaw22Test.java:37-41,103-140,144-176`; `BetaPosterior.java:12-26,38-64,74-108`;
+`BetaPosteriorTest.java:20-43,49-77,93-184`; `RuntimeHealthShiftDetector.java:12-25,36-83,95-129`;
+`RuntimeHealthShiftDetectorTest.java:28-132`; `ProductCapabilityService.java:99-188,248-355`;
+`ProductCapabilityServiceTest.java:57-132,146-194,249-300,331-353,362-428,438-592`;
+`ClientRuntimeObservationEntity.java:15,25,28,34,37,49,70-76,81-85`;
+`CapabilityObservationEntity.java:22,33-51,59-78`;
+`V92__client_runtime_observations.sql:1-12`; `V95__runtime_preview_window.sql:1-2`;
+`V104__observation_instrument_failure.sql:16-24`; `V109__observation_artifact_identity.sql:25-26`;
+`V107__capability_observations.sql:23-36`; `V140__capability_observations_instrument_failure.sql:6-10`;
+callers/consumers grep: `ContinuousOrchestrationService.java:285`, `ProjectController.java:191-205`,
+`FalsificationCycleService.java:404-405,813`, `DeliveryRealityProducerService.java:1181`.
+
+**Текущий статус:** считаю механизм идеальным
+
+**комментарий для Антигравити:** считаю механизм идеальным
 
 ---
 
