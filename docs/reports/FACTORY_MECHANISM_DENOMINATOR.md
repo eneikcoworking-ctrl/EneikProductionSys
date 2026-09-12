@@ -1042,3 +1042,38 @@ Remaining non-ideal point for this family: no deletion work remains. The only cu
 was proven in this tact to pass a nonblank `cacheKey`.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XLII; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: State Writer Ownership Family
+
+Status: documentation-only strict-family replacement for section XIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: the factory state-owner map, `WishlistRepository`/`WishlistEntity` wishlist
+status transitions, `TaskRepository`/`TaskEntity` task status transitions, and
+`SessionLifecycleService`/`JulesSessionRepository` Jules-session lifecycle ownership.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 32 |
+| Sections still missing visible `комментарий для Антигравити` | 31 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section was a narrative warning about many writers. Section XIII now states the exact
+engineering contract: many writers are allowed only when the transition owner, allowed writers and atomic
+write path are named. It records the ideal for wishlist status transitions, task status transitions and Jules
+session lifecycle fields, and it keeps the strong existing CAS/lifecycle mechanisms intact.
+
+Remaining non-ideal point for this family: the source has strong local forms (`WishlistRepository` CAS,
+`TaskRepository` terminal guards and CAS, `SessionLifecycleService` as remote-session owner), but it still lacks
+a complete owner-map for every mutable repository field and transition. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XIII; family summary is not a substitute.

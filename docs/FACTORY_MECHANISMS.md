@@ -2071,70 +2071,229 @@ updated_at = CURRENT_TIMESTAMP`, и при нуле затронутых стр�
 
 # XIII. Взаимодействие: кто пишет каждое состояние
 
-Разделы выше судят механизмы по одному. Идеальный механизм при неидеальном взаимодействии бесполезен, и
-корпус называет это прямо — `PART_WHOLE_OWNERSHIP` (D004):
+## XIII.1. Карта владельцев записываемого состояния фабрики
 
-> Сделать владение частями и инварианты целого **явными до** разделения модулей, таблиц или сервисов.
-> Обязательство: показать, **какой агрегат вправе менять каждую часть**.
+* **Имена механизма или семейства** — семейство правил владения состоянием:
+  `docs/FACTORY_MECHANISMS.md#XIII`, все интерфейсы `src/main/java/com/eneik/production/repositories/*Repository.java`
+  и все изменяющие вызовы репозиториев из `src/main/java`.
+* **Философский паттерн** — `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004 Concurrency conflict:
+  прежде чем делить модуль или добавлять писателя, надо явно назвать, какой агрегат или сервис имеет право
+  менять каждую часть целого состояния. Здесь дефект не в числе писателей сам по себе, а в неназванном
+  владельце перехода.
+* **Связи** — карта владельцев ограничивает все механизмы, которые вызывают `save`, `delete`,
+  `compareAndSet...`, `writeStatus...`, `claim...`, `release...` и другие изменяющие методы репозиториев.
+  Самые рискованные соседи этого раздела: `WishlistRepository`, `TaskRepository`, `JulesSessionRepository`,
+  `ProjectFlowService`, `JulesDispatchService`, `ClaimService`, `StrandedFinalizingSweepService`,
+  `AutoMergeService` и изменяющие внутренние контроллеры.
+* **Идеальная форма** — для каждого изменяемого состояния фабрики существует явная таблица владения:
+  состояние, поле или переход; легальный владелец; допустимые вспомогательные писатели; допустимый способ
+  записи; запрет на запись вне владельца; проверка, которая это опровергает. Много писателей допустимо
+  только когда они пишут разные части или проходят через общий атомарный переход.
+* **Граница** — механизм описывает право на изменение состояния. Он не решает продуктовые приоритеты, не
+  переписывает большие сервисы по размеру и не объявляет каждый прямой `save` дефектом без анализа перехода.
+* **Входы** — список репозиториев, вызовы изменяющих методов, комментарии владения в коде, инциденты гонок,
+  миграции, расписания и внутренние HTTP-поверхности, которые могут изменить состояние.
+* **Выходы** — документированная карта владельцев, запрет на новые неименованные писатели, порядок безопасной
+  правки больших сервисов и основание для будущих тестов/линтеров владения.
+* **Владельцы истины и состояния** — истина о фактических писателях живёт в `src/main/java`; истина о
+  требуемом праве писать должна жить в этом разделе и в локальных комментариях/тестах у конкретных переходов.
+* **Инварианты** — новый писатель не добавляется без владельца перехода; разделение большого сервиса не
+  начинается до объявления владельцев его состояний; локальный `save` не считается безопасным, если он
+  меняет состояние, для которого уже есть атомарный переход.
+* **Сильная форма сейчас** — замер источников уже показывает нижнюю границу риска: в проекте есть 46
+  репозиториев; `WishlistRepository`, `TaskRepository` и `JulesSessionRepository` имеют много изменяющих
+  писателей; в коде уже существуют сильные локальные формы вроде `compareAndSetStatus`,
+  `writeStatusUnlessTerminal` и явного владельца удалённой жизни сессии в `SessionLifecycleService`.
+* **Слабая/неидеальная форма сейчас** — общей машинно-проверяемой таблицы владельцев для всех 46
+  репозиториев нет. Поэтому новые писатели можно добавить технически корректно и всё равно нарушить целый
+  поток состояния.
+* **Что сделать для идеала** — завести и поддерживать owner-map для записываемых состояний фабрики:
+  репозиторий/поле/переход, владелец, разрешённые писатели, обязательный метод записи, опровержение. После
+  owner-map добавить проверку, которая падает при новом изменяющем вызове без записи в карте.
+* **Что не трогать** — не сокращать число писателей механически, не заменять CAS-методы обычным `save`, не
+  дробить `ProjectFlowService` или `JulesDispatchService` только по размеру до фиксации владельцев состояний.
+* **Опровержение** — `grep -R -n -E "repository\\.(save|delete|compareAndSet|writeStatus|claim|release)"`
+  находит изменяющий вызов по состоянию, которого нет в owner-map, или два владельца меняют один переход без
+  общего атомарного правила.
+* **Критерий закрытия** — все 46 репозиториев либо признаны read-only, либо имеют запись владения для каждого
+  изменяемого перехода; новый изменяющий вызов без владельца обнаруживается проверкой до слияния.
+* **Свидетельства записи** — `grep -R -l -E "interface .*Repository|extends JpaRepository"
+  src/main/java/com/eneik/production/repositories | wc -l`; `grep -R -n -E
+  "DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP|PART_WHOLE_OWNERSHIP|D004" docs/philosopher-patterns docs`;
+  старый замер раздела XIII; текущие чтения `WishlistRepository`, `TaskRepository`, `JulesSessionRepository`,
+  `SessionLifecycleService`.
+* **Текущий статус** — не идеален как общая карта; частично силён за счёт локальных атомарных переходов.
+* **комментарий для Антигравити** — применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`: сначала назвать
+  владельца каждого перехода состояния, потом править код. Не путать “много писателей” с дефектом; дефект —
+  писатель без названного права и без общего атомарного правила.
 
-Обязательство здесь не «пусть пишет один», а «пусть будет **названо**, кто вправе». Много писателей само по
-себе не дефект; дефект — когда не сказано, кто из них хозяин.
+## XIII.2. Владение переходами заявок
 
-**Замер по всем 46 хранилищам состояния.** Метод: для каждого репозитория ищется вызов изменяющего метода
-(`save`, `delete`, `compareAndSet…`, `mark…`, `reset…` и подобных) из любого класса `src/main`, кроме него
-самого, с исключением строк `import`. Метод даёт ложные срабатывания на совпадении имён и не видит записи
-через чужую обёртку — то есть числа ниже это **нижняя граница**, а не точная величина.
+* **Имена механизма или семейства** — `WishlistRepository`, `WishlistEntity.status`,
+  `WishlistEntity.finalizingSince`, `WishlistStatus`, изменяющие писатели:
+  `AutoMergeService`, `DeliveredWorkJudgmentService`, `DeliveryRealityProducerService`,
+  `DesignShopOrchestrationService`, `DesignSystemFalsificationService`, `FalsificationCycleService`,
+  `FeatureService`, `GeminiObserverActionService`, `InternalGeminiObserverController`,
+  `InternalRepairController`, `JulesDispatchService`, `KaizenService`, `LaunchabilityConstraintService`,
+  `OpsAuditorService`, `PlannedWorkRecoveryService`, `ProductLaunchabilityService`, `ProjectFlowService`,
+  `StrandedFinalizingSweepService`, `TechnicalLeadCompiler`, `WishlistService`.
+* **Философский паттерн** — `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004 Concurrency conflict:
+  заявка является частью целого производственного потока, поэтому переходы `pending`, `compiling`,
+  `finalizing`, `converted_to_task`, `dismissed` и lease-поле `finalizingSince` должны иметь названного
+  владельца до добавления новых писателей.
+* **Связи** — компиляция заявок идёт через `JulesDispatchService` и `TechnicalLeadCompiler`; восстановление
+  и санитария идут через `ProjectFlowService`, `PlannedWorkRecoveryService`, `StrandedFinalizingSweepService`;
+  продуктовые и дизайн-механизмы создают или закрывают заявки; `WishlistRepository.compareAndSetStatus...`
+  является общей дверью для гонкоопасного перехода.
+* **Идеальная форма** — каждый переход заявки задан таблицей `from -> to -> владелец -> допустимые писатели`.
+  Гонкоопасные переходы используют `compareAndSetStatus` или `compareAndSetStatusWithTimestamp`; lease
+  `finalizingSince` обновляется только механизмами, которые реально держат или продлевают финализацию.
+* **Граница** — механизм имеет право менять только жизненный цикл заявки и её lease. Он не должен решать
+  содержание задачи, дизайн-вердикт, качество PR или статус проекта.
+* **Входы** — `WishlistEntity`, статус заявки, `finalizingSince`, проект, источник заявки, результаты
+  компилятора, восстановительные обходы, cron-тики и внутренние ремонтные команды.
+* **Выходы** — новый статус заявки, сброшенный или обновлённый `finalizingSince`, допущенная или отклонённая
+  компиляция, сигнал соседним механизмам о том, что заявка уже занята или снова доступна.
+* **Владельцы истины и состояния** — состояние хранит таблица wishlists через `WishlistEntity`; атомарность
+  переходов держит `WishlistRepository`; фактические владельцы отдельных переходов должны быть названы в
+  owner-map, а не угадываться по имени сервиса.
+* **Инварианты** — одна заявка не компилируется двумя независимыми сессиями; завершение финализации не
+  спорит с восстановлением; `finalizingSince` означает живую или восстанавливаемую финализацию, а не просто
+  возраст строки; `dismissed` не возвращается в рабочий поток без отдельного правила.
+* **Сильная форма сейчас** — в `WishlistRepository` уже есть `compareAndSetStatus`,
+  `compareAndSetStatusWithTimestamp`, `renewFinalizingLeases` и `renewFinalizingLease`; комментарий над
+  `compareAndSetStatus` фиксирует реальный инцидент двойной компиляции и закрывает его атомарной записью.
+* **Слабая/неидеальная форма сейчас** — писателей много, а полная таблица владельцев по каждому переходу
+  заявки отсутствует. Поэтому нельзя честно считать весь механизм идеальным, даже если отдельные CAS-точки
+  сильные.
+* **Что сделать для идеала** — описать таблицу переходов заявок и закрепить за каждым переходом владельца;
+  все гонкоопасные смены статуса перевести или подтвердить через CAS/lease-метод; добавить проверку, которая
+  обнаруживает прямой `wishlistRepository.save` со сменой статуса вне разрешённого владельца.
+* **Что не трогать** — не удалять `compareAndSetStatus...`, не сводить `finalizingSince` к обычному тайм-ауту,
+  не чинить конфликт восстановлением одного сервиса без записи общего владельца перехода.
+* **Опровержение** — найден `wishlistRepository.save(wishlist)` после `wishlist.setStatus(...)` вне
+  разрешённого владельца; две параллельные компиляции одной заявки проходят одновременно; sweep возвращает
+  заявку в состояние, из которого завершитель больше не умеет её закрыть.
+* **Критерий закрытия** — все переходы `WishlistStatus` перечислены с владельцами; прямые записи статуса
+  либо удалены, либо доказаны безопасными; параллельная проба допуска одной заявки даёт ровно одного
+  победителя.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/WishlistRepository.java`;
+  `src/main/java/com/eneik/production/models/persistence/WishlistEntity.java`; grep по
+  `wishlistRepository.(save|delete|compareAndSetStatus|compareAndSetStatusWithTimestamp|renewFinalizingLease)`.
+* **Текущий статус** — частично силён, но не идеален.
+* **комментарий для Антигравити** — применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`: для каждой смены
+  `WishlistStatus` назвать владельца и обязательный способ записи. Не “упрощать” CAS в `save`; правка нужна
+  только после owner-map переходов.
 
-| Категория | Хранилищ |
-|---|---|
-| Только чтение, писателей нет | 17 |
-| Один писатель — владение де-факто единственно | 12 |
-| **Два и более писателей** | **17** |
+## XIII.3. Владение переходами задач
 
-**Владение объявлено словами лишь в трёх файлах** из всего кода: `SessionLifecycleService`,
-`AccountHealthService`, `AccountEntity`. То есть из 29 записываемых хранилищ хозяин назван у трёх.
+* **Имена механизма или семейства** — `TaskRepository`, `TaskEntity.status`, `TaskEntity.updatedAt`,
+  `TaskStatus`, `TaskRepository.compareAndSetStatusAt`, `TaskRepository.writeStatusUnlessTerminalAt`,
+  изменяющие писатели: `InternalTaskController`, `AutoMergeService`, `ClaimService`,
+  `TechnicalLeadCompiler`, `DesignShopOrchestrationService`, `FalsificationCycleService`, `GateOrchestrator`,
+  `GeminiObserverActionService`, `DeliveredWorkJudgmentService`, `JulesDispatchService`,
+  `MarketResearchService`, `OpsAuditorService`, `BranchGarbageCollectorService`, `PlannedWorkRecoveryService`,
+  `ProjectFlowService`, `TaskCarrierBackfillService`.
+* **Философский паттерн** — `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004 Concurrency conflict:
+  задача является узлом общего графа исполнения, и её статус нельзя менять как локальное поле без владельца
+  перехода и инварианта терминальности.
+* **Связи** — `ClaimService` владеет claim/release/fail/complete-переходами; `JulesDispatchService` пишет
+  результаты сессий; `ProjectFlowService` и восстановительные сервисы возвращают задачи в очередь;
+  `GateOrchestrator` и review-механизмы переводят задачи по качественным результатам; контроллеры дают
+  ручную поверхность изменения.
+* **Идеальная форма** — все переходы задач описаны как конечный автомат с владельцем перехода. Терминальные
+  статусы необратимы; revive-переходы проходят через `writeStatusUnlessTerminal`; точные гонкоопасные
+  переходы проходят через `compareAndSetStatusAt`; смена статуса и движение `updatedAt` атомарны.
+* **Граница** — механизм решает жизненный цикл `TaskEntity`, но не решает содержимое задачи, качество PR,
+  бизнес-приоритет проекта или то, какой агент должен быть выбран.
+* **Входы** — текущий `TaskStatus`, claim-состояние, PR/гейт-результаты, dispatch-сессии, recovery-события,
+  ручные внутренние команды, carrier-маркеры и project status.
+* **Выходы** — новый `TaskStatus`, обновлённый `updatedAt`, отказ перезаписать терминальную задачу,
+  разблокировка или закрытие downstream-потока.
+* **Владельцы истины и состояния** — таблица tasks через `TaskEntity`; атомарные переходы в `TaskRepository`;
+  доменный инвариант терминальности в `TaskEntity.setStatus` и `TaskStatus.isTerminal`.
+* **Инварианты** — `done`, `failed`, `spike_completed` не перезаписываются другим статусом; движение статуса
+  двигает `updatedAt`; очередь не воскрешает задачу, которую другой поток уже закрыл; carrier-задача не
+  создаёт бесконечный цикл компиляции.
+* **Сильная форма сейчас** — `TaskEntity.setStatus` запрещает перезаписать терминальный статус; `TaskRepository`
+  содержит `compareAndSetStatusAt` и `writeStatusUnlessTerminalAt`; комментарии в репозитории фиксируют
+  реальные race-инциденты и объясняют, почему обычный `save` недостаточен.
+* **Слабая/неидеальная форма сейчас** — изменяющих писателей много; не все переходы `TaskStatus` сведены к
+  явной таблице владельцев; прямые `taskRepository.save` ещё допустимы в разных сервисах и требуют
+  классификации по полям, которые они реально меняют.
+* **Что сделать для идеала** — составить таблицу переходов `TaskStatus` с владельцами и разрешёнными
+  писателями; для каждого прямого `taskRepository.save` указать, меняет ли он статус, dispatch-поля,
+  carrier-поля или иной не lifecycle-факт; добавить проверку на смену статуса вне разрешённых методов.
+* **Что не трогать** — не ослаблять терминальный guard в `TaskEntity`; не заменять
+  `writeStatusUnlessTerminalAt` и `compareAndSetStatusAt` обычным сохранением; не считать ручной контроллер
+  универсальным владельцем состояния.
+* **Опровержение** — терминальная задача переходит в нетерминальный статус; `updatedAt` не меняется вместе со
+  статусом; новый `taskRepository.save` меняет `status` вне владельца перехода; параллельный recovery и
+  complete создают новую compiler-задачу после закрытия старой.
+* **Критерий закрытия** — все переходы `TaskStatus` имеют владельца и разрешённый метод записи; прямые
+  сохранения статуса запрещены или доказаны безопасными; тест гонки терминального статуса и revive-перехода
+  проходит стабильно.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/TaskRepository.java`;
+  `src/main/java/com/eneik/production/models/persistence/TaskEntity.java`;
+  `src/main/java/com/eneik/production/models/persistence/TaskStatus.java`; grep по
+  `taskRepository.(save|delete|writeStatus|compareAndSetStatus|claimQueued|mark|reset)`.
+* **Текущий статус** — частично силён, но не идеален.
+* **комментарий для Антигравити** — применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`: сохранить
+  терминальный guard и атомарные методы, затем разложить все смены `TaskStatus` по владельцам. Не чинить
+  циклы задач локальной заменой `save`, пока не назван владелец перехода.
 
-### Три самых спорных состояния
+## XIII.4. Владение жизнью Jules-сессии
 
-**`WishlistRepository` — 20 писателей.** `AutoMergeService`, `DeliveredWorkJudgmentService`,
-`DeliveryRealityProducerService`, `DesignShopOrchestrationService`, `DesignSystemFalsificationService`,
-`FalsificationCycleService`, `FeatureService`, `GeminiObserverActionService`,
-`InternalGeminiObserverController`, `InternalRepairController`, `JulesDispatchService`, `KaizenService`,
-`LaunchabilityConstraintService`, `OpsAuditorService`, `PlannedWorkRecoveryService`,
-`ProductLaunchabilityService`, `ProjectFlowService`, `StrandedFinalizingSweepService`,
-`TechnicalLeadCompiler`, `WishlistService`.
-*Это не теория.* Взаимная блокировка, из-за которой фабрика стояла сегодня, была спором ровно двух из этих
-двадцати: восстановление возвращало заявку в `pending`, а завершение умело брать её только из `compiling`.
-Ни то, ни другое не было ошибкой само по себе — **не было названо, кто из них хозяин перехода**.
-
-**`TaskRepository` — 15 писателей.** Второй сегодняшний круг жил здесь: уборка помечала задачу компилятора
-выполненной, а отправка тут же создавала новую. Снова оба действия по отдельности осмысленны.
-
-**`JulesSessionRepository` — 7 писателей**, включая два контроллера. `SessionLifecycleService` объявляет себя
-единственным владельцем вопроса «знает ли Jules, что сессия закончена» — и это правильная форма, — но
-остальные поля строки сессии пишут ещё шестеро.
-
-### Что отсюда следует
-
-Пока хозяин не назван, всякий новый механизм, пишущий заявки или задачи, **добавляет ребро в граф, которого
-никто не проверяет**. Оба сегодняшних круга — не случайность и не небрежность конкретного автора: это то,
-что происходит с состоянием, у которого двадцать писателей и ни одного объявленного владельца.
-
-Отсюда же видно, почему разделение `ProjectFlowService` и `JulesDispatchService` нельзя начинать с
-разрезания по размеру. Образец требует объявить владение **до** разделения; разрезать класс, у которого
-владение не названо, значит превратить внутренние вызовы в межсервисные гонки и получить тот же спор,
-только дороже.
-
-**Порядок работы, вытекающий из замера, а не из вкуса:**
-1. Назвать хозяина для `WishlistRepository` — 20 писателей и два измеренных инцидента.
-2. Назвать хозяина для `TaskRepository` — 15 писателей и один измеренный инцидент.
-3. Только после этого разделять большие классы ядра.
-
-Продуктовый код по этому замеру не правился.
-
----
-
----
+* **Имена механизма или семейства** — `SessionLifecycleService`, `JulesSessionRepository`,
+  `JulesSessionEntity.status`, `JulesSessionEntity.remoteDeletedAt`, `JulesSessionEntity.closedAt`,
+  `JulesSessionEntity.closureReason`, `JulesDispatchService`, `JulesSessionController`,
+  `InternalGeminiObserverController`, `AutoMergeService`, `ClaimService`, `ProjectFlowService`.
+* **Философский паттерн** — `MARGARET_GILBERT_02_JOINT_COMMITMENT_LOCK`, D004 Concurrency conflict:
+  локальная фабрика и внешний Jules делят обязательство о том, жива ли сессия. Ни один писатель не должен
+  молча переопределять общий контракт завершения сессии.
+* **Связи** — `SessionLifecycleService.retireSessionOnly` является общей дверью для “сессия действительно
+  больше не жива у Jules”; `JulesDispatchService` создаёт и завершает локальные dispatch-сессии;
+  `JulesSessionRepository.claimPrOpenedWorkflow` держит lease для обработки `pr_opened`; контроллеры и
+  recovery-сервисы пишут локальные поля, но не должны подменять удалённую истину.
+* **Идеальная форма** — удалённая жизнь сессии имеет одного владельца: `SessionLifecycleService`. Локальные
+  lifecycle-поля имеют field-level owner-map: кто пишет `status`, `closedAt`, `closureReason`,
+  `remoteDeletedAt`, `prOpenedWorkflowClaimedAt`, `externalSessionId` и почему. HTTP-вызов к Jules не держит
+  открытую DB-транзакцию; подтверждённое удаление записывает `remoteDeletedAt`.
+* **Граница** — механизм решает только жизнь и локальное завершение Jules-сессии. Он не решает, успешна ли
+  задача, что делать с PR, как оценивать дизайн или когда создавать новую задачу.
+* **Входы** — `JulesSessionEntity`, `externalSessionId`, API key аккаунта, статус задачи, статус проекта,
+  ответ `JulesApiClient.deleteSession`, lease `prOpenedWorkflowClaimedAt`, ручные cancel/cleanup команды.
+* **Выходы** — локальный статус `cancelled`, `closedAt`, `closureReason`, `remoteDeletedAt`, освобождение или
+  удержание workflow-lease, журнал результата cleanup.
+* **Владельцы истины и состояния** — локальные поля хранит `JulesSessionEntity`; удалённую истину возвращает
+  API Jules; `SessionLifecycleService` владеет переходом “Jules знает, что сессия закончена”.
+* **Инварианты** — подтверждённое удаление у Jules записывается отдельно от локального cancel; 404 от Jules
+  считается доказательством, что удалённая сессия уже отсутствует; DB-транзакция не удерживается во время
+  сетевого вызова; обработка `pr_opened` имеет lease и освобождение при ошибке.
+* **Сильная форма сейчас** — `SessionLifecycleService` прямо объявлен sole owner для вопроса “does Jules
+  itself know this session is done”; `retireSessionOnly` разделяет локальный cancel, подготовку контекста,
+  сетевой delete и запись `remoteDeletedAt`; `JulesSessionRepository.claimPrOpenedWorkflow` задаёт lease.
+* **Слабая/неидеальная форма сейчас** — `julesSessionRepository.save` вызывается из нескольких сервисов и
+  контроллеров; не все поля `JulesSessionEntity` имеют явного field-level владельца в одном месте.
+* **Что сделать для идеала** — записать field-level owner-map для `JulesSessionEntity`; запретить новые
+  bypass-записи завершения сессии вне `SessionLifecycleService`; добавить проверку, что удалённая жизнь
+  сессии меняется только через общий сервис.
+* **Что не трогать** — не переносить сетевой delete обратно внутрь одной большой транзакции; не считать
+  локальный `cancelled` равным подтверждённому удалению у Jules; не обходить `SessionLifecycleService` ради
+  быстрой правки `JulesDispatchService`.
+* **Опровержение** — код пишет `remoteDeletedAt` или закрывает внешнюю сессию вне `SessionLifecycleService`;
+  HTTP delete выполняется под открытой DB-транзакцией; локальная сессия считается удалённой у Jules без 200
+  или 404 от API.
+* **Критерий закрытия** — все lifecycle-поля `JulesSessionEntity` имеют владельцев; удалённая жизнь сессии
+  меняется только через `SessionLifecycleService`; тест/поиск не находит нового обходного завершения.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/services/jules/SessionLifecycleService.java`;
+  `src/main/java/com/eneik/production/repositories/JulesSessionRepository.java`;
+  `src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`; grep по
+  `julesSessionRepository.(save|delete)`.
+* **Текущий статус** — частично силён, но не идеален.
+* **комментарий для Антигравити** — применить `MARGARET_GILBERT_02_JOINT_COMMITMENT_LOCK`: сохранять
+  `SessionLifecycleService` как владельца удалённой жизни Jules-сессии и дописать владельцев по полям.
+  Не обходить этот сервис локальным `save`; правка нужна в owner-map и запрете обходов, а не в споре сервисов.
 
 # XIV. Сверка с корпусом философских образцов
 
