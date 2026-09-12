@@ -1560,6 +1560,31 @@ public class ProjectFlowService {
     }
 
     /**
+     * Derives a task's target context from the wishlist that produced it, for tasks whose own field is
+     * still UNDETERMINED (2026-09-12).
+     *
+     * <p>Refusing to dispatch an unknown target is right and stays. What was missing is the other half:
+     * nothing ever RESOLVED the unknown, so a task whose target is knowable sat in the queue and was
+     * retried every tick - measured live, 374 warnings and a pipeline halted for over two hours on two
+     * tasks. This resolves only what the producer already knows by construction: a coverage-gap wishlist
+     * is raised by comparing the client product's shipped code against the brief, so its work is product
+     * work. Everything else still returns null and is still refused - an unknown is not answered by
+     * guessing, and the client product is never the silent default (law 2, prescription XVI 43).
+     *
+     * <p>Deliberately does not touch task status: a blocked task with no resumable dispatch verdict is
+     * retired to `failed` by recoverBlockedWork, so parking here would trade a stuck queue for lost work.
+     */
+    TargetContext deriveTargetContextFromSourceWishlist(TaskEntity task) {
+        if (task == null || task.getSourceWishlistId() == null) {
+            return null;
+        }
+        return wishlistRepository.findById(task.getSourceWishlistId())
+                .filter(wishlist -> wishlist.getSource() == WishlistSource.coverage_gap)
+                .map(wishlist -> TargetContext.PRODUCT_CODEBASE)
+                .orElse(null);
+    }
+
+    /**
      * How many client entries the published referent declares, or -1 when there is no file or no trailer to
      * read. The trailer is written by syncClientBriefToRepository itself ("Entries: N."), so this reads a
      * number the factory put there, not a shape guessed out of the prose.
@@ -6418,10 +6443,18 @@ public class ProjectFlowService {
             }
 
             if (task.getTargetContext() == null || task.getTargetContext() == TargetContext.UNDETERMINED) {
-                log.warn("Task {} has undetermined targetContext; skipping dispatch until target context is resolved", task.getId());
-                task.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
-                taskRepository.save(task);
-                continue;
+                TargetContext derived = deriveTargetContextFromSourceWishlist(task);
+                if (derived != null) {
+                    log.info("Task {} had an undetermined targetContext; derived {} from its source wishlist and persisted it",
+                            task.getId(), derived);
+                    task.setTargetContext(derived);
+                    taskRepository.save(task);
+                } else {
+                    log.warn("Task {} has undetermined targetContext; skipping dispatch until target context is resolved", task.getId());
+                    task.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
+                    taskRepository.save(task);
+                    continue;
+                }
             }
 
             Optional<JulesSessionEntity> existingSession = findActiveJulesSession(task.getId());

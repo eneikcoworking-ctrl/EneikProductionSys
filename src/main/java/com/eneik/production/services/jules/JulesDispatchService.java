@@ -4263,6 +4263,13 @@ public class JulesDispatchService {
             wishlist.setProjectId(auditTask.getProject().getId());
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.coverage_gap);
             wishlist.setSourceRoleTag(gap.roleTag());
+            // A coverage gap is found by comparing the CLIENT PRODUCT's shipped code against the brief, so
+            // the work it asks for is product work by construction - that is knowledge this producer holds,
+            // not a guess about the world. Declared here instead of leaving the field default
+            // (UNDETERMINED), which ProjectFlowService.dispatchQueuedTasks must refuse to dispatch: on
+            // 2026-09-12 two such tasks sat queued for over two hours and halted the pipeline. This says
+            // nothing about the FEATURE - that stays unset for the reason given just below.
+            wishlist.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
             // Left unset (unlike the pre-redesign version): a coverage audit now runs once against the
             // WHOLE wishlist's shipped code, potentially spanning several epics, so there is no single
             // correct feature to inherit anymore - resolveOrCreateFeatureId gives it its own grouping,

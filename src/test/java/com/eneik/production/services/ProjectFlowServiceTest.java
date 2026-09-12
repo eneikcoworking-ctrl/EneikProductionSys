@@ -654,6 +654,37 @@ class ProjectFlowServiceTest {
     // order below has to keep client work ahead of self-generated work (the intent) while still admitting
     // self-generated work when no client work is queued (the deadlock).
 
+    @Test
+    void undeterminedTargetIsDerivedOnlyFromACoverageGapWishlist() {
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        ProjectFlowService service = serviceWithWishlists(wishlistRepository);
+
+        // A coverage gap is raised against the client product's own shipped code, so its target is known.
+        TaskEntity fromCoverageGap = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.coverage_gap);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE,
+                service.deriveTargetContextFromSourceWishlist(fromCoverageGap),
+                "a coverage-gap task must resolve to the product codebase instead of waiting forever");
+
+        // Everything else stays unknown: the unknown is refused, never guessed into the client product.
+        TaskEntity fromClient = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.client);
+        org.junit.jupiter.api.Assertions.assertNull(
+                service.deriveTargetContextFromSourceWishlist(fromClient),
+                "a client wishlist carries no evidence about the target; it must stay undetermined");
+
+        TaskEntity withoutWishlist = new TaskEntity();
+        withoutWishlist.setId(UUID.randomUUID());
+        org.junit.jupiter.api.Assertions.assertNull(
+                service.deriveTargetContextFromSourceWishlist(withoutWishlist),
+                "a task with no source wishlist has nothing to derive from");
+
+        org.junit.jupiter.api.Assertions.assertNull(
+                service.deriveTargetContextFromSourceWishlist(null),
+                "a null task must not throw");
+    }
+
     private TaskEntity taskFromWishlist(WishlistRepository wishlistRepository,
             com.eneik.production.models.persistence.WishlistSource source) {
         TaskEntity task = new TaskEntity();
