@@ -455,6 +455,8 @@ class FlowSpineServiceTest {
         FlowSpineDto dto = spineOver(List.of(failedPlannedTask(1)), project).build(project.getId());
 
         assertNotEquals("BLOCKED_BY_FAILED_FRONTIER", dto.currentState());
+        assertEquals(1, dto.counts().failedTasksTotal(), "failedTasksTotal must count all failed tasks");
+        assertEquals(0, dto.counts().failedTasksRecoveryCanResume(), "failedTasksRecoveryCanResume must be 0 when budget spent");
     }
 
     /**
@@ -470,6 +472,8 @@ class FlowSpineServiceTest {
         FlowSpineDto dto = spineOver(List.of(failedPlannedTask(0)), project).build(project.getId());
 
         assertEquals("BLOCKED_BY_FAILED_FRONTIER", dto.currentState());
+        assertEquals(1, dto.counts().failedTasksTotal());
+        assertEquals(1, dto.counts().failedTasksRecoveryCanResume());
     }
 
     /**
@@ -490,6 +494,85 @@ class FlowSpineServiceTest {
         FlowSpineDto dto = spineOver(List.of(task), project).build(project.getId());
 
         assertNotEquals("BLOCKED_BY_FAILED_FRONTIER", dto.currentState());
+        assertEquals(1, dto.counts().failedTasksTotal());
+        assertEquals(0, dto.counts().failedTasksRecoveryCanResume());
+    }
+
+    /**
+     * Prescription 29: SENSE_REFERENCE_SPLIT (D009) + CONVERSATION_MAXIM (D007).
+     *
+     * <p>The flow summary distinguishes raw unpartitioned failure count (failedTasksTotal)
+     * from resolver-actionable tasks (failedTasksRecoveryCanResume), eliminating category confusion.
+     * Similarly, doneTasks separates aggregate completed work (done + spike_completed) from raw
+     * doneTasksTotal and spikeCompletedTasks.
+     */
+    @Test
+    void prescription29SenseReferenceSplitDistinguishesTotalFailedFromRecoveryResumable() throws Exception {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+
+        // 2 tasks that recovery can resume (unspent resume budget, client brief)
+        TaskEntity resumable1 = failedPlannedTask(0);
+        TaskEntity resumable2 = failedPlannedTask(0);
+
+        // 3 tasks that recovery CANNOT resume:
+        // - 1 past its resume budget
+        TaskEntity pastBudget = failedPlannedTask(1);
+        // - 1 retired with quarantine status
+        TaskEntity quarantined = failedPlannedTask(0);
+        quarantined.setJulesDispatchStatus("Poka-yoke: out-of-cycle generated work is quarantined");
+        // - 1 without brief/feature (spurious failure)
+        TaskEntity unlinked = new TaskEntity();
+        unlinked.setId(UUID.randomUUID());
+        unlinked.setStatus(TaskStatus.failed);
+        unlinked.setJulesDispatchStatus("unlinked failure");
+
+        // Done and spike_completed tasks
+        TaskEntity done1 = new TaskEntity();
+        done1.setId(UUID.randomUUID());
+        done1.setStatus(TaskStatus.done);
+        TaskEntity done2 = new TaskEntity();
+        done2.setId(UUID.randomUUID());
+        done2.setStatus(TaskStatus.done);
+        TaskEntity spike = new TaskEntity();
+        spike.setId(UUID.randomUUID());
+        spike.setStatus(TaskStatus.spike_completed);
+
+        List<TaskEntity> allTasks = List.of(resumable1, resumable2, pastBudget, quarantined, unlinked, done1, done2, spike);
+        FlowSpineDto dto = spineOver(allTasks, project).build(project.getId());
+
+        // 1. Resolver-scoped vs raw total failed
+        assertEquals(5, dto.counts().failedTasksTotal(), "failedTasksTotal must match raw count of failed tasks (5)");
+        assertEquals(2, dto.counts().failedTasksRecoveryCanResume(), "failedTasksRecoveryCanResume must count only resumable tasks (2)");
+
+        // 2. Done vs spike_completed
+        assertEquals(3, dto.counts().doneTasks(), "doneTasks is aggregate completed work (2 done + 1 spike)");
+        assertEquals(2, dto.counts().doneTasksTotal(), "doneTasksTotal is strictly status done (2)");
+        assertEquals(1, dto.counts().spikeCompletedTasks(), "spikeCompletedTasks is strictly status spike_completed (1)");
+
+        // 3. Jackson JSON serialization: verifies strong fence for SENSE_REFERENCE_SPLIT
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        String json = mapper.writeValueAsString(dto.counts());
+
+        assertTrue(json.contains("\"failedTasksTotal\":5"), "JSON must include failedTasksTotal: " + json);
+        assertTrue(json.contains("\"failedTasksRecoveryCanResume\":2"), "JSON must include failedTasksRecoveryCanResume: " + json);
+        assertTrue(json.contains("\"doneTasksTotal\":2"), "JSON must include doneTasksTotal: " + json);
+        assertTrue(json.contains("\"spikeCompletedTasks\":1"), "JSON must include spikeCompletedTasks: " + json);
+        // The misleading field name "failedTasks" must NOT be serialized as a field
+        assertFalse(json.contains("\"failedTasks\":"), "JSON must NOT serialize ambiguous failedTasks field: " + json);
+
+        // 4. Deserialization backwards compatibility: older JSON containing "failedTasks" maps to failedTasksRecoveryCanResume
+        String legacyJson = "{\"queuedTasks\":0,\"activeTasks\":0,\"reviewTasks\":0,\"doneTasks\":3,\"failedTasks\":7,\"blockedTasks\":0,\"totalFeatures\":1,\"completeFeatures\":1,\"totalDeliverables\":1,\"mergedDeliverables\":1,\"decompositionComplete\":true}";
+        FlowSpineDto.FlowCounts deserialized = mapper.readValue(legacyJson, FlowSpineDto.FlowCounts.class);
+        assertEquals(7, deserialized.failedTasksRecoveryCanResume(), "legacy 'failedTasks' JSON field must deserialize to failedTasksRecoveryCanResume via @JsonAlias");
+
+        // 5. Structural/Reflection fence (SENSE_REFERENCE_SPLIT): FlowCounts has strictly ONE constructor
+        // with 14 parameters (no overloaded constructors that silently conflate failedTasksRecoveryCanResume with failedTasksTotal)
+        assertEquals(1, FlowSpineDto.FlowCounts.class.getConstructors().length,
+                "FlowCounts must only have the canonical 14-arg constructor to eliminate category conflation");
+        assertEquals(14, FlowSpineDto.FlowCounts.class.getConstructors()[0].getParameterCount(),
+                "Canonical constructor must accept all 14 flow metrics");
     }
 
     @Test

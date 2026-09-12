@@ -69,8 +69,13 @@ public class DesignDriftMonitorService {
         // Drift comparison requires an established per-project design-system baseline (captured by
         // DesignShopOrchestrationService.captureBaseline into DesignShopCycleEntity).
         // If no baseline exists, fetching the 70KB live HTML body every cycle is pure unexecutable waste (muda).
+        if (designShopCycleRepository == null) {
+            log.info("DesignDriftMonitorService: designShopCycleRepository is not configured on this monitor instance; skipping live page fetch and drift comparison");
+            return;
+        }
+
         java.util.Optional<com.eneik.production.models.persistence.DesignShopCycleEntity> cycleOpt =
-                designShopCycleRepository != null && project != null && project.getId() != null
+                project != null && project.getId() != null
                         ? designShopCycleRepository.findByProjectId(project.getId())
                         : java.util.Optional.empty();
 

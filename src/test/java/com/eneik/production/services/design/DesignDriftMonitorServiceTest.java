@@ -51,6 +51,18 @@ class DesignDriftMonitorServiceTest {
     }
 
     @Test
+    void skipsFetchWhenRepositoryNotConfigured() {
+        // Distinguishes unconfigured repository from absent project baseline in DB
+        DesignDriftMonitorService unconfigured = new DesignDriftMonitorService(
+                launcherClient, auditService, settingsService, kaizenService
+        );
+
+        unconfigured.checkLiveInstance(project, "http://localhost:8090/");
+
+        verifyNoInteractions(launcherClient, kaizenService);
+    }
+
+    @Test
     void skipsFetchAndComparisonWhenProjectHasNoEstablishedBaseline() {
         // Prescription 28 (FALSIFICATION_HARNESS / D008):
         // If no baseline exists, fetching the 70KB HTML body every cycle is pure unexecutable waste (muda).

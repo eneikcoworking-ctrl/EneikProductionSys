@@ -257,8 +257,8 @@ class OperationalPolicyServiceTest {
                 List.of(),
                 new FlowSpineDto.EvidenceVector(0, openReviews, 0, 0, 0,
                         pendingWishlist, compilingWishlist, 0, "ok", state.equals("BLOCKED_BY_DUPLICATE_CONTENT")),
-                new FlowSpineDto.FlowCounts(queuedTasks, 0, reviewTasks, 0, 0, 0,
-                        1, 0, 1, 0, pendingWishlist == 0 && compilingWishlist == 0),
+                new FlowSpineDto.FlowCounts(queuedTasks, 0, reviewTasks, 0, 0, 0, 0,
+                        1, 0, 1, 0, pendingWishlist == 0 && compilingWishlist == 0, 0, 0),
                 List.of(),
                 new FlowSpineDto.JournalSummary(null, null, null, null, "hash", false, 0),
                 "deterministic precedence"

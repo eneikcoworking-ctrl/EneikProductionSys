@@ -156,7 +156,7 @@ public class OperationalPolicyService {
             // PlannedWorkRecoveryService.resumeEligibleTask refuses on an active claim, an active session,
             // a merged task, an unsatisfied dependency, or a prior resume (bounded at one), and moves the
             // status by compare-and-set. Authorizing it more often cannot produce double work.
-            case RECOVER_FAILED_FRONTIER -> activeProject && snapshot.counts().failedTasks() > 0
+            case RECOVER_FAILED_FRONTIER -> activeProject && snapshot.counts().failedTasksRecoveryCanResume() > 0
                     && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             case DISPATCH_QUEUED_TASKS -> activeProject && snapshot.counts().queuedTasks() > 0
                     && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());

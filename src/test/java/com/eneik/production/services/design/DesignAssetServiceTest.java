@@ -274,6 +274,42 @@ class DesignAssetServiceTest {
         assertThat(report.producerTokens()).contains("#fbf9f1", "#7d8570");
     }
 
+    @Test
+    void whenDeclaredTokensProvidedAndScreenIsSpaShellWithoutStylesPassesAsUnauditedWithoutAestheticDriftRejection() throws Exception {
+        // Prescription 28 residual fence (CANNOT_JUDGE / UNDECIDABLE):
+        // If an SPA shell has no extractable CSS tokens, the audit returns CANNOT_JUDGE.
+        // It must NOT be rejected as "aesthetic_drift" (which was false red burning generation budget).
+        // Instead, it passes through as an un-audited screen with auditVerdict="CANNOT_JUDGE" recorded in metadata.
+        when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
+        when(stitchClient.hasStitchKey()).thenReturn(true);
+        when(stitchClient.createProject(anyString())).thenReturn("123456");
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), eq("ds-42")))
+                .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
+        // Raw SPA shell with no CSS styles
+        when(stitchClient.download("https://example.com/html"))
+                .thenReturn("<!DOCTYPE html><html><body><div id=\"root\"></div><script src=\"app.js\"></script></body></html>".getBytes());
+        when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
+
+        DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
+                project, null, "A login screen", "mockup", "fast", false, "ds-42",
+                java.util.List.of("#fbf9f1", "#7d8570"), java.util.List.of("IBM Plex Sans")
+        );
+
+        // Crucial falsification assertion: must NOT be rejected as aesthetic_drift
+        assertThat(result.available()).isTrue();
+        assertThat(result.status()).isEqualTo("ok");
+        assertThat(result.model()).isEqualTo("stitch");
+        verify(gitHubPullRequestService).commitFile(eq(project), contains("mockup.html"), any(), anyString());
+
+        // Metadata records CANNOT_JUDGE verdict
+        assertThat(result.metadataPath()).isNotBlank();
+        String metadataContent = java.nio.file.Files.readString(java.nio.file.Paths.get(result.metadataPath()));
+        var node = new ObjectMapper().readTree(metadataContent);
+        assertThat(node.path("auditVerdict").asText()).isEqualTo("CANNOT_JUDGE");
+        assertThat(node.path("auditVerdictDisplay").asText()).isEqualTo("не могу судить");
+    }
+
     private String base64Png() {
         return java.util.Base64.getEncoder().encodeToString(new byte[]{1, 2, 3});
     }

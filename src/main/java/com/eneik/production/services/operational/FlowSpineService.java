@@ -409,7 +409,9 @@ public class FlowSpineService {
         long queued = countStatus(tasks, TaskStatus.queued);
         long active = tasks.stream().filter(task -> Set.of(TaskStatus.claimed, TaskStatus.in_progress).contains(task.getStatus())).count();
         long review = tasks.stream().filter(task -> Set.of(TaskStatus.pending_review, TaskStatus.review).contains(task.getStatus())).count();
-        long done = countStatus(tasks, TaskStatus.done) + countStatus(tasks, TaskStatus.spike_completed);
+        long doneTotal = countStatus(tasks, TaskStatus.done);
+        long spikeCompletedTotal = countStatus(tasks, TaskStatus.spike_completed);
+        long done = doneTotal + spikeCompletedTotal;
         // 2026-08-18: count only failed tasks the named resolver for this state can ever act on. The
         // transition row below names PlannedWorkRecoveryService as the resolver for
         // BLOCKED_BY_FAILED_FRONTIER, and that service declares its own domain in
@@ -440,6 +442,7 @@ public class FlowSpineService {
         java.util.Map<java.util.UUID, WishlistEntity> briefById = wishlist.stream()
                 .collect(java.util.stream.Collectors.toMap(WishlistEntity::getId, item -> item, (a, b) -> a));
         long failed = countFailedTheResolverCanAct(tasks, briefById);
+        long failedTotal = countStatus(tasks, TaskStatus.failed);
         long blocked = countStatus(tasks, TaskStatus.blocked);
         // Charter invariant 8: an element that can structurally never reach done leaves the denominator,
         // or any code deciding on this metric blocks silently. A brief whose budget is spent AND which
@@ -621,7 +624,8 @@ public class FlowSpineService {
                 reviewTasksWithoutArtifact, failingReviewComposition, failingReviews,
                 qualityGatePassed, qualityGateFailed, readiness.totalFeatures(), readiness.completeFeatures(),
                 readiness.totalDeliverables(), readiness.mergedDeliverables(), readiness.decompositionComplete(),
-                systemStatus, duplicateContent, clientAcceptanceTraversals);
+                systemStatus, duplicateContent, clientAcceptanceTraversals,
+                failedTotal, doneTotal, spikeCompletedTotal);
     }
 
     private FlowSpineDto.Transition nextTransition(String state, StateInputs input) {
@@ -734,12 +738,15 @@ public class FlowSpineService {
                 input.reviewTasks(),
                 input.doneTasks(),
                 input.failedTasks(),
+                input.failedTasksTotal(),
                 input.blockedTasks(),
                 input.totalFeatures(),
                 input.completeFeatures(),
                 input.totalDeliverables(),
                 input.mergedDeliverables(),
-                input.decompositionComplete()
+                input.decompositionComplete(),
+                input.doneTasksTotal(),
+                input.spikeCompletedTasks()
         );
     }
 
@@ -1211,8 +1218,47 @@ public class FlowSpineService {
             boolean decompositionComplete,
             String systemStatus,
             boolean duplicateContentDetected,
-            int clientAcceptanceTraversals
+            int clientAcceptanceTraversals,
+            long failedTasksTotal,
+            long doneTasksTotal,
+            long spikeCompletedTasks
     ) {
+        public StateInputs(
+                ProjectStatus projectStatus,
+                long queuedTasks,
+                long activeTasks,
+                long reviewTasks,
+                long doneTasks,
+                long failedTasks,
+                long blockedTasks,
+                long pendingWishlist,
+                long compilingWishlist,
+                long openSessions,
+                int mergedReviews,
+                int openReviews,
+                long reviewTasksWithoutArtifact,
+                String failingReviewComposition,
+                int failingReviews,
+                int qualityGatePassed,
+                int qualityGateFailed,
+                int totalFeatures,
+                int completeFeatures,
+                int totalDeliverables,
+                int mergedDeliverables,
+                boolean decompositionComplete,
+                String systemStatus,
+                boolean duplicateContentDetected,
+                int clientAcceptanceTraversals
+        ) {
+            this(projectStatus, queuedTasks, activeTasks, reviewTasks, doneTasks, failedTasks, blockedTasks,
+                    pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews,
+                    reviewTasksWithoutArtifact, failingReviewComposition, failingReviews,
+                    qualityGatePassed, qualityGateFailed, totalFeatures, completeFeatures,
+                    totalDeliverables, mergedDeliverables, decompositionComplete,
+                    systemStatus, duplicateContentDetected, clientAcceptanceTraversals,
+                    failedTasks, doneTasks, 0L);
+        }
+
         public StateInputs(
                 ProjectStatus projectStatus,
                 long queuedTasks,
@@ -1249,6 +1295,10 @@ public class FlowSpineService {
 
         public boolean hasClientAcceptanceTraversal() {
             return clientAcceptanceTraversals > 0;
+        }
+
+        public long failedTasksRecoveryCanResume() {
+            return failedTasks;
         }
     }
     /**

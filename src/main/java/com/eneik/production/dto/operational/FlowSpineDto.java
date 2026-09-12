@@ -1,5 +1,9 @@
 package com.eneik.production.dto.operational;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -85,14 +89,31 @@ public record FlowSpineDto(
             long activeTasks,
             long reviewTasks,
             long doneTasks,
-            long failedTasks,
+            @JsonProperty("failedTasksRecoveryCanResume")
+            @JsonAlias("failedTasks")
+            long failedTasksRecoveryCanResume,
+            @JsonProperty("failedTasksTotal")
+            long failedTasksTotal,
             long blockedTasks,
             int totalFeatures,
             int completeFeatures,
             int totalDeliverables,
             int mergedDeliverables,
-            boolean decompositionComplete
+            boolean decompositionComplete,
+            @JsonProperty("doneTasksTotal")
+            long doneTasksTotal,
+            @JsonProperty("spikeCompletedTasks")
+            long spikeCompletedTasks
     ) {
+        /**
+         * @deprecated Use {@link #failedTasksRecoveryCanResume()} for resolver-actionable failed tasks,
+         * or {@link #failedTasksTotal()} for the unpartitioned raw status count.
+         */
+        @Deprecated
+        @JsonIgnore
+        public long failedTasks() {
+            return failedTasksRecoveryCanResume;
+        }
     }
 
     public record FlowInvariant(

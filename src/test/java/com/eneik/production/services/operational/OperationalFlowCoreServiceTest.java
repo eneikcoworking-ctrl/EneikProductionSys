@@ -148,7 +148,7 @@ class OperationalFlowCoreServiceTest {
                 List.of(new FlowSpineDto.ForbiddenTransition("BLOCKED_BY_REVIEW", "MERGED",
                         "Failing/conflicted PR evidence cannot be promoted.")),
                 new FlowSpineDto.EvidenceVector(0, 0, 0, 0, 0, 0, 0, 0, "ok", false),
-                new FlowSpineDto.FlowCounts("QUEUED".equals(state) ? 1 : 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, true),
+                new FlowSpineDto.FlowCounts("QUEUED".equals(state) ? 1 : 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, true, 0, 0),
                 List.of(new FlowSpineDto.FlowInvariant("single_current_state", "pass",
                         "Every project maps to exactly one flow state.", "test evidence")),
                 new FlowSpineDto.JournalSummary(null, null, null, null,

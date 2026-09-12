@@ -492,7 +492,10 @@ public class DesignAssetService {
                 log.info("DesignAssetService: consistency audit traceRatio={} crossScreenJaccard={} offTokens={} declaredTokens={} producerTokens={}",
                         consistencyReport.traceRatio(), consistencyReport.avgCrossScreenJaccard(), consistencyReport.offTokenValues(),
                         consistencyReport.declaredTokens(), consistencyReport.producerTokens());
-                if (!consistencyReport.traceAccepted()) {
+                if (consistencyReport.isCannotJudge()) {
+                    log.info("DesignAssetService: visual consistency cannot be judged (verdict={}: {}). Passing screen as un-audited without aesthetic rejection.",
+                            consistencyReport.verdict(), consistencyReport.verdictReason());
+                } else if (!consistencyReport.traceAccepted()) {
                     return new DesignAssetResult(false, "aesthetic_drift", "stitch", htmlPath, "", "text/html",
                             String.format(Locale.ROOT,
                                     "Screen rejected: token_trace_ratio=%.3f below required %.2f. Off-token values: %s. Declared tokens: %s. Producer tokens: %s",
@@ -516,6 +519,9 @@ public class DesignAssetService {
             metadata.put("htmlPath", htmlPath);
             metadata.put("designSystemId", designSystemId == null ? "" : designSystemId);
             if (consistencyReport != null) {
+                metadata.put("auditVerdict", consistencyReport.verdict() == null ? "" : consistencyReport.verdict().name());
+                metadata.put("auditVerdictDisplay", consistencyReport.displayVerdict());
+                metadata.put("auditVerdictReason", consistencyReport.verdictReason());
                 metadata.put("tokenTraceRatio", consistencyReport.traceRatio());
                 metadata.put("crossScreenJaccard", consistencyReport.avgCrossScreenJaccard());
                 var declaredArr = metadata.putArray("declaredTokens");

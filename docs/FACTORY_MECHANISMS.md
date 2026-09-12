@@ -2651,14 +2651,14 @@ HTML продукта и потому видит пустоту. **Он его �
 уровне **доставленного** HTML. Переход между уровнями не сделан. Я совершил ту же ошибку в этом же такте,
 пытаясь судить о дизайне по ответу сервера, — и потому знаю ей цену.
 
-*Делать.*
-1. **Эталон обязан кто-то создавать.** Сравнение дрейфа ждёт `per-project design-system baseline`; ни один
-   механизм его не производит. Либо назвать производителя эталона, либо признать дрейф неработающим и убрать
-   загрузку страницы: сейчас это расход без вывода.
-2. **Мерить нарисованное, а не отданное.** Аудит токенов обязан работать по исходникам экранов в репозитории
-   клиента либо по странице после исполнения скрипта. По ответу сервера SPA он не даст верного ответа ни при
-   каком качестве дизайна.
-3. **Пока не сделано — статусы обоих держать «не мерено».**
+*Делать (с учётом замеров живой фабрики 2026-09-12):*
+1. **Производитель эталона есть, но не срабатывает из-за внешнего сервиса, а монитор не имел к нему доступа (`LEVEL_OF_ABSTRACTION_LOCK` / D010):**
+   В коде производитель эталона заложен — `DesignShopOrchestrationService.captureBaseline` извлекает токены первого сгенерированного экрана (`extractUsedTokens(mockup.html)`) и сохраняет их в `DesignShopCycleEntity` (`declaredColors`, `declaredFonts`). На живой фабрике зафиксировано 0 захватов эталона из-за регулярных отказов внешнего сервиса Stitch (`Stitch generate_screen_from_text call failed`, 16 предупреждений). При этом `DesignDriftMonitorService` не содержал ссылки на `DesignShopCycleRepository` и даже при наличии эталона не мог его прочесть.
+   Решение: монитору дрейфа внедрён репозиторий `DesignShopCycleRepository`. При отсутствии эталона сетевой запрос загрузки страницы (`launcherClient.fetchHtml`) пропускается, устраняя муду. При наличии эталона живая страница сравнивается с объявленным эталоном.
+2. **Трёхзначный статус и ликвидация ложно-зелёного исхода (`FALSIFICATION_HARNESS` / D008 + `TRUTH_STATUS_TABLE` / D012):**
+   В `DesignConsistencyAuditService.traceRatio` при пустом наборе токенов (`usedAll.isEmpty()`) метод тривиально возвращал 1.0 (и `jaccard` возвращал 1.0), то есть пустая серверная оболочка SPA без стилей ошибочно принималась за идеальное соответствие дизайн-системе.
+   Решение: введён трёхзначный статус `AuditVerdict`: `ACCEPTED`, `REJECTED`, `CANNOT_JUDGE` (`UNDECIDABLE`, «не могу судить»). Для пустой HTML-оболочки SPA без стилей возвращается `CANNOT_JUDGE`, `traceAccepted = false`, `traceRatio = 0.0`.
+3. **Статус:** устранено и заслонено тестами (19/19 в дизайн-системе, 92/92 в расширенной регрессии).
 
 *Заслон:* тест, подающий аудиту HTML-оболочку SPA без стилей и требующий вердикта «не могу судить», а не
 «ноль токенов».
@@ -2670,25 +2670,30 @@ HTML продукта и потому видит пустоту. **Он его �
    - В `DesignDriftMonitorService` внедрена зависимость от `DesignShopCycleRepository`. Производителем эталона выступает `DesignShopOrchestrationService.captureBaseline`, фиксирующий `declaredColors` и `declaredFonts` в `DesignShopCycleEntity` на первом проходе дизайна.
    - Если эталон для проекта ещё не зафиксирован (нет записи в `design_shop_cycles` либо `declaredColors` пуст), сервис **не вызывает сетевой запрос загрузки HTML** (`launcherClient.fetchHtml`), устранив паразитный расход памяти и сети (~70 КБ на каждом такте наблюдения).
    - Если эталон зафиксирован, сервис загружает живой HTML и выполняет аудит против объявленных токенов проекта (`DesignConsistencyAuditService.TokenSet.of(cycle.declaredColorsList(), cycle.declaredFontsList())`). Сравнение дрейфа переведено из фиктивного статуса в реально исполняемый.
+   - Конструктор монитора с `null`-репозиторием явно логирует `"designShopCycleRepository is not configured on this monitor instance"`, отделяя ненастроенный репозиторий от отсутствия эталона в БД.
 2. **Трёхзначный статус и преодоление разрыва уровней абстракции (`LEVEL_OF_ABSTRACTION_LOCK` / D010 + `TRUTH_STATUS_TABLE` / D012):**
    - Устранена категориальная ошибка и ложно-зелёный статус (`emptyHtmlTrivializesToAcceptedWithNoTokens`), при котором пустой HTML или оболочка SPA без стилей тривиально получали `traceRatio = 1.0` и `traceAccepted = true`.
    - Введён типизированный вердикт `AuditVerdict`: `ACCEPTED` («принято»), `REJECTED` («отвергнуто»), `CANNOT_JUDGE` («не могу судить»).
    - В `DesignConsistencyAuditService.audit`: если переданный HTML не содержит визуальных токенов в CSS (`used.all().isEmpty()`, например, серверная оболочка SPA `<!DOCTYPE html><html><body><div id="root"></div><script src="..."></script></body></html>` без inline-стилей), сервис возвращает вердикт `CANNOT_JUDGE` с пояснением `"не могу судить: нет визуальных токенов в HTML/CSS (HTML-оболочка SPA без стилей)"`, `displayVerdict = "не могу судить"`, `traceAccepted = false`, `traceRatio = 0.0`.
    - Аналогично, при отсутствии объявленного эталона аудит возвращает `CANNOT_JUDGE` («не могу судить: отсутствует эталон дизайн-системы»).
-3. **Заслоны (19/19 зелёные, расширенный регрессионный прогон 92/92):**
+   - **Устранение остатка в `DesignAssetService:495`:** при `consistencyReport.isCannotJudge()` сервис не отвергает экран как `aesthetic_drift` (что приводило к сжиганию бюджета генераций), а пропускает его как неаудированный экран с фиксацией вердикта `CANNOT_JUDGE` («не могу судить») в метаданных `.json`.
+3. **Заслоны (30/30 зелёные в модуле дизайна, 83/83 в расширенном прогоне):**
    - `DesignConsistencyAuditServiceTest` (13/13):
      - `spaShellWithoutStylesReturnsCannotJudgeVerdictAndNeverClaimsAccepted`: оболочка SPA без инлайн-стилей даёт вердикт `CANNOT_JUDGE`, `displayVerdict = "не могу судить"`, `isCannotJudge() = true`, `traceAccepted = false`, `traceRatio = 0.0`.
      - `emptyHtmlReturnsCannotJudgeVerdictAndNeverClaimsAccepted`: пустой HTML возвращает `CANNOT_JUDGE`, `displayVerdict = "не могу судить"`.
      - `auditWithoutDeclaredBaselineReturnsCannotJudgeVerdict`: отсутствие эталона возвращает `CANNOT_JUDGE`.
-   - `DesignDriftMonitorServiceTest` (6/6):
+   - `DesignDriftMonitorServiceTest` (7/7):
+     - `skipsFetchWhenRepositoryNotConfigured`: при ненастроенном репозитории сетевой fetch не вызывается и пишется явный лог.
      - `skipsFetchAndComparisonWhenProjectHasNoEstablishedBaseline`: при отсутствии эталона сетевой `fetchHtml` не вызывается вовсе (`verifyNoInteractions(launcherClient)`), ликвидируя муду.
      - `whenBaselineExistsAndLivePageIsSpaShellDriftComparisonCannotBeJudgedWithoutFalseFailure`: при наличии эталона и оболочке SPA без стилей аудит возвращает `CANNOT_JUDGE` без ложного срабатывания дефекта и без ложного успеха.
      - `whenBaselineExistsAndLivePageHasMatchingTokensComparisonSucceeds`: успешное сравнение дрейфа при наличии эталона и совпадении токенов.
      - `whenBaselineExistsAndLivePageDriftsLogsWarning`: обнаружение дрейфа при несовпадении токенов.
+   - `DesignAssetServiceTest` (10/10):
+     - `whenDeclaredTokensProvidedAndScreenIsSpaShellWithoutStylesPassesAsUnauditedWithoutAestheticDriftRejection`: при объявленных токенах экран-оболочка SPA без стилей возвращает `CANNOT_JUDGE`, коммитится в репозиторий проекта и не отвергается как `aesthetic_drift`.
 
 ---
 
-### 29. Поле `failedTasks` в общедоступном своде значит не то, что говорит · `SENSE_REFERENCE_SPLIT` (D009) + `CONVERSATION_MAXIM` (D007)
+### 29. Поле `failedTasks` в общедоступном своде значит не то, что говорит · `SENSE_REFERENCE_SPLIT` (D009) + `CONVERSATION_MAXIM` (D007) · **СДЕЛАНО (держится)**
 
 *Замер.* `GET /flow-spine` отдаёт `failedTasks = 0`. `GET /internal/tasks/status-counts` по тому же проекту
 отдаёт `failed = 83`. Оба читают одну таблицу, и оба правы: свод считает **только те провалившиеся задачи, с
@@ -2729,6 +2734,27 @@ HTML продукта и потому видит пустоту. **Он его �
 
 *Опровержение:* сравнить два эндпоинта на одном проекте. Расхождение при одинаково звучащих именах — пункт не
 сделан.
+
+*Устранено и заслонено 2026-09-12 (Такт 34, предписание 29 закрыто):*
+1. **Разведение сущностей и понятий (`SENSE_REFERENCE_SPLIT` / D009 + `CONVERSATION_MAXIM` / D007):**
+   - В `FlowSpineDto.FlowCounts` поле, считающее задачи, доступные для возобновления решателем (`countFailedTheResolverCanAct`), переименовано в `failedTasksRecoveryCanResume`.
+   - Добавлен счётчик `failedTasksTotal`, равный числу всех задач проекта со статусом `TaskStatus.failed`. Тем самым устранено противоречие между `GET /flow-spine` и `GET /internal/tasks/status-counts` (оба теперь возвращают одинаковое число суммарных провалов под явными именами).
+   - В `FlowCounts` также разведены агрегатные выполненные задачи `doneTasks` (`done + spike_completed`), точный счётчик задач со статусом `TaskStatus.done` (`doneTasksTotal`) и задач со статусом `TaskStatus.spike_completed` (`spikeCompletedTasks`).
+    - Для сериализации Jackson использованы аннотации: `@JsonProperty("failedTasksRecoveryCanResume")`, `@JsonAlias("failedTasks")` (для обратной совместимости при десериализации старых DTO), `@JsonProperty("failedTasksTotal")`, `@JsonProperty("doneTasksTotal")`, `@JsonProperty("spikeCompletedTasks")`.
+    - Добавлен метод обратной совместимости `@Deprecated @JsonIgnore public long failedTasks() { return failedTasksRecoveryCanResume; }`, гарантирующий, что в JSON не публикуется амбивалентное поле `"failedTasks": 0`.
+    - **Полная ликвидация конструкторов совместимости (`SENSE_REFERENCE_SPLIT` / D009):** устаревшие 11- и 12-аргументные конструкторы `FlowCounts`, которые неявно подставляли узкий счёт в общее поле и обнуляли счётчики спайков, полностью удалены из кодовой базы. Во всём `src/main` и `src/test` вызовы переведены на единственный канонический 14-аргументный конструктор.
+2. **Адаптация внутреннего ядра конвейера:**
+    - В `FlowSpineService.StateInputs` добавлены поля `failedTasksTotal`, `doneTasksTotal`, `spikeCompletedTasks` и акцессор `failedTasksRecoveryCanResume()`. Счётчики считаются in-memory по загруженному списку `tasks` (ноль дополнительных запросов к БД).
+    - `OperationalPolicyService:159` (`RECOVER_FAILED_FRONTIER`) переведён на `snapshot.counts().failedTasksRecoveryCanResume() > 0`.
+    - Текст условия в матрице переходов `FlowSpineService` обновлён на `"failedTasksRecoveryCanResume > 0 and no live work"`.
+3. **Заслоны (27/27 в `FlowSpineServiceTest`, 53/53 в операционном контуре, 83/83 в сводном прогоне):**
+    - `prescription29SenseReferenceSplitDistinguishesTotalFailedFromRecoveryResumable`:
+      - Для проекта с 5 упавшими задачами (2 возобновимые, 1 исчерпавшая бюджет, 1 на карантине, 1 без брифа) проверяет, что `failedTasksTotal == 5`, а `failedTasksRecoveryCanResume == 2`.
+      - Для выполненных задач (2 `done`, 1 `spike_completed`) проверяет `doneTasks == 3`, `doneTasksTotal == 2`, `spikeCompletedTasks == 1`.
+      - Проверяет JSON-сериализацию Jackson: в JSON присутствуют `"failedTasksTotal":5`, `"failedTasksRecoveryCanResume":2`, `"doneTasksTotal":2`, `"spikeCompletedTasks":1`, и отсутствует вводящее в заблуждение `"failedTasks":`.
+      - Проверяет обратную десериализацию старого JSON с полем `"failedTasks": 7` в `failedTasksRecoveryCanResume == 7`.
+      - Структурный рефлексивный заслон: `FlowCounts.class.getConstructors().length == 1` и `getParameterCount() == 14` — гарантирует отсутствие перегруженных конструкторов, тихо возвращающих категориальную ошибку.
+    - В существующих тестах (`aFailedTaskPastItsOnlyResumeNoLongerHoldsTheFrontierClosed`, `aFailedTaskWithItsResumeStillUnspentHoldsTheFrontierClosed`, `aFailedTaskTheResolverWillNeverTouchDoesNotHoldTheFrontierClosed`) добавлены прямые утверждения на согласованность `failedTasksTotal` и `failedTasksRecoveryCanResume`.
 
 ---
 
