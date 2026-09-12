@@ -802,111 +802,143 @@ first and keep these invariants green.
 
 # VI. Суждение
 
-**Общий суд по разделу.** Философски самая зрелая часть фабрики и самая **бездействующая**. Решётка честна до
-редкости: трёхзначность вместо двузначности, объявление предмета до суждения, обязанность воздержаться при
-невозможности обосновать. И при этом связи показывают: **у всех пяти слоёв ноль вызывающих** — их собирает
-Spring, единственный потребитель `VerdictReconciliation` — `VerdictGate`, а его зовёт **дашборд**. То есть
-самый строгий судья системы слышен только тогда, когда кто-то откроет экран.
+## Семейство: решётка суждения, слой опровержений и продвижение рычагов
 
-**`VerdictLayer`**, **`Verdict`**, **`Judgement`**, **`VerdictReconciliation`**, **`VerdictGate`** — решётка:
-слой объявляет **заранее** конечный набор утверждений, о которых судит, и лишь затем судит.
-*Связи:* пять реализаций собираются Spring; `VerdictReconciliation` → `VerdictGate` → дашборд.
-*Ценность:* область суждения не растёт по ходу — условие Баркан, по которому фабрика названа.
-*Комментарий:* **ядро по назначению, периферия по действию.** Трёхзначность заложена в тип, а не введена
-руками, как её пришлось вводить в двух других местах за смену. Это разница между продуманным и написанным по
-случаю.
-*Философия:* `TRUTH_STATUS_TABLE` (D012) — **сильная** по устройству. Опровержение: найти вызывающего,
-округлившего «не установлено» до «в порядке».
+*Строгая запись семейства. Семейство взято целиком: оно решает, когда фабрика имеет право утверждать
+`разрешено`, `удержать`, `воздержаться`, когда модель вообще зовётся к суду, и когда новый решающий рычаг
+может получить живое влияние.*
 
-**`AcceptanceVerdictLayer`** — видел ли **заплативший** купленное в работе?
-*Связи:* вызывающих нет; зовёт корпус рынка и вердикт.
-*Ценность:* каждый ценностный путь корпуса описывает дорогу конечного пользователя, и ни один — дорогу
-покупателя.
-*Комментарий:* **ядро.** Самый глубокий вопрос системы: фабрика доходила до «сдано» по числу слияний, то есть
-**подменяла утверждение о показанном утверждением о построенном**. Та же подстановка, что «готово» вместо
-«доставлено», но уровнем выше и дороже: там теряется задача, здесь сделка.
-*Философия:* `SUBSTITUTION_ORACLE` (D009) — **сильная** по предмету, **не мерена** по читателю.
-Опровержение: назвать решение, изменённое его вердиктом.
+**Имена механизма или семейства:** `VerdictLayer`, `Verdict`, `Judgement`, `VerdictReconciliation`,
+`VerdictGate`, `VerdictController`, `AutonomousVerdictObservationService`, `AcceptanceVerdictLayer`,
+`RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`,
+`JudgmentAgentClient`, `FactoryJudgmentService`, `DeliveredWorkJudgmentService`, `CriteriaEvidenceSelector`,
+`LeverPromotionService`, `LeverStage`, `LeverAgreement`, `LeverObservation`, `LeverPromotionStateEntity`,
+`LeverObservationRepository`, `LeverPromotionStateRepository`.
 
-**`RuntimeVerdictLayer`** — работает ли поставленный продукт на самом деле?
-*Связи:* вызывающих нет; зовёт транспорт GitHub и вердикт.
-*Ценность:* фабрика однажды сама нашла два дефекта сборки, оба починила и **не пересмотрела вердикт** — весь
-день философия подчинялась замеру, снятому до починок.
-*Комментарий:* **ядро.** **Хранимое «упало» выдавалось за текущий факт** — зеркало главного дефекта системы:
-там объявленный успех принимался без проверки, здесь объявленная неудача.
-*Философия:* `RELIABILITY_CHAIN` (D010) — **сильная** после починки. Опровержение: назвать возраст вердикта
-о запуске.
+**Философский паттерн:** основной паттерн `KARL_POPPER_03_TRUTH_STATUS_TABLE` / D012: истинно, ложно и
+не установлено должны быть разными состояниями, а не булевым удобством. Для вызова модели применяется
+`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008: судить только по опровержению, не по календарю. Для свежести
+свидетельства и уровней применяется `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010 и
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010. Для отбора промпта и пропущенных файлов применяется
+`ELVIN_GOLDMAN_11_CONVERSATION_MAXIM` / D007. Для пересмотра стадии рычага применяется
+`PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` / D007 и общий `ACP-061 Hoare Triple Review`.
 
-**`DoctrineVerdictLayer`** — что говорят тринадцать ролевых доктрин.
-*Связи:* вызывающих нет; зовёт метрики и вердикт.
-*Ценность:* тринадцать независимых мнений о состоянии проекта.
-*Комментарий:* **ядро по назначению, живой пример муды по действию.** Слой писал «отказано», две роли
-возражали прямо, семь мягко — а конвейер отправлял задачи и рапортовал 82% готовности. **Слой, созданный
-удерживать приёмку, удерживал её в пустоту.** Это и есть определение муды для судящего механизма: не «неверно
-судит», а «судит, и никто не слышит».
-*Философия:* `TELEOSEMANTIC_FEEDBACK` (D011) — **слабая**. Опровержение: привести слой к отказу и посмотреть,
-изменилось ли хоть одно действие.
+**Связи:** пять `VerdictLayer`-реализаций собираются Spring и читаются `VerdictReconciliation`.
+`VerdictController` отдаёт `/api/projects/{projectId}/verdict`. `CommandDashboardService` зовёт
+`VerdictGate.constrain` для readiness-отчёта. `OperationalPolicyService` зовёт
+`VerdictGate.evaluateActionProhibition`, а `ProjectFlowService` зовёт `evaluateTaskProhibition` перед
+отправкой очередной задачи. `AutonomousVerdictObservationService` читает `VerdictReconciliation` и пишет
+новые или изменившиеся отказы в `DefectJournalService`. `FactoryJudgmentService` по расписанию читает только
+непрочитанные переходы инвариантов и зовёт `JudgmentAgentClient`; findings попадают в `KaizenService`.
+`DeliveredWorkJudgmentService` вызывается из `ContinuousOrchestrationService`, читает задачу, PR и diff,
+пишет verdict в `TaskEntity.payload`, а при `REFUTED` создаёт `WishlistEntity`. `JudgmentAgentClient` перед
+передачей текста через sidecar вызывает `CriteriaEvidenceSelector`. `LeverPromotionService` получает
+наблюдения от TOC, аккаунтов, Six Sigma, Flow Spine и Kaizen, пишет `lever_observations` и
+`lever_promotion_state`.
 
-**`InfrastructureVerdictLayer`** — в состоянии ли **сама фабрика** давать осмысленные ответы о продукте?
-*Связи:* вызывающих нет; зовёт самодиагностику фабрики.
-*Ценность:* запускатель лежал, и никто не сказал; философия подчинена запускаемости, значит она либо
-пропускалась, либо шла вслепую.
-*Комментарий:* **ядро.** Философски необходимый слой, которого почти нигде не бывает: прежде чем судить о
-предмете, проверь исправность инструмента. Отдельно записано, что именно у запускателя **не было блока
-healthcheck вовсе** — то есть отсутствие проверки и было причиной.
-*Философия:* `SELF_MODEL_SANITY` (D013) — **сильная**. Опровержение: погасить зависимость и посмотреть,
-изменился ли вердикт.
+**Идеальная форма:** судящий механизм сначала объявляет предмет суждения, потом судит; отсутствие
+свидетельства становится `ABSTAIN`, а не разрешением; отказ становится `WITHHOLD` с причиной и кодом, а не
+текстовой догадкой. Сведение слоёв монотонно: новый слой может только сохранить или сузить разрешение.
+Модель вызывается только когда есть durable refutation, а не чтобы подтвердить нормальность. Delivery-суд
+решает только delivery, factory-суд решает только factory, runtime/acceptance/doctrine/infrastructure/six-sigma
+не смешиваются. Рычаг получает живую власть только после свежих разрешённых наблюдений и теряет её при первом
+реальном несогласии.
 
-**`SixSigmaVerdictLayer`** — качество процесса; слой, обязанный **воздержаться**, а не назвать число.
-*Связи:* вызывающих нет; зовёт только вердикт.
-*Ценность:* необоснованное число неотличимо от обоснованного и портит всё, что на него обопрётся.
-*Комментарий:* **периферия; и самый честный механизм системы.** Он мог бы выдать число и был бы «полезнее».
-*Философия:* `TRUTH_STATUS_TABLE` (D012) — **сильная**, третий исход исполнен буквально.
+**Граница:** это механизм суждения и продвижения доверия, а не механизм создания клиентской ценности. Он не
+принимает работу за клиента, не чинит продукт, не переписывает задачи и не решает вместо гейтов доставки.
+`VerdictGate` имеет право понизить readiness или запретить действие, но не имеет права добавить разрешение,
+которого не было. Recovery-dispatch остаётся разрешённым, когда запрет существует именно для восстановления.
+`DeliveredWorkJudgmentService` пишет verdict и refutation-work, но не блокирует уже совершённый переход.
 
-**`JudgmentAgentClient`** — одно ограниченное суждение по одному опровержению.
-*Связи:* вызывают трое судящих; зовёт отбор свидетельства.
-*Ценность:* суждение на подписке, а не на потокенном ключе.
-*Комментарий:* **периферия.** Урок о том, как обещание в плане подменяет замер: первая версия звала метрический
-API, а план обещал «плоскую цену». **Замена одного счётчика другим не была улучшением**, и это выяснилось лишь
-настоящим вызовом.
-*Философия:* `DECISION_EXPECTED_LOSS` (D005) — **сильная**. Опровержение: назвать цену вызова и её источник.
+**Входы:** declared propositions каждого слоя; клиентские acceptance traversal-записи; market corpus и
+client brief; runtime observations и свежесть относительно `main`; doctrine metrics и роли; health-пробы
+launcher/ML/DB; настройки `verdict_gating_enabled`, `verdict_gating_project_slug`,
+`judgment_agent_enabled`, лимиты prompt/diff/cycle; invariant status transitions; task acceptance criteria,
+PR URL, diff и список файлов репозитория; lever key, subject id, incumbent/candidate decision,
+ground-truth outcome и stage state.
 
-**`FactoryJudgmentService`** — суждение, движимое **опровержением**, а не часами.
-*Связи:* вызывающих нет — идёт по расписанию; зовёт клиента суждения и кайдзен.
-*Ценность:* подтверждений сорок в день, они бесплатны и ничего не сообщают; опровержений около трёх, и каждое
-информативно.
-*Комментарий:* **периферия; лучшее приложение Поппера во всём коде.** Модель зовут на опровержение, а не по
-расписанию — прямая экономия дорогого ресурса, выведенная из философии, а не из бюджета.
-*Философия:* `FALSIFICATION_HARNESS` (D008) — **сильная**. Опровержение: найти вызов модели, сделанный по
-таймеру, а не по опровержению.
+**Выходы:** `VerdictReconciliation.Reconciliation(advance, debt, refusals, constraint, judgements)`;
+`VerdictGate.Decision` и `ActionProhibition`; HTTP-ответ verdict endpoint; defect journal записи новых или
+изменившихся отказов; `judged_at` у invariant transition; systemic defect proposal в Kaizen; acceptance
+verdict/reason/timestamp/silence counters в `TaskEntity.payload`; `delivery_refuted` wishlist; строки
+`lever_observations`; текущая стадия в `lever_promotion_state`.
 
-**`DeliveredWorkJudgmentService`** — удовлетворяет ли слитый diff тому утверждению, на котором задача обещала
-проверяться?
-*Связи:* вызывает общий тик; зовёт 8; пишет `TaskRepository`, `WishlistRepository`.
-*Ценность:* двадцать шесть задач, тринадцать слитых PR, **ноль проверенных доставок** — самый громкий замер в
-истории системы.
-*Комментарий:* **ядро.** Диагноз точен: **гейты были не слабы, они были недостижимы.** Разница существенная:
-слабый гейт чинят ужесточением, недостижимый — только тем, что ставят на путь, по которому работа идёт.
-*Философия:* `CONSTRUCTIVE_PROOF_OBJECT` (D007) — **сильная**. Опровержение: слить diff, не отвечающий
-критерию задачи, и посмотреть, признана ли доставка.
+**Владельцы истины и состояния:** `Judgement` владеет слоем, proposition, verdict, reason, evidence и
+reasonCode. `Verdict` владеет трёхзначной конъюнкцией. `VerdictReconciliation` владеет агрегатом слоёв.
+Факты приёмки клиента живут в acceptance traversal storage, runtime-факты в `ClientRuntimeObservationRepository`
+и GitHub main freshness, doctrine-факты в `EmsMetricsService`, инфраструктура в health/probe-сервисах, дефекты
+в `DefectJournalService`, invariant transitions в `InvariantStatusChangeRepository`, delivery-verdict в
+`TaskEntity.payload`, delivery findings в `WishlistRepository`, рычаги в `lever_observations` и
+`lever_promotion_state`.
 
-**`CriteriaEvidenceSelector`** — закон 17: судить по механически обрезанному свидетельству нельзя.
-*Связи:* вызывают двое судящих; ничего не зовёт.
-*Ценность:* обрезание по длине есть выбор свидетельства по положению, а не по отношению к делу.
-*Комментарий:* **ядро (суждение).** Куски diff режутся по границам файлов, порядок сохраняется, **пропущенное
-называется** — последнее важнее всего: названное пропущенное остаётся проверяемым.
-*Философия:* `CONVERSATION_MAXIM` (D007) — **сильная**. Опровержение: найти суждение, где пропущенное не
-названо.
+**Инварианты:** (1) declared proposition без ruling становится debt; (2) exception слоя становится видимым
+`ABSTAIN`, а не исчезает; (3) `WITHHOLD` доминирует, `ABSTAIN` блокирует, `PERMIT` возникает только из всех
+`PERMIT`; (4) empty lattice не может сама стать основанием для gate-разрешения; (5) gate только вычитает
+разрешение и scoped by flag/project; (6) action prohibition использует typed reasonCode, не substring prose;
+(7) refutation row помечается `judged_at` только после ruling или осознанного `UNJUDGEABLE`; `UNAVAILABLE`
+оставляет строку для retry; (8) mechanically truncated evidence must name what was omitted; (9) fresh lever
+starts `observe_only`; one promotion consumes evidence only once; real disagreement demotes immediately.
 
-**`LeverPromotionService`**, **`LeverStage`**, **`LeverAgreement`** — лестница продвижения решателя.
-*Связи:* вызывают 5 механизмов, включая здоровье аккаунта и хребет потока.
-*Ценность:* новый решатель получает право действовать, **лишь пережив накопленное свидетельство, а не деплой
-и не таймер**.
-*Комментарий:* **периферия по предмету, ядро по последствиям** — решатель на жёстком гейте держит поток.
-`LeverAgreement` держит четырёхзначность Белнапа: «нет свидетельства» — не «ложь». Тот же отказ от
-оптимистичной склейки, что и всюду, доведённый до четырёх значений.
-*Философия:* `BELIEF_UPDATE_LEDGER` (D007) — **сильная**. Опровержение: найти продвижение, случившееся по
-времени или деплою.
+**Сильная форма сейчас:** текущий код имеет реальные вызывающие: readiness dashboard, operational policy,
+task-dispatch filter и autonomous refusal observer. `VerdictGateTest` закрепляет flag-off, empty-scope,
+empty-lattice, monotonicity, action prohibition, typed reasonCode и recovery exemption. `VerdictReconciliationTest`
+закрепляет refusal dominance, abstention debt, declared-but-unruled debt and throwing-layer debt.
+`FactoryJudgmentServiceTest` закрепляет no-refutation/no-call, disabled/no-query, retry on unavailable,
+bounded cycle and history in prompt. `DeliveredWorkJudgmentServiceTest` и `JudgmentAgentClientLaw17Test`
+закрепляют delivery/factory level split and evidence selection. `LeverPromotionServiceTest` закрепляет
+observe-only default, one-stage promotion, immediate demotion and no second promotion without fresh evidence.
+
+**Слабая/неидеальная форма сейчас:** по текущим source/test evidence не найдено кодового дефекта, требующего
+правки. Оставшаяся слабость эксплуатационная, не кодовая: включение `VerdictGate` intentionally staged через
+flag/project slug, а `AutonomousVerdictObservationService` держит active refusal ledger в памяти и должен
+переутвердить baseline после restart. Это не основание переписывать механизм; это граница включения и
+наблюдения.
+
+**Что сделать для идеала:** ничего не кодить в ядре суждения без нового опровержения. Перед расширением
+`verdict_gating_project_slug` или включением gate для большего контура выполнить operational probe: показать
+активный project slug, включённый flag, один `WITHHOLD` refusal, один разрешённый recovery dispatch, одну
+обычную dispatch-задачу, которую gate удержал, и одну defect-journal запись от `AutonomousVerdictObservationService`.
+Если runtime probe не сойдётся с тестовым контрактом, тогда чинить только конкретный разрыв probe, а не
+трёхзначную решётку.
+
+**Что не трогать:** не сводить `Verdict` к boolean/score/percentage; не считать `ABSTAIN` разрешением; не
+превращать `reasonCode` обратно в substring matching; не включать gate глобально пустым slug; не блокировать
+recovery-dispatch; не звать judgment model по расписанию без refutation; не обрезать diff механически по
+символам; не продвигать lever по deploy, времени или старому пакету evidence.
+
+**Опровержение:** создать проект с enabled verdict gate и scoped slug; заставить infrastructure layer выдать
+`WITHHOLD` по `DISPATCH_QUEUED_TASKS`; обычная задача должна быть skipped by `ProjectFlowService`, recovery-задача
+должна пройти, readiness must not be upgraded, defect journal must record only a new/changed refusal. Для
+factory judgment: добавить unjudged transition; `UNAVAILABLE` не должен выставлять `judged_at`, `ABSTAIN` должен.
+Для delivery judgment: diff beyond limit must name omitted files or sections. Для lever: два evaluate cycles без
+новых observations не должны поднять stage дважды.
+
+**Критерий закрытия:** запись считается закрытой, когда все перечисленные классы и поверхности названы одним
+семейством, все реальные вызывающие названы, каждый выход и владелец состояния назван, а запрет на кодовую
+правку без нового опровержения записан явно. Механизм считается воплощённым идеально до появления нового
+контрпримера, потому что исходники и focused-тесты уже закрепляют перечисленные свойства безопасности.
+
+**Свидетельства записи:** `grep -RIn 'VerdictGate' src/main/java src/test/java` показывает production callers in
+`CommandDashboardService`, `OperationalPolicyService`, `ProjectFlowService` and `AutonomousVerdictObservationService`;
+`grep -RIn 'evaluateActionProhibition\|evaluateTaskProhibition\|constrain(' src/main/java src/test/java`;
+`src/main/java/com/eneik/production/services/verdict/Verdict.java:24` and `:62`;
+`VerdictLayer.java:20`, `:31`, `:42`; `Judgement.java:17`; `VerdictReconciliation.java:36`, `:72`;
+`VerdictGate.java:79`, `:159`, `:167`, `:227`; layer files at
+`AcceptanceVerdictLayer.java:42`, `RuntimeVerdictLayer.java:32`, `DoctrineVerdictLayer.java:27`,
+`InfrastructureVerdictLayer.java:38`, `SixSigmaVerdictLayer.java:29`;
+`AutonomousVerdictObservationService.java:49`, `:87`, `:94`; `VerdictController.java:21`;
+`JudgmentAgentClient.java:43`, `:268`, `:304`; `FactoryJudgmentService.java:35`, `:69`;
+`DeliveredWorkJudgmentService.java:50`, `:152`; `CriteriaEvidenceSelector.java:14`, `:25`, `:116`;
+`LeverPromotionService.java:28`, `:56`, `:104`; `LeverStage.java:10`; `LeverAgreement.java:12`;
+`LeverObservation.java`, `LeverPromotionStateEntity.java`, `V88__lever_promotion_ladder.sql`,
+`V108__invariant_judgment_cursor.sql`, `V122__void_verdicts_reached_without_a_readable_reason.sql`;
+tests: `VerdictGateTest`, `VerdictReconciliationTest`, `FactoryJudgmentServiceTest`,
+`DeliveredWorkJudgmentServiceTest`, `JudgmentAgentClientLaw17Test`, `LeverPromotionServiceTest`.
+
+**Текущий статус:** идеален по текущим source/test evidence; кодовая правка не требуется. Нужна только
+операционная проверка перед расширением области включения gate.
+
+**комментарий для Антигравити:** считаю механизм идеальным.
 
 ---
 

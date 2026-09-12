@@ -603,3 +603,42 @@ evidence. Future work should add a failing counterexample first if runtime metri
 missed delivery failures.
 
 комментарий для Антигравити: считаю механизм идеальным.
+
+## 2026-09-12 Codex Strict Record: Judgment Lattice And Lever Promotion Family
+
+Status: documentation-only strict-family replacement for section VI in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `VerdictLayer`, `Verdict`, `Judgement`, `VerdictReconciliation`,
+`VerdictGate`, `VerdictController`, `AutonomousVerdictObservationService`, `AcceptanceVerdictLayer`,
+`RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`,
+`JudgmentAgentClient`, `FactoryJudgmentService`, `DeliveredWorkJudgmentService`, `CriteriaEvidenceSelector`,
+`LeverPromotionService`, `LeverStage`, `LeverAgreement`, `LeverObservation`, `LeverPromotionStateEntity`,
+`LeverObservationRepository` and `LeverPromotionStateRepository` as the judgment lattice, refutation judgment
+and lever-promotion family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 21 |
+| Sections still missing visible `комментарий для Антигравити` | 42 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section said the verdict layers had no real callers and were heard only by the
+dashboard. Current source disproves that: `VerdictGate` is called from `CommandDashboardService`,
+`OperationalPolicyService` and `ProjectFlowService`, and `AutonomousVerdictObservationService` records new or
+changed refusals into the defect journal.
+
+Remaining non-ideal point for this family: no code weakness was identified from current source/test evidence.
+The only remaining work before broader runtime use is operational verification of the staged flag/project-scope
+deployment and live refusal observation.
+
+комментарий для Антигравити: считаю механизм идеальным.
