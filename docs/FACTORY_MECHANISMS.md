@@ -7937,65 +7937,129 @@ background `ACP-061 Hoare Triple Review`.
 
 # XXXIV. Внутренний вход наблюдателя: запрет, записанный в комментарии
 
-**`InternalGeminiObserverController`** (433 строки) — открывает наружу собственный журнал наблюдателя, его
-действия, граф свидетельств и целый набор служебных справок о работе фабрики.
-*Связи:* путь `/internal/gemini-observer` | **17 входов: 14 читающих и 3 изменяющих** —
-`/retire-stuck-worker-now`, `/release-finalizing-wishlist`, `/reset-daily-session-counts-now`, плюс запись
-сессии внутри | читает `GeminiObserverJournalRepository`, `GeminiObserverActionRepository`,
-`CoherenceRunRepository`, журнал дефектов и размеры таблиц.
-*Ценность:* без него узнать, что наблюдатель на самом деле видел и делал, можно было лишь восстановлением
-по логам контейнера, теряемым при каждом перезапуске.
-*Комментарий:* **периферия по замыслу и ядро по последствиям, потому что три его входа меняют состояние
-фабрики.**
+**`InternalGeminiObserverController`**, **`ApiAuthorizationInterceptor`**, **`WebConfig`**,
+**`GeminiObserverJournalRepository`**, **`GeminiObserverActionRepository`**, **`EvidenceNodeRepository`**,
+**`CoherenceRunRepository`**, **`OperationalRealityFindingRepository`**, **`PersistentWorkerSessionRepository`**,
+**`JulesSessionRepository`**, **`PrReviewRepository`**, **`AccountRepository`**, **`TaskRepository`**,
+**`WishlistRepository`**, **`ContinuousOrchestrationService`**, **`GeminiObserverActionService`** — семейство
+внутренней наблюдательной поверхности Gemini/observer diagnostics and repair actions.
 
-Замысел был верный, и он записан: заводился вход по указанию оператора — «Gemini has her own log, you could
-have looked there», — чтобы настоящая запись действий стала **достижимой**, а не выводимой из кода.
-Отдельно оговорено, что запись действий есть свидетельство «regardless of what she later claims in her
-journal prose», то есть сделанное отделено от рассказанного о сделанном.
+*Философский паттерн:* главный текущий паттерн — `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`
+(`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, D010 Data lineage loss): internal diagnostics are
+useful only when the acquisition chain names which repository/table owns the fact and which boundary protects
+the read or mutation. Для границ уровня применяется `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`: observer
+journal evidence, dispatch-account diagnostics, persistent-worker diagnostics, and repair commands are not
+one kind of endpoint. Local security pattern already present in code: `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`
+for executable denial, with `ACP-061 Hoare Triple Review` before any later code.
 
-Дальше — то, ради чего эта запись существует. В javadoc класса написано: **«Restricted to localhost in
-production via filter/security, same as InternalTaskController»**. Это запрет, записанный в комментарии.
-Замер 7 сентября:
+*Связи:* `WebConfig` registers `ApiAuthorizationInterceptor` for `/api/**` and `/internal/**`.
+`InternalGeminiObserverController` exposes `/internal/gemini-observer/**`. Read endpoints publish journal,
+actions, evidence nodes, coherence runs, operational-reality findings, db table sizes, wishlist compiler task
+diagnostics, account defect journal, persistent workers, dispatch capacity, dispatch eligibility, account
+capacity and task merge evidence. Mutating endpoints call real repair/reset paths:
+`GeminiObserverActionService.retireStuckWorkerNow`, wishlist release through repository state change,
+`ContinuousOrchestrationService.resetDailyLimitedAccounts`, and `clearCorruptedSessionPrUrl`.
 
-    curl -s -4 -o /dev/null -w '%{http_code}' http://2.28.123.162:8080/actuator/health            → 200
-    curl -s -4 -o /dev/null -w '%{http_code}' http://2.28.123.162:8080/internal/gemini-observer/db-table-sizes → 200
+*Идеальная форма:* internal observer access is an evidence surface with an executable boundary. Safe reads are
+allowed from loopback or with a valid operator key and must return scoped, bounded facts from the owning
+repository. Mutating internal operations require valid credentials even from localhost, and must either call a
+named owner service or perform one narrow repair with before/after evidence. A diagnostic endpoint may expose
+why dispatch or observer state is blocked, but it must not become a public dashboard or a hidden actuator.
 
-Контроль пройден: обычный путь здоровья по тому же внешнему адресу тоже отвечает 200, значит проба
-работает, а не молчит. Прежде та же проба по IPv6 дала ноль и по контролю тоже, поэтому она отброшена как негодная,
-а не принял за доказательство закрытости.
+*Граница:* this family may expose internal evidence and run explicitly named internal repairs. It must not be
+treated as ordinary public API, must not bypass the owner services for broad state changes, must not leak raw
+secrets, and must not let the inert/retired observer status erase the need to protect repair commands. The
+security boundary belongs to `ApiAuthorizationInterceptor`; the controller javadoc is documentation, not the
+guard.
 
-Граница этого замера: проба сделана **с самой машины** по её внешнему адресу, поэтому она
-доказывает, что **приложение не ограничивает путь**, но сама по себе не доказывает, что до него дойдёт
-удалённый хост — ответ мог вернуться петлёй, не выходя наружу. Для полного доказательства нужна проба со
-стороннего хоста; её у меня в этот такт не было.
+*Входы:* request path/method/remote address/API key or bearer token; query params `projectId`, `wishlistId`,
+`carrierTaskId`, `sessionId`, `taskId`, `accountName`, `tag`, date windows, feature/pr filters; repository
+rows for observer journal/actions/evidence/coherence/reality findings, sessions, reviews, accounts, tasks,
+projects, persistent workers and wishlist rows; raw table-size metadata through `JdbcTemplate`; API key
+setting `eneik.security.api-key`.
 
-**Задача для кодинга.** Ограничение, объявленное в javadoc, должно стать исполнимым: проверка источника
-запроса на всех входах пути `/internal/**`, и в первую очередь на трёх изменяющих. Место:
-`InternalGeminiObserverController` и одноимённая оговорка у `InternalTaskController`. Проверка: запрос
-`/internal/gemini-observer/db-table-sizes` со стороннего хоста получает отказ с названной причиной.
-Опровергнет: успешный ответ на изменяющий запрос без полномочия. Пункты 24 и 27 перечня о том же; здесь
-названо конкретное место и конкретная ложная строка.
+*Выходы:* JSON/list diagnostics for journals/actions/evidence/coherence/findings/table sizes/dispatch
+capacity/account capacity/task merge evidence; string or map results for retire/release/reset/clear repair
+commands; interceptor denials with `401` for missing credentials on mutating internal operations, `403` for
+external internal reads without credentials or invalid credentials, and allow for loopback safe reads or valid
+operator credentials.
 
-Второе, помельче: два входа этого контроллера — `/dispatch-capacity-probe` и `/persistent-workers` —
-отвечают `HTTP 500` (раздел XXIII), тогда как `/db-table-sizes` на том же контроллере исправен. Поверхность
-разбора у выключенного механизма частично сломана, и заметить это некому.
-*Живое, 7 сентября 2026:* контроллер работает и отвечает; сам наблюдатель, которому он служит, —
-заглушка, «permanently inert» (раздел XXIIд). То есть **вход пережил механизм**: смотреть через него не на
-что, а изменять через него по-прежнему можно.
-*Философия:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз,
-`BARCAN-TAG-10 DEONTIC-PROHIBITION`, принцип исключающих причин, anchor *Practical Reason and Norms / The
-Authority of Law*. Сильная дословно: «запрет — **исполнимый путь отказа** с объяснимой причиной, и на него
-есть тест». Слабая: «**запрет записан в документе или комментарии**». Опровержение: «совершить запрещённое
-действие; если оно прошло — запрета нет, есть пожелание». **Форма: слабая, дословно по определению слабой
-формы, и опровержение выполнено.** Запрет записан в комментарии; запрещённое действие — обращение не с
-localhost — прошло и вернуло 200. По Разу это не запрет, а пожелание.
-Второй образец: `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци,
-`BARCAN-TAG-01 ACTUALIST-OBJECT`, принцип топологии пространственно-временных границ, anchor *Parts and
-Places / formal ontology of boundaries and spatial parts*. Сильная дословно: «названа точка, где меняется
-владелец проверки, полномочия или сохранения, и на неё есть тест». Слабая: «граница „понятна из структуры
-пакетов“». Опровержение: «удалить проверку на границе; если ни один тест не покраснел, границы нет».
-**Форма: слабая.** Точка смены полномочий обозначена **словом в пути** — `/internal` — и больше ничем.
-Удалять проверку для опровержения не нужно: её нет, удалять нечего.
+*Владельцы истины и состояния:* observer journal and action rows own what the observer saw/did; evidence and
+coherence repositories own graph/coherence facts; operational reality repository owns task reality findings;
+Jules/session/review/account/task/project repositories own dispatch and capacity facts; wishlist repository
+owns finalizing release state; `ContinuousOrchestrationService` owns daily account-limit reset; interceptor
+owns the authorization decision; controller methods own only diagnostic shape or the explicitly named repair
+command.
+
+*Инварианты:* (1) all `/internal/**` requests pass through the interceptor; (2) external non-loopback safe
+reads require a valid operator credential; (3) mutating internal operations require credentials even from
+localhost; (4) missing server API key disables mutating operations; (5) read diagnostics must be scoped by
+project/account/task/tag where possible; (6) persistent-workers without a single active project returns
+`UNDETERMINED_PROJECT`, not a full table dump; (7) dispatch capacity without a single active project returns
+`UNDETERMINED_PROJECT`, not HTTP 500; (8) repairs record or return before/after facts where possible.
+
+*Сильная форма сейчас:* the old security defect in this section is no longer current at the interceptor
+level. `ApiAuthorizationInterceptor` enforces `/internal/**`: safe reads are allowed only from loopback or
+valid operator credentials; mutating internal methods require a configured key and request credentials.
+Tests pin external internal read denial, loopback read allow, external read with valid key allow, mutating
+internal localhost without credentials denied with `401`, and mutating internal with valid credentials allowed.
+The earlier `/persistent-workers` and `/dispatch-capacity-probe` 500 class is also stronger now:
+controller tests pin explicit project, single-active-project fallback and `UNDETERMINED_PROJECT` without
+`findAll()` when no single active project exists.
+
+*Слабая/неидеальная форма сейчас:* this documentation record was stale and still described the internal
+boundary as only a comment. Remaining non-ideal points are diagnostic breadth, not the old missing guard:
+`dispatchEligibilityDetail` still scans all accounts for a tag diagnostic, `accountCapacity` scans all
+sessions/accounts and then counts in memory, and this tact did not run controller/security tests or an
+external live probe. The observer itself may be inert/retired, but several repair commands remain live and
+must stay protected.
+
+*Что сделать для идеала:* do not code the old `/internal/**` localhost guard from scratch. First run focused
+`ApiAuthorizationInterceptorTest` and `InternalGeminiObserverControllerTest`, plus a live or fixture probe for
+external safe read denial and mutating localhost-without-key denial. If implementation is later requested,
+only then narrow the remaining diagnostic scans with projection/bounded repository methods while preserving
+the exact diagnostic questions and `UNDETERMINED_PROJECT` behavior.
+
+*Что не трогать:* keep the interceptor registration for `/internal/**`, the distinction between safe reads
+and mutating operations, the requirement that mutating internal operations need credentials even from
+localhost, the `UNDETERMINED_PROJECT` semantics, the observer journal/action evidence boundary, and
+before/after evidence on repair commands. Do not weaken internal reads into public API because they are
+"only diagnostics".
+
+*Опровержение:* send a non-loopback GET to `/internal/gemini-observer/db-table-sizes` without credentials; if
+it succeeds, the internal read boundary is false. Send a localhost POST to
+`/internal/gemini-observer/retire-stuck-worker-now` without credentials; if it succeeds, mutating internal
+authorization is false. Call `/persistent-workers` or `/dispatch-capacity-probe` with no project and no single
+active project; if either 500s or dumps all rows instead of `UNDETERMINED_PROJECT`, the diagnostic boundary is
+false.
+
+*Критерий закрытия:* this family is ideal when focused security/controller tests and live/fixture probes show:
+external internal reads deny without credentials, valid operator credentials allow intended reads, mutating
+internal operations require credentials even from loopback, no-single-active-project diagnostics return
+`UNDETERMINED_PROJECT`, account/session diagnostics are bounded or explicitly accepted as secured diagnostics,
+and no endpoint leaks raw API keys or changes state without owner-service/repair evidence.
+
+*Свидетельства записи:* `git status --short`; `git log -1 --oneline`; no active Claude process; protocol
+reads from `/home/remotecli/codex-mechanisms-session/SESSION.md`, `docs/HOW_TO_READ_BEFORE_FIXING.md` and top
+`Как читать`; philosopher rows `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`, `RELIABILITY_CHAIN`; `grep -nE` endpoint inventory
+for `InternalGeminiObserverController`; `nl -ba` on constructor/mutating and diagnostic methods; `nl -ba
+src/main/java/com/eneik/production/security/ApiAuthorizationInterceptor.java`; `grep -RIn` for `/internal/**`
+registration and tests; focused reads of `ApiAuthorizationInterceptorTest` relations 5, 6, 7, 15 and 16, and
+`InternalGeminiObserverControllerTest` persistent-worker / dispatch-capacity cases.
+
+*Текущий статус:* strict family record filled. Implementation is strong for the old "comment-only internal
+guard" defect; not declared ideal until focused tests/live probes and bounded diagnostic decisions are
+recorded.
+
+*комментарий для Антигравити:* не кодь старую задачу "сделать `/internal/**` исполнимым запретом" как будто
+её нет: current `ApiAuthorizationInterceptor` already guards `/internal/**`, and tests cover external denial,
+loopback read allow, credentialed read allow, and mutating-internal credential requirement. First verify those
+tests and a live/fixture probe; later code, if any, should narrow `dispatchEligibilityDetail` and
+`accountCapacity` diagnostics without weakening the security boundary. Philosophy:
+`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`;
+local support `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`; common background `ACP-061 Hoare Triple Review`.
 
 # XXXV. Выбор аккаунта: наказание порядком, а не исключением
 
