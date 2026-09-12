@@ -566,3 +566,40 @@ projections still need explicit set/source names before they can be compared.
 `EpistemicLayerInvariantGate` to real PR-diff evidence, then add allowed/denied authority tests for
 `GithubAccessService` and explicit PR-set names for summaries; preserve `AutoMergeService`, `CodeChangeClassifier`,
 `GitHubApiBudgetService`, real-evidence gates and branch-GC cleanup as load-bearing invariants.
+
+## 2026-09-12 Codex Strict Record: Delivery Witness Family
+
+Status: documentation-only strict-family replacement for section V in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `ClientDeliverableReadinessService`, `DeliveryRealityProducerService`,
+`ProductLaunchabilityService`, `ContinuousOrchestrationService`, `ClientRuntimeObservabilityService`,
+`ProjectFlowService`, `WishlistRepository`, `FeatureRepository`, `TaskRepository`, `JulesSessionRepository`,
+`PrReviewRepository`, `OperationalRealityFindingRepository`, `EvidenceNodeRepository`, `DefectJournalRepository`,
+`ProjectRepository`, `GitHubPullRequestService`, `PlannedWorkRecoveryService`, `TaskEntity`, `WishlistEntity`,
+`FeatureEntity`, `PrReviewEntity` and `EvidenceNodeEntity` as the delivery-witness family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to code, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 20 |
+| Sections still missing visible `комментарий для Антигравити` | 43 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: section V now separates delivered value from task status, carrier work, runtime observation and
+repository launchability. It explicitly records that the delivery predicate, reality producer and launchability
+checks are currently load-bearing and should not be rewritten as local status cleanups.
+
+Remaining non-ideal point for this family: no implementation weakness was identified from current source/test
+evidence. Future work should add a failing counterexample first if runtime metrics later show false positives or
+missed delivery failures.
+
+комментарий для Антигравити: считаю механизм идеальным.

@@ -675,33 +675,128 @@ Derived rather than picked»), и в коде прямо объявлено, ч�
 ---
 # V. Свидетельство доставки
 
-**`ClientDeliverableReadinessService`** (1626 строк) — меряет сданный объём по настоящей иерархии: корневая
-заявка → эпики → плановые пункты → задачи → свидетельство слияния.
-*Связи:* **вызывают 11 механизмов**; зовёт 9; пишет `FeatureRepository`.
-*Ценность:* эпик завершён, только когда у каждого пункта есть **своё** слияние. Слияние от посторонней задачи
-в том же эпике пункт не закрывает.
-*Комментарий:* **ядро, и главный носитель различия между «сделано» и «доставлено».** Сегодня именно его свод
-спас: уборщик мета-задач считал продукт готовым по статусам задач, а этот механизм в ту же секунду говорил
-«20 из 22». **Механизм, у которого спросили, оказался прав; ошибся тот, кто не спросил.**
-*Философия:* `SUBSTITUTION_ORACLE` (D009) — **сильная**. Опровержение: закрыть пункт слиянием посторонней
-задачи того же эпика.
+**Имена механизма или семейства:** `ClientDeliverableReadinessService`, `DeliveryRealityProducerService`,
+`ProductLaunchabilityService`, `ContinuousOrchestrationService`, `ClientRuntimeObservabilityService`,
+`ProjectFlowService`, `WishlistRepository`, `FeatureRepository`, `TaskRepository`, `JulesSessionRepository`,
+`PrReviewRepository`, `OperationalRealityFindingRepository`, `EvidenceNodeRepository`, `DefectJournalRepository`,
+`ProjectRepository`, `GitHubPullRequestService`, `PlannedWorkRecoveryService`, `TaskEntity`, `WishlistEntity`,
+`FeatureEntity`, `PrReviewEntity` and `EvidenceNodeEntity` as the delivery-witness family.
 
-**`DeliveryRealityProducerService`** — превращает обнаружение расхождения в свидетельство.
-*Связи:* вызывающих нет — идёт по расписанию; зовёт 8; пишет 4 хранилища, включая журнал дефектов.
-*Ценность:* обнаружение существовало с июля и упиралось в поле дашборда.
-*Комментарий:* **ядро.** Формула, ради которой он написан, — **сигнал без читателя не есть наблюдение** — и
-она приложима шире: это рабочее определение муды для всякого измеряющего механизма. Но за ним же числится
-**накопленное перепроизводство**: 196 заявок одного источника, 155 отброшено при 15 клиентских.
-*Философия:* `TELEOSEMANTIC_FEEDBACK` (D011) — **сильная** по читателю, **не держится** по области находки.
-Опровержение: провалить доставку заказанного требования дважды и посчитать заявки.
+**Механизмы внутри секции:**
+- delivery readiness: `ClientDeliverableReadinessService` measures client value through root wishlist, product
+  epics, planned items, task attempts, repair closure and merge evidence.
+- reality producer: `DeliveryRealityProducerService` turns a delivery mismatch into durable evidence, refreshed
+  standing evidence, bounded repair scope or terminal defect-journal fact.
+- launchability gate: `ProductLaunchabilityService` checks whether a delivered project has a real launch path,
+  consistent datastore artifacts and no frontend-owned fake domain records.
+- orchestration caller: `ContinuousOrchestrationService` calls launchability checks from the existing
+  per-project `CHECK_LAUNCHABILITY` tick, not through a separate scheduler.
 
-**`ProductLaunchabilityService`** — есть ли у проекта задокументированный способ запуститься.
-*Связи:* вызывает общий тик; зовёт 4; пишет `ProjectRepository`, `WishlistRepository`.
-*Ценность:* самое дешёвое первое действие; всё остальное бессмысленно, если продукт не стартует.
-*Комментарий:* **ядро** — подчинение ТОС гейтит на запускаемости. Проверять сначала самое дешёвое и самое
-разрушительное при отказе — инженерная экономия внимания.
-*Философия:* `KNOWLEDGE_FIRST_GATE` (D006) — **сильная**. Опровержение: объявить проект запускаемым без
-файла запуска.
+**Философский паттерн:** primary `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN`, family `CATEGORY_ERROR_SCAN`, defect
+`D002 Invalid state`: task status, delivery evidence, carrier work, product launchability and fake frontend
+records are different kinds of facts and must not substitute for one another. Supporting patterns:
+`KARL_POPPER_01_FALSIFICATION_HARNESS` / `D008 False green` for merge-evidence and launchability refutations,
+`KARL_POPPER_03_TRUTH_STATUS_TABLE` / `D012 Policy contradiction` for delivered/undelivered/unknown states,
+`PITER_GERDENFORS_13_CONVERSATION_MAXIM` / `D007 Evidence gap` for reader-actionable evidence, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / `D010 Data lineage loss` for source/freshness/validation, and `ACP-061 Hoare Triple Review`.
+
+**Связи:** `ClientDeliverableReadinessService.computeForProject` is read by flow, operational truth,
+launchability, design shop, falsification, dispatch and status surfaces. It reads wishlists, features, tasks,
+sessions and reviews, and exposes predicates such as `hasRequiredMergeEvidence`, `reachedMain` and
+`isAuxiliaryTask`. `DeliveryRealityProducerService.produce` is scheduled, scopes to active projects, reuses the
+readiness predicates, writes `OperationalRealityFindingEntity`, `EvidenceNodeEntity`, `WishlistEntity` and
+`DefectJournalEntity`, and may consult runtime observations and planned-work recovery. `ProductLaunchabilityService`
+is called by `ContinuousOrchestrationService` under `OperationalAction.CHECK_LAUNCHABILITY`; it reads GitHub files
+through `GitHubPullRequestService`, writes `ProjectEntity.launchabilityCheckedAt`, and creates deduplicated
+runtime/datastore/frontend wishlists.
+
+**Идеальная форма:** delivered means the client's product requirement has its own valid evidence, not merely a
+finished factory task. Readiness is feature-level value, with item-level details preserved but not allowed to
+drive the feature ratio. A failed delivery becomes one readable fact and, where safe, one bounded repair path.
+Carrier work is recorded in the carrier channel and cannot become product scope. Launchability is checked before
+runtime reasoning depends on it; datastore/runtime/frontend contradictions become product work only when the
+repository itself supplies the refuting evidence.
+
+**Граница:** this family may decide delivery readiness, missing delivery evidence, runtime launch evidence and
+launchability follow-up work. It must not merge PRs, dispatch sessions, change client code directly, invent a
+product epic for a repair, count auxiliary/carrier work as delivered product, or turn a one-time bootstrap check
+into the whole runtime-observation program.
+
+**Входы:** client/coverage/self-falsification wishlists, feature roots and duplicate winners, planned work items,
+task statuses/roles/features/source wishlists/dependencies/payload verdicts, PR review merge/code flags, Jules
+sessions, repair-chain links, runtime observation summaries, GitHub default-branch files (`docker-compose.yml`,
+`Dockerfile`, `frontend/package.json`, runtime contract, application/test properties, `pom.xml`, frontend sources),
+system setting `max_repair_depth`, operational action authorization and project active status.
+
+**Выходы:** `Readiness` with feature count, deliverable count, ratio, decomposition completeness and
+self-falsification readiness; standing operational-reality findings; refreshed evidence-node timestamps; product
+repair wishlists with `sourceTaskId` and inherited product epic; terminal defect-journal entries for exhausted or
+unreachable repair chains; carrier-channel defect facts; runtime-observation evidence nodes; launchability gap,
+datastore-artifact disagreement and frontend-unbacked-record wishlists; `ProjectEntity.launchabilityCheckedAt`.
+
+**Владельцы истины и состояния:** `WishlistRepository` owns client requirements, planned items and repair links;
+`FeatureRepository` owns product epics; `TaskRepository` owns task attempts, statuses and dependencies;
+`PrReviewRepository` owns merge/code evidence; `JulesSessionRepository` owns session-to-task history;
+`ClientDeliverableReadinessService` owns the delivery predicate; `OperationalRealityFindingRepository` and
+`EvidenceNodeRepository` own durable negative delivery evidence; `DefectJournalRepository` owns terminal
+factory/product defect records; GitHub owns repository launch files; `ProductLaunchabilityService` owns the
+launchability artifact checks; `ProjectRepository` owns active project state and the once-ever launchability mark.
+
+**Инварианты:**
+- `done` is not delivery; delivery requires `hasRequiredMergeEvidence` unless the role is explicitly non-code or
+  covered by the QA/design evidence rules.
+- value ratio is feature-level, not task-count-level; deliverable counts remain detail, not the controlling ratio.
+- a planned item may be fulfilled by its own task attempts or by repair closure, but not by an unrelated task in
+  the same epic.
+- decomposition completeness and delivery completeness are different questions.
+- evidence for a standing delivery failure is refreshed, not multiplied.
+- repair scope inherits the product epic reachable from the requirement; a repair may not found a new product epic.
+- repeated failures or repair-depth exhaustion become terminal defect facts, not another product wishlist loop.
+- carrier work is never product-delivery debt; if it needs naming, it is named in the carrier channel.
+- launchability checks use repository files and deduplicated wishlist sources; day-zero absence and uncertainty stay silent.
+- datastore/runtime/frontend checks are repeated outside the once-ever `checkOnce` guard because later commits can introduce contradictions.
+
+**Сильная форма:** current source satisfies the section ideal. `ClientDeliverableReadinessService` computes readiness
+from a scoped hierarchy, filters dismissed/auxiliary work, walks repair closure, carries feature-level ratio and
+keeps self-falsification readiness separate from delivered status. `DeliveryRealityProducerService` uses the same
+readiness predicate as the dashboard, reads project tasks/wishlists once per sweep, refreshes standing evidence,
+bounds repair loops by `max_repair_depth`, records carrier non-delivery outside the product channel, and records
+runtime failure as evidence when a real product observation exists. `ProductLaunchabilityService` avoids GitHub
+fetches before anything has shipped, creates one deduped launchability gap, checks datastore contract/artifact/test
+agreement on every authorized tick, and flags frontend-owned fake records without punishing day-zero or label-only UI.
+
+**Слабая или неидеальная форма:** no implementation weakness is identified in current source/test evidence for this
+section. Remaining caution is operational, not a code-change instruction: if runtime metrics later show repeated
+false positives or missed delivery failures, update the predicates and tests before changing production behavior.
+
+**Что надо сделать для идеала:** no code change is required from this record. Preserve the current predicates and
+extend only with a failing counterexample first: a client requirement closed by an unrelated task, a no-code product
+merge counted as delivery, repeated repair filing beyond the configured depth, carrier work filed as product scope,
+or a launched product whose repository artifacts contradict the declared runtime contract.
+
+**Что не трогать:** do not replace `hasRequiredMergeEvidence` with `TaskStatus.done`; do not drive readiness ratio
+from task or deliverable count; do not count decision/spike/review/carrier work as product delivery; do not create a
+new product epic for a repair; do not emit unbounded repeated repair wishlists; do not remove the carrier channel;
+do not put datastore/frontend checks behind `launchabilityCheckedAt`; do not write client code directly from
+launchability checks; do not treat missing day-zero files as a defect before any product exists.
+
+**Опровержение:** close a planned client item using a merged PR from a different item in the same epic; readiness
+must not count it. Merge a code-owing task whose PR has no code; `DeliveryRealityProducerService` must record/order
+the missing delivery rather than leave it hidden. Repeat the same undelivered repair beyond `max_repair_depth`; the
+producer must write a terminal defect and not another wishlist. Give a carrier task no merge evidence; it must not
+produce product scope. Make compose ship PostgreSQL while application/tests/contract point to H2 or `UNDECLARED`;
+launchability must file a datastore disagreement.
+
+**Закрытие:** the section remains closed while the focused tests keep proving the readiness hierarchy, delivery
+predicate agreement, carrier/product partition, repair-depth bound, runtime-evidence production, launchability
+deduplication, datastore agreement and frontend fake-record detection. A future change must add the counterexample
+first and keep these invariants green.
+
+**Свидетельства записи:** `nl -ba src/main/java/com/eneik/production/services/ClientDeliverableReadinessService.java | sed -n "153,205p;309,480p;1350,1425p;1450,1590p"`; `nl -ba src/main/java/com/eneik/production/services/DeliveryRealityProducerService.java | sed -n "136,235p;996,1135p;1136,1240p"`; `nl -ba src/main/java/com/eneik/production/services/runtime/ProductLaunchabilityService.java | sed -n "1,230p;230,390p"`; `nl -ba src/main/java/com/eneik/production/services/ContinuousOrchestrationService.java | sed -n "256,275p"`; `nl -ba src/test/java/com/eneik/production/services/DeliveryPredicateAgreementTest.java | sed -n "1,230p"`; `nl -ba src/test/java/com/eneik/production/services/DeliveryRealityLaw2CarrierChannelTest.java | sed -n "35,180p"`; `nl -ba src/test/java/com/eneik/production/services/runtime/ProductLaunchabilityServiceTest.java | sed -n "100,215p;285,335p;345,415p"`; `grep -nE "FALSIFICATION_HARNESS|TRUTH_STATUS_TABLE|CONVERSATION_MAXIM|CATEGORY_ERROR_SCAN" docs/philosopher-patterns/philosophers/*.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
+
+**Текущий статус:** механизм секции описан цельно и признан идеальным по текущему source/test contract. Код в этом
+такте не менялся.
+
+**комментарий для Антигравити:** считаю механизм идеальным.
 
 ---
 
