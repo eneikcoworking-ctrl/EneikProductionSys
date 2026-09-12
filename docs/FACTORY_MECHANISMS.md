@@ -9372,77 +9372,108 @@ explicit `refreshDbrStatus`, low-priority throttle, high-priority bypass and sin
 Править надо разметку реальных стадий/очередей или вывести capacity из наблюдаемой пропускной способности,
 потом добавить пробу, где built-in production path дает и `DBR_THROTTLE`, и `DBR_BYPASS`.
 
-# XLIV. Очистка журнала проекта: предел настоящий, срабатывает раз в сутки
+# XLIV. Очистка журнала проекта: предел настоящий, частота выведена из роста
 
-**`ProjectEventLogRetentionService`** (132 строки) — держит долговечный журнал проекта в границах, и держит
-**по смыслу, а не по возрасту**.
-*Связи:* `@Scheduled(cron = "0 17 3 * * ?")` — раз в сутки в 03:17 | `deleteBefore` по сроку и
-`trimToCeiling` по потолку, каждый в своей короткой сделке | пишет `ProjectEventLogRepository` | сам себя
-зовёт через прокси, чтобы сделка действительно открылась.
-*Ценность:* без него таблица растёт неограниченно по построению — в javadoc записано, что она уже доходила
-до **162 тысяч строк** при всех замороженных проектах и полном отсутствии работы.
-*Комментарий:* **ядро, и устроено оно правильно, а вот частота не отвечает скорости роста.**
+## Семейство: durable project log retention and forensic read boundary
 
-Правило сделано по смыслу, и это верно: указание оператора от 26 июля требует полного журнала **от начала
-проекта до приёмки**, поэтому у **непринятого** проекта не удаляется ничего, каким бы старым оно ни было.
-Чего указание не требует — хранить журнал вечно после того, как работа сдана; отсюда два независимых
-предела, и они названы порознь, потому что отказывают по-разному: тридцать дней после приёмки и потолок в
-двадцать тысяч записей на проект.
+**Имена механизмов и частей:** `ProjectEventLogRetentionService`, `ProjectEventLogRepository`,
+`ProjectRepository`, `ProjectEntity`, `ProjectStatus`, `ProjectEventLogEntity`, `ProjectEventLogService`,
+`DurableProjectLogAppender`, `ProjectLogFlushQueue`, `SystemStatusController`.
 
-Теперь замер. Живой проект **не принят** (состояние «деятельный»), значит срок не применяется вовсе, и всё
-держится на одном потолке. В свой единственный за сутки заход, 7 сентября в 03:17, служба удалила **17592
-записи сверх потолка** и ноль по сроку. Спустя двадцать один час в таблице снова **37467 строк**.
+**Философский паттерн:** primary `ALONZO_CHERCH_21_DERIVED_CUTOFF`, defect `D010 Data lineage loss`: retention
+cadence and cutoff must be derived from the log's growth and evidence boundary, not from an inherited daily
+number. Supporting patterns: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for one-row boundary acquisition instead of
+heap-loading excess rows, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for separating pre-acceptance forensic
+history from post-acceptance retention, `ALVA_NOE_01_PERCEPTION_ACTION_LOOP` for visible success/failure feedback,
+`AYZEK_LEVI_10_DEFEASIBLE_EXCEPTION_LEDGER` for the "do not age-delete unaccepted projects" exception, and
+`ACP-061 Hoare Triple Review`.
 
-То есть таблица ходит по кругу: раз в сутки её подрезают до двадцати тысяч, и к следующему заходу она
-набирает почти столько же снова. Предел настоящий и работает, но **между двумя срабатываниями таблица почти
-удваивается**, и всё это время лишние семнадцать тысяч строк лежат в базе, которая живёт внутри той же
-памяти, что и приложение.
+**Связи, вызовы и взаимодействия:** `DurableProjectLogAppender` captures INFO+ project-scoped log events and
+hands them to `ProjectLogFlushQueue`; `ProjectEventLogService.flush` drains up to 500 entries every five
+seconds, persists them through `ProjectEventLogRepository` when `project_event_log_enabled` is true, and exposes
+bounded `recent` plus chronological `since` reads to `SystemStatusController`. `ProjectEventLogRetentionService`
+runs on frequent fixed delay, iterates projects from `ProjectRepository`, preserves unaccepted/frozen projects
+by age, deletes accepted projects only after the grace period, trims any project over the per-project ceiling,
+and calls its own transactional methods through the lazy self-proxy so deletes run inside short write
+transactions.
 
-**Задача для кодинга.** Частоту очистки надо привести в соответствие со скоростью роста, а не с сутками:
-при семнадцати с половиной тысячах записей в день суточный заход означает, что половину времени таблица
-вдвое больше предела. Место: `@Scheduled(cron = "${project-event-log.retention-cron:0 17 3 * * ?}")` и
-потолок `project-event-log.max-entries-per-project:20000`. Проверка: измеренное число строк не превышает
-потолок более чем на дневной прирост, делённый на число заходов. Опровергнет: замер, показывающий, что
-прирост неравномерен и суточного захода достаточно.
+**Идеальная форма:** the project log survives deploys and remains forensic evidence from project start to
+acceptance, but it must not grow without bound. Unaccepted projects are never age-deleted; accepted projects may
+be deleted only after the grace period; every project is protected by a per-project ceiling that keeps newest
+entries. The retention cadence must be frequent enough for measured growth. Trimming must acquire exactly the
+oldest kept boundary row and delete before it, not load all excess rows into JVM memory. One project's retention
+failure must not stop the sweep for the rest.
 
-Отмечу сделанное верно и редкое: два предела **названы порознь с объяснением, почему их два** — «because
-they fail differently». Один защищает от вечного хранения после сдачи, другой — от того, чтобы один шумный
-проект заполнил базу. Это не два числа для надёжности, а два разных отказа, каждый со своим средством.
-*Живое, 7–8 сентября 2026:* служба отработала **один раз** за сутки — одна строка в журнале, и в ней оба
-числа названы: 0 по сроку, 17592 по потолку. Замер таблицы `db-table-sizes`: было 26735 днём, стало
-**37467** к ночи, то есть около семисот-восьмисот строк в час.
-*Философия:* `ALVA_NOE_01_PERCEPTION_ACTION_LOOP` (D011) — Альва Ноэ, `BARCAN-TAG-03 BELIEF-INTENSION`,
-принцип энактивизма, anchor *Action in Perception — enactive perception*. Сильная дословно: «у всякого
-действия есть воспринимаемая обратная связь, включая отказ». Слабая: «успех виден, отказ молчит».
-Опровержение: «вызвать отказ и посмотреть, узнал ли о нём действующий». **Форма: сильная.** Действие
-докладывает оба своих исхода числами, и отдельно ловится отказ по проекту — `log.error` с указанием, какому
-именно проекту очистка не удалась. Молчащего отказа здесь нет.
-Второй образец: `AYZEK_LEVI_10_DEFEASIBLE_EXCEPTION_LEDGER` (D012) — Айзек Леви,
-`BARCAN-TAG-04 MODAL-QUANTIFIER`, принцип фиксации доксастических состояний, anchor *The Fixation of Belief
-and Its Undoing / Enterprise of Knowledge — doxastic commitment*. Сильная дословно: «у исключения есть срок,
-область, утвердивший и компенсирующая проверка». Слабая: «флаг `skipValidation` с комментарием».
-Опровержение: «найти исключение без срока — оно вечное, а вечное исключение есть новое правило». **Форма:
-сильная.** Исключение — «у непринятого проекта не удаляем ничего» — имеет область (один проект), срок
-(до приёмки), утвердивший (указание оператора, приведённое датой) и компенсирующую проверку (потолок,
-работающий независимо от приёмки). Именно потолок и не даёт этому исключению стать вечным правилом.
+**Граница:** this family may persist, read and delete rows in `project_event_log` under the retention policy. It
+does not decide project acceptance, task status, Gemini evidence, delivery truth, or raw SQL/debug access. It is
+operator/external-agent forensic history, not Gemini's own observation source and not a full DEBUG trace stream.
 
-*Реализационный факт, 11 сентября 2026: такт 6 — ProjectEventLogRetentionService целиком (пункт 5 очереди, Раздел XLIV).*
-1. **Частота очистки приведена в соответствие со скоростью роста (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010):**
-   - Суточный cron `0 17 3 * * ?` (число, выбранное однажды при скорости роста ~2566 строк/час) ликвидирован.
-   - Служба переведена на непрерывный мониторинг по расписанию: `@Scheduled(fixedDelayString = "${project-event-log.retention-fixed-delay-ms:60000}", initialDelayString = "${project-event-log.retention-initial-delay-ms:30000}")`.
-   - Каждую минуту выполняется быстрый индексированный `countByProjectId` (запрос `COUNT(*)`, 0 строк в памяти). При превышении потолка 20 000 записей излишек срезается немедленно, так что таблица превышает потолок не более чем на ~40 строк (0.2% вместо 180% при 36 382 строках излишка за сутки).
-2. **Ликвидация подъёма излишка в память JVM (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010):**
-   - Метод `trimToCeiling` больше не загружает `PageRequest.of(0, excess)` с тысячами сущностей в кучу JVM (до 36 382 объектов) ради одной метки времени.
-   - Запрос переведён на точечный срез граничной строки: `PageRequest.of(excess - 1, 1)`. Размер страницы инвариантен и равен ровно 1 при любом объёме излишка (`pageSize == 1`).
-3. **Сохранение сильных правил и изоляции:**
-   - Непринятый проект не чистится по возрасту («полный журнал от начала до приёмки» по указанию оператора).
-   - Принятый проект хранится 30 дней grace period (`retainAfterAcceptedDays`).
-   - Короткие изолированные транзакции по каждому проекту, вызов через self-прокси, сохранение новейших записей.
-4. **Заслоняющие тесты (`ProjectEventLogRetentionServiceTest`):**
-   - `trimToCeilingRequestsSingleRowPageEvenWithLargeExcess`: подтверждает `pageSize == 1` и `pageNumber == 36381` при `excess = 36382`.
-   - `retentionIsConfiguredWithFrequentFixedDelayNotDailyCron`: рефлексивно фальсифицирует суточный cron и подтверждает непрерывный `fixedDelayString`.
-   - `enforceRetentionTrimsExcessInSingleCycleWhenCountExceedsCeiling`: проверяет подрезку излишка за один цикл с `pageSize == 1`.
-   - Все 10 юнит-тестов сервиса и 56 тестов регрессионного прогона пройдены успешно (`BUILD SUCCESS`).
+**Входы:** scoped log events with `PROJECT:{id}` MDC, event timestamp/level/logger/message, the
+`project_event_log_enabled` setting, flush batch size, project id/status/acceptedAt, retention grace days,
+per-project ceiling, retention fixed delay and initial delay, repository counts, boundary row `createdAt`,
+`recent` limit and optional `since` instant.
+
+**Выходы:** `project_event_log` rows, bounded recent and chronological project-log API results, deleted rows for
+accepted projects past grace, deleted rows before the ceiling boundary, retention success logs and per-project
+failure logs.
+
+**Владельцы истины и состояния:** `ProjectEventLogEntity` and `project_event_log` own durable log rows;
+`ProjectEventLogRepository` owns count/boundary/delete queries; `ProjectEntity.status` and `acceptedAt` own
+acceptance/grace state; application properties own retention delay, grace and ceiling; `ProjectLogFlushQueue`
+owns transient handoff, while `ProjectEventLogService` owns DB persistence and read projection.
+
+**Инварианты:**
+- unaccepted, waiting or frozen projects are never deleted by age;
+- accepted projects are deleted only after `acceptedAt + retainAfterAcceptedDays`;
+- per-project ceiling applies independently of acceptance state;
+- newest entries are kept when trimming to ceiling;
+- `trimToCeiling` asks for one boundary row with page size `1`;
+- delete queries run inside transactional methods reached through the self-proxy;
+- one project failure is logged and does not stop other projects;
+- project-log reads are bounded by limit unless `since` explicitly asks for chronological history;
+- Gemini does not consume this durable project log as its observation source.
+
+**Сильная форма сейчас:** current source and tests support the ideal. Retention uses frequent
+`fixedDelayString`, not the old daily cron. The old heap-risk path is gone: large excess uses
+`PageRequest.of(excess - 1, 1)`. Tests pin no age deletion for active/waiting/frozen projects, grace-period
+preservation, accepted-project deletion after grace, newest-entry ceiling semantics, per-project failure
+isolation, one-row boundary lookup for a 36,382-row excess, absence of cron, and same-cycle trimming when count
+exceeds the ceiling. The writer path is deploy-independent, bounded in queue/batch size, and gated only at DB
+persist time so disabled persistence does not grow an unbounded in-memory queue.
+
+**Слабая / неидеальная форма:** no current implementation weakness was identified from source/test evidence in
+this tact. The old section's live-measurement defect has already been resolved by frequent fixed-delay retention
+and one-row boundary acquisition.
+
+**Что надо сделать для идеала:** no code change is required from this section record. Keep the current policy
+and remeasure only if live row growth, project cardinality or forensic-access needs materially change.
+
+**Что не трогать:** do not restore daily cron; do not delete unaccepted/frozen projects by age; do not load the
+full excess row set into memory; do not bypass the transactional self-proxy for modifying deletes; do not expose
+an unbounded default recent read; do not let Gemini consume this log as its own evidence channel; do not replace
+the two independent limits with one generic TTL.
+
+**Опровержение / проверка:** this record is false if `enforceRetention` has `cron` instead of frequent
+`fixedDelayString`; if `trimToCeiling` requests page size greater than `1` or `PageRequest.of(0, excess)`; if an
+unaccepted project's old rows are deleted while under ceiling; if an accepted project's rows are deleted before
+grace ends; if one thrown delete exception prevents the next project from being processed; if `recent` has no
+upper bound; or if Gemini reads `ProjectEventLogService` / `ProjectEventLogRepository` as its observation source.
+
+**Критерий закрытия:** closed as ideal while the listed refutations fail, the focused retention tests continue
+to pin frequent cadence and one-row boundary acquisition, and live operations do not show row growth exceeding
+the ceiling by more than the expected delay-window intake.
+
+**Доказательства:** `ProjectEventLogRetentionService.java:20-39,47-51,53-59,69-108,110-135`;
+`ProjectEventLogRepository.java:16-33`; `ProjectEventLogService.java:18-28,42-82`;
+`ProjectEventLogEntity.java:7-18,23-36`; `DurableProjectLogAppender.java:10-17,21-42`;
+`ProjectLogFlushQueue.java:9-17,25-39`; `SystemStatusController.java:40-58`;
+`ProjectEventLogRetentionServiceTest.java:57-115,117-151,153-210`; philosopher rows:
+`04_FACTORY_DERIVED_PATTERNS.md:130-150`, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE_02_elvin-goldman.md:38,53`,
+`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md:67`.
+
+**Текущий статус:** считаю механизм идеальным
+
+**комментарий для Антигравити:** считаю механизм идеальным
 
 # XVIII. Чего в этом перечне нет
 

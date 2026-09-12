@@ -816,3 +816,37 @@ production path can produce both `DBR_THROTTLE` and `DBR_BYPASS` without making 
 "Flow unmeasured". Править надо разметку реальных стадий/очередей или вывести capacity из наблюдаемой
 пропускной способности, потом добавить пробу, где built-in production path дает и `DBR_THROTTLE`, и
 `DBR_BYPASS`.
+
+## 2026-09-12 Codex Strict Record: Durable Project Log Retention Family
+
+Status: documentation-only strict-family replacement for section XLIV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `ProjectEventLogRetentionService`, `ProjectEventLogRepository`,
+`ProjectRepository`, `ProjectEntity`, `ProjectStatus`, `ProjectEventLogEntity`, `ProjectEventLogService`,
+`DurableProjectLogAppender`, `ProjectLogFlushQueue` and `SystemStatusController` as the durable project log
+retention and forensic read boundary family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 26 |
+| Sections still missing visible `комментарий для Антигравити` | 37 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section still contained a stale live defect about daily retention. Current source and
+tests show that the daily cron was replaced with frequent fixed-delay retention and that trimming now acquires
+one boundary row instead of loading the full excess into JVM memory.
+
+Remaining non-ideal point for this family: no current implementation weakness was identified from source/test
+evidence in this tact. No code was changed.
+
+комментарий для Антигравити: считаю механизм идеальным
