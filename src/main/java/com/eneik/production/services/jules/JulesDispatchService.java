@@ -682,14 +682,7 @@ public class JulesDispatchService {
                     + "regardless of what you report in the PR summary.\n");
         }
         if (com.eneik.production.services.gate.DesignExcellenceGate.UI_TAGS.contains(task.getRole().getTag())) {
-            String designCheckDir = com.eneik.production.services.gate.DesignExcellenceGate.designCheckDir(task);
-            roleContextBuilder.append("- Design verification (exception to the no-screenshots rule above): before opening the PR, "
-                    + "use Playwright (or an equivalent headless browser tool) to render the actual UI you just built and save "
-                    + "exactly two real PNG screenshots - one at 1440px viewport width (desktop), one at 375px viewport width "
-                    + "(mobile) - at " + designCheckDir + "desktop-1440.png and " + designCheckDir + "mobile-375.png, and commit "
-                    + "ONLY these two files (nothing else from your test run) as part of this PR. This is the only evidence the "
-                    + "platform's automated design gate accepts - without these two real files at these exact paths the task "
-                    + "will fail the gate regardless of what you report in the PR summary.\n");
+            roleContextBuilder.append(designVerificationInstruction(task));
         }
         if (buildPhase) {
             roleContextBuilder.append("- This project is in its build phase: trust is maximal right now. Make the call yourself from your role's own judgment (see Role Charter below) rather than hedging toward the safest generic option - the system doesn't exist yet, your judgment is what's building it. Mechanical polish gates are relaxed for this phase; your role's own refusal criteria still apply in full.\n");
@@ -5844,4 +5837,18 @@ public class JulesDispatchService {
         }
     }
 
+    public static String designVerificationInstruction(TaskEntity task) {
+        String designCheckDir = com.eneik.production.services.gate.DesignExcellenceGate.designCheckDir(task);
+        return "- Design verification (exception to the no-screenshots rule above): before opening the PR, "
+                + "use Playwright (or an equivalent headless browser tool) to render the actual UI you just built, save "
+                + "two real PNG screenshots - one at 1440px viewport width (desktop), one at 375px viewport width "
+                + "(mobile) - at " + designCheckDir + "desktop-1440.png and " + designCheckDir + "mobile-375.png, and export layout geometry "
+                + "bounding boxes (from getBoundingClientRect on key layout elements) at "
+                + designCheckDir + "layout-check.json (shape: [{\"id\":\"header\",\"left\":0,\"top\":0,\"width\":375,\"height\":60}, ...]), "
+                + "and commit ONLY these three verification files (nothing else from your test run) as part of this PR. "
+                + "This is the only evidence the platform's automated design gate accepts - without these three real files at these exact paths the task "
+                + "will fail the gate regardless of what you report in the PR summary.\n";
+    }
+
 }
+

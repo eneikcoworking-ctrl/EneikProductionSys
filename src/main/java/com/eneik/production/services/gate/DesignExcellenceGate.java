@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.services.github.GitHubPullRequestService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
@@ -30,18 +31,17 @@ import java.util.Set;
 @Order(200)
 public class DesignExcellenceGate implements GateCheck {
     public static final Set<String> UI_TAGS = Set.of("BARCAN-TAG-03", "BARCAN-TAG-11");
-    private static final String CHECK_NAME = "design_excellence";
-    private static final long MIN_SCREENSHOT_BYTES = 1024;
+    public static final String CHECK_NAME = "design_excellence";
+    public static final long MIN_SCREENSHOT_BYTES = 1024;
+    public static final String DESKTOP_SCREENSHOT = "desktop-1440.png";
+    public static final String MOBILE_SCREENSHOT = "mobile-375.png";
+    public static final String LAYOUT_CHECK_JSON = "layout-check.json";
 
     private final JulesSessionRepository julesSessionRepository;
     private final GitHubPullRequestService gitHubPullRequestService;
     private final com.eneik.production.services.design.LayoutGeometryAuditService layoutGeometryAuditService;
 
-    public DesignExcellenceGate(JulesSessionRepository julesSessionRepository,
-                                 GitHubPullRequestService gitHubPullRequestService) {
-        this(julesSessionRepository, gitHubPullRequestService, new com.eneik.production.services.design.LayoutGeometryAuditService());
-    }
-
+    @Autowired
     public DesignExcellenceGate(JulesSessionRepository julesSessionRepository,
                                  GitHubPullRequestService gitHubPullRequestService,
                                  com.eneik.production.services.design.LayoutGeometryAuditService layoutGeometryAuditService) {
@@ -121,7 +121,10 @@ public class DesignExcellenceGate implements GateCheck {
             }
         }
 
-        boolean layoutGeometryPassed = true;
+        boolean hasGeometryViolations = false;
+        boolean hasVerifiableGeometryPassed = false;
+        List<String> geometryFailureReasons = new ArrayList<>();
+
         for (String changedPath : changedFiles) {
             if (isMarkupOrLayoutPath(changedPath)) {
                 java.util.Optional<String> contentOpt = gitHubPullRequestService.fetchFileContent(task.getProject(), headRef, changedPath);
@@ -130,21 +133,36 @@ public class DesignExcellenceGate implements GateCheck {
                     com.eneik.production.services.design.LayoutGeometryAuditService.LayoutAuditResult layoutResult =
                             layoutGeometryAuditService.auditLayout(content);
                     if (!layoutResult.scalable()) {
-                        layoutGeometryPassed = false;
-                        failureReasons.add("viewport scalability prohibited in " + changedPath + ": user-scalable=no or maximum-scale=1 detected (violates mobile accessibility and prevents zoom recovery)");
+                        hasGeometryViolations = true;
+                        geometryFailureReasons.add("viewport scalability prohibited in " + changedPath + ": user-scalable=no or maximum-scale=1 detected (violates mobile accessibility and prevents zoom recovery)");
                     }
                     if (layoutResult.hasCollisions()) {
-                        layoutGeometryPassed = false;
+                        hasGeometryViolations = true;
                         for (com.eneik.production.services.design.LayoutGeometryAuditService.Collision col : layoutResult.collisions()) {
-                            failureReasons.add("responsive check failed: layout collision detected in " + changedPath + ": " + col.description());
+                            geometryFailureReasons.add("responsive check failed: layout collision detected in " + changedPath + ": " + col.description());
                         }
                     }
-                    if (!layoutResult.passed() && layoutResult.scalable() && !layoutResult.hasCollisions()) {
-                        layoutGeometryPassed = false;
-                        failureReasons.add("responsive check failed: " + layoutResult.verdictReason() + " in " + changedPath);
+                    if (layoutResult.isFailed() && !layoutResult.hasCollisions() && layoutResult.scalable()) {
+                        hasGeometryViolations = true;
+                        geometryFailureReasons.add("responsive check failed: " + layoutResult.verdictReason() + " in " + changedPath);
+                    }
+                    if (layoutResult.passed()) {
+                        hasVerifiableGeometryPassed = true;
                     }
                 }
             }
+        }
+
+        boolean layoutGeometryPassed = false;
+        if (hasGeometryViolations) {
+            failureReasons.addAll(geometryFailureReasons);
+        } else if (hasVerifiableGeometryPassed) {
+            layoutGeometryPassed = true;
+        } else {
+            // Epistemic three-value status: CANNOT_JUDGE ("геометрия не выводима")
+            // When no bounding boxes exist in PR (e.g. layout-check.json missing), responsiveness cannot be judged.
+            // 40 points are NOT awarded, preventing false green on diff file sizes alone.
+            failureReasons.add("responsive check cannot be judged: геометрия не выводима (layout-check.json отсутствует или не содержит элементов для аудита); 40 баллов за отзывчивость не начислены");
         }
 
         if (responsiveOk && layoutGeometryPassed) {
@@ -171,6 +189,10 @@ public class DesignExcellenceGate implements GateCheck {
 
     public static String designCheckDir(TaskEntity task) {
         return ".eneik/records/design-check-" + task.getId() + "/";
+    }
+
+    public static String layoutCheckPath(TaskEntity task) {
+        return designCheckDir(task) + LAYOUT_CHECK_JSON;
     }
 
     // -1 unless the path both appears as a real changed file in the PR's own diff AND is actually

@@ -38,7 +38,7 @@ class DesignExcellenceGateTest {
     void setUp() {
         julesSessionRepository = mock(JulesSessionRepository.class);
         gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        gate = new DesignExcellenceGate(julesSessionRepository, gitHubPullRequestService);
+        gate = new DesignExcellenceGate(julesSessionRepository, gitHubPullRequestService, new com.eneik.production.services.design.LayoutGeometryAuditService());
         // Default: no implementer session/PR found for any task.
         when(julesSessionRepository.findByTaskId(any())).thenReturn(List.of());
     }
@@ -76,7 +76,7 @@ class DesignExcellenceGateTest {
     }
 
     @Test
-    void shouldPassUiTaskWithBothRealScreenshotsAndDifferentSizes() {
+    void shouldFailWhenScreenshotsDifferInSizeButNoGeometryEvidenceProvided() {
         TaskEntity task = createTask("BARCAN-TAG-11", null);
         stubRealPr(task, "desktop-1440.png", "mobile-375.png");
         stubFileBytes(task, "desktop-1440.png", 2000);
@@ -87,7 +87,83 @@ class DesignExcellenceGateTest {
 
         GateResult result = gate.check(task);
 
+        // Falsification harness (D008): screenshots differing in bytes alone is NOT sufficient.
+        // Without verified geometry elements (layout-check.json or markup geometry), responsiveness
+        // cannot be judged: score is 30 (screenshots) + 0 (responsive) + 30 (visual QA) = 60 < 70.
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureReasons()).anyMatch(r -> r.contains("responsive check cannot be judged: геометрия не выводима"));
+    }
+
+    @Test
+    void shouldPassUiTaskWithScreenshotsAndValidLayoutCheckJson() {
+        TaskEntity task = createTask("BARCAN-TAG-11", null);
+        stubRealPrWithFiles(task,
+                List.of("desktop-1440.png", "mobile-375.png"),
+                List.of(DesignExcellenceGate.layoutCheckPath(task)));
+        stubFileBytes(task, "desktop-1440.png", 2000);
+        stubFileBytes(task, "mobile-375.png", 1500);
+
+        String json = """
+                [
+                    {"id": "header", "left": 0, "top": 0, "width": 375, "height": 60},
+                    {"id": "main", "left": 0, "top": 70, "width": 375, "height": 300}
+                ]
+                """;
+        when(gitHubPullRequestService.fetchFileContent(any(), eq(HEAD_REF), eq(DesignExcellenceGate.layoutCheckPath(task))))
+                .thenReturn(Optional.of(json));
+
+        GateResult result = gate.check(task);
+
         assertThat(result.passed()).isTrue();
+        assertThat(result.failureReasons()).isEmpty();
+    }
+
+    @Test
+    void shouldFailWhenLayoutCheckJsonHasCollisions() {
+        TaskEntity task = createTask("BARCAN-TAG-11", null);
+        stubRealPrWithFiles(task,
+                List.of("desktop-1440.png", "mobile-375.png"),
+                List.of(DesignExcellenceGate.layoutCheckPath(task)));
+        stubFileBytes(task, "desktop-1440.png", 2000);
+        stubFileBytes(task, "mobile-375.png", 1500);
+
+        String json = """
+                [
+                    {"id": "nav-menu", "left": 10, "top": 20, "width": 200, "height": 60},
+                    {"id": "hero", "left": 50, "top": 40, "width": 200, "height": 100}
+                ]
+                """;
+        when(gitHubPullRequestService.fetchFileContent(any(), eq(HEAD_REF), eq(DesignExcellenceGate.layoutCheckPath(task))))
+                .thenReturn(Optional.of(json));
+
+        GateResult result = gate.check(task);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureReasons()).anyMatch(r -> r.contains("responsive check failed: layout collision detected"));
+    }
+
+    @Test
+    void shouldFailWhenScreenshotsDifferInSizeAndMarkupHasNoGeometryElements() {
+        TaskEntity task = createTask("BARCAN-TAG-11", null);
+        stubRealPrWithFiles(task,
+                List.of("desktop-1440.png", "mobile-375.png"),
+                List.of("frontend/src/App.svelte"));
+        stubFileBytes(task, "desktop-1440.png", 2000);
+        stubFileBytes(task, "mobile-375.png", 1500);
+
+        String markupWithoutGeometry = """
+                <main>
+                    <h1>Hello World</h1>
+                    <p>Sample component without inline geometry attributes</p>
+                </main>
+                """;
+        when(gitHubPullRequestService.fetchFileContent(any(), eq(HEAD_REF), eq("frontend/src/App.svelte")))
+                .thenReturn(Optional.of(markupWithoutGeometry));
+
+        GateResult result = gate.check(task);
+
+        assertThat(result.passed()).isFalse();
+        assertThat(result.failureReasons()).anyMatch(r -> r.contains("responsive check cannot be judged: геометрия не выводима"));
     }
 
     @Test

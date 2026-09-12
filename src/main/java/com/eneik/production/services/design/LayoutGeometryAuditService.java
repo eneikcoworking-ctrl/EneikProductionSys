@@ -37,6 +37,7 @@ public class LayoutGeometryAuditService {
     // 2. data-rect="x,y,w,h" or data-box="x,y,w,h"
     private static final Pattern DATA_RECT_ELEM = Pattern.compile("<([a-zA-Z0-9_-]+)\\b([^>]*data-(?:rect|box)=[\"']([0-9.,\\s-]+)[\"'][^>]*)>", Pattern.CASE_INSENSITIVE);
     // 3. inline style with left, top, width, height
+    private static final Pattern HTML_TAG_WITH_STYLE = Pattern.compile("<([a-zA-Z0-9_-]+)\\b([^>]*style=[\"']([^\"']*)[\"'][^>]*)>", Pattern.CASE_INSENSITIVE);
     private static final Pattern STYLE_ATTR = Pattern.compile("style=[\"']([^\"']*)[\"']", Pattern.CASE_INSENSITIVE);
 
     private final ObjectMapper objectMapper;
@@ -96,15 +97,55 @@ public class LayoutGeometryAuditService {
 
     public record ViewportScalabilityResult(boolean scalable, String violation) {}
 
+    public enum GeometryVerdict {
+        PASSED("прошло"),
+        FAILED("отказ"),
+        CANNOT_JUDGE("геометрия не выводима");
+
+        private final String displayName;
+
+        GeometryVerdict(String displayName) {
+            this.displayName = displayName;
+        }
+
+        public String displayName() {
+            return displayName;
+        }
+    }
+
     public record LayoutAuditResult(
             boolean passed,
             boolean scalable,
             List<Collision> collisions,
             double proximityRatio,
+            GeometryVerdict verdict,
             String verdictReason) {
 
-        public boolean hasCollisions() {
+        public LayoutAuditResult(
+                boolean passed,
+                boolean scalable,
+                List<Collision> collisions,
+                double proximityRatio,
+                String verdictReason) {
+            this(passed, scalable, collisions, proximityRatio,
+                    passed ? GeometryVerdict.PASSED : (hasCollisions(collisions) || !scalable || (verdictReason != null && verdictReason.contains("rejected")) ? GeometryVerdict.FAILED : GeometryVerdict.CANNOT_JUDGE),
+                    verdictReason);
+        }
+
+        private static boolean hasCollisions(List<Collision> collisions) {
             return collisions != null && !collisions.isEmpty();
+        }
+
+        public boolean hasCollisions() {
+            return hasCollisions(collisions);
+        }
+
+        public boolean isCannotJudge() {
+            return verdict == GeometryVerdict.CANNOT_JUDGE;
+        }
+
+        public boolean isFailed() {
+            return verdict == GeometryVerdict.FAILED;
         }
     }
 
@@ -135,6 +176,29 @@ public class LayoutGeometryAuditService {
     }
 
     /**
+     * Parses a JSON array node of bounding boxes.
+     */
+    public List<BoundingBox> parseBoxArray(JsonNode root) {
+        if (root == null || !root.isArray()) {
+            return List.of();
+        }
+        List<BoundingBox> list = new ArrayList<>();
+        for (int i = 0; i < root.size(); i++) {
+            JsonNode node = root.get(i);
+            String id = node.has("id") ? node.get("id").asText() : "elem-" + i;
+            String group = node.has("group") ? node.get("group").asText() : null;
+            double left = node.has("left") ? node.get("left").asDouble() : (node.has("x") ? node.get("x").asDouble() : 0.0);
+            double top = node.has("top") ? node.get("top").asDouble() : (node.has("y") ? node.get("y").asDouble() : 0.0);
+            double width = node.has("width") ? node.get("width").asDouble() : (node.has("w") ? node.get("w").asDouble() : 0.0);
+            double height = node.has("height") ? node.get("height").asDouble() : (node.has("h") ? node.get("h").asDouble() : 0.0);
+            if (width > 0 && height > 0) {
+                list.add(new BoundingBox(id, group, left, top, width, height));
+            }
+        }
+        return list;
+    }
+
+    /**
      * Extracts bounding boxes from HTML markup or JSON layout definitions.
      */
     public List<BoundingBox> extractBoundingBoxes(String markup) {
@@ -148,21 +212,24 @@ public class LayoutGeometryAuditService {
             try {
                 JsonNode root = objectMapper.readTree(trimmed);
                 if (root.isArray()) {
-                    List<BoundingBox> list = new ArrayList<>();
-                    for (int i = 0; i < root.size(); i++) {
-                        JsonNode node = root.get(i);
-                        String id = node.has("id") ? node.get("id").asText() : "elem-" + i;
-                        String group = node.has("group") ? node.get("group").asText() : null;
-                        double left = node.has("left") ? node.get("left").asDouble() : (node.has("x") ? node.get("x").asDouble() : 0.0);
-                        double top = node.has("top") ? node.get("top").asDouble() : (node.has("y") ? node.get("y").asDouble() : 0.0);
-                        double width = node.has("width") ? node.get("width").asDouble() : (node.has("w") ? node.get("w").asDouble() : 0.0);
-                        double height = node.has("height") ? node.get("height").asDouble() : (node.has("h") ? node.get("h").asDouble() : 0.0);
-                        if (width > 0 && height > 0) {
-                            list.add(new BoundingBox(id, group, left, top, width, height));
-                        }
-                    }
+                    List<BoundingBox> list = parseBoxArray(root);
                     if (!list.isEmpty()) {
                         return list;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // Check if input is a JSON object with boxes/elements/rectangles
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                JsonNode root = objectMapper.readTree(trimmed);
+                for (String key : List.of("boxes", "elements", "rectangles", "items", "components")) {
+                    if (root.has(key) && root.get(key).isArray()) {
+                        List<BoundingBox> list = parseBoxArray(root.get(key));
+                        if (!list.isEmpty()) {
+                            return list;
+                        }
                     }
                 }
             } catch (Exception ignored) {}
@@ -198,42 +265,61 @@ public class LayoutGeometryAuditService {
             }
         }
 
-        // 2. Check SVG rect elements: <rect x="10" y="20" width="100" height="50" ...>
-        Matcher rectMatcher = SVG_RECT.matcher(markup);
-        while (rectMatcher.find()) {
+        // 2. Check SVG <rect x="..." y="..." width="..." height="..." />
+        Matcher svgRectMatcher = SVG_RECT.matcher(markup);
+        while (svgRectMatcher.find()) {
             counter++;
-            String attrs = rectMatcher.group(1);
+            String attrs = svgRectMatcher.group(1);
             Double x = extractDoubleAttr(attrs, "x");
             Double y = extractDoubleAttr(attrs, "y");
-            Double width = extractDoubleAttr(attrs, "width");
-            Double height = extractDoubleAttr(attrs, "height");
-            if (x != null && y != null && width != null && height != null && width > 0 && height > 0) {
+            Double w = extractDoubleAttr(attrs, "width");
+            Double h = extractDoubleAttr(attrs, "height");
+            if (w != null && h != null && w > 0 && h > 0) {
                 String id = extractAttr(attrs, "id");
-                if (id == null) id = "rect-" + counter;
+                if (id == null) id = "svg-rect-" + counter;
                 String group = extractAttr(attrs, "data-group");
-                boxes.add(new BoundingBox(id, group, x, y, width, height));
+                if (group == null) group = extractAttr(attrs, "class");
+                boxes.add(new BoundingBox(id, group, x != null ? x : 0.0, y != null ? y : 0.0, w, h));
             }
         }
 
-        // 3. Check inline styles with left/top/width/height
-        Matcher styleMatcher = Pattern.compile("<([a-zA-Z0-9_-]+)\\b([^>]*style=[\"'][^\"']*[\"'][^>]*)>", Pattern.CASE_INSENSITIVE).matcher(markup);
+        // 3. Check HTML elements with inline style: style="left: ...; top: ...; width: ...; height: ..."
+        Matcher styleMatcher = HTML_TAG_WITH_STYLE.matcher(markup);
+        boolean foundStyleBoxes = false;
         while (styleMatcher.find()) {
             String tag = styleMatcher.group(1);
+            if ("rect".equalsIgnoreCase(tag)) {
+                continue;
+            }
             String attrs = styleMatcher.group(2);
-            Matcher sMatcher = STYLE_ATTR.matcher(attrs);
-            if (sMatcher.find()) {
-                String style = sMatcher.group(1);
+            String style = styleMatcher.group(3);
+
+            Double left = extractCssPixel(style, "left");
+            Double top = extractCssPixel(style, "top");
+            Double width = extractCssPixel(style, "width");
+            Double height = extractCssPixel(style, "height");
+            if (left != null && top != null && width != null && height != null && width > 0 && height > 0) {
+                counter++;
+                String id = extractAttr(attrs, "id");
+                if (id == null) id = tag + "-" + counter;
+                String group = extractAttr(attrs, "data-group");
+                if (group == null) group = extractAttr(attrs, "class");
+                boxes.add(new BoundingBox(id, group, left, top, width, height));
+                foundStyleBoxes = true;
+            }
+        }
+
+        if (!foundStyleBoxes) {
+            Matcher rawStyleMatcher = STYLE_ATTR.matcher(markup);
+            while (rawStyleMatcher.find()) {
+                String style = rawStyleMatcher.group(1);
                 Double left = extractCssPixel(style, "left");
                 Double top = extractCssPixel(style, "top");
                 Double width = extractCssPixel(style, "width");
                 Double height = extractCssPixel(style, "height");
                 if (left != null && top != null && width != null && height != null && width > 0 && height > 0) {
                     counter++;
-                    String id = extractAttr(attrs, "id");
-                    if (id == null) id = tag + "-" + counter;
-                    String group = extractAttr(attrs, "data-group");
-                    if (group == null) group = extractAttr(attrs, "class");
-                    boxes.add(new BoundingBox(id, group, left, top, width, height));
+                    boxes.add(new BoundingBox("elem-" + counter, null, left, top, width, height));
                 }
             }
         }
@@ -243,10 +329,11 @@ public class LayoutGeometryAuditService {
 
     /**
      * Audits layout geometry: detects overlapping elements and checks Gestalt proximity.
+     * Returns three-valued outcome: PASSED, FAILED, or CANNOT_JUDGE.
      */
     public LayoutAuditResult auditBoxes(List<BoundingBox> boxes) {
         if (boxes == null || boxes.isEmpty()) {
-            return new LayoutAuditResult(true, true, List.of(), 1.0, "no elements to audit");
+            return new LayoutAuditResult(false, true, List.of(), 1.0, GeometryVerdict.CANNOT_JUDGE, "геометрия не выводима: нет элементов для аудита");
         }
 
         List<Collision> collisions = new ArrayList<>();
@@ -262,6 +349,11 @@ public class LayoutGeometryAuditService {
                     collisions.add(new Collision(a.id(), b.id(), area, desc));
                 }
             }
+        }
+
+        if (!collisions.isEmpty()) {
+            String reason = "rejected: " + collisions.size() + " layout collision(s) detected (" + collisions.get(0).description() + ")";
+            return new LayoutAuditResult(false, true, collisions, 0.0, GeometryVerdict.FAILED, reason);
         }
 
         // Grouping proximity check (GROUPING_PROXIMITY_GATE):
@@ -315,44 +407,91 @@ public class LayoutGeometryAuditService {
             }
         }
 
-        boolean passed = collisions.isEmpty() && proximityViolations.isEmpty();
-        String reason;
-        if (!collisions.isEmpty()) {
-            reason = "rejected: " + collisions.size() + " layout collision(s) detected (" + collisions.get(0).description() + ")";
-        } else if (!proximityViolations.isEmpty()) {
-            reason = "rejected: Gestalt proximity gate violated (" + String.join("; ", proximityViolations) + ")";
-        } else {
-            reason = "accepted: layout geometry verified (0 collisions, proximity ratio=" + String.format(Locale.ROOT, "%.2f", maxProximityRatio) + ")";
+        if (!proximityViolations.isEmpty()) {
+            String reason = "rejected: Gestalt proximity gate violated (" + String.join("; ", proximityViolations) + ")";
+            return new LayoutAuditResult(false, true, collisions, maxProximityRatio, GeometryVerdict.FAILED, reason);
         }
 
-        return new LayoutAuditResult(passed, true, collisions, maxProximityRatio, reason);
+        String reason = "accepted: layout geometry verified (0 collisions, proximity ratio=" + String.format(Locale.ROOT, "%.2f", maxProximityRatio) + ")";
+        return new LayoutAuditResult(true, true, collisions, maxProximityRatio, GeometryVerdict.PASSED, reason);
     }
 
     /**
-     * Full audit of markup: combines viewport scalability with layout geometry.
+     * Audits multi-resolution JSON definitions (e.g. {"desktop": [...], "mobile": [...]}).
+     */
+    private LayoutAuditResult auditMultiResolutionJson(JsonNode root) {
+        List<Collision> allCollisions = new ArrayList<>();
+        double worstProximityRatio = 0.0;
+        int auditedResolutions = 0;
+
+        for (String resKey : List.of("desktop", "mobile", "tablet")) {
+            if (root.has(resKey)) {
+                JsonNode resNode = root.get(resKey);
+                List<BoundingBox> boxes = parseBoxArray(resNode);
+                if (!boxes.isEmpty()) {
+                    auditedResolutions++;
+                    LayoutAuditResult resAudit = auditBoxes(boxes);
+                    if (resAudit.hasCollisions()) {
+                        allCollisions.addAll(resAudit.collisions());
+                    }
+                    if (resAudit.proximityRatio() > worstProximityRatio) {
+                        worstProximityRatio = resAudit.proximityRatio();
+                    }
+                    if (resAudit.isFailed() && !resAudit.hasCollisions()) {
+                        return resAudit;
+                    }
+                }
+            }
+        }
+
+        if (auditedResolutions == 0) {
+            return new LayoutAuditResult(false, true, List.of(), 1.0, GeometryVerdict.CANNOT_JUDGE, "геометрия не выводима: нет элементов для аудита в разрешениях");
+        }
+
+        if (!allCollisions.isEmpty()) {
+            return new LayoutAuditResult(false, true, allCollisions, worstProximityRatio, GeometryVerdict.FAILED, allCollisions.get(0).description());
+        }
+
+        return new LayoutAuditResult(true, true, List.of(), worstProximityRatio, GeometryVerdict.PASSED, "accepted: layout geometry verified across resolutions");
+    }
+
+    /**
+     * Full audit of markup or layout JSON: combines viewport scalability with layout geometry.
      */
     public LayoutAuditResult auditLayout(String markup) {
-        ViewportScalabilityResult viewportResult = auditViewportScalability(markup);
-        List<BoundingBox> boxes = extractBoundingBoxes(markup);
-        LayoutAuditResult boxResult = auditBoxes(boxes);
+        if (markup == null || markup.isBlank()) {
+            return new LayoutAuditResult(false, true, List.of(), 1.0, GeometryVerdict.CANNOT_JUDGE, "геометрия не выводима: пустой контент");
+        }
 
+        ViewportScalabilityResult viewportResult = auditViewportScalability(markup);
         if (!viewportResult.scalable()) {
             return new LayoutAuditResult(
                     false,
                     false,
-                    boxResult.collisions(),
-                    boxResult.proximityRatio(),
+                    List.of(),
+                    1.0,
+                    GeometryVerdict.FAILED,
                     "rejected: " + viewportResult.violation()
             );
         }
 
-        return new LayoutAuditResult(
-                boxResult.passed(),
-                true,
-                boxResult.collisions(),
-                boxResult.proximityRatio(),
-                boxResult.verdictReason()
-        );
+        String trimmed = markup.trim();
+        // Check if content is a JSON with multiple resolutions (e.g. {"desktop": [...], "mobile": [...]})
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+                JsonNode root = objectMapper.readTree(trimmed);
+                if (root.has("desktop") || root.has("mobile")) {
+                    return auditMultiResolutionJson(root);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        List<BoundingBox> boxes = extractBoundingBoxes(markup);
+        if (boxes.isEmpty()) {
+            return new LayoutAuditResult(false, true, List.of(), 1.0, GeometryVerdict.CANNOT_JUDGE, "геометрия не выводима: нет элементов для аудита");
+        }
+
+        return auditBoxes(boxes);
     }
 
     private static String extractAttr(String attrs, String name) {

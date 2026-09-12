@@ -8062,17 +8062,26 @@ meaning as use, private-language argument*. Сильная дословно: «�
   1. Создан `LayoutGeometryAuditService`: вычисляет геометрию прямоугольников `BoundingBox` (`overlaps`, `overlapArea`,
      `distanceTo`), проверяет отсутствие пересечений и Gestalt proximity ratio (`intra / inter < 1.0`), проводит аудит
      масштабируемости viewport (`auditViewportScalability`, запрет `user-scalable=no`, `user-scalable=0`, `maximum-scale=1.0`).
-  2. `DesignExcellenceGate`: проверяет изменённую разметку (`.html`, `.svelte`, `.vue`, `.jsx`, `.tsx`, `layout.json`).
+  2. `DesignExcellenceGate`: проверяет изменённую разметку (`.html`, `.svelte`, `.vue`, `.jsx`, `.tsx`, `layout.json`, `layout-check.json`).
      При обнаружении наложения элементов или запрета масштабирования сбрасывает проверку отзывчивости (`responsive_ok = false`,
      вес 40), снижая общий балл до 60 < 70 и отвергая задачу с явной причиной.
-  3. `DesignConsistencyAuditService`: отклоняет вердиктом `REJECTED` разметку с `user-scalable=no` / `maximum-scale=1.0`.
-  4. `ProjectFlowService`: текст задания ревьюеру `designReviewPrompt` явно разделяет машинные инварианты геометрии
+     При отсутствии разметки/файла геометрии (`CANNOT_JUDGE`) 40 баллов за отзывчивость не начисляются, исключая ложную зелёнку.
+     Конструктор класса сведён к строго единственному с аннотацией `@Autowired`.
+  3. `JulesDispatchService`: инструкция `designVerificationInstruction` для UI-задач требует 3 обязательных файла:
+     `desktop-1440.png`, `mobile-375.png` и `layout-check.json` (Playwright getBoundingClientRect).
+  4. `DesignConsistencyAuditService`: отклоняет вердиктом `REJECTED` разметку с `user-scalable=no` / `maximum-scale=1.0`.
+  5. `ProjectFlowService`: текст задания ревьюеру `designReviewPrompt` явно разделяет машинные инварианты геометрии
      (`DesignExcellenceGate`, `GROUPING_PROXIMITY_GATE`) и эстетическое/семантическое суждение человека. Текст задания
      закреплен строгим тестом.
 - **Заслоны (89/89 зелёные в тестах):**
-  - `LayoutGeometryAuditServiceTest` (8/8): проверка пересечений, Gestalt proximity ratio, `user-scalable=no`, `maximum-scale=1.0`.
-  - `DesignExcellenceGateTest` (9/9): снимки разного размера при наложении элементов в разметке или при `user-scalable=no`
-    отвергаются с баллом 60 < 70; чистая разметка проходит с баллом 100 >= 70.
+  - `LayoutGeometryAuditServiceTest` (13/13): проверка пересечений, Gestalt proximity ratio, `user-scalable=no`, `maximum-scale=1.0`,
+    `CANNOT_JUDGE` при пустых наборах/разметке без геометрии, парсинг JSON-массивов и multi-resolution JSON.
+  - `DesignExcellenceGateTest` (11/11):
+    - Доказано опровержение: два снимка разного размера БЕЗ файла геометрии отвергаются с баллом 60 < 70 («геометрия не выводима»).
+    - Разметка без атрибутов геометрии (Svelte-компонент) отвергается с баллом 60 < 70.
+    - Пересечения в `layout-check.json` отвергаются с причиной `layout collision detected`.
+    - Валидный `layout-check.json` проходит с баллом 100 >= 70.
+  - `GateOrchestratorIntegrationTest` (9/9): сквозной заслон со стабом `layout-check.json`.
   - `DesignConsistencyAuditServiceTest` (14/14): `htmlWithUserScalableNoReturnsRejected`.
   - `ProjectFlowServiceTest` (41/41): `designReviewPrompt_explicitlySeparatesAutomatedMachineGates`.
 - **Форма:** сильная, подтверждена падающими тестами на опровержение. Статус: **СДЕЛАНО (держится)**.

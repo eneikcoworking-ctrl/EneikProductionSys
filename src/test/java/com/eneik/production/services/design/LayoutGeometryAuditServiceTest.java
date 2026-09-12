@@ -166,4 +166,85 @@ class LayoutGeometryAuditServiceTest {
         assertThat(result.proximityRatio()).isGreaterThanOrEqualTo(1.0);
         assertThat(result.verdictReason()).contains("Gestalt proximity gate violated");
     }
+
+    @Test
+    void emptyBoxesReturnsCannotJudgeVerdict() {
+        LayoutGeometryAuditService.LayoutAuditResult result = service.auditBoxes(List.of());
+        assertThat(result.passed()).isFalse();
+        assertThat(result.verdict()).isEqualTo(LayoutGeometryAuditService.GeometryVerdict.CANNOT_JUDGE);
+        assertThat(result.isCannotJudge()).isTrue();
+        assertThat(result.isFailed()).isFalse();
+        assertThat(result.verdictReason()).contains("геометрия не выводима: нет элементов для аудита");
+    }
+
+    @Test
+    void markupWithoutGeometryElementsReturnsCannotJudgeVerdict() {
+        String markup = """
+                <div class="header">
+                    <h1>Title</h1>
+                    <p>Description text</p>
+                </div>
+                """;
+        LayoutGeometryAuditService.LayoutAuditResult result = service.auditLayout(markup);
+        assertThat(result.passed()).isFalse();
+        assertThat(result.verdict()).isEqualTo(LayoutGeometryAuditService.GeometryVerdict.CANNOT_JUDGE);
+        assertThat(result.isCannotJudge()).isTrue();
+        assertThat(result.isFailed()).isFalse();
+        assertThat(result.verdictReason()).contains("геометрия не выводима");
+    }
+
+    @Test
+    void jsonArrayWithBoxesIsAuditedCorrectly() {
+        String json = """
+                [
+                    {"id": "box-1", "left": 0, "top": 0, "width": 100, "height": 50},
+                    {"id": "box-2", "left": 0, "top": 60, "width": 100, "height": 50}
+                ]
+                """;
+        LayoutGeometryAuditService.LayoutAuditResult result = service.auditLayout(json);
+        assertThat(result.passed()).isTrue();
+        assertThat(result.verdict()).isEqualTo(LayoutGeometryAuditService.GeometryVerdict.PASSED);
+        assertThat(result.hasCollisions()).isFalse();
+    }
+
+    @Test
+    void multiResolutionJsonDesktopAndMobileAudited() {
+        String json = """
+                {
+                    "desktop": [
+                        {"id": "sidebar", "left": 0, "top": 0, "width": 300, "height": 800},
+                        {"id": "main", "left": 310, "top": 0, "width": 800, "height": 800}
+                    ],
+                    "mobile": [
+                        {"id": "sidebar", "left": 0, "top": 0, "width": 375, "height": 200},
+                        {"id": "main", "left": 0, "top": 210, "width": 375, "height": 600}
+                    ]
+                }
+                """;
+        LayoutGeometryAuditService.LayoutAuditResult result = service.auditLayout(json);
+        assertThat(result.passed()).isTrue();
+        assertThat(result.verdict()).isEqualTo(LayoutGeometryAuditService.GeometryVerdict.PASSED);
+        assertThat(result.hasCollisions()).isFalse();
+    }
+
+    @Test
+    void multiResolutionJsonWithMobileCollisionFailsAudit() {
+        String json = """
+                {
+                    "desktop": [
+                        {"id": "sidebar", "left": 0, "top": 0, "width": 300, "height": 800},
+                        {"id": "main", "left": 310, "top": 0, "width": 800, "height": 800}
+                    ],
+                    "mobile": [
+                        {"id": "sidebar", "left": 0, "top": 0, "width": 375, "height": 200},
+                        {"id": "main", "left": 0, "top": 150, "width": 375, "height": 600}
+                    ]
+                }
+                """;
+        LayoutGeometryAuditService.LayoutAuditResult result = service.auditLayout(json);
+        assertThat(result.passed()).isFalse();
+        assertThat(result.verdict()).isEqualTo(LayoutGeometryAuditService.GeometryVerdict.FAILED);
+        assertThat(result.hasCollisions()).isTrue();
+    }
 }
+
