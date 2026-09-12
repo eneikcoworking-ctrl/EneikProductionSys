@@ -1220,3 +1220,35 @@ is complete. Compiler identity/admission is strong for current rows, but legacy 
 not proven complete. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XV; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Gemini Retirement Transfer Map
+
+Status: documentation-only strict-family replacement for section XXVIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `GoogleAiResourceController`/`GoogleAiResourceService` resource and
+interaction surface; `StitchClient` design-generation artifact surface; `JulesApiClient` as a non-Gemini
+session client; `MLPredictionServiceClient` plus `src/models/ml/PredictionService.py`; `JudgmentAgentClient`
+plus `judgment-proxy/server.js`; decommissioned `GeminiProjectObserverService`; and post-Gemini context/
+coherence ownership (`GeminiContextService`, `ContextChunkRepository`, `EvidenceCoherenceService`).
+
+Denominator effect: one more old/stale section is now a strict mechanism record with per-mechanism
+Antigravity comments. Key correction: broad `googleapis.com` grep was not accepted as a Gemini dependency.
+`JulesApiClient` is not a Gemini mechanism, and `GeminiContextCacheManager` is already removed.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 37 |
+| Sections still missing visible `комментарий для Антигравити` | 26 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal points for this section: Google AI resources, Stitch replacement, ML/embedding sidecar,
+judgment proxy and context retrieval still need post-Gemini implementation decisions or contract tests.
+`JulesApiClient` and the inert observer are classified as no-fix-needed for Gemini retirement. No code was
+changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXVIII; family summary is not a substitute.

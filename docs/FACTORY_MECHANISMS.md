@@ -8235,43 +8235,475 @@ common background `ACP-061 Hoare Triple Review`.
 # XXVIII. Отказ от Gemini: что подлежит переносу
 
 Указание оператора 7 сентября 2026: **от служб, завязанных на Gemini, надлежит отказаться** и перенести их
-либо на сессии языковой модели, либо на бэкенд без языковой модели вовсе. Помечаю здесь, что именно этим затронуто,
-и разделяю по замеру, а не по звучанию имени.
+либо на сессии языковой модели, либо на бэкенд без языковой модели вовсе. Эта секция не является планом
+замены по именам. Она фиксирует механизмы, где снятие Gemini меняет владельца решения, и отдельно называет
+похожие, но не равные поверхности.
 
-Сперва оговорка, без которой список был бы вдвое длиннее и вдвое неверней. Слово `Gemini` встречается в
-58 файлах `src/main`, и из них 39 — бины. Но **упоминание не есть зависимость**: большинство лишь называет
-ключ настройки, поле сущности или пишет о нём в комментарии. Замер по настоящему вызову
-(`grep -rn "generativelanguage\|googleapis.com\|generateContent"`) даёт **четыре файла**.
+Старый замер этой секции был неточен: `JulesApiClient` нельзя переносить как Gemini только потому, что его
+URL живёт на `jules.googleapis.com`, а `GeminiContextCacheManager` уже отсутствует в source/test grep и
+снят в разделе XLII. Нынешняя граница такая: прямой `generativelanguage.googleapis.com` остаётся в
+`GoogleAiResourceService`, `src/models/ml/PredictionService.py` и `judgment-proxy/server.js`; Stitch и Jules
+являются отдельными Google API surface, но не одним и тем же механизмом.
 
-**Прямо вызывают модель — переносить в первую очередь:**
+### XXVIII.1. Google AI resource and interaction surface
 
-- `GoogleAiResourceService` (4 места вызова) — основной путь к модели.
-- `StitchClient` (3) — порождение экранов дизайна; его же следы видны в живом журнале.
-- `GeminiContextCacheManager` (1) — кэш контекста на стороне поставщика.
-- `JulesApiClient` (1) — один вызов; предмет требует отдельной проверки, потому что основная работа этого
-  клиента к модели не относится.
+**Имена механизма или семейства:** `GoogleAiResourceController`, `GoogleAiResourceService`, endpoints
+`/api/ai/resources`, `/api/ai/resources/probe-models`, `/api/ai/resources/design-assets`,
+`/api/ai/resources/video-assets`.
 
-**Ходят к модели через посредника — переносить вместе с ним:**
+**Философский паттерн:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+`LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE`, defect `D009 Substitution failure`. Смена Gemini на другой
+исполнительский путь является заменой модели/зависимости; сильная форма требует до замены доказать сохранение
+под значимыми наблюдениями, а не просто получить зелёные тесты.
 
-- `MLPredictionServiceClient` и сам сайдкар `src/models/ml/PredictionService.py`: предсказание узкого места
-  спрашивает модель и падает на среднее арифметическое при отказе (раздел XIX).
-- Сайдкар `judgment-proxy/server.js`: сочиняет вердикты по ключевым словам, когда модель недоступна
-  (там же).
+**Связи:** контроллер зовёт `GoogleAiResourceService.resourceMatrix()` и `probeModels()`, а также
+`DesignAssetService`, `VideoAssetService`, `ProjectOperationalContextService` и `ProjectRepository`.
+`GoogleAiResourceService` читает `SystemSettingsService`, строит HTTP-запросы к `interactionsUrl` и
+`modelsUrl`, возвращает текст, image/video payload или явную недоступность.
 
-**Уже мертво, переносить нечего** — `GeminiProjectObserverService` есть заглушка, «permanently inert»
-(раздел XXIIд); его входы и таблицы остались, и два входа отвечают отказом (раздел XXIII).
+**Идеальная форма:** поверхность ресурсов должна честно показывать, какие AI-ресурсы включены, и каждый
+изменяющий/расходный вызов должен либо идти через новый объявленный механизм с доказанной эквивалентностью,
+либо быть явно снят. Нельзя оставлять имя Gemini как будто это просто строка модели, если именно поставщик
+владеет grounding, URL context, image/video generation или стоимостью.
 
-**Особый случай, требующий решения раньше прочих:** вложения для выборки знаний считает
-`MLPredictionServiceClient`, то есть **весь путь подсказок к исполнителям опирается на модель**
-(раздел XXVI). Перенос выборки — не замена клиента, а выбор: считать вложения без внешней модели или
-отказаться от ранжирования по смыслу в пользу иного отбора. Это решение о механизме, а не о вызове.
+**Граница:** этот механизм имеет право перечислить и вызвать внешний ресурс. Он не имеет права решать, что
+клиентский продукт готов, что дизайн принят, что PR прошёл ревью или что поиск дал правду; такие решения
+принадлежат соседним механизмам и их владельцам истины.
 
-Сюда же относится уже описанное: связность свидетельств и её счёт (раздел XXIIе) назначением своим имели
-служить «внешним якорем против самоотчёта модели». Если модель уходит, вопрос, ради которого якорь
-существовал, меняется, и якорь надо перенаправлять, а не просто сохранять.
+**Входы:** `gemini_api_key`, `gemini_enabled`, `google_search_grounding_enabled`, `url_context_enabled`,
+`design_service_enabled`, `nano_banana_enabled`, `veo_enabled`, model settings, project id, brief, asset type,
+quality, `useGoogleSearch`, URL/question/context.
 
-Всё перечисленное — **пометка о принятом решении**, а не предписание и не план. Ни одной строки продуктового
-кода я по нему не трогал.
+**Выходы:** resource matrix, model probe result, `InteractionResult`, generated design/video asset response,
+HTTP error/unavailable status, redacted raw provider preview in diagnostics.
+
+**Владельцы истины и состояния:** `SystemSettingsService` owns configuration truth; Google Generative Language
+owns provider availability and model response; project state belongs to `ProjectRepository`; design/video
+asset persistence belongs to the asset services, not to this resource service.
+
+**Инварианты:** missing key and disabled feature produce explicit unavailability, not a fabricated answer.
+Provider body is redacted before logging. A resource row is not proof that the downstream product mechanism
+is correct.
+
+**Сильная форма сейчас:** `callInteraction()` returns unavailable on missing key, reports non-2xx as
+`api_error`, redacts the key from provider response, and uses bounded request timeout. `resourceMatrix()`
+separates resource id, tool type, model and operator use instead of one boolean.
+
+**Слабая/неидеальная форма сейчас:** Gemini is still the direct provider for text, search grounding, URL
+context and image/video model settings. Replacing it by a generic chat/session call would lose tool semantics
+unless the replacement carries equivalent observations.
+
+**Что сделать для идеала:** before removal, split the resource matrix into retired Gemini capabilities and
+replacement capabilities; for each replacement, add a contract/golden-master check proving the same observable
+result class or explicitly mark the capability removed. Keep separate records for search grounding, URL
+context, image generation and video generation instead of one "LLM call" bucket.
+
+**Что не трогать:** do not weaken explicit unavailable/error states, key redaction, timeout bounds, or
+feature flags while moving providers. Do not solve the authorization issue here; it is section XXXVIII.
+
+**Опровержение:** this record is false if a code grep finds another live `generativelanguage` caller outside
+the named surfaces, or if an endpoint silently returns a successful answer when the provider is disabled or
+keyless.
+
+**Критерий закрытия:** closed when all Google AI resource rows are either retired with visible 410/disabled
+semantics or mapped to replacement services with contract evidence for the declared observable class.
+
+**Свидетельства записи:** `GoogleAiResourceService.java:38-48,51-133,191-230,230-305`;
+`GoogleAiResourceController.java:67-99,121-145`; philosopher corpus
+`03_PATTERN_STRENGTH.md:232-235` and
+`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE_03_luchano-floridi.md:38`.
+
+**Текущий статус:** не идеален: граница описана, но provider-retirement contract ещё не закодирован.
+
+**комментарий для Антигравити:** применить `LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE`: не заменяй Gemini
+одним абстрактным "чатом"; сначала для каждого tool type назови наблюдение, которое обязан сохранить
+новый путь. Если наблюдение не сохраняется, capability надо честно снять, а не маскировать fallback-ответом.
+
+### XXVIII.2. Stitch design generation surface
+
+**Имена механизма или семейства:** `StitchClient`, `DesignAssetService`, `DesignSystemFalsificationService`,
+`DesignShopOrchestrationService`, `JulesDispatchService` design-review/edit calls that consume
+`StitchClient.GeneratedScreen`.
+
+**Философский паттерн:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+`LUCHANO_FLORIDI_19_BOUNDARY_TOPOLOGY`, defect `D006 Authorization ambiguity` as the local handoff pattern,
+with `SUBSTITUTION_ORACLE` as the replacement rule. Stitch is not just image generation; it is a remote MCP
+screen artifact boundary.
+
+**Связи:** `StitchClient` talks to `https://stitch.googleapis.com/mcp`, creates projects/design systems,
+generates screens, edits screens in place, fetches current screen state and downloads screenshot/HTML. Design
+shop services read its `screenId`, `htmlDownloadUrl` and `screenshotDownloadUrl`; design review can later edit
+the same screen.
+
+**Идеальная форма:** any post-Gemini replacement must preserve the screen artifact contract: one project,
+one screen identity, screenshot plus eventual HTML, in-place edit semantics, structured design-system fields
+and explicit unavailable responses. A plain image generator is not an equivalent substitute.
+
+**Граница:** this mechanism owns remote design-screen generation/editing and retrieval. It does not own
+client acceptance, PR merge, brand truth or the design-shop state machine.
+
+**Входы:** Stitch API key, MCP URL, project id, prompt, model id, design system id/theme fields, selected
+screen ids, download URLs.
+
+**Выходы:** project id, `GeneratedScreen`, `DesignSystemResult`, `ApplyDesignSystemResult`, raw tools/list
+debug response, downloaded bytes or unavailable status.
+
+**Владельцы истины и состояния:** Stitch owns remote project/screen/design-system resources; design shop
+entities own local lifecycle state; `SystemSettingsService` owns key/config; repository files own accepted
+drafts after asset services persist them.
+
+**Инварианты:** `generateScreenFromText` must not treat screenshot-only immediate response as final HTML
+readiness; `editScreens` must mutate the selected screen, not fork a drifting variant; download failure is
+reported as null/unavailable, not as a successful asset.
+
+**Сильная форма сейчас:** code captures `screenId`, documents delayed HTML synthesis, provides `getScreen()`,
+and uses explicit `edit_screens` in-place semantics. MCP errors return unavailable/null instead of invented
+assets.
+
+**Слабая/неидеальная форма сейчас:** the default model id is still `GEMINI_3_FLASH`, and the provider is a
+Google-hosted Stitch service. The section does not yet have contract tests proving an alternate generator can
+produce the same screen identity and edit lifecycle.
+
+**Что сделать для идеала:** before replacing Stitch, write a replacement contract around project creation,
+screen generation, follow-up `getScreen`, in-place edit, design-system application and download. If no
+replacement can satisfy that contract, mark the Stitch path intentionally retained or intentionally disabled;
+do not silently degrade to static images.
+
+**Что не трогать:** do not remove `screenId` follow-up, raw response diagnostics, structured design-system
+arguments, or destructive in-place edit semantics.
+
+**Опровержение:** this record is false if design shop can accept a generated screen without any stable screen
+id, or if an alternate path loses either screenshot, HTML, or edit continuity while still marking generation
+as successful.
+
+**Критерий закрытия:** closed when Stitch is either retained as a named exception with operator approval or
+replaced by a provider whose contract test proves the same artifact lifecycle.
+
+**Свидетельства записи:** `StitchClient.java:20-24,37-48,92-129,131-188,202-248,268-364`;
+`DesignAssetService.java:417,437`; `JulesDispatchService.java:4455,4537`.
+
+**Текущий статус:** частично силён, но не идеален: artifact contract is clear; provider-retirement decision
+and replacement evidence are missing.
+
+**комментарий для Антигравити:** применить `LUCHANO_FLORIDI_19_BOUNDARY_TOPOLOGY` и
+`LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE`: не подменяй Stitch картинкой. Идеальный перенос обязан сохранить
+project/screen identity, eventual HTML, screenshot and in-place edit; если это нельзя доказать, путь надо
+оставить как явное исключение или отключить.
+
+### XXVIII.3. Jules API client is not a Gemini mechanism
+
+**Имена механизма или семейства:** `JulesApiClient`, `JulesDispatchService`, `SessionLifecycleService`,
+`InternalJulesActivitiesProbeController`.
+
+**Философский паттерн:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+`LUCHANO_FLORIDI_05_CATEGORY_ERROR_SCAN`, defect `D002 Invalid state`. Ошибка старой записи состояла в том,
+что Google-hosted API был смешан с Gemini model dependency.
+
+**Связи:** `JulesApiClient` creates and checks Jules sessions through `jules.googleapis.com`; dispatch and
+lifecycle services use its session id, activity stream and raw checks. It is adjacent to Gemini retirement
+because PR-review fallback now uses Jules, but it is not a Gemini text-generation call.
+
+**Идеальная форма:** Jules remains a session/execution provider with its own enable flag, key, source check,
+activity limits and branch semantics. It must not be retired by a Gemini-removal grep unless the replacement
+explicitly preserves Jules session semantics.
+
+**Граница:** this mechanism may create/check Jules sessions. It does not own the Gemini resource matrix,
+Stitch screen generation, embeddings, or judgment verdict schema.
+
+**Входы:** `jules_enabled`, `jules_api_key`, repo URL, task description, role context, title, starting branch,
+Jules source availability.
+
+**Выходы:** `CreateSessionResult`, external session id, status code/message, prompt length, source name,
+effective branch, activity/raw session checks.
+
+**Владельцы истины и состояния:** Jules API owns external session state; `JulesSessionRepository` owns local
+session rows; `TaskEntity` owns task lifecycle; `SystemSettingsService` owns enable/key settings.
+
+**Инварианты:** disabled Jules returns skipped; missing repo/key returns explicit failure/skipped; branch
+fallback is visible; activity payload size is bounded.
+
+**Сильная форма сейчас:** `createSessionDetailed()` checks enable flag, repo URL, key, source availability,
+starting branch, and returns structured failure rather than pretending a session exists.
+
+**Слабая/неидеальная форма сейчас:** none for Gemini-retirement classification. Any remaining Jules defects
+belong to Jules-session sections, not to this Gemini transfer section.
+
+**Что сделать для идеала:** no Gemini-removal code change. Preserve this client as the replacement-side
+execution mechanism when other sections route work to Jules.
+
+**Что не трогать:** do not delete or "port" Jules because `jules.googleapis.com` matches a broad Google API
+grep. Do not collapse session lifecycle into a model call.
+
+**Опровержение:** this classification is false only if `JulesApiClient` starts calling
+`generativelanguage.googleapis.com` or `generateContent` directly.
+
+**Критерий закрытия:** closed for this section when direct Gemini-removal work leaves Jules untouched except
+where a specific Jules-session mechanism requires it.
+
+**Свидетельства записи:** `JulesApiClient.java:43-56,80-150`; grep for
+`generativelanguage|generateContent` finds no direct match in `JulesApiClient.java`.
+
+**Текущий статус:** идеален for Gemini-retirement classification.
+
+**комментарий для Антигравити:** считаю механизм идеальным.
+
+### XXVIII.4. ML prediction, chat and embedding sidecar
+
+**Имена механизма или семейства:** `MLPredictionServiceClient`, `src/models/ml/PredictionService.py`,
+`AiHealthTracker`, `GeminiContextService`, `FlowSpineService.shadowCheckEmbeddingDuplicatesAcrossActiveProjects`.
+
+**Философский паттерн:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+`LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK`, defect `D010 Data lineage loss`. Embedding vectors, chat
+answers and bottleneck predictions are not interchangeable just because they return JSON.
+
+**Связи:** Java client calls the FastAPI sidecar for bottleneck risk, embeddings and assistant chat. The
+sidecar directly calls Gemini `generateContent`, `embedContent` and `cachedContents`. `GeminiContextService`
+uses embeddings for corpus indexing/retrieval; `FlowSpineService` uses embeddings for semantic duplicate
+shadow observations; `chatCritical()` can route judgment-like questions through `JudgmentAgentClient`.
+
+**Идеальная форма:** each sidecar capability must have an explicit owner after Gemini removal: deterministic
+backend calculation, local embedding model, approved non-Gemini provider, Jules/Claude judgment path, or a
+declared removed capability. The transfer must preserve null/no-op safety and must not turn missing vectors
+into false knowledge.
+
+**Граница:** this family may calculate risk, embed text, retrieve semantic context or ask for bounded critical
+judgment. It must not decide PR approval, delivery acceptance or user value without the caller's mechanism
+owning that decision.
+
+**Входы:** WIP count, cycle time, prompt, system instruction, model tier/override, Gemini API key, model env
+vars, text to embed, corpus rows, duplicate task texts, judgment sidecar response.
+
+**Выходы:** bottleneck boolean, embedding vector or null, chat text or unavailable sentinel, health success or
+failure events, context chunks, duplicate-lever observations.
+
+**Владельцы истины и состояния:** `PredictionService.py` owns provider calls; `MLPredictionServiceClient`
+owns Java contract and fallback semantics; `ContextChunkRepository` owns stored vectors; `FlowSpineService`
+owns duplicate shadow observations; `AiHealthTracker` owns dependency health facts.
+
+**Инварианты:** embedding failure is null/no-op, never zero vector; the breaker suppresses waste against a
+known failing dependency; critical chat through `JudgmentAgentClient` must preserve the unavailable sentinel
+instead of inventing a verdict.
+
+**Сильная форма сейчас:** Java embed path has failure breaker and null semantics; `GeminiContextService`
+filters vector dimension mismatches and treats retrieval failure as empty context; `chatCritical()` can use
+`JudgmentAgentClient` before falling back to Gemini tiered chat.
+
+**Слабая/неидеальная форма сейчас:** Python sidecar still owns direct Gemini generate/embed/cache URLs and
+mock JSON fallbacks. Semantic retrieval and duplicate shadow checks still depend on embeddings produced by
+that model family.
+
+**Что сделать для идеала:** split sidecar endpoints by capability. For embeddings, pick local/non-Gemini
+embedding ownership or remove semantic ranking and document deterministic fallback. For chat, route critical
+judgment only through `JudgmentAgentClient` or another schema-bound replacement. For bottleneck prediction,
+prove whether it is deterministic enough to keep without model calls. Add contract tests around null/no-op,
+breaker and "no fabricated vector" behavior.
+
+**Что не трогать:** do not remove the embed breaker, dimension guard, unavailable sentinel, or caller-side
+empty-context safety while changing providers.
+
+**Опровержение:** this record is false if an embedding failure can produce a non-null garbage vector, if
+retrieval treats empty context as proof that no context exists, or if Python still calls Gemini after the
+section is marked migrated.
+
+**Критерий закрытия:** closed when `PredictionService.py` has no `generativelanguage`/`cachedContents`
+dependency or every remaining dependency is an explicit operator-approved exception with contract tests.
+
+**Свидетельства записи:** `MLPredictionServiceClient.java:49-93,119-190,208-247`;
+`PredictionService.py:19-27,52-71,98-170,173-248`; `GeminiContextService.java:95-113,134-183,363-420`;
+`FlowSpineService.java:1032-1120`.
+
+**Текущий статус:** не идеален: safety around failure is partly strong, but provider ownership remains Gemini
+inside the sidecar.
+
+**комментарий для Антигравити:** применить `LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK`: отдельно решай
+embedding, chat, cache and bottleneck. Не делай одну замену "Gemini -> другой LLM"; у каждого выхода свой
+уровень абстракции и свой критерий сохранения.
+
+### XXVIII.5. Judgment sidecar and proxy verdict channel
+
+**Имена механизма или семейства:** `JudgmentAgentClient`, `judgment-proxy/server.js`, shadow verdict files
+under `/shadow/inbox`, `/shadow/verdicts`, `/shadow/served`.
+
+**Философский паттерн:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+`LUCHANO_FLORIDI_02_CONSTRUCTIVE_PROOF_OBJECT`, defect `D007 Evidence gap`. A verdict is valid only when it
+carries the schema/result object the caller can check.
+
+**Связи:** `MLPredictionServiceClient.chatCritical()` can call `JudgmentAgentClient`; the client sends bounded
+HTTP to `judgment-sidecar`. `judgment-proxy/server.js` can try Gemini primary, write a shadow inbox request,
+wait for manual verdict, validate verdict JSON and serve schema/text results.
+
+**Идеальная форма:** after Gemini retirement, the judgment channel has exactly one declared authority path:
+Claude subscription sidecar or manual schema verdict. It must distinguish `ABSTAIN`, `FINDING`,
+`UNAVAILABLE` and `UNJUDGEABLE`; it must never replace an unavailable judge with a fake abstention.
+
+**Граница:** this mechanism rules on factory self-refutations only. It must not judge client delivery,
+product success, PR merge readiness or broad prose advice.
+
+**Входы:** prompt, schema, sidecar URL, timeout settings, shadow request body, optional manual verdict JSON,
+Gemini key/model env vars while legacy proxy remains.
+
+**Выходы:** schema verdict, text result, unavailable reason, served verdict file, health success/failure in
+the Java caller.
+
+**Владельцы истины и состояния:** `JudgmentAgentClient` owns Java channel constraints; sidecar/proxy owns
+process execution and shadow files; manual verdict file owns human fallback; callers own what they do with a
+validated verdict.
+
+**Инварианты:** prompt over channel limit must be structurally selected with warning, not blindly truncated.
+`ABSTAIN` is a real ruling, not a fallback for failure. Missing/malformed manual verdict is `UNAVAILABLE`.
+
+**Сильная форма сейчас:** Java client separates factory/product/delivery levels, enforces prompt-channel
+budgeting and keeps schema-bound results. Proxy validates manual verdicts and refuses malformed JSON.
+
+**Слабая/неидеальная форма сейчас:** `judgment-proxy/server.js` still has `GEMINI_API_KEY`, Gemini fallback
+model list and direct `generateContent` call. That is a Gemini dependency unless retired or explicitly scoped
+as emergency-only.
+
+**Что сделать для идеала:** remove Gemini primary from the proxy or gate it behind an explicit retired/disabled
+setting; make Claude/manual schema verdict the only normal authority. Preserve schema validation and distinct
+non-answer states.
+
+**Что не трогать:** do not weaken schema validation, prompt selection warning, or the distinction between
+`ABSTAIN`, `FINDING` and `UNAVAILABLE`.
+
+**Опровержение:** this record is false if the proxy can return an autonomous keyword verdict as if it were a
+schema-bound judgment, or if a Gemini call remains enabled after the Gemini-retirement work is claimed done.
+
+**Критерий закрытия:** closed when `judgment-proxy/server.js` has no live Gemini path or when that path is
+documented as a disabled emergency exception with a test proving normal verdicts do not use it.
+
+**Свидетельства записи:** `JudgmentAgentClient.java:22-41,55-81,90-125,127-175`;
+`judgment-proxy/server.js:11-15,64-144,146-232`.
+
+**Текущий статус:** не идеален: Java judgment channel is strong; proxy still contains a Gemini primary path.
+
+**комментарий для Антигравити:** применить `LUCHANO_FLORIDI_02_CONSTRUCTIVE_PROOF_OBJECT`: вердикт должен быть
+проверяемым объектом со схемой. Убирая Gemini из proxy, не заменяй его эвристикой; лучше вернуть
+`UNAVAILABLE`, чем выдать правдоподобный, но бесхозный verdict.
+
+### XXVIII.6. Decommissioned Gemini observer
+
+**Имена механизма или семейства:** `GeminiProjectObserverService`, `InternalGeminiObserverController`,
+`GeminiObserverJournalRepository`, `GeminiObserverActionRepository`, migration
+`V111__permanently_disable_gemini_project_observer.sql`.
+
+**Философский паттерн:** `BARCAN-TAG-10_DEONTIC-PROHIBITION`,
+`DZHOZEF_RAZ_03_BOUNDARY_TOPOLOGY`, defect `D006 Authorization ambiguity` as the operator prohibition boundary:
+when a mechanism is decommissioned as Muda, no adjacent diagnostic table resurrects it as an actor.
+
+**Связи:** service class remains as a zero-dependency Spring stub to satisfy injection contracts. Controller
+still exposes diagnostic views over old observer journal/action/evidence/coherence tables and some internal
+repair/probe endpoints; those endpoints are not model calls.
+
+**Идеальная форма:** observer execution remains permanently inert; historical tables remain readable only as
+evidence of what the old observer saw/did. Any broken diagnostic endpoint is fixed or removed under section
+XXIII, not by reanimating the observer.
+
+**Граница:** this mechanism may preserve compatibility and historical read access. It may not schedule,
+dispatch, judge, collapse tasks or call any LLM.
+
+**Входы:** Spring construction, internal diagnostic requests, old observer journal/action rows, evidence and
+coherence repositories.
+
+**Выходы:** no observer cycle side effect; diagnostic JSON from controller endpoints.
+
+**Владельцы истины и состояния:** migration/settings own disabled state; old journal/action tables own history;
+current orchestration truth belongs to deterministic orchestration/recovery/auditor services.
+
+**Инварианты:** `runObserverCycle()` is inert. The stub has no heavy repository dependencies. Historical
+diagnostics do not imply a live observer.
+
+**Сильная форма сейчас:** class doc states permanent decommissioning; constructor has no dependencies;
+`runObserverCycle()` does nothing.
+
+**Слабая/неидеальная форма сейчас:** none for Gemini retirement. Broken old diagnostic endpoints, if present,
+are a separate section XXIII issue and must not be repaired by restarting Gemini observer behavior.
+
+**Что сделать для идеала:** no Gemini-removal code change. Keep the stub inert and handle controller cleanup
+only where section XXIII says to repair or remove diagnostics.
+
+**Что не трогать:** do not restore repositories, schedules, AI prompts, action execution or observer cycles.
+
+**Опровержение:** this record is false if `GeminiProjectObserverService.runObserverCycle()` performs any work
+or if a scheduler calls a non-inert observer path.
+
+**Критерий закрытия:** closed for Gemini retirement while the service remains inert and no direct model call
+is reachable through observer execution.
+
+**Свидетельства записи:** `GeminiProjectObserverService.java:7-30`;
+`InternalGeminiObserverController.java:32-44,46-91`; section XXIII covers the live diagnostic defects.
+
+**Текущий статус:** идеален for Gemini-retirement boundary.
+
+**комментарий для Антигравити:** считаю механизм идеальным.
+
+### XXVIII.7. Context retrieval and evidence coherence after Gemini
+
+**Имена механизма или семейства:** `GeminiContextService`, `ContextChunkRepository`,
+`EvidenceCoherenceService`, `CoherenceRunRepository`, `CoherenceRunNodeResultRepository`, `ProjectController`
+coherence graph endpoint, `InternalGeminiObserverController.coherenceRuns`.
+
+**Философский паттерн:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+`LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK`, defect `D010 Data lineage loss`, plus common `ACP-102`
+because a ranking criterion is not the same concept as useful context.
+
+**Связи:** `GeminiContextService` indexes standing knowledge into chunks and retrieves by embedding
+similarity. `EvidenceCoherenceService` is deterministic graph scoring over evidence nodes and coherence run
+rows. Old observer diagnostics can display coherence runs, but coherence itself is not a Gemini call.
+
+**Идеальная форма:** retiring Gemini must not erase the factory's memory or evidence anchor. Retrieval either
+gets a new embedding owner with vector compatibility rules or becomes a deterministic documented selector.
+Coherence remains deterministic and is redirected to current consumers where needed.
+
+**Граница:** context retrieval decides what text becomes prompt context; evidence coherence scores support or
+question evidence clusters. Neither mechanism may claim that a model answer is true merely because retrieved
+chunks or coherence scores exist.
+
+**Входы:** standing knowledge files, philosopher-pattern corpus, context chunks, embedding vectors, query text,
+evidence nodes, coherence configuration, project id.
+
+**Выходы:** retrieved chunks, index rows, empty retrieval on failure, coherence runs, node result rows,
+coherence graph projection.
+
+**Владельцы истины и состояния:** `ContextChunkRepository` owns stored vectors and source refs;
+`EvidenceNodeRepository`/`CoherenceRunRepository` own evidence graph state; source files own document content;
+the embedding provider owns vector semantics until replaced.
+
+**Инварианты:** vectors from different dimensions/models are incomparable and must be excluded; empty retrieval
+is a fact about retrieval availability, not a fact that no useful context exists. Coherence scoring is not a
+substitute for model self-report.
+
+**Сильная форма сейчас:** retrieval is feature-flagged, idempotent by content hash, dimension-checked and
+fails empty. Coherence has deterministic run rows and graph projection. Section XXIIe already records the
+unread anchor problem.
+
+**Слабая/неидеальная форма сейчас:** retrieval still depends on Gemini embeddings through
+`MLPredictionServiceClient.embed()`. Evidence coherence exists as an anchor but current consumers are not
+fully proven after the observer was retired.
+
+**Что сделать для идеала:** decide whether context selection remains semantic with a non-Gemini embedding
+owner or becomes deterministic lexical/source-scoped selection. Reindex vectors under the new owner with
+visible model/version metadata. For coherence, wire a current consumer or explicitly mark it diagnostic-only.
+
+**Что не трогать:** do not delete stored evidence/coherence rows as "Gemini leftovers"; do not treat old
+vectors as comparable after model change; do not revive observer just to make coherence useful.
+
+**Опровержение:** this record is false if after Gemini removal context retrieval still silently calls Gemini,
+or if coherence is claimed useful while no current decision reads it.
+
+**Критерий закрытия:** closed when retrieval has a declared post-Gemini selection owner and coherence has a
+current consumer or an explicit diagnostic-only status in section XXIIe.
+
+**Свидетельства записи:** `GeminiContextService.java:28-43,95-113,134-183,219-260,363-420`;
+`EvidenceCoherenceService.java:62-121,138-168,204-264`; `ProjectController.java:208-212`;
+`InternalGeminiObserverController.java:453-455`; common pattern `ACP-102` at
+`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md:185-203`.
+
+**Текущий статус:** частично силён, но не идеален: safety exists, ownership after Gemini is not decided.
+
+**комментарий для Антигравити:** применить `LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK` и `ACP-102`.
+Контекстная выборка, embedding similarity и coherence score — разные уровни. Не удаляй их пачкой как
+"остатки Gemini"; сначала назначь нового владельца смысла или честно переведи механизм в diagnostic-only.
 
 # XXIX. Цех дизайна: порождение экранов и сверка их с маркой
 
