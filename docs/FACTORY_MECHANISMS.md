@@ -8690,63 +8690,94 @@ missing-key, unavailable, no-video, write-error and ok statuses plus metadata/me
 
 # XL. Выметающий обход: восстановление, которому не нужен держатель
 
-**`StrandedFinalizingSweepService`** (143 строки) — раз в минуту освобождает притязание требования,
-застрявшее в переходном состоянии «завершается».
-*Связи:* `@Scheduled(cron = "0 * * * * ?")` — каждую минуту | `sweep()` по всем проектам, `sweepProject()`
-по одному | вызывающих в коде нет: механизм приводится в движение только расписанием | опирается на
-`finalizing` из `WishlistStatus` (раздел XXIб).
-*Ценность:* без него одна застрявшая строка останавливает проект целиком.
-*Комментарий:* **ядро, и сильное рассуждение о восстановлении в этом коде.**
+* **Имена механизма или семейства** — `StrandedFinalizingSweepService`, `JulesDispatchService`,
+  `WishlistEntity`, `WishlistStatus.finalizing`, `WishlistRepository`, `ProjectRepository`,
+  `DefectJournalRepository`, migration `V139__wishlist_finalizing_since.sql`, `LogScope`.
 
-Состояние «завершается» есть **страж, а не место отдыха**: раздача ставит его перед медленной работой с
-GitHub, чтобы повторное завершение отступило, и снимает, когда работа кончилась. Обе смены принадлежат
-одному пути исполнения. Если путь умрёт посередине — падение, перезапуск, убитая по памяти машина, — строку
-**не сдвинет больше никто**, и код говорит это в двух местах прямо: «leaving the wishlist permanently stuck
-in `finalizing` with no other recovery path» и «which would make every future admission's compare-and-swap
-fail forever».
+* **Философский паттерн** — `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, Альва Ноэ, `BARCAN-TAG-03`, publication
+  anchor *Action in Perception*, defect `D013 Runtime drift`: восстановление объясняет причинную цепь
+  trigger -> transient claim -> stuck row -> blocked project -> observable orchestration denial. Также
+  `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`: runtime health is operational silence plus scoped
+  finalizing evidence, not the agent story. `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` applies to the measured
+  lease duration; `ACP-061` is the code-change background.
 
-Последствие не местное, и цепь приведена целиком: застрявший корень делает ложным «все корни
-скомпилированы», это делает ложным «разложение завершено», это держит проект в состоянии разложения, а в
-нём отказано и восстановлению провалившегося рубежа, и раздаче задач, и раздаче разборов. **Одна строка
-останавливает весь проект.** Замер: требование застряло 16 августа в 09:39 и стояло **38 часов**, всё это
-время ноль задач в работе, и каждый оборот оркестрации писал отказы, ссылавшиеся на это одно состояние.
+* **Связи** — `JulesDispatchService` moves wishlists into `finalizing` through CAS with timestamp and renews
+  the lease during slow GitHub/parse work. `StrandedFinalizingSweepService.sweep()` runs by scheduled cron
+  and iterates active projects only via `ProjectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`.
+  `sweepProject()` reads `WishlistRepository.findByProjectIdAndStatus(projectId, finalizing)`, initializes
+  historical null `finalizingSince`, and releases only through `WishlistRepository.compareAndSetStatus(finalizing -> pending)`.
+  `DefectJournalRepository` supplies optional `FINALIZING_DURATION` samples for data-driven lease sizing.
 
-Почему прежнее средство восстановления не доставало: оно освобождает притязания, перечисленные в наборе
-постоянного работника, а настоящая принадлежность завершения компилятора лежит **в другом месте** — в
-пометке на полезной нагрузке самой задачи-компилятора. «So the tool looks in the wrong place, which is why
-the same failure was investigated by hand five days earlier and left unfixed». То есть беду разбирали
-руками, не нашли и оставили — потому что искали не там.
+* **Идеальная форма** — `finalizing` is a short-lived guard, not a resting state. A live compiler keeps the
+  lease fresh through `finalizingSince`; a dead compiler leaves the timestamp to age; the sweep releases only
+  expired `finalizing` rows back to `pending` with CAS, so a concurrent live completion cannot be robbed.
+  Historical rows without `finalizingSince` receive a fresh bounded lease instead of being swept immediately.
+  Active projects are swept; inactive/historical projects are not used to manufacture current work.
 
-И вот решение, ради которого запись стоит читать. Обход **не ищет держателя вовсе**, и это названо его
-сутью. Состояние «завершается» описано как покрывающее одну ограниченную работу; значит притязание старше,
-чем такая работа может длиться, застряло **по определению самого состояния**, кто бы его ни поставил. В коде
-это названо проверкой предмета: спросить, существует ли ещё то, что состояние поставило, — и ответ
-получается **без обратной ссылки, которой в схеме никогда не было**.
+* **Граница** — this mechanism may only reclaim expired wishlist claims from `finalizing` to `pending`. It
+  does not retry compilation, create tasks, decide decomposition completeness, retire workers, inspect PRs,
+  or infer holder identity from worker batches. It deliberately does not need a reverse pointer to the holder.
 
-Это редкий образец починки: вместо того чтобы заводить недостающую связь и потом её поддерживать, взяли
-свойство, которое у состояния уже есть, — его ограниченность во времени.
-*Живое, 7 сентября 2026:* обход работает и **молчит**: строк службы в журнале за сутки ноль при контроле в
-20 упоминаний самого состояния `finalizing` — то есть греп видит, переходы происходят, а выметать нечего.
-Здесь молчание есть здоровье, и это тот редкий случай, когда отсутствие записей я толкую как исправность, а
-не как незапуск: расписание раз в минуту, и одна застрявшая строка дала бы запись немедленно.
-*Философия:* `AYZEK_LEVI_10_DEFEASIBLE_EXCEPTION_LEDGER` (D012) — Айзек Леви,
-`BARCAN-TAG-04 MODAL-QUANTIFIER`, принцип фиксации доксастических состояний, anchor *The Fixation of Belief
-and Its Undoing / Enterprise of Knowledge — doxastic commitment*. Сильная дословно: «у исключения есть срок,
-область, утвердивший и компенсирующая проверка». Слабая: «флаг `skipValidation` с комментарием».
-Опровержение: «найти исключение без срока — оно вечное, а вечное исключение есть новое правило». **Форма:
-сильная.** Временное отступление от обычного хода — притязание — имеет срок (предельный возраст), область
-(одно состояние одного вида строк), обоснование в коде и **компенсирующую проверку**, которой и является сам
-обход. Опровержение выполнить нельзя: исключения без срока здесь нет, срок и есть признак срабатывания.
-Второй образец: `AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` (D002) — Ахилле Варци,
-`BARCAN-TAG-01 ACTUALIST-OBJECT`, принцип топологии пространственно-временных границ, anchor *Parts and
-Places / formal ontology of boundaries and spatial parts*. Сильная дословно: «у объекта есть владелец,
-личность, жизненный цикл и семантика удаления, и он привязан к агрегату или каноническому реестру».
-Слабая: «класс с полями и репозиторием, у которого нет ответа на вопрос „кто вправе его удалить“».
-Опровержение: «назвать две точки кода, удаляющие объект по разным правилам; если они есть — реестра нет».
-**Форма: слабая по владению, сильная по жизненному циклу — и обход существует именно потому, что первое
-слабо.** Владельца притязания назвать нельзя: обратной ссылки в схеме нет, и прежнее средство искало его не
-там. Жизненный цикл же задан полностью, вплоть до предельного возраста, — и этого хватило, чтобы обойтись
-без владельца.
+* **Входы** — scheduled cron, active project rows, `WishlistStatus.finalizing`, `WishlistEntity.finalizingSince`,
+  CAS result, optional `FINALIZING_DURATION` metric values, `stranded-finalizing.max-age-minutes`,
+  `stranded-finalizing.min-samples-for-data-driven` and `stranded-finalizing.safety-multiplier` defaults.
+
+* **Выходы** — a stale row is returned to `pending`; a fresh or renewed row is left untouched; a historical
+  null-lease row is saved with `finalizingSince=now`; a lost CAS is logged as concurrent completion; logs are
+  scoped by project and then cleared.
+
+* **Владельцы истины и состояния** — `WishlistEntity.status` and `finalizingSince` own the claim state and
+  lease start; `WishlistRepository` owns atomic state transitions and lease renewal; `ProjectRepository`
+  owns active-project scope; `DefectJournalRepository` owns observed duration samples; `JulesDispatchService`
+  owns setting and renewing the lease during real work.
+
+* **Инварианты** — no read-then-write release; no release without `status == finalizing`; age is measured
+  from `finalizingSince`, not `createdAt` or `lastCompileDispatchedAt`; null `finalizingSince` is initialized,
+  not swept; a live renewed lease stays protected; every released row re-enters ordinary admission through
+  `pending`; the scheduled sweep has no attempt budget and remains idempotent.
+
+* **Сильная форма сейчас** — current source is strong. `sweep()` is active-project scoped and never calls
+  `findAll`; `sweepProject()` calculates a lease, uses `finalizingSince`, initializes historical nulls, and
+  releases by CAS only. `StrandedFinalizingSweepServiceTest` covers old-row release, fresh-row non-release,
+  active-project iteration without `findAll`, fresh `finalizingSince` despite old dispatch timestamp,
+  renewed live-worker lease, historical null initialization, data-driven lease from median samples and
+  fallback to the default lease. Migration `V139` adds and indexes `finalizing_since`.
+
+* **Слабая/неидеальная форма сейчас** — no implementation weakness is identified from current source/test
+  evidence. Runtime silence still has to be interpreted carefully: absence of release logs is healthy only
+  when the scheduler is running and finalizing transitions are otherwise visible.
+
+* **Что сделать для идеала** — кодить не нужно. Before any future code change, run the focused
+  `StrandedFinalizingSweepServiceTest` and one runtime/log probe that distinguishes "scheduler alive and
+  nothing stranded" from "scheduler not running". If production needs stronger observability, add a cheap
+  heartbeat counter for sweep runs/releases without changing release semantics.
+
+* **Что не трогать** — do not replace CAS with entity save; do not measure age from `createdAt` or
+  `lastCompileDispatchedAt`; do not sweep null `finalizingSince` immediately; do not add a holder lookup or
+  persistent-worker dependency; do not restrict the sweep by attempt budget; do not include inactive projects
+  unless a separate historical-repair procedure is written.
+
+* **Опровержение** — a fresh or renewed `finalizing` row is released; an expired `finalizing` row remains
+  stuck; a row that has already left `finalizing` is overwritten; null `finalizingSince` is swept immediately;
+  `sweep()` calls `projectRepository.findAll()`; or a live/log probe shows the scheduled method is not firing
+  while stale finalizing rows exist.
+
+* **Критерий закрытия** — `StrandedFinalizingSweepServiceTest` remains green for release, non-release,
+  active scope, renewal, null initialization and data-driven lease; repository methods remain CAS-based; a
+  production or fixture probe can show either no stale finalizing rows or a release log returning stale rows
+  to `pending` without concurrent-holder damage.
+
+* **Свидетельства записи** — `nl -ba src/main/java/com/eneik/production/services/StrandedFinalizingSweepService.java | sed -n '20,210p'`;
+  `nl -ba src/test/java/com/eneik/production/services/StrandedFinalizingSweepServiceTest.java | sed -n '48,229p'`;
+  `nl -ba src/main/java/com/eneik/production/repositories/WishlistRepository.java | sed -n '29,53p'`;
+  `nl -ba src/main/resources/db/migration/V139__wishlist_finalizing_since.sql | sed -n '1,7p'`;
+  `grep -RIn 'FINALIZING_DURATION\|renewFinalizingLeases\|finalizingSince' src/main/java src/test/java`;
+  philosopher rows `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `ACP-061`.
+
+* **Текущий статус** — идеален по current source/test contract; no code change is requested.
+
+* **комментарий для Антигравити:** считаю механизм идеальным.
 
 # XLI. Заслон качества экрана: проверка предмета, а не отчёта о нём
 

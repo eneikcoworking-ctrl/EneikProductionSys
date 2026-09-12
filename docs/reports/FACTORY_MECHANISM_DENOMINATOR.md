@@ -488,3 +488,37 @@ passed/failed/unapplied task partition, then unify quality-evidence projection a
 operational truth, system status and Six Sigma surfaces. Expose unapplied as context, not as a defect. Apply
 `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple Review`.
+
+## 2026-09-12 Codex Strict Record: Stranded Finalizing Sweep
+
+Status: documentation-only strict-family replacement for section XL in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `StrandedFinalizingSweepService`, `JulesDispatchService`,
+`WishlistEntity`, `WishlistStatus.finalizing`, `WishlistRepository`, `ProjectRepository`,
+`DefectJournalRepository`, migration `V139__wishlist_finalizing_since.sql` and `LogScope` as the
+stranded-finalizing recovery family.
+
+Denominator effect: one more old narrative section is now a strict mechanism record with philosophical
+pattern, ideal form, boundary, inputs, outputs, truth/state owners, invariants, strong/weak form, what to do,
+what not to touch, refutation, closure criterion, evidence, current status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 18 |
+| Sections still missing visible `комментарий для Антигравити` | 45 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the record is now visible as an ideal mechanism, not just old incident prose. Current source
+uses `finalizingSince`, active-project scoped acquisition, CAS release, null-lease initialization, optional
+data-driven lease sizing from `FINALIZING_DURATION`, and focused tests for release/non-release/renewal/null
+initialization/fallback.
+
+Remaining non-ideal point for this family: no implementation weakness was identified from current source/test
+evidence. Runtime silence remains valid only when scheduler liveness is separately observable.
+
+комментарий для Антигравити: считаю механизм идеальным.
