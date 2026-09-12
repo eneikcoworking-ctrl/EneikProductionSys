@@ -407,3 +407,43 @@ runtime behavior. Apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
 `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`, `ALONZO_CHERCH_21_DERIVED_CUTOFF`,
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple
 Review`.
+
+## 2026-09-12 Codex Strict Record: AI Resource Mutation Boundary
+
+Status: documentation-only strict-family replacement for section XXXVIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `GoogleAiResourceController`, `ApiAuthorizationInterceptor`, `WebConfig`,
+`GoogleAiResourceService`, `DesignAssetService`, `VideoAssetService`, `ProjectOperationalContextService`,
+`ProjectRepository` and `StitchClient` as the AI-resource mutation boundary family.
+
+Denominator effect: one more stale narrative section is now a strict mechanism record with philosophical
+pattern, ideal form, boundary, inputs, outputs, truth/state owners, invariants, strong/weak form, what to do,
+what not to touch, refutation, closure criterion, evidence, current status and Antigravity comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 16 |
+| Sections still missing visible `комментарий для Антигравити` | 47 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section described the five AI-resource POST endpoints as open because no filter
+existed. Current source is different: `ApiAuthorizationInterceptor` exists, `WebConfig` registers it for
+`/api/**` and `/internal/**`, and `ApiAuthorizationInterceptorTest` covers unauthenticated/invalid/valid and
+unconfigured-key behavior for the AI-resource mutation paths.
+
+Remaining non-ideal point for this family: no code was changed in this tact. The record does not declare the
+mechanism ideal because the evidence found is interceptor-unit plus registration evidence, not an end-to-end
+MVC/deploy probe for `GoogleAiResourceController`, and successful AI-resource mutations do not yet have an
+actor/project/action audit trail in the strict record.
+
+комментарий для Антигравити: do not code the stale "create a filter from scratch" task. First prove the
+current `ApiAuthorizationInterceptor` boundary end-to-end for `GoogleAiResourceController` with focused
+MVC/integration tests, verify fail-closed deploy/runbook behavior for `ENEIK_SECURITY_API_KEY`, and add audit
+trace for successful AI-resource mutations. Apply `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
+`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple Review`.
