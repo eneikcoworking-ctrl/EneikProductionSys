@@ -1004,3 +1004,41 @@ frequency was not remeasured here; that is an operational observability question
 mechanism.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XLI; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: Static Corpus Cache Ownership Family
+
+Status: documentation-only strict-family replacement for section XLII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: stale/removed `GeminiContextCacheManager`,
+`SystemStatusController.reindexGeminiContext`, `GeminiContextService.reindexStandingKnowledge`,
+`MLPredictionServiceClient.chat(prompt, systemInstruction, cacheKey)`, sidecar
+`PredictionService.ensure_gemini_cache`, sidecar `PredictionService.ask_gemini_cached` and the sidecar chat
+fallback path as the static-corpus provider cache ownership family.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 31 |
+| Sections still missing visible `комментарий для Антигравити` | 32 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section still described the pre-fix backend `GeminiContextCacheManager` defect as an
+open coding task. Current source/test evidence says that duplicate backend manager has already been removed.
+Section XLII now records the current contract: backend Java must not create provider `cachedContents`; manual
+reindex refreshes RAG only; sidecar `PredictionService.py` is the single legal owner of provider cached-content
+creation and must fail open to uncached calls.
+
+Remaining non-ideal point for this family: no deletion work remains. The only current usage gap is that
+`MLPredictionServiceClient.chat(..., cacheKey)` exists as the Java carrier, but no main Java production caller
+was proven in this tact to pass a nonblank `cacheKey`.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XLII; family summary is not a substitute.

@@ -9307,57 +9307,120 @@ briefs still require `desktop-1440.png`, `mobile-375.png` and `layout-check.json
 
 # XLII. Кэш постоянного корпуса: два механизма на одно дело, работает один
 
-**`GeminiContextCacheManager`** (162 строки) — заводит на стороне поставщика модели кэш постоянного корпуса:
-двенадцати уставов ролей и семидесяти восьми файлов образцов, примерно сорок-пятьдесят тысяч единиц текста.
-*Связи:* вызывающий **один** — `SystemStatusController:72`, то есть кнопка на своде состояния |
-`getOrCreateStaticCorpusCache()` и `invalidateCache()` | это один из четырёх прямых путей к модели,
-помеченных к переносу (раздел XXVIII).
-*Ценность:* заявлено в самом файле: время до первого ответа с ~4,5 до ~0,8 секунды, расход входного текста
-меньше примерно на три четверти.
-*Комментарий:* **периферия, и вот почему — заведённым кэшем никто не пользуется.**
+**Имена механизмов:** stale/removed `GeminiContextCacheManager`; `SystemStatusController.reindexGeminiContext`;
+`GeminiContextService.reindexStandingKnowledge`; `MLPredictionServiceClient.chat(prompt, systemInstruction,
+cacheKey)`; sidecar `PredictionService.ensure_gemini_cache`; sidecar `PredictionService.ask_gemini_cached`;
+sidecar chat request field `cacheKey`.
 
-Замер по всему `src/main` на `cachedContent|cacheName|getOrCreateStaticCorpusCache` вне самого менеджера даёт
-два попадания: строку в `SystemStatusController`, где кэш **создаётся**, и **комментарий** в
-`GeminiContextService:698`. Ни одного места, где созданное имя кэша передавалось бы в запрос к модели
-(контроль: внутри самого менеджера термин встречается семь раз, значит греп видит).
+**Философский паттерн:** primary `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, Фред Дрецке, `BARCAN-TAG-07`,
+publication anchor *Knowledge and the Flow of Information*, defect `D011 Perception failure`: a cache signal is
+valid only if a later action actually consumes it. Supporting patterns: `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`
+/ D004 because only one aggregate should own provider cached-content creation; `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE`
+/ D014 because repeated system instructions must stay a retrievable grounded capsule, not stale project-specific
+context; common background `ACP-061 Hoare Triple Review`.
 
-Перед утверждением проверена вторую сторону — вызовы к модели идут через сайдкар. И там оказалось
-обратное: **сайдкар имеет собственный кэш и действительно им пользуется** — `ensure_cached_content`,
-`ask_gemini_cached`, и в теле запроса передаётся `"cachedContent": cached_content_name`
-(`src/models/ml/PredictionService.py:117,154,158`). Там же приведён замер, сделанный до постройки:
-«Verified live against the real API before building this».
+**Описание идеала:** backend Java must not create provider `cachedContents` resources that no model request uses.
+Manual `/api/system-status/gemini-context/reindex` must refresh the RAG standing-knowledge corpus only. Provider
+cached-content creation belongs to the ML sidecar because the sidecar is the component that actually builds the
+Gemini request body. A caller that has a static, repeated `systemInstruction` may pass a `cacheKey` through
+`MLPredictionServiceClient`; the sidecar then creates or refreshes one cache for the exact `(model, cacheKey,
+systemInstruction hash)` and sends `"cachedContent": cache_name` with the prompt. Any cache failure must fall
+back to the uncached call and must never become a new review/orchestration failure mode. Call-specific RAG
+evidence stays in `prompt`, never in cached static instruction.
 
-Итог: **на одно дело два механизма, и работает не тот, что в бэкенде.** Java-овский заводит кэш по нажатию
-на своде и остаётся ни с чем связанным; питоновский заводит свой и подставляет в каждый запрос. Заявленная
-выгода достигается вторым, а не первым.
+**Граница механизма:** this family may refresh local RAG chunks; carry an optional cache key to the sidecar;
+create short-lived Gemini cached-content resources for static instructions; and fail open to uncached generation.
+It must not create cached-content resources from dashboard/backend Java, expose unused cache names in operator
+responses, cache project-specific evidence snapshots, require cache success for correctness, or resurrect the
+removed backend manager.
 
-**Задача для кодинга.** Либо связать java-овский кэш с путём запросов, либо снять его как дублирующий —
-второе вероятнее, раз вызовы к модели идут через сайдкар, у которого кэш свой. Место:
-`GeminiContextCacheManager` целиком и его единственный вызов `SystemStatusController:72`. Проверка: греп по
-`cachedContent` в `src/main` находит либо использование, либо ничего — но не создание без использования.
-Опровергнет: найденное место, где имя из этого менеджера всё же попадает в запрос, — тогда механизм нужен, а
-неверен замер.
+**Связи:** `SystemStatusController.reindexGeminiContext` calls only `GeminiContextService.reindexStandingKnowledge`
+and returns `"Re-index triggered"`. `GeminiContextService.reindexStandingKnowledge` indexes standing corpus files
+when enabled and configured. `MLPredictionServiceClient.chat(prompt, systemInstruction, cacheKey)` forwards
+`cacheKey` to `/api/v1/assistant/chat`. `PredictionService.py` receives `cacheKey`, calls
+`ensure_gemini_cache`, and when a cache resource name exists calls `ask_gemini_cached`; exceptions fall through
+to `ask_gemini`. `SystemStatusControllerTest` locks the old backend duplicate out of the classpath and asserts
+that no Java source in `src/main/java` references `cachedContents`.
 
-Отмечу связь с указанием об отказе от Gemini (раздел XXVIII): при переносе этот механизм переносить не надо
-вовсе, его надо снять. Это первый случай в перечне, где ответ на «куда переносить» — «никуда».
-*Живое, 7 сентября 2026:* собственных строк в журнале за сутки нет; кэш заводится только по нажатию на
-своде состояния, а нажатий не было. Проверить, существует ли кэш на стороне поставщика, запись не может, не делая
-запроса к модели, — а это расход, и на живой фабрике я его тратить не стал.
-*Философия:* `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011) — Фред Дрецке,
-`BARCAN-TAG-07 SECOND-ORDER-KNOWLEDGE`, принцип информационной пропускной способности каналов, anchor
-*Knowledge and the Flow of Information — informational epistemology*. Сильная дословно: «сигнал признан
-годным лишь если меняет следующее действие и предотвращает ошибочное». Слабая: «сигнал есть и он верен».
-Опровержение: «назвать действие, которое сигнал изменил; **сигнал без читателя не есть наблюдение**».
-**Форма: слабая, и опровержение выполнено.** Назвать действие, которое изменило бы созданное здесь имя
-кэша, запись не может: читающего нет. Это третий такой случай в перечне — после счёта связности (раздел XXIIе) и
-счётчика переходов графа (XXIг), — и во всех трёх механизм исправен, а связи с решением нет.
-Второй образец: `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` (D004) — Ахилле Варци,
-`BARCAN-TAG-01 ACTUALIST-OBJECT`, принцип топологии пространственно-временных границ, anchor *Parts and
-Places / formal ontology of boundaries and spatial parts*. Сильная дословно: «до разделения модулей
-объявлено, какой агрегат вправе менять каждую часть». Слабая: «классы разделены по размеру или по слоям».
-Опровержение: «найти поле, которое пишут два сервиса». **Форма: слабая.** Владение кэшем постоянного корпуса
-не объявлено нигде, и потому его завели дважды — в бэкенде и в сайдкаре. Опровержение выполняется в своей
-обобщённой форме: не поле, которое пишут двое, а **предмет, который двое заводят порознь**.
+**Входы:** reindex POST, `gemini_context_learning_enabled`, repo root, standing-knowledge files, prompt,
+systemInstruction, optional `cacheKey`, Gemini model tier/override, Gemini API key, sidecar in-memory cache
+registry, cache TTL, `force_json` inference and provider cachedContents API response.
+
+**Выходы:** refreshed `ContextChunkEntity` corpus; system-status reindex response without `cacheResourceName`;
+sidecar in-memory cache entry with provider resource name and expiry; Gemini request with `cachedContent` when
+available; plain uncached Gemini request when cache creation or cached call fails.
+
+**Владельцы истины и состояния:** `GeminiContextService` owns the stored RAG corpus and reindex lifecycle.
+`SystemStatusController` owns the manual reindex command surface only. `MLPredictionServiceClient` owns the
+Java-to-sidecar cache-key transport. `PredictionService.py` owns provider cached-content creation, registry,
+TTL and fallback. Gemini provider owns the actual cachedContents resource. `GeminiContextCacheManager` owns
+nothing in current source because it has been removed.
+
+**Инварианты:**
+- Java backend source must contain zero live `cachedContents` creation/reference;
+- `GeminiContextCacheManager` must remain absent from classpath;
+- manual reindex must not create a provider prompt cache or return a cache resource name;
+- cached content may contain static repeated system instruction only, never call-specific RAG/evidence;
+- cache identity includes model, caller cache key and systemInstruction hash;
+- cache failure falls back to uncached generation;
+- sidecar cache registry is in-memory and self-healing after restart;
+- provider cache ownership stays at the sidecar request-construction boundary.
+
+**Сильная форма сейчас:** the old duplicated backend cache is removed. `SystemStatusController` has no
+`GeminiContextCacheManager` dependency and `reindexGeminiContext()` calls only `reindexStandingKnowledge`.
+`SystemStatusControllerTest` proves the response has no `cacheResourceName`, the removed class is absent and
+`src/main/java` has zero `cachedContents` references. `PredictionService.py` owns the actual cachedContent path:
+`ensure_gemini_cache` creates a provider cache for exact model/key/content hash, `ask_gemini_cached` sends
+`"cachedContent"`, and the chat handler falls back to `ask_gemini` when cache creation or cached call fails.
+
+**Слабая / неидеальная форма:** the old section's coding task is stale and must not be repeated. Current source
+still shows `MLPredictionServiceClient.chat(..., cacheKey)` as a carrier but no main Java caller currently passes
+a nonblank `cacheKey`; therefore the sidecar cache is a correct available mechanism, not proven to be used by a
+current Java production flow in this tact. This is a usage/benefit gap, not a reason to resurrect backend caching.
+
+**Что надо сделать для идеала:** no deletion work remains. If the factory wants cached-token savings for a
+specific repeated static instruction, connect that caller to `MLPredictionServiceClient.chat(..., cacheKey)` with
+a stable cache key and a test proving dynamic RAG evidence remains in the prompt. Do not add any Java
+`cachedContents` creator. If no production caller benefits, leave the sidecar support dormant and documented.
+
+**Что не трогать:** do not recreate `GeminiContextCacheManager`; do not add `cacheResourceName` back to the
+system-status response; do not move provider cache creation to a controller; do not cache dynamic project
+evidence or retrieved context in `systemInstruction`; do not make a cache failure fail the task; do not remove
+`reindexStandingKnowledge` from the manual reindex endpoint.
+
+**Опровержение / проверка:** this record is false if `Class.forName("...GeminiContextCacheManager")` succeeds;
+if Java main source contains `cachedContents`; if `/gemini-context/reindex` creates or returns a provider cache
+name; if sidecar cached calls do not send `"cachedContent"` when `cacheKey` is supplied; if a cache failure does
+not fall back to uncached `ask_gemini`; or if a production caller is found using a separate backend-created cache.
+
+**Критерий закрытия:** ideal when the backend duplicate stays absent, sidecar cache remains the single provider
+cached-content owner, at least one intended production caller either deliberately passes `cacheKey` with a stable
+static instruction and test coverage or the dormant support is explicitly accepted, and every cache failure is
+observable as fallback rather than orchestration failure.
+
+**Доказательства:** `SystemStatusController.java:61-70`; `SystemStatusControllerTest.java:19-82`;
+`GeminiContextService.java:134-150,431-445`; `MLPredictionServiceClient.java:196-205,243-265`;
+`PredictionService.py:98-159,496-512`; `ANTIGRAVITY_QUEUE.md:196-198`; `AGY_ASKS.md:483-495`; grep
+`GeminiContextCacheManager|getOrCreateStaticCorpusCache|cachedContents` in `src/main/java` and `src/models`.
+
+**Текущий статус:** partially ideal: duplicate backend cache is correctly removed; sidecar cache ownership is
+correct; current Java production usage of `cacheKey` is not proven in this tact.
+
+**Комментарии для Антигравити по механизмам:**
+- `GeminiContextCacheManager`: механизм снят и не должен воскресать. Применить
+  `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` and `ACP-061`: do not add
+  any backend Java `cachedContents` creator; keep the class absent and the old section as stale history only.
+- `SystemStatusController.reindexGeminiContext`: считаю механизм идеальным.
+- `GeminiContextService.reindexStandingKnowledge`: считаю механизм идеальным.
+- `MLPredictionServiceClient.chat(prompt, systemInstruction, cacheKey)`: механизм не идеален only as a usage
+  carrier, not as implementation. Применить `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`: if cached-token savings
+  are desired, connect a real repeated-static-instruction caller to this overload with a stable `cacheKey`; do
+  not change this into provider-cache ownership.
+- `PredictionService.ensure_gemini_cache`: считаю механизм идеальным.
+- `PredictionService.ask_gemini_cached`: считаю механизм идеальным.
+- `PredictionService` chat fallback on cache failure: считаю механизм идеальным.
+
+**комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
 # XLIII. Верёвка: ограничитель выпуска, который не может сработать
 
