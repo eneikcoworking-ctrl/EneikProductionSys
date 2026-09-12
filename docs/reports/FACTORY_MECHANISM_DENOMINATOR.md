@@ -365,3 +365,45 @@ contract is ideal for the task-status guard; fresh closure evidence requires run
 ordinary save logic; preserve the entity guard, exact-state CAS, unless-terminal guard, same-statement
 `updatedAt` write and `0` affected-row refusal semantics. Apply `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`,
 `ALVA_NOE_17_CAUSAL_PROCESS_TRACE` and `ACP-061 Hoare Triple Review` before any later code.
+
+## 2026-09-12 Codex Strict Record: TOC Sentinel And Video Asset Surface
+
+Status: documentation-only strict-family replacement for section XXXVII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded:
+
+- `TocSentinelService`, `TocExecutionGraph`, `TocAnomalyDetector`, `TocOptimizer`,
+  `TocSentinelController`, `TocNode`, `TocEdge`, `TocToken` as the TOC sentinel runtime family.
+- `VideoAssetService`, `GoogleAiResourceService`, `GoogleAiResourceController`, `AutoMergeService` as the
+  peripheral video-asset generation family that was previously embedded in the same section.
+
+The TOC record replaces stale implementation advice. Current source already has cached pure
+`getDbrStatus()`, explicit `refreshDbrStatus()`, dynamic `SchedulingConfigurer` cadence, removed leaky
+component getters, unmodifiable graph facade collections and single-writer in-flight lifecycle tests.
+
+The video record is not declared ideal. Source has clear fail-closed branches and metadata/media evidence,
+but focused `VideoAssetService` branch tests were not found in this tact.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 15 |
+| Sections still missing visible `комментарий для Антигравити` | 48 |
+
+This is a section denominator, not a mechanism count. It proves section progress only.
+
+Remaining non-ideal point for TOC: no tests were run and no live scheduler/log measurement was taken in this
+tact, but the current source/test contract is strong for the old TOC defects.
+
+Remaining non-ideal point for Video: focused branch tests are needed for disabled, missing-key, unavailable,
+no-video, ok and write-error outcomes with a temporary asset root.
+
+комментарий для Антигравити: TOC core old defects are not current; first verify `TocSentinelServiceTest`,
+`TocOptimizerTest` and `TocSentinelControllerTest`, preserving pure read, explicit refresh, facade ownership
+and dynamic cadence. Video asset generation is not ideal by tests; add focused branch tests before changing
+runtime behavior. Apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
+`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`, `ALONZO_CHERCH_21_DERIVED_CUTOFF`,
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061 Hoare Triple
+Review`.

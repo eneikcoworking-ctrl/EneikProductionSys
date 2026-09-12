@@ -8277,83 +8277,185 @@ ordinary `save()` logic, and do not remove the apparent duplicate protection bet
 
 # XXXVII. Сторож ТОС: чтение, которое пересчитывает
 
-**`TocSentinelService`** (193 строки) — ведёт жетон исполнения через шаги, наполняет счётчики графа и раз в
-две секунды пересматривает, что считать узким местом.
-*Связи:* зовут **семеро** — `AutoMergeService` (единственный, кто размечает шаги),
-`BottleneckAwarePriorityService`, `SixSigmaAuditService`, `KaizenService`, `ConstraintIdentificationService`,
-`SystemAuditController`, `TocSentinelController` | внутрь ходит к `TocExecutionGraph`, `TocAnomalyDetector`
-и `TocOptimizer`, и **отдаёт их наружу целиком** тремя геттерами | пишет `TocNode` и `TocEdge`
-(раздел XXIг).
-*Ценность:* без него граф не наполняется вовсе: жетон, шаги и их завершение проходят только через него.
-*Комментарий:* **ядро по положению, и два замечания к устройству.**
+**`TocSentinelService`**, **`TocExecutionGraph`**, **`TocAnomalyDetector`**, **`TocOptimizer`**,
+**`TocSentinelController`**, **`TocNode`**, **`TocEdge`**, **`TocToken`** — семейство TOC sentinel runtime:
+execution-token telemetry, graph state, anomaly detection, primary-constraint calculation and DBR admission.
 
-Первое: **сторож работает раз в две секунды** — `@Scheduled(fixedRate = 2000)`, и каждый раз просматривает
-заторы и заново определяет ограничение. Отсюда и объём в журнале: строк с меткой сторожа за сутки 7332,
-больше, чем у любого другого механизма, кроме оркестрации. Сам по себе частый обход не порок; порок был бы,
-если бы он что-то стоил, а при одном размеченном шаге он дёшев. Но частота эта задана числом в коде и ни из
-чего не выведена — тот же разряд, что назначенные пороги рычага (образец
-`ALONZO_CHERCH_21_DERIVED_CUTOFF`).
+*Философский паттерн:* главный паттерн — `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`
+(`BARCAN-TAG-00_CODE-GUARDIAN`, Людвиг Витгенштейн, D013 Runtime drift): operational status reads must not be
+the agent's story about itself and must not mutate the thing observed. Ownership boundary uses
+`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` (`BARCAN-TAG-01_ACTUALIST-OBJECT`, D004 Concurrency conflict):
+the graph's parts need one owner and no leaked mutable whole. Watchdog cadence uses
+`ALONZO_CHERCH_21_DERIVED_CUTOFF`: a polling cutoff must be derived from observed flow, not copied as a magic
+number. Общий фон перед кодом: `ACP-061 Hoare Triple Review`.
 
-Второе, и оно существеннее: **`getDbrStatus()` — не чтение.** Он вызывает `evaluateConstraintsAndDbr()`, а
-тот в цикле пишет в узлы: проставляет загрузку и признак главного ограничения (`TocOptimizer:44-58`,
-раздел XXIг). То есть **всякий, кто спрашивает состояние, тем самым его меняет**, и таких спрашивающих
-пятеро.
+*Связи:* `AutoMergeService` marks execution steps; `SystemAuditController`, `TocSentinelController`,
+`SixSigmaAuditService`, `KaizenService` and TOC-priority/constraint services read status or graph facts
+through `TocSentinelService`. The service owns step entry/exit, resource acquire/wait/release, active token
+registration and scheduled watchdog execution. `TocAnomalyDetector` detects cycles, stalls and resource
+deadlocks. `TocOptimizer` mutates node utilization/primary-constraint flags only during refresh/watchdog
+evaluation and exposes cached `DbrStatus` for reads.
 
-Сопоставление внутри одной фабрики опять разительное. `FlowSpineService` (раздел XXV) намеренно разводит
-`build`, который только считает, и `observe`, который считает и записывает, — чтобы сам вопрос о состоянии
-не оставлял следов. Здесь ровно наоборот: следов не оставляет только тот, кто не спрашивает.
+*Идеальная форма:* read and observe are separate. HTTP/status callers may read the last DBR snapshot without
+changing node utilization, primary-constraint flags, arrival-rate state or timestamps. Recalculation happens
+only in `periodicWatchdog()` or explicit `refreshDbrStatus()`. The graph, optimizer and detector are not
+returned as writable internals; callers use bounded facade methods. Watchdog cadence is derived from active
+work and observed step durations, then clamped by declared min/max bounds. Node in-flight counters are
+incremented and decremented only by the sentinel lifecycle.
 
-**Задача для кодинга.** Разделить чтение и пересчёт, как это сделано у свода потока: `getDbrStatus()` обязан
-возвращать последнее вычисленное сторожем состояние, а пересчёт остаётся за расписанием. Место:
-`TocSentinelService.getDbrStatus` и `TocOptimizer.evaluateConstraintsAndDbr` (записи `setUtilization` и
-`setPrimaryConstraint` внутри цикла). Проверка: два подряд запроса состояния при остановленном сторже дают
-один и тот же ответ и ничего не меняют. Опровергнет: изменение признака главного ограничения, вызванное
-чтением.
+*Граница:* this family owns volatile runtime telemetry and TOC control signals. It does not own durable task
+truth, account selection, client delivery readiness, Six Sigma defect truth or Kaizen proposal truth. It may
+influence admission via DBR throttling, but it must not be treated as proof that factory output is delivered
+or accepted.
 
-Третье, помельче: три геттера отдают наружу сам граф, обнаружитель и оптимизатор целиком, так что любой
-вызывающий может писать в них напрямую, минуя сторожа. Владение здесь не объявлено ничем, кроме соглашения.
-*Живое, 7 сентября 2026:* сторож работает непрерывно — в журнале строки `[TOC-SENTINEL][STEP_EXIT]` и
-`[END_EXECUTION]` с отметками секундной давности, всего 7332 за сутки. Питает его по-прежнему один
-размеченный шаг: сценарий `AUTOMERGE_CYCLE` (замер разметки — раздел XXIг, за прошедшие сутки не изменился).
-*Философия:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн,
-`BARCAN-TAG-00 CODE-GUARDIAN`, принцип языковых игр, anchor *Philosophical Investigations — language-games,
-meaning as use, private-language argument*. Сильная дословно: «утверждение о работе системы опирается на
-логи, метрики, проверки здоровья или состояние свода, и ссылка приведена». Слабая: «утверждение опирается на
-собственный рассказ агента о том, что он сделал». Опровержение: «потребовать команду, которой замер снят;
-её отсутствие и есть нарушение». **Форма: сильная по источнику, испорченная наблюдателем.** Показания
-берутся из настоящих замеров времени исполнения, а не из рассказа механизма о себе, — и предъявить их можно.
-Но наблюдение здесь **меняет наблюдаемое**: спросив состояние, спрашивающий переставил признак ограничения.
-Образец требует опираться на замер; он не предполагал, что снятие замера будет его же изменять.
-Второй образец: `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` (D004) — Ахилле Варци,
-`BARCAN-TAG-01 ACTUALIST-OBJECT`, принцип топологии пространственно-временных границ, anchor *Parts and
-Places / formal ontology of boundaries and spatial parts*. Сильная дословно: «до разделения модулей
-объявлено, какой агрегат вправе менять каждую часть». Слабая: «классы разделены по размеру или по слоям».
-Опровержение: «найти поле, которое пишут два сервиса». **Форма: сильная.** Владение графом и узлами
-инкапсулировано в `TocSentinelService`: утечка внутренних объектов через геттеры ликвидирована, граф
-наружу не отдаётся. Счётчик «в работе» (`inFlightCount`) сведён к строго единственному владельцу: инкремент
-перенесён из `TocAnomalyDetector` в `TocSentinelService.enterStep`, декремент выполняется в
-`TocSentinelService.exitStep`. `TocAnomalyDetector` теперь только детектирует аномалии и ставит флаг застоя,
-`TocOptimizer` ставит загрузку и главное ограничение, а счётчиками и жизненным циклом узла владеет только
-`TocSentinelService`. Ни у одного поля нет двух сервисов-писателей. Опровержение снято.
+*Входы:* scenario name, token id, priority, step name, success/failure, resource id, graph nodes/edges/tokens,
+node observed durations, in-flight counts, configured `minCadenceMs`, `maxCadenceMs`, `maxBufferCapacity`,
+HTTP `/api/toc/**` event and read requests, scheduled trigger ticks.
 
-*Приведение к идеальной модели (Antigravity L2, 11 сентября 2026):*
-1. **Чистое чтение без изменения наблюдаемого (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013):**
-   `TocOptimizer` сохраняет снимок `latestDbrStatus`. `TocSentinelService.getDbrStatus()` возвращает его чистым чтением без вызова `evaluateConstraintsAndDbr()`, без пересчёта входного потока и без изменения узлов `TocNode` (`setUtilization`, `setPrimaryConstraint`). Пересчёт графа изолирован в `periodicWatchdog()` и явном `refreshDbrStatus()`. Заслонено тестом `getDbrStatusDoesNotMutateGraphOrConstraintState()`.
-2. **Ликвидация утечки внутренних компонентов и единственный владелец счётчиков (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004):**
-   Геттеры `getGraph()`, `getAnomalyDetector()` и `getOptimizer()` удалены из `TocSentinelService`. Доступ ко всем операционным сущностям переведён на методы сервиса: `getToken(id)`, `getNode(name)`, `getAllNodes()` (unmodifiable), `getEdges()` (unmodifiable), `getActiveTokenCount()`, `getGlobalArrivalRatePerSec()`, `getCompletedCountAllNodes()`, `getMaxBufferCapacity()`, `setMaxBufferCapacity(cap)`. Сторонние сервисы (`KaizenService`, `SixSigmaAuditService`, `TocSentinelController`) избавлены от прямого хождения во внутренние компоненты. Инкремент `inFlightCount` узла перенесён из обнаружителя в фасад `TocSentinelService`. Заслонено тестами `partWholeEncapsulationEnforcedWithoutLeakyComponentGetters()` и `inFlightCounterOwnedExclusivelyBySentinelServiceLifecycle()`.
-3. **Выведенная динамическая частота обхода (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D008):**
-   Частота сторожа больше не является фиксированной константой в коде или настройке. `TocSentinelService` реализует `SchedulingConfigurer`, регистрируя динамический `Trigger`: период вычисляется как половина кратчайшей наблюдённой длительности шага в графе (`min(meanDurationMs) / 2` по критерию Найквиста–Шеннона), зажат объявленными границами `[minCadenceMs, maxCadenceMs]`. При отсутствии активной работы в графе (`getActiveTokenCount() == 0`) сторож расслабляется до верхнего предела (`maxCadenceMs = 10000ms`), предотвращая пустой опрос при отсутствии нагрузки (даже если узел имеет историю завершений за прошлые циклы). При наличии токенов в работе период динамически адаптируется под реальную скорость шагов. Инкремент счётчика узла при отклонённом шаге-цикле предотвращён. Заслонено тестами `nodeWithCompletionsAndZeroWorkInFlightRelaxesToMaxBound()`, `nodeInFlightWithMean1000msDerivesCadence500ms()`, `activeWorkClampsToLowerAndUpperBounds()`, `rejectedCycleStepDoesNotIncrementInFlightCounter()` и `derivedCadenceAdaptsDynamicallyToObservedStepDurations()`.
+*Выходы:* active/completed/throttled/aborted `TocToken` states; node in-flight/completed counts, utilization
+and primary-constraint flags; anomaly reports; cached `DbrStatus`; DBR admission decisions; `/api/toc/status`,
+`/api/toc/constraint`, `/api/toc/graph`, `/api/toc/anomalies` responses; log lines for step lifecycle,
+constraint shifts, rope throttling and watchdog errors.
 
+*Владельцы истины и состояния:* `TocExecutionGraph` stores the in-memory graph, tokens and edges;
+`TocSentinelService` owns lifecycle writes and facade access; `TocAnomalyDetector` owns anomaly reports and
+stall/deadlock decisions; `TocOptimizer` owns current constraint, rope state, buffer capacity and cached
+`DbrStatus`; `TocSentinelController` owns HTTP shape only.
 
+*Инварианты:* (1) `getDbrStatus()` is pure read of cached status; (2) `refreshDbrStatus()` and
+`periodicWatchdog()` are the recalculation paths; (3) `getGraph()`, `getAnomalyDetector()` and
+`getOptimizer()` are not public service API; (4) returned node/edge collections are unmodifiable; (5)
+`enterStep` increments in-flight only when anomaly checks allow the step; (6) `exitStep` decrements in-flight
+and records duration; (7) idle cadence returns `maxCadenceMs`; (8) active cadence is half of the shortest
+observed mean duration, clamped to `[minCadenceMs, maxCadenceMs]`; (9) a single instrumented stage must report
+flow unmeasured, not falsely optimal.
 
-**`VideoAssetService`** (229 строк) — порождает видео-образы через тот же путь к внешней модели.
-*Связи:* одна дверь `generateAsset`, вызывающих два | ходит в `GoogleAiResourceService`.
-*Ценность:* без него нет видео-образов; на поток это не влияет.
-*Комментарий:* **периферия.** Одна дверь, два вызывающих, поток удержать не может. Входит в перечень
-помеченных к переносу с Gemini (раздел XXVIII). Разбирать подробнее не стал намеренно: при одной двери и
-двух вызывающих подробный разбор был бы объёмом без предмета.
-*Живое:* строк службы в журнале за сутки нет.
-*Философия:* **не мерено** — по той же причине.
+*Сильная форма сейчас:* the old defects in this section are no longer current. Source has
+`SchedulingConfigurer`, dynamic trigger cadence, cached `latestDbrStatus`, pure `getDbrStatus()`, explicit
+`refreshDbrStatus()`, facade methods instead of leaky component getters, unmodifiable graph collections and
+single-writer in-flight lifecycle. Tests pin pure reads, missing leaky getters, unmodifiable collections,
+exclusive in-flight ownership, idle max cadence, active derived cadence, lower/upper clamps, rejected-cycle
+no-increment, dynamic cadence adaptation, explicit refresh and single-stage unmeasured recommendation.
+
+*Слабая/неидеальная форма сейчас:* this tact did not run the focused tests and did not measure live log
+volume or scheduler cadence after the current implementation. The mechanism remains volatile/in-memory by
+design: graph state does not survive restart, so it is runtime telemetry, not durable factory history. The
+HTTP event endpoints are operational controls and should not be exposed as client-delivery proof.
+
+*Что сделать для идеала:* do not code the old fixed-rate, read-mutates-state or leaky-getter fixes again.
+Run `TocSentinelServiceTest`, `TocOptimizerTest` and `TocSentinelControllerTest`, then verify live or fixture
+logs that the watchdog relaxes when idle and that `/api/toc/status` reads do not advance `lastEvaluatedAt`.
+If durable TOC history is required, define a separate persistence mechanism; do not overload this runtime
+graph.
+
+*Что не трогать:* keep `getDbrStatus()` pure, keep `refreshDbrStatus()` explicit, keep the dynamic trigger,
+keep idle relaxation to `maxCadenceMs`, keep single-writer in-flight ownership, keep unmodifiable graph
+facade collections, and keep the "single instrumented stage is unmeasured" recommendation.
+
+*Опровержение:* call `getDbrStatus()` repeatedly without `periodicWatchdog()` or `refreshDbrStatus()`; if
+`lastEvaluatedAt`, node utilization or primary-constraint flags change, read purity is false. Reflect on
+`TocSentinelService`; if `getGraph`, `getAnomalyDetector` or `getOptimizer` exists, ownership is false.
+Create a node with completions but no active tokens; if cadence is not `maxCadenceMs`, idle relaxation is
+false. Reject a cycle step; if the node in-flight count increments, lifecycle ownership is false.
+
+*Критерий закрытия:* this family is closed when focused tests pass and a current evidence note records pure
+read behavior, dynamic cadence, single-writer in-flight ownership, unmodifiable facade collections and
+single-stage unmeasured DBR recommendation.
+
+*Свидетельства записи:* `git status --short`; `git log -1 --oneline`; current section XXXVII; `find` and
+`grep -RIn` over TOC classes; `nl -ba` on `TocSentinelService`, `TocOptimizer`, `TocSentinelController`,
+`TocExecutionGraph`, `TocSentinelServiceTest`; philosopher rows
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`,
+`ALONZO_CHERCH_21_DERIVED_CUTOFF` and `ACP-061`.
+
+*Текущий статус:* strict family record filled. Current source/test contract is strong for the old TOC
+observer defects; no code change is advised before fresh test/live evidence.
+
+*комментарий для Антигравити:* не кодь старые TOC defects as if still open: `getDbrStatus()` is currently a
+cached pure read, leaky component getters are gone, and cadence is dynamically derived. First verify
+`TocSentinelServiceTest`, `TocOptimizerTest` and `TocSentinelControllerTest`; preserve read/refresh
+separation, facade ownership and dynamic cadence. Philosophy:
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`,
+`ALONZO_CHERCH_21_DERIVED_CUTOFF`, common background `ACP-061 Hoare Triple Review`.
+
+**`VideoAssetService`**, **`GoogleAiResourceService`**, **`GoogleAiResourceController`**, **`AutoMergeService`**
+— peripheral video-asset generation family that asks the configured Google/Veo model for a video block and
+writes the resulting media plus metadata to disk.
+
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, D010
+Data lineage loss): a generated media asset is trustworthy only when metadata records project, model,
+prompt context, raw preview, file path, MIME type and generation status. `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`
+keeps "asset unavailable", "model returned no video", "write error" and "generated media file" as different
+states.
+
+*Связи:* `GoogleAiResourceController` exposes the manual video endpoint; `AutoMergeService` can request a
+video asset from merge automation; `VideoAssetService.generateAsset(...)` calls
+`GoogleAiResourceService.callInteraction(...)` with `video_generation` and optional `google_search`, then
+writes metadata/video under the configured asset root.
+
+*Идеальная форма:* video generation is optional and fail-closed. If `veo_enabled` is false or no Google AI key
+exists, it returns unavailable without external call. If the model returns text but no video block, metadata
+is saved and status is `no_video`. If video bytes exist, the service writes the media file and metadata
+atomically enough that the caller receives paths and MIME type. It must not fabricate a video path, silently
+reuse an image path, or let a failed external generation look like a delivered asset.
+
+*Граница:* this family owns external video generation and local media/metadata writing. It does not own
+design-system consistency, client delivery acceptance, product runtime truth, or Google API health. It is
+peripheral to the factory flow: absence of video is a status, not a blocked build.
+
+*Входы:* project id/name/slug/repository; operational context prompt JSON; brief; asset type; quality;
+`useGoogleSearch`; settings `veo_enabled`, `google_search_grounding_enabled`, `veo_model`; Google AI key
+availability; interaction text, raw preview, video base64 and MIME type; configured `assetRoot`.
+
+*Выходы:* `VideoAssetResult` with `available`, `status`, `model`, `videoPath`, `metadataPath`, `mimeType`,
+`message`; metadata JSON file; video file when available; logs for disabled, missing key, model failure,
+no-video and write-error outcomes.
+
+*Владельцы истины и состояния:* `SystemSettingsService` owns feature/model/search switches and key
+availability through `GoogleAiResourceService`; Google/Veo owns returned media; local filesystem under
+`assetRoot` owns saved metadata/media evidence; `VideoAssetResult` is the caller contract.
+
+*Инварианты:* (1) disabled video generation performs no external call; (2) missing key performs no external
+call; (3) unavailable/model-failed/no-video/write-error are distinct statuses; (4) media path is returned
+only after bytes are decoded and written; (5) metadata is written for no-video and ok paths; (6) file names
+are slugged and rooted under configured asset root.
+
+*Сильная форма сейчас:* source distinguishes `unavailable`, interaction failure, `no_video`, `write_error`
+and `ok`; it writes metadata before returning `no_video`, decodes base64 before returning media path, records
+model/brief/raw preview and guards disabled/missing-key cases before external generation.
+
+*Слабая/неидеальная форма сейчас:* no focused `VideoAssetServiceTest` was found in this tact; controller and
+automation tests mock the service rather than proving file/write behavior. The family is not declared ideal
+until disabled, missing-key, no-video, ok and write-error branches are covered by focused tests with a temp
+asset root.
+
+*Что сделать для идеала:* add or run focused tests for `VideoAssetService.generateAsset(...)` covering
+disabled setting, missing key, unavailable interaction, no-video metadata write, successful mp4/webm/mov
+write and write-error. Do not change runtime behavior before those branch contracts are pinned.
+
+*Что не трогать:* keep disabled/key guards, distinct statuses, metadata capture, slugged asset directory,
+MIME-to-extension mapping and the distinction between text output/raw preview and actual video media.
+
+*Опровержение:* with `veo_enabled=false`, if `GoogleAiResourceService.callInteraction` is called, the guard
+is false. With blank `outputVideoBase64`, if a video path is returned as available, no-video handling is
+false. With valid base64 and MIME type, if metadata or media file is absent after success, evidence
+lineage is false.
+
+*Критерий закрытия:* focused tests prove all generation branches and filesystem side effects with a temporary
+asset root; caller tests prove unavailable/no-video does not masquerade as delivered client value.
+
+*Свидетельства записи:* `grep -RIn` for `VideoAssetService`, `generateAsset` and
+`GoogleAiResourceService`; `nl -ba src/main/java/com/eneik/production/services/video/VideoAssetService.java`;
+controller and automation usage grep; no focused `VideoAssetServiceTest` found.
+
+*Текущий статус:* strict peripheral record filled. Implementation has clear fail-closed branches but is not
+ideal by test evidence.
+
+*комментарий для Антигравити:* механизм не идеален. Do not rewrite `VideoAssetService` as a generic media
+helper or merge it into design-image generation; first add focused branch tests preserving disabled,
+missing-key, unavailable, no-video, write-error and ok statuses plus metadata/media evidence. Philosophy:
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, common background
+`ACP-061 Hoare Triple Review`.
 
 # XXXVIII. Вход к ресурсам модели: пять изменяющих запросов на открытом пути
 
