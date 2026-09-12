@@ -8904,122 +8904,144 @@ mutation distinction, path normalization in `listVideoAssets`, and current fail-
 
 # XXXIX. Метрики качества: два счёта одного слова, 388 против нуля
 
-* **Имена механизма или семейства** — `QualityMetricsController`, `OperationalTruthService`,
-  `OperationalTruthController`, `OperationalTruthDto.EvidenceSummary`, `TaskEntity`,
-  `TaskRepository`, `TaskConflictRepository`, `PrReviewRepository`, `JulesSessionRepository`,
-  `ProjectRepository`, `OnboardingAuditFindingRepository`, `SixSigmaAuditService`.
+## Семейство: quality evidence truth table, DPMO and operational trust projections
 
-* **Философский паттерн** — `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, Альфред Тарский,
-  `BARCAN-TAG-06`, publication anchor *The Concept of Truth in Formalized Languages*, defect `D012 Policy
-  contradiction`: качество должно говорить, истинно ли проверка провалена, пройдена, не применена или не
-  измерена, а не прятать эти состояния под одним словом. Также применим
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`: каждое число дефектов должно называть источник, окно, критерий и
-  владельца расчёта. `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` нужен для различения check-level defects,
-  task-level delivery evidence and factory-level trust warning; `ACP-061` остаётся фоном перед кодом.
+**Имена механизмов и частей:** `QualityMetricsController`, `QualityGateController`, `OperationalTruthController`,
+`OperationalTruthService`, `OperationalTruthDto.EvidenceSummary`, `TaskEntity`, `TaskRepository`,
+`TaskConflictRepository`, `PrReviewRepository`, `JulesSessionRepository`, `ProjectRepository`,
+`OnboardingAuditFindingRepository`, `SixSigmaAuditService`, `SystemStatusService`.
 
-* **Связи** — `GET /api/quality/conflict-dpmo` считает DPMO конфликтов слияния из `PrReviewRepository`,
-  `TaskConflictRepository`, `JulesSessionRepository`, `TaskRepository` and `ProjectRepository`.
-  `GET /api/quality/defect-summary` собирает merge conflicts, failed quality-gate checks and onboarding
-  findings. `OperationalTruthService` независимо строит evidence summary для проекта, используя
-  `TaskEntity.isVerifiedForDelivery()`, `isDeliveryVerificationFailed()` and
-  `isDeliveryVerificationAbsent()`. `SixSigmaAuditService.computeQualityGateDefectRate` уже имеет соседний
-  расчёт check-level opportunities/defects/undetermined.
+**Философский паттерн:** primary `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, defect `D012 Policy contradiction`:
+quality must explicitly distinguish passed, failed, undetermined and not-applied states. Supporting patterns:
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for source/window/owner of every count,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for check-level, task-level and factory-level numbers, and
+`ACP-061 Hoare Triple Review`.
 
-* **Идеальная форма** — check-level метрика качества считает только проверки, которые реально существуют в
-  `qualityGateReport.checks`, и defect означает `passed == false`. Task-level operational truth считает
-  задачи в трёх взаимоисключающих состояниях: verified, failed/refuted, absent/unapplied. Factory-level
-  DPMO показывает opportunities/defects/window/source and does not reuse the same label for another level.
-  Отсутствие применимой проверки не называется провалом; проваленная проверка не исчезает как "нет дефектов".
+**Связи, вызовы и взаимодействия:** `QualityMetricsController` exposes `/api/quality/conflict-dpmo` and
+`/api/quality/defect-summary`; it reads PR reviews, conflicts, Jules sessions, tasks, projects and onboarding
+findings. `QualityGateController` exposes `/api/quality-gate/defect-rate` and delegates the calculation to
+`SixSigmaAuditService.computeQualityGateDefectRate`. `OperationalTruthController` exposes project operational
+truth and delegates to `OperationalTruthService`, which reads task delivery-verification predicates from
+`TaskEntity` and publishes `OperationalTruthDto.EvidenceSummary`. `SystemStatusService` builds a dashboard
+quality-gate section from task reports and Six Sigma CTQ breakdown. `SixSigmaAuditService` owns quality-gate
+defect-rate, CTQ and DPMO vocabulary.
 
-* **Граница** — `QualityMetricsController` имеет право показывать агрегированную сводку качества и дефектов.
-  Он не должен становиться владельцем delivery-readiness, trust score or acceptance verdict. `TaskEntity`
-  owns the delivery-verification partition. `OperationalTruthService` owns project trust evidence wording.
-  `SixSigmaAuditService` owns Six Sigma quality-rate calculation. Эти границы нельзя чинить одной заменой
-  текста в UI или одним булевым полем.
+**Идеальная форма:** check-level quality metrics count actual `qualityGateReport.checks` and treat
+`passed=false` as defect, missing `passed` as undetermined, and empty checks as zero opportunities. Task-level
+operational truth partitions each task into verified, failed/refuted or absent/unapplied. DPMO names source,
+window and opportunity set. No endpoint reuses the same label for a different truth level. Not-applied checks
+are visible context, not defects.
 
-* **Входы** — строки review/conflict/session/task/project/onboarding; `qualityGateReport.checks[*].passed`;
-  `qualityGateReport.applicableChecksByStage.IMPLEMENTATION_RESULT`; `qualityGatePassed`;
-  acceptance criterion verdict fields in `TaskEntity`; project id and recency window in operational truth;
-  seven-day window in conflict DPMO.
+**Граница:** `QualityMetricsController` may aggregate quality/conflict/onboarding defects for dashboard/API use;
+it must not own delivery acceptance or trust scoring. `QualityGateController` is only an HTTP observation surface
+for the Six Sigma quality-gate calculation. `TaskEntity` owns task-level delivery-verification predicates.
+`OperationalTruthService` owns project trust/evidence wording. `SixSigmaAuditService` owns Six Sigma count
+semantics. `SystemStatusService` may present dashboard sections, but it must not become a second owner of
+quality truth.
 
-* **Выходы** — `/api/quality/conflict-dpmo` returns merge-attempt counts, conflicts, DPMO, last-seven-days
-  and by-project breakdown. `/api/quality/defect-summary` returns total defects plus conflict, quality-gate
-  and onboarding lists. `/api/projects/{projectId}/operational-truth` returns evidence counts including
-  `qualityGatePassed`, `qualityGateFailed` and `qualityGateUnapplied`, and warning text only for actual
-  failed quality-gate evidence.
+**Входы:** PR review rows, conflict rows, Jules session rows, task rows, project rows, onboarding findings,
+`qualityGateReport.checks[*].passed`, `qualityGateReport.applicableChecksByStage.IMPLEMENTATION_RESULT`,
+`qualityGatePassed`, acceptance-criteria verdict fields, project id, recency window and seven-day DPMO window.
 
-* **Владельцы истины и состояния** — `TaskEntity` owns the task truth partition; `TaskRepository` owns scoped
-  acquisition of tasks with quality-gate reports; `PrReviewRepository` and `TaskConflictRepository` own merge
-  attempts/conflicts; `OnboardingAuditFindingRepository` owns onboarding findings; `OperationalTruthDto`
-  owns the external evidence shape; `SixSigmaAuditService` owns quality-rate terminology.
+**Выходы:** conflict DPMO with all-time/last-seven-day/project breakdowns; defect summary with conflict,
+quality-gate and onboarding lists; quality-gate defect-rate map with attempts/opportunities/defects/passed/
+undetermined/DPMO; operational truth evidence with `qualityGatePassed`, `qualityGateFailed` and
+`qualityGateUnapplied`; dashboard quality-gate section with totals, DPMO/yield/sigma and CTQ breakdown.
 
-* **Инварианты** — failed check count is not the same thing as task failed for delivery; zero applicable
-  delivery checks is absent/unapplied, not passed and not failed; `qualityGatePassed=false` cannot be read
-  without `deliveryChecksApplied()` or acceptance verdict context; `qualityGatePassed + qualityGateFailed +
-  qualityGateUnapplied` must partition recent tasks with quality evidence in operational truth; no quality
-  metric may use a stale all-tasks scan when a scoped repository method exists.
+**Владельцы истины и состояния:** `TaskEntity` owns task delivery-verification states; `TaskRepository` owns
+quality-report acquisition; `PrReviewRepository` and `TaskConflictRepository` own merge attempts/conflicts;
+`JulesSessionRepository` maps PR review sessions to tasks; `OnboardingAuditFindingRepository` owns onboarding
+findings; `OperationalTruthDto` owns the external operational-truth shape; `SixSigmaAuditService` owns
+quality-rate terminology and CTQ breakdown.
 
-* **Сильная форма сейчас** — старое "388 непройденных заслонов" уже нельзя читать как текущий дефект:
-  `TaskEntity` has explicit `isVerifiedForDelivery`, `isDeliveryVerificationFailed`,
-  `isDeliveryVerificationAbsent`, `deliveryChecksApplied` and `qualityGateChecksFailed`; `OperationalTruthDto`
-  exposes `qualityGateUnapplied`; `OperationalTruthService` counts passed/failed/unapplied separately and
-  warns only on `qualityGateFailed`; `OperationalTruthServiceTest` contains the "388 case" fixture proving
-  a task with report and zero delivery checks is unapplied, not failed. `QualityMetricsControllerTest`
-  likewise proves empty `checks` gives `qualityGate.total == 0`, and that `/defect-summary` uses
-  `findByQualityGateReportIsNotNull()` instead of `taskRepository.findAll()`.
+**Инварианты:**
+- failed check count is not task failed-for-delivery;
+- `qualityGatePassed=false` is not enough without `deliveryChecksApplied()` or acceptance verdict context;
+- zero `IMPLEMENTATION_RESULT` applicable checks is absent/unapplied, not failed;
+- empty `checks` produces zero quality-gate defects;
+- missing `passed` is undetermined in Six Sigma quality-gate rate;
+- operational truth passed + failed + unapplied partitions recent tasks with quality reports;
+- defect totals must not add unapplied checks as defects;
+- scoped repository acquisition must be preferred over stale all-task scans where available.
 
-* **Слабая/неидеальная форма сейчас** — расчёт качества всё ещё рассыпан по нескольким владельцам:
-  `QualityMetricsController` hand-builds defect summary, `SystemStatusService` has its own quality gate
-  section, and `SixSigmaAuditService` has another check-level defect-rate function with `undetermined`.
-  `/api/quality/defect-summary` does not expose an explicit `qualityGateUnapplied` auxiliary count, so the
-  user sees zero failed checks but not the "not applied" side of the truth table from the same endpoint.
-  `getConflictDpmo()` still materializes projects, sessions, tasks and conflicts for by-project breakdown;
-  that is mainly cost and drift risk, not the old truth bug.
+**Сильная форма сейчас:** the old "388 failed quality gates" defect is not current. `TaskEntity` has
+`isVerifiedForDelivery`, `isDeliveryVerificationFailed`, `isDeliveryVerificationAbsent`,
+`deliveryChecksApplied` and `qualityGateChecksFailed`. `OperationalTruthService` counts passed, failed and
+unapplied separately, and `OperationalTruthDto.EvidenceSummary` exposes `qualityGateUnapplied`.
+`OperationalTruthServiceTest` contains the old 388-style case: quality report present, `qualityGatePassed=false`
+and zero delivery checks applied is unapplied, not failed. `QualityMetricsControllerTest` proves empty `checks`
+produce zero quality-gate defects and `/defect-summary` uses `findByQualityGateReportIsNotNull()`.
+`QualityGateController` delegates to `SixSigmaAuditService`, and `SixSigmaAuditServiceTest` proves missing
+`passed` is undetermined.
 
-* **Что сделать для идеала** — make one shared quality-evidence projection that is consumed by
-  `QualityMetricsController`, `OperationalTruthService`, `SystemStatusService` and `SixSigmaAuditService`.
-  The projection must return check-level failed/passed/undetermined and task-level verified/failed/unapplied
-  as separate fields. Then expose `qualityGateUnapplied` from `/api/quality/defect-summary` as not-a-defect
-  context, and replace remaining by-project DPMO in-memory joins with scoped repository queries if the
-  endpoint becomes hot.
+**Слабая / неидеальная форма:** quality evidence is still projected by several owners:
+`QualityMetricsController` hand-builds defect summary, `OperationalTruthService` publishes task-level evidence,
+`SystemStatusService` builds another quality section, and `SixSigmaAuditService` owns defect-rate/CTQ math.
+`/api/quality/defect-summary` does not expose `qualityGateUnapplied` as explicit non-defect context, while
+operational truth does. `getConflictDpmo()` still materializes project/session/task/conflict sets for by-project
+breakdown. These are owner/terminology drift and cost risks, not the old truth bug.
 
-* **Что не трогать** — do not revert to treating `qualityGatePassed=false` as failed evidence. Do not count
-  empty `checks` or zero `IMPLEMENTATION_RESULT` applicable checks as defects. Do not "fix" the zero in
-  `/defect-summary` by adding the unapplied count into `qualityGate.total`; that would reintroduce the old
-  lie. Do not remove the task-level partition helpers from `TaskEntity` as duplication.
+**Что надо сделать для идеала:** create one shared quality-evidence projection consumed by
+`QualityMetricsController`, `QualityGateController`/`SixSigmaAuditService`, `OperationalTruthService` and
+`SystemStatusService`. It must return check-level passed/failed/undetermined, task-level verified/failed/
+unapplied, source window and owner. Expose `qualityGateUnapplied` from `/api/quality/defect-summary` as context,
+not as defect. If conflict DPMO becomes hot, replace by-project in-memory joins with scoped repository queries.
 
-* **Опровержение** — a task with `qualityGateReport` present, `qualityGatePassed=false` and zero
-  `IMPLEMENTATION_RESULT` applicable checks appears under `qualityGateFailed` or under
-  `/api/quality/defect-summary.qualityGate.total`; a failed check with `passed=false` is absent from the
-  quality defect list; the sum of operational truth passed/failed/unapplied no longer partitions the test
-  fixture; or two endpoints publish the same label while using different truth levels without naming the
-  transform.
+**Что не трогать:** do not reintroduce the old rule that `qualityGatePassed=false` means failed delivery. Do not
+count empty `checks` or zero delivery checks as defects. Do not add `qualityGateUnapplied` into
+`qualityGate.total`. Do not delete the `TaskEntity` partition helpers as duplication. Do not move Six Sigma
+defect-rate math into `QualityGateController`.
 
-* **Критерий закрытия** — focused tests for `QualityMetricsController`, `OperationalTruthService`,
-  `TaskEntity` delivery-verification predicates and `SixSigmaAuditService.computeQualityGateDefectRate`
-  prove the four visible categories: passed check, failed check, undetermined check and no applicable
-  delivery check. `/api/quality/defect-summary` and `/api/projects/{id}/operational-truth` must publish
-  compatible labels and must not require a reader to know the old 388 incident to understand the difference.
+**Опровержение / проверка:** this record is false if a task with quality report, `qualityGatePassed=false` and
+zero `IMPLEMENTATION_RESULT` checks appears under failed delivery or `/defect-summary.qualityGate.total`; if a
+failed check with `passed=false` is absent from the quality defect list; if missing `passed` is counted as pass or
+defect instead of undetermined in `SixSigmaAuditService`; if operational truth passed/failed/unapplied no longer
+partitions the fixture; or if two endpoints publish the same quality label while using different truth levels
+without naming the transform.
 
-* **Свидетельства записи** — `nl -ba src/main/java/com/eneik/production/controllers/QualityMetricsController.java | sed -n '38,181p'`;
-  `nl -ba src/test/java/com/eneik/production/controllers/QualityMetricsControllerTest.java | sed -n '34,144p'`;
-  `nl -ba src/main/java/com/eneik/production/models/persistence/TaskEntity.java | sed -n '411,504p'`;
-  `nl -ba src/main/java/com/eneik/production/services/operational/OperationalTruthService.java | sed -n '351,385p'`;
-  `nl -ba src/test/java/com/eneik/production/services/operational/OperationalTruthServiceTest.java | sed -n '540,633p'`;
-  `nl -ba src/main/java/com/eneik/production/services/audit/SixSigmaAuditService.java | sed -n '487,525p'`;
-  `grep -RIn 'qualityGateUnapplied\|isDeliveryVerificationAbsent\|qualityGateChecksFailed\|findByQualityGateReportIsNotNull' src/main/java src/test/java`.
+**Критерий закрытия:** ideal when one shared projection feeds the visible quality endpoints, tests cover passed
+check, failed check, undetermined check and no applicable delivery check, `/defect-summary` shows unapplied as
+not-a-defect context, and the endpoint labels match operational-truth and Six Sigma levels without requiring the
+reader to know the old 388 incident.
 
-* **Текущий статус** — частично силён: old 388-as-failed defect is fixed in current source/test fixtures, but
-  the quality metrics family is not ideal until one shared projection removes the remaining terminology and
-  owner drift.
+**Доказательства:** `QualityMetricsController.java:13-181`; `QualityGateController.java:12-37`;
+`OperationalTruthController.java:12-24`; `OperationalTruthService.java:332-385`;
+`OperationalTruthDto.java:77-94`; `TaskEntity.java:411-504`; `SixSigmaAuditService.java:478-527`;
+`SystemStatusService.java:351-419`; `QualityMetricsControllerTest.java:34-183`;
+`OperationalTruthServiceTest.java:533-633`; `QualityGateControllerTest.java:16-55`;
+`SixSigmaAuditServiceTest.java:466-487`; philosopher rows:
+`ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`.
 
-* **комментарий для Антигравити:** механизм не идеален. Не правь старый "388 failed quality gates" defect as
-  if it were current: current `TaskEntity` and `OperationalTruthService` already separate passed, failed and
-  unapplied, and `QualityMetricsControllerTest` keeps empty checks at zero defects. Next correct work is to
-  unify quality-evidence projection across `QualityMetricsController`, `OperationalTruthService`,
-  `SystemStatusService` and `SixSigmaAuditService`, expose unapplied as context not defect, and preserve the
-  task-level truth partition. Philosophy: `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`,
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`.
+**Текущий статус:** не идеален: old 388-as-failed defect is fixed, but shared quality-evidence projection and
+visible unapplied context are still missing.
+
+**Комментарии для Антигравити по механизмам:**
+- `QualityMetricsController`: механизм не идеален. Применить `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`,
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`: не правь
+  старый "388 failed gates" defect; вынеси `/defect-summary` and `/conflict-dpmo` на shared quality-evidence
+  projection, добавь `qualityGateUnapplied` как context-not-defect, и не складывай unapplied в defect total.
+- `QualityGateController`: считаю механизм идеальным
+- `OperationalTruthController`: считаю механизм идеальным
+- `OperationalTruthService`: считаю механизм идеальным
+- `OperationalTruthDto.EvidenceSummary`: считаю механизм идеальным
+- `TaskEntity`: считаю механизм идеальным
+- `TaskRepository`: считаю механизм идеальным
+- `TaskConflictRepository`: считаю механизм идеальным
+- `PrReviewRepository`: считаю механизм идеальным
+- `JulesSessionRepository`: считаю механизм идеальным
+- `ProjectRepository`: считаю механизм идеальным
+- `OnboardingAuditFindingRepository`: считаю механизм идеальным
+- `SixSigmaAuditService`: механизм не идеален как family boundary owner, not because its current math is wrong.
+  Применить `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE` and `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`: preserve
+  current passed/failed/undetermined calculation and become the shared projection owner instead of allowing
+  parallel quality labels to keep drifting.
+- `SystemStatusService`: механизм не идеален. Применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and
+  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`: stop hand-building a separate quality-gate section once the
+  shared projection exists; preserve CTQ breakdown from `SixSigmaAuditService` and do not reinterpret
+  unapplied checks as defects.
+
+**комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
 # XL. Выметающий обход: восстановление, которому не нужен держатель
 

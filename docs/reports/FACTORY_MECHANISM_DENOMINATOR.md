@@ -892,3 +892,41 @@ boundary proof plus structured successful-mutation audit, not recreating the int
 all five mutating endpoints, fail-closed blank-key test, refutation by removing `WebConfig` registration,
 deploy/runbook key probe, and structured audit trace for successful AI-resource mutations. Сохрани safe GET vs
 mutation distinction, path normalization in `listVideoAssets`, and current fail-closed owner-service semantics.
+
+## 2026-09-12 Codex Strict Record: Quality Evidence Truth Table Family
+
+Status: documentation-only strict-family replacement for section XXXIX in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: `QualityMetricsController`, `QualityGateController`,
+`OperationalTruthController`, `OperationalTruthService`, `OperationalTruthDto.EvidenceSummary`, `TaskEntity`,
+`TaskRepository`, `TaskConflictRepository`, `PrReviewRepository`, `JulesSessionRepository`,
+`ProjectRepository`, `OnboardingAuditFindingRepository`, `SixSigmaAuditService` and `SystemStatusService` as
+the quality evidence truth table, DPMO and operational trust projection family.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 28 |
+| Sections still missing visible `комментарий для Антигравити` | 35 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section's "388 failed quality gates" defect is no longer current. Current code/tests
+already separate verified, failed and unapplied task-level evidence; empty checks yield zero quality defects;
+missing check `passed` is undetermined in Six Sigma. The remaining non-ideal point is projection ownership:
+`QualityMetricsController`, `OperationalTruthService`, `SystemStatusService` and `SixSigmaAuditService` still
+publish related quality truths through separate projections.
+
+Remaining non-ideal point for this family: code was not changed in this tact. Ideal work is one shared quality
+evidence projection plus explicit `qualityGateUnapplied` context in `/api/quality/defect-summary`, not reviving
+the old 388-as-failed bug.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXIX; family summary is not a substitute.
