@@ -2436,122 +2436,182 @@ updated_at = CURRENT_TIMESTAMP`, и при нуле затронутых стр�
 
 # XV. Класс дефекта «тихое размножение задач»: подпись, замер, случаи
 
-Записано по указанию оператора, чтобы этот класс можно было **находить и предупреждать**, а не узнавать о нём
-по исчерпанной квоте.
+## XV.1. Доменная подпись тихого размножения задач
 
-### Подпись
+* **Имена механизма или семейства** — defect-class record for silent duplicate task generation:
+  duplicated `TaskEntity` rows or compiler Jules sessions sharing one work identity while mostly reaching
+  terminal status; evidence fields `TaskEntity.contentKey`, `payload.slice_title`, `description`,
+  `createdAt`, `status`, Jules session count per compiler task.
+* **Философский паттерн** — `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`, D002 Invalid state: “how many duplicates
+  are stuck now” and “how fast duplicates are being generated over time” are different categories and must
+  not share one detector.
+* **Связи** — signature is consumed by `TaskDuplicateDetector`, `ContinuousOrchestrationService`,
+  `DefectJournalService`, `TaskRepository`, `JulesSessionRepository`, `PlannedWorkRecoveryService`,
+  `ProjectFlowService`, `TechnicalLeadCompiler`, `JulesDispatchService`.
+* **Идеальная форма** — the defect class is detected by work identity, time window, terminal/non-terminal
+  split and external-session spend. A key with many terminal tasks is not “safe history” if it was produced
+  rapidly; a key with live non-terminal duplicates is a separate stuck-state signal.
+* **Граница** — this mechanism identifies and records the class. It must not block dispatch by itself,
+  because a hard block on historical duplicates already caused deadlock; blocking belongs to specific
+  owner/gate mechanisms after local refutation.
+* **Входы** — task rows, task statuses, content key/slice title/description, `createdAt`, Jules sessions,
+  rolling window and threshold.
+* **Выходы** — duplicate-generation velocity evidence, stuck duplicate evidence, defect-journal record,
+  investigation trigger before blaming external Jules capacity.
+* **Владельцы истины и состояния** — tasks table owns task rows; Jules sessions table owns session spend;
+  `TaskDuplicateDetector` owns category separation; `DefectJournalService` owns durable defect evidence.
+* **Инварианты** — terminal duplicates count for velocity but not for stuck-state blocking; timestamp must
+  keep full date and time; external refusals after the burst are consequence evidence, not root cause.
+* **Сильная форма сейчас** — `TaskDuplicateDetector` explicitly separates `StuckDuplicateContent` from
+  `DuplicateGenerationVelocity`; default velocity threshold is `WishlistEntity.COMPILE_ATTEMPT_BUDGET` and
+  uses `count > threshold`.
+* **Слабая/неидеальная форма сейчас** — historical manual measurement remains in prose; live runtime count
+  was not remeasured in this tact.
+* **Что сделать для идеала** — preserve the split and make operator-facing reports expose both live-stuck
+  duplicate state and velocity-over-time evidence with full timestamps.
+* **Что не трогать** — do not merge terminal duplicates back into the hard blocker; do not print time without
+  date; do not treat Jules refusal as root cause before checking local velocity.
+* **Опровержение** — a duplicate burst spends sessions and reaches terminal statuses while the detector
+  records neither velocity nor defect-journal evidence.
+* **Критерий закрытия** — a burst over threshold creates exactly one defect-journal record per content key
+  per window, while old terminal duplicates do not hard-stop dispatch.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/services/task/TaskDuplicateDetector.java`;
+  `grep -R -n -E "DuplicateGenerationVelocity|findStuckDuplicateContent|DEFAULT_VELOCITY" src/main/java`.
+* **Текущий статус** — считаю механизм идеальным.
 
-Механизм порождает задачи с одним и тем же содержанием, каждая отправляется, тратит сессию Jules и
-**успешно завершается**. Внешне всё исправно: задачи идут, статусы `done`, дашборд спокоен. Расходуется
-только внешний бюджет, а он не наш и потому невидим.
+## XV.2. Duplicate velocity journaler
 
-Дефект по корпусу — `CATEGORY_ERROR_SCAN` (D002): детектор измеряет «сколько дубликатов **застряло сейчас**»,
-а называется и используется как «порождаются ли дубликаты». Потраченная сессия потрачена независимо от того,
-чем кончилась задача.
+* **Имена механизма или семейства** — `ContinuousOrchestrationService.checkDuplicateGenerationVelocity`,
+  `TaskDuplicateDetector.detectDuplicateGenerationVelocity`, `TaskDuplicateDetector.evaluateVelocity`,
+  `DefectJournalService.recordDefect`, `DefectJournalRepository`.
+* **Философский паттерн** — `ALFRED_TARSKIY_10_INSTITUTIONAL_FACT_REGISTER`, D007 Evidence gap: velocity
+  crossing the legal attempt budget becomes an institutional defect only when a rule creates a durable audit
+  record.
+* **Связи** — orchestration tick reads tasks created after `now - DEFAULT_VELOCITY_WINDOW`, reads compiler
+  tasks by `contentKey` prefix `compile:`, counts Jules sessions for compiler tasks, then records
+  `DUPLICATE_GENERATION_VELOCITY` through `DefectJournalService`.
+* **Идеальная форма** — velocity journaler observes without blocking, deduplicates defect records per
+  content key and window, includes terminal tasks and compiler sessions, and writes a durable signal that
+  later triage can inspect.
+* **Граница** — it may record and warn; it must not decide ownership, reset wishlist state, kill tasks or
+  block new work directly.
+* **Входы** — project, tasks in rolling window, compiler tasks, Jules sessions by task id, recent defect
+  records, threshold and window constants.
+* **Выходы** — zero or more `DUPLICATE_GENERATION_VELOCITY` defect journal entries and logs.
+* **Владельцы истины и состояния** — `TaskRepository` and `JulesSessionRepository` own evidence; defect
+  journal owns durable warning; `ContinuousOrchestrationService` owns the scheduled observation.
+* **Инварианты** — one record per content key per window; condition is strict `count > threshold`; compiler
+  V137 single-row identity is supplemented by session count, so repeated compiler sessions are still visible.
+* **Сильная форма сейчас** — source counts both task rows and compiler-task sessions; missing journal service
+  fails loud in logs; no blocking side effect is visible in this path.
+* **Слабая/неидеальная форма сейчас** — no source non-ideality identified in this tact.
+* **Что сделать для идеала** — no code change identified; preserve observation-only behavior and the
+  compiler-session branch.
+* **Что не трогать** — do not turn this journaler into a hard stop; do not remove terminal tasks or compiler
+  sessions from velocity evidence.
+* **Опровержение** — repeated compiler sessions for one `compile:` content key exceed threshold but no
+  defect-journal record is emitted.
+* **Критерий закрытия** — focused test or live probe shows exactly one durable record per key/window for
+  `count > COMPILE_ATTEMPT_BUDGET`, and no hard-stop status is set from velocity alone.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/services/ContinuousOrchestrationService.java`;
+  `grep -R -n -E "checkDuplicateGenerationVelocity|DUPLICATE_GENERATION_VELOCITY|findByProjectIdAndContentKeyStartingWith" src/main/java`.
+* **Текущий статус** — считаю механизм идеальным.
 
-Три признака, по которым класс узнаётся:
+## XV.3. Recovery/reset generator boundary
 
-1. Число задач с одним ключом содержания много больше единицы, а **почти все терминальны**.
-2. Детектор дубликатов молчит — по устройству, а не по настройке: он исключает терминальные и требует три
-   одновременно живых.
-3. Отказы внешней системы приходят **позже** размножения, иногда на часы, и выглядят как её сбой.
+* **Имена механизма или семейства** — `PlannedWorkRecoveryService.recoverStuckCompilingWishlists`,
+  `PlannedWorkRecoveryService.cleanoutOrphanedMetaTasksWhenProductComplete`, `WishlistRepository`,
+  `TaskRepository`, `ClientDeliverableReadinessService.Readiness`.
+* **Философский паттерн** — `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004 Concurrency conflict:
+  recovery and completion may both be locally reasonable, but the whole transition must have one named
+  owner or recovery can indirectly create duplicate tasks.
+* **Связи** — recovery reads all project tasks and wishlists, resets stuck compiling wishlists to
+  `converted_to_task` or `pending`, and cleanout may complete meta tasks only after readiness says promised
+  delivery exists; downstream dispatch then sees pending wishlists and may create/compiler-dispatch work.
+* **Идеальная форма** — recovery guarantees post-state of the whole system, not just its own hands. It may
+  reset a wishlist only when the owner of the wishlist/task transition agrees that no live compiler or
+  finalizing completion can still legitimately finish it.
+* **Граница** — recovery may unstick stale state and clean meta work; it must not infer delivered product
+  solely from task terminal statuses and must not erase the compiler carrier that would create missing work.
+* **Входы** — compiling wishlists, project tasks, `sourceWishlistId`, readiness record, product/meta task
+  classification, terminal statuses.
+* **Выходы** — wishlist status reset, meta task status done, released terminal claim, log entry.
+* **Владельцы истины и состояния** — `WishlistEntity.status` and `TaskEntity.status` own persisted state;
+  readiness service owns delivery evidence; owner-map for wishlist/task transitions remains the missing
+  higher-level truth source.
+* **Инварианты** — “I do not create a task” is not a system guarantee; recovery must consider mechanisms that
+  will create tasks as a consequence of its state write; cleanout requires delivered-what-was-promised, not
+  absence of active product tasks.
+* **Сильная форма сейчас** — cleanout now asks `readiness.completeFeatures == totalFeatures` and
+  `mergedDeliverables == totalDeliverables`; recovery checks active compiler tasks before resetting stuck
+  compiling wishlists.
+* **Слабая/неидеальная форма сейчас** — full owner-map for wishlist/task transitions remains outside this
+  method; section XIII records that as not ideal.
+* **Что сделать для идеала** — complete the wishlist/task owner-map and route recovery writes through the
+  named transition owner or CAS contract; keep readiness-based cleanout.
+* **Что не трогать** — do not revert to “all product tasks terminal means product delivered”; do not assert
+  safety from “this method creates nothing”.
+* **Опровержение** — recovery resets state and a different mechanism immediately creates a duplicate compiler
+  task/session for the same work identity.
+* **Критерий закрытия** — recovery post-state is expressed as a whole-system invariant and tested against the
+  downstream dispatch path, not just against local writes.
+* **Свидетельства записи** — `src/main/java/com/eneik/production/services/PlannedWorkRecoveryService.java`;
+  `grep -R -n -E "recoverStuckCompilingWishlists|cleanoutOrphanedMetaTasksWhenProductComplete|deliveredWhatWasPromised" src/main/java`.
+* **Текущий статус** — partially strong, not ideal until transition ownership is complete.
 
-### Замер — воспроизводимый, снимается в любой момент
+## XV.4. Compiler work identity and completion admission
 
-```
-curl -s "http://localhost:8080/internal/tasks?projectId=<PROJECT_ID>" | python3 -c "
-import sys,json,collections
-rows=json.load(sys.stdin)
-TERM={'done','failed','blocked','spike_completed'}
-c=collections.Counter((t.get('title') or '') for t in rows)
-for title,n in c.most_common():
-    if n<3: break
-    ts=sorted(t.get('createdAt','') for t in rows if (t.get('title') or '')==title)
-    live=sum(1 for t in rows if (t.get('title') or '')==title and str(t.get('status')) not in TERM)
-    print('%4d задач | живых %d | %s .. %s | %s'%(n,live,ts[0][:19],ts[-1][:19],title[:60]))
-"
-```
+* **Имена механизма или семейства** — `TaskEntity.contentKey`, migration
+  `V137__compiler_task_identity_from_work.sql`, `ProjectFlowService` compiler task minting,
+  `TechnicalLeadCompiler.findLiveSemanticTask/createAndSaveTask`, `JulesDispatchService.admitWishlistCompilationCompletion`,
+  `WishlistRepository.compareAndSetStatusWithTimestamp`.
+* **Философский паттерн** — `DZHONATAN_SHAFFER_18_PERSISTENCE_SNAPSHOT`, D010 Data lineage loss: compiler
+  work identity must survive repeated turns, rows and sessions so the factory can tell “same work again”
+  from “new work”.
+* **Связи** — project flow mints compiler tasks with `compile:<projectId>:<hash>` content keys; compiler
+  collapses live semantic duplicates; Jules completion admission locks project and CAS-claims wishlists
+  `compiling/pending -> finalizing`; duplicate completions are discarded or skipped without re-decomposing.
+* **Идеальная форма** — the work identity is stable before dispatch, admission is atomic before slow PR/parse
+  work, and duplicate compiler completions cannot build the same graph twice.
+* **Граница** — identity/admission protects compiler work generation. It does not judge product quality,
+  repair failed tasks by itself, or own all task/wishlist transitions.
+* **Входы** — project id, wishlist ids, content key, wishlist status, compiler task payload, Jules session,
+  PR evidence and task graph plan.
+* **Выходы** — compiler task identity, dismissed duplicate wishlist, `finalizing` claim with timestamp,
+  duplicate completion discard, task graph creation for claimed wishlist positions.
+* **Владельцы истины и состояния** — `tasks.content_key` owns work identity for task rows; wishlist status
+  owns completion claim; project row lock and CAS own admission exclusion.
+* **Инварианты** — a failed historical task cannot block replacement forever; a compiler completion cannot
+  re-decompose a wishlist it did not claim; duplicate webhook/replay does not create another graph.
+* **Сильная форма сейчас** — V137 adds `content_key`; ProjectFlow has compiler identity comments;
+  `admitWishlistCompilationCompletion` uses project lock and CAS to `finalizing`; duplicate already-compiled
+  batches are discarded.
+* **Слабая/неидеальная форма сейчас** — rows predating V137 may lack `content_key`; global task/wishlist
+  owner-map remains incomplete.
+* **Что сделать для идеала** — backfill or explicitly exclude legacy compiler rows where work identity is
+  derivable; keep CAS admission and project lock.
+* **Что не трогать** — do not remove `contentKey`, project row lock or `finalizing` CAS; do not revive the
+  old read-then-write completion path.
+* **Опровержение** — two completions for the same wishlist both pass admission and build tasks, or a derived
+  legacy compiler row lacks identity and produces a repeated session burst invisible to velocity detection.
+* **Критерий закрытия** — every compiler work unit has stable identity or explicit legacy exclusion, and a
+  concurrent completion test admits at most one owner per wishlist.
+* **Свидетельства записи** — `src/main/resources/db/migration/V137__compiler_task_identity_from_work.sql`;
+  `src/main/java/com/eneik/production/models/persistence/TaskEntity.java`; `ProjectFlowService`;
+  `TechnicalLeadCompiler`; `JulesDispatchService.admitWishlistCompilationCompletion`.
+* **Текущий статус** — partially strong, not ideal for legacy identity coverage.
 
-**Дату не отбрасывать.** Первая редакция этого замера печатала только время, `ts[0][11:19]`, и окно
-«16:14 → 17:32» августовских задач читалось как сегодняшнее — я на этом поднял ложную тревогу о третьем
-генераторе через час после того, как сам этот раздел написал. Срез `[:19]` выше даёт дату и время; менять
-его нельзя. Прибор, теряющий измерение, которое различает случаи, показывает совпадение там, где его нет.
+## XV.5. Комментарии для Антигравити по механизмам
 
-Второй срез, обязательный при вопросе «идёт ли это **сейчас**»: то же самое, но по задачам, созданным за
-последние сутки. Ключ с тремя повторами за месяц и ключ с тремя повторами за десять минут — разные предметы,
-и общий счёт их не различает.
-
-Читать так: **много задач при малом числе живых** и есть подпись. Окно первая-последняя даёт темп и, что
-важнее, **момент остановки** — по нему находится правка, которая генератор закрыла.
-
-### Случаи, измеренные 5 сентября 2026
-
-| Ключ | Задач | Окно | Темп | Чем закрыт |
-|---|---|---|---|---|
-| `c7fc10ad` | 33 | 01:05 → 09:47 | ~4 в час | Размыканием взаимной блокировки компиляции: восстановление возвращало заявку в `pending`, а завершение умело брать её только из `compiling`. |
-| `71db39a2` | 5 | 13:05 → 13:15 | ~30 в час | Тем же размыканием; короткая вспышка на другой заявке. |
-| `b1c27ea9` | 31 | 14:21 → 15:19 | ~21 в час | Правкой уборки «осиротевших» мета-задач: она считала продукт готовым по статусам задач и сносила носителя компиляции, после чего сторож не видел активного и создавался новый. |
-
-Полный счёт за сутки: **создано 92 задачи, из них 69 — дубликаты четырёх предметов, то есть три четверти
-всей дневной выработки**. Последний дубликат создан в 15:19:27; за последующие часы — ни одного.
-
-Итого **69 задач на четыре единицы работы** — то есть до шестидесяти четырёх сессий Jules там, где нужно было
-две. Этим и была выбрана суточная квота; отказы Jules, выглядевшие как внешний сбой, — следствие, а не
-причина.
-
-Последний дубликат `b1c27ea9` создан в 15:19:27, правка развёрнута в 15:19:35. Совпадение до секунд — это и
-есть доказательство, что закрыт именно этот генератор, а не совпало по времени.
-
-### Кто именно это устроил
-
-Вопрос оператора, и ответ проверен по коду, а не по памяти.
-
-**Сбрасывает состояние — `PlannedWorkRecoveryService`, оба раза.** Возврат заявки в `pending` —
-`PlannedWorkRecoveryService:456`; снос мета-задачи компилятора как осиротевшей —
-`PlannedWorkRecoveryService:522`.
-
-**Создаёт задачи — `ProjectFlowService:3478`.**
-
-Круг: восстановление сбрасывает состояние → отправка честно видит «активной задачи нет, заявки ждут» и
-создаёт новую → новая не может завершиться → восстановление снова видит застрявшее → сбрасывает.
-
-**Ни один из двух не ошибается в своих границах.** Восстановление обязано поднимать застрявшее; отправка
-обязана компилировать ждущие заявки. Ошибка не в механизме, а в том, что **у состояния нет хозяина** и
-потому никто не отвечает за переход целиком.
-
-**Гарантия, которая истинна и бесполезна.** Javadoc восстановления обещает дословно: *«…и никогда не создаёт
-задачу, заявку, ветку или сессию»*. Обещание сдержано буквально — он не создал ни одной. И при этом из-за
-него создано шестьдесят четыре.
-
-Гарантия сформулирована **о собственных действиях, а не о следствиях**. Это категориальная ошибка в самой
-гарантии (`CATEGORY_ERROR_SCAN`, D002): утверждение о том, что делают руки механизма, подано как утверждение
-о поведении системы. Отсюда правило, приложимое ко всякому механизму фабрики:
-
-    гарантия вида «я не делаю X» ничего не обещает о том, будет ли сделано X
-    обещание имеет силу, только если высказано о состоянии системы после действия
-
-Проверка для всякой такой гарантии: назвать механизм, который сделает X **вследствие** моего действия. Если
-такой есть — гарантия описывает не систему, а мои руки.
-
-### Почему класс возвращается
-
-Оба генератора устроены одинаково и **ни один из двух механизмов в паре не был неправ сам по себе**.
-Восстановление законно возвращало заявку. Завершение законно требовало своё состояние. Уборка законно
-сносила осиротевшее. Спор возник потому, что **у состояния не назван хозяин**: в заявки пишут двадцать
-механизмов, в задачи пятнадцать (раздел XIV). Пока это так, третий генератор — вопрос времени, а не
-возможности.
-
-Отсюда порядок предупреждения, а не лечения:
-
-* **Причина** — пункты 1 и 2 предписаний: назвать хозяина заявок и задач. Это единственное, что делает
-  появление новой пары невозможным, а не редким.
-* **Прибор** — пункт 19: считать **темп порождения** дубликатов, включая завершённые, и писать его в журнал
-  дефектов. Блокировать им нельзя: блокировка по этому счёту уже давала неразрешимый тупик 4 августа.
-* **Раннее наблюдение** — замер выше стоит снимать при всяком необъяснённом отказе внешней системы, **до**
-  того как искать причину на её стороне. Сегодня я потратил половину смены на гипотезы о Jules, тогда как
-  расход был наш.
-
----
+* `TaskDuplicateDetector` — **комментарий для Антигравити:** считаю механизм идеальным.
+* `ContinuousOrchestrationService.checkDuplicateGenerationVelocity` — **комментарий для Антигравити:** считаю механизм идеальным.
+* `PlannedWorkRecoveryService` recovery/reset path — **комментарий для Антигравити:** механизм не идеален:
+  применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; сохранять readiness-based cleanout, но завершить
+  owner-map для wishlist/task transitions и проверять whole-system post-state, а не только “метод сам не
+  создаёт задач”.
+* `compiler work identity/admission family` — **комментарий для Антигравити:** механизм не идеален только по
+  legacy identity coverage: применить `DZHONATAN_SHAFFER_18_PERSISTENCE_SNAPSHOT`; сохранить `contentKey`,
+  project lock and `finalizing` CAS, backfill or explicitly exclude pre-V137 rows where identity is derivable.
 
 # XVI. Предписания для L2: что и как чинить
 

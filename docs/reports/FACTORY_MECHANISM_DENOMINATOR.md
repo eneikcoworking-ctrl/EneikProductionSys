@@ -1182,3 +1182,41 @@ grounding guard is still manual/protocol-level. A future ideal form is a doc che
 evidence lines, closure criteria and per-mechanism Antigravity comments. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XIV; family summary is not a substitute.
+
+## 2026-09-12 Codex Strict Record: Silent Duplicate Task Generation
+
+Status: documentation-only strict-family replacement for section XV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanism/family now recorded: the silent duplicate task generation signature, `TaskDuplicateDetector`,
+`ContinuousOrchestrationService.checkDuplicateGenerationVelocity`, the
+`PlannedWorkRecoveryService` recovery/reset boundary, and the compiler work identity/admission family
+(`TaskEntity.contentKey`, V137, `ProjectFlowService`, `TechnicalLeadCompiler`,
+`JulesDispatchService.admitWishlistCompilationCompletion`).
+
+Denominator effect: one more old/stale section is now a strict mechanism record with a complete list of
+mechanisms inside the section, philosophical pattern, ideal form, boundary, inputs, outputs, truth/state owners,
+invariants, strong/weak form, what to do, what not to touch, refutation, closure criterion, evidence, current
+status and visible per-mechanism Antigravity comments.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 36 |
+| Sections still missing visible `комментарий для Антигравити` | 27 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Key correction: the old section told the incident story and gave a manual measurement recipe. Section XV now
+separates the domain signature, the live velocity journaler, the recovery/reset boundary and the compiler
+identity/admission guard. It keeps the crucial category distinction: stuck duplicate state and duplicate
+generation velocity are different mechanisms and must not be merged.
+
+Remaining non-ideal point for this family: `TaskDuplicateDetector` and the velocity journaler are treated as
+ideal. `PlannedWorkRecoveryService` remains only partially strong until the wishlist/task transition owner-map
+is complete. Compiler identity/admission is strong for current rows, but legacy pre-V137 identity coverage is
+not proven complete. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XV; family summary is not a substitute.
