@@ -7404,54 +7404,130 @@ and Church's thesis — formal computability*. Сильная дословно: 
 
 # XXVII. Операционная правда: чем фабрика оценивает доверие к себе
 
-**`OperationalTruthService`** (675 строк) — сводит доставку, доверие, деятельный поток и помехи в один
-ответ о том, чего стоит нынешнее состояние проекта.
-*Связи:* зовут `TrustSnapshotService`, `LeverPromotionService`, `ClientDeliverableReadinessService`,
-`BranchGarbageCollectorService`, `OperationalTruthController` | наружу — единственная дверь `build(projectId)`
-| он же держит `promotionPolicy()`, тот словарь из пяти ступеней, по которому ходит лестница доверия
-(раздел XXIд).
-*Ценность:* без него оценка состояния собирается каждым читающим заново и по-своему.
-*Комментарий:* **ядро, и в нём найден дефект, который стоит назвать прямо.**
+**`OperationalTruthService`**, **`OperationalTruthController`**, **`OperationalTruthDto`**, **`TrustSnapshotService`**,
+**`LeverPromotionService`**, **`ClientDeliverableReadinessService`**, **`SystemStatusService`** — семейство
+операционной правды, доверия и наблюдаемой готовности проекта.
 
-Оценка доверия начинается с **единицы** и дальше только **вычитается**. Замер: в теле расчёта шесть мест
-вида `score -= …` и **ни одного прибавления** (0,35 или 0,25 за плохое состояние системы, 0,30 за повтор
-содержания, 0,20 за неудачные разборы, 0,15, и два ограниченных вычитания за помехи и свежие дефекты).
-Уровни: от 0,85 — «доверенный», от 0,65 — «наблюдать», от 0,40 — «ухудшен», ниже — «заблокирован».
+*Философский паттерн:* главный паттерн для текущей записи — `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`
+(`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, D010 Data lineage loss): доверие к проекту допустимо
+только через надёжную цепочку источников, свежести и проверки. Для самой динамики доверия применяется
+выведенный фабричный паттерн `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`: полномочия растут медленно и
+пакетно по накопленным свидетельствам, а падают быстро по подтверждённому отказу. Для границ между
+доставкой, задачей, PR, заслоном, дефектом и операторским экраном применяется
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; перед кодом общий фон `ACP-061 Hoare Triple Review`.
 
-Отсюда следует то, чего в коде никто не объявлял: **проект, о котором не известно ничего, получает полное
-доверие.** Нет слияний, нет пройденных заслонов, нет вообще свидетельств — оценка остаётся единицей, и
-уровень выходит «доверенный». Доверие здесь выдаётся по умолчанию и лишь отнимается.
+*Связи:* `OperationalTruthController` отдаёт read-only endpoint `/api/projects/{projectId}/operational-truth`
+и вызывает `OperationalTruthService.build(projectId)`. `OperationalTruthService` читает проект, задачи,
+wishlist, Jules sessions, PR reviews, defect journal, readiness and system-status facts; внутри вызывает
+`ClientDeliverableReadinessService.computeForProject`, `SystemStatusService.getStatus`, helpers
+`sessionsForTasks`, `reviewsForSessions`, `delivery`, `activeFlow`, `evidence`, `defects`, `blockers`,
+`invariants`, `trust`, `blockedValue`, `learning`, `sourceOfTruth`, `promotionPolicy`,
+`frontendTranslations` and `recommendedNextAction`. `TrustSnapshotService` later calls `build(projectId)` to
+persist trust snapshots. `LeverPromotionService` and `LeverStage` reuse the promotion-ladder vocabulary
+documented here, but lever promotion is a separate mechanism.
 
-Сопоставление внутри одной фабрики делает это особенно наглядным. Лестница доверия к решающим механизмам
-(раздел XXIд) устроена ровно наоборот: незнакомый рычаг падает в «только наблюдать» с нулевым действием и
-обязан **заслужить** полномочия двадцатью разрешёнными наблюдениями. Один и тот же вопрос — насколько мы
-чему-то доверяем — решён в двух местах противоположными умолчаниями.
+*Идеальная форма:* operational truth is an observation algebra, not a permission shortcut. The service must
+build one project-scoped fact packet where delivery, trust, active flow, blockers, evidence, defects,
+learning, invariants and source-of-truth entries remain separate fields. Trust may not start as full trust;
+it starts from positive evidence count, grows in named packets within a freshness window, is clamped, and is
+demoted immediately by runtime stop conditions, duplicate content, failing reviews, failed gates, blockers
+and recent defects. A project with no positive delivery or verification evidence must be `undetermined`, not
+`trusted`.
 
-**Задача для кодинга.** Оценка доверия обязана начинаться не с полного доверия, а с неустановленного, и
-расти по свидетельству, как растёт ступень рычага. Место: `OperationalTruthService.trust()`, начальное
-`double score = 1.0` и шесть вычитаний ниже; уровни — `trustLevel()`. Проверка: проект без единого
-свидетельства не должен получать уровень «доверенный». Опровергнет: путь, на котором отсутствие
-свидетельств даёт положительную оценку.
+*Граница:* this family may read and summarize operational facts; it must not mutate tasks, wishlists,
+sessions, PR reviews, defect journal rows, readiness, system status or project flow. It may recommend the
+next action as text and publish the promotion policy vocabulary, but it does not promote levers, dispatch
+work, accept delivery, close blockers or auto-remediate. `mode` remains `observe_only` until a different
+mechanism earns promotion through its own tests and false-positive review.
 
-Отдельно оговорю, чего здесь **нет** и в чём вины механизма нет: сами веса вычитаний назначены рукой, и это
-уже признано в самой фабрике — миграция `V90` (раздел XXIIж) заведена ровно затем, чтобы когда-нибудь
-подобрать их по настоящим исходам, и она честно отказалась сочинять их заранее.
-*Живое, 7 сентября 2026* (`curl -s localhost:8080/api/projects/<id>/operational-truth`): доверие **0,7,
-уровень «наблюдать»**. Предупреждений два, и оба настоящие: «388 задач имеют свидетельство непройденного
-заслона качества» и «33 записи журнала дефектов за последние сутки». То есть механизм работает, считает и
-называет основания — дефект не в его исправности, а в том, откуда он начинает счёт.
-*Философия:* `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` (D006) — Элвин Голдман,
-`BARCAN-TAG-07 SECOND-ORDER-KNOWLEDGE`, принцип релайабилизма процессов, anchor *A Causal Theory of Knowing
-/ Epistemology and Cognition — reliabilism*. Сильная дословно: «рискованное действие требует свидетельства
-знаниевого качества, а не убеждения или намерения; приложена проверка или источник полномочия». Слабая:
-«действие разрешено, потому что „мы уверены“». Опровержение: «потребовать источник; ссылка на собственное
-убеждение и есть дефект». **Форма: слабая.** Уровень «доверенный» достигается **отсутствием** свидетельств
-против, то есть источником доверия оказывается неведение. Потребовать источник у полной оценки нечего:
-единица не выведена ниоткуда, она задана.
-Второй образец: `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` (D010, выведен из фабрики,
-`04_FACTORY_DERIVED_PATTERNS.md`). Сильная форма требует, чтобы полномочия росли медленно по накопленному
-свидетельству и терялись быстро. **Форма: слабая, и зеркально.** Здесь доверие не растёт вовсе — оно дано
-целиком заранее и только убывает; путь вверх отсутствует так же, как у разжалованного аккаунта из пункта 38.
+*Входы:* `projectId`; `ProjectEntity`; tasks from `TaskRepository.findByProjectIdOrderByCreatedAtDesc`;
+wishlists from `WishlistRepository.findByProjectId`; sessions from `JulesSessionRepository.findByTaskIdIn`;
+reviews from `PrReviewRepository.findByJulesSessionIdIn`; recent project defects from
+`DefectJournalRepository.findByProjectIdAndCreatedAtAfter`; readiness from
+`ClientDeliverableReadinessService`; system status from `SystemStatusService`; carrier-task predicates from
+`ProjectFlowService`; constants `TRUST_RECENCY_WINDOW`, `TRUST_EVIDENCE_THRESHOLD`, `TRUST_PACKET_SIZE`,
+review status sets and terminal task statuses.
+
+*Выходы:* `OperationalTruthDto` with `generatedAt`, `mode="observe_only"`, project ref, delivery summary,
+trust score/level/positiveSignals/warnings, active-flow counts, blockers, evidence summary, defect summary,
+learning summary, source-of-truth entries, invariant statuses, promotion policy, frontend translations and
+recommended next action. The endpoint returns this DTO directly and writes nothing.
+
+*Владельцы истины и состояния:* task lifecycle truth belongs to `ProjectFlowService` / `ClaimService` /
+`JulesDispatchService`; wishlist lifecycle to `ProjectFlowService`, `TechnicalLeadCompiler` and
+`OpsAuditorService`; PR/merge truth to `AutoMergeService` / `GitHubPullRequestService` and PR-review rows;
+delivery readiness to `ClientDeliverableReadinessService`; quality evidence to `GateOrchestrator`; defect
+memory to `DefectJournalService` / `KaizenService`; trust dynamics to `OperationalTruthService` only as
+read-model math. Persisted trust history belongs to `TrustSnapshotService`, not to this read endpoint.
+
+*Инварианты:* (1) no positive delivery/verification evidence means trust level `undetermined`; (2) trust base
+comes from `computeBaseTrust(positiveEvidenceCount)`, not from default `1.0`; (3) 20 positive evidence items
+are required for base `1.0`; (4) evidence older than `TRUST_RECENCY_WINDOW` is excluded from trust evidence;
+(5) failed quality gates and unapplied quality gates are different outcomes; (6) agent/session activity is
+weaker evidence than merged PR or gate evidence; (7) `done` is not substitutable for delivered value without
+local merged PR evidence, except named carrier/audit task families; (8) read endpoints do not mutate project
+state; (9) recommendation text cannot become an actuator.
+
+*Сильная форма сейчас:* the old defect in this section is no longer current. Source now defines
+`computeBaseTrust`: `<=0` positive evidence returns `0.0`, 1..4 returns `0.50`, 5..9 returns `0.65`, 10..14
+returns `0.75`, 15..19 returns `0.85`, and `>=20` returns `1.0`. `trust()` sets `score = baseTrust`, clamps
+to `0.0` when positive evidence count is zero, and calls `trustLevel(clamped, positiveEvidenceCount > 0)`;
+`trustLevel(score, false)` returns `undetermined`. Tests pin packet growth, immediate demotion on confirmed
+failure, the evidence-flag overload, tri-state verified/failed/unapplied partition, recency-window exclusion,
+and institutional audit rows not penalizing trust.
+
+*Слабая/неидеальная форма сейчас:* this documentation record was stale and still instructed a future agent to
+code a fix that source and tests already contain. That was harmful because it could send an implementer back
+into a solved trust-base path. The remaining uncertainty is not the old `score = 1.0` defect; it is live
+verification and broader read-model coverage: this tact did not run the test class, did not call the live
+endpoint, and did not prove every frontend/consumer interprets `undetermined` separately from `blocked`.
+
+*Что сделать для идеала:* do not code the old trust-base fix again. If implementation work is later requested,
+first run the focused `OperationalTruthServiceTest` and a live endpoint check for a project with no positive
+evidence; only then consider consumer/UI hardening for `undetermined` vs `blocked`. For documentation, keep
+this strict record synchronized with the denominator and delete or neutralize any remaining stale prose that
+says trust still starts from unconditional full confidence.
+
+*Что не трогать:* keep `computeBaseTrust`, `trustLevel(score, hasPositiveEvidence)`, the packet thresholds,
+the 30-day recency window, the observe-only mode, project-scoped task/session/review acquisition, the
+non-defect audit-category exclusion, and the distinction between failed quality evidence and unapplied
+quality evidence. Do not collapse `undetermined` into `blocked`; one is absence of positive evidence, the
+other is positive negative evidence.
+
+*Опровержение:* construct a project with no merged reviews and no passed delivery gates, then call
+`OperationalTruthService.build(projectId)` or the endpoint. If `dto.trust().level()` is `trusted`, `watch`,
+`degraded` or `blocked` instead of `undetermined`, the mechanism is false. Add 20 fresh positive gate/review
+items and one confirmed failing review; if trust remains `trusted`, asymmetric demotion is false. Add an old
+verified gate beyond `TRUST_RECENCY_WINDOW`; if it increases trust, freshness is false.
+
+*Критерий закрытия:* this family can be called ideal when the focused tests and a live or fixture endpoint
+check prove: zero positive evidence gives `undetermined`, packet thresholds are stable, confirmed failures
+demote immediately, stale evidence is excluded, failed/unapplied gate outcomes remain distinct, frontend or
+downstream consumers display `undetermined` as unknown rather than failure, and the endpoint remains
+read-only.
+
+*Свидетельства записи:* `git status --short`; `git log -1 --oneline`; no active Claude process; protocol
+reads from `/home/remotecli/codex-mechanisms-session/SESSION.md`, `docs/HOW_TO_READ_BEFORE_FIXING.md` and
+top `Как читать`; philosopher rows `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`, `ACP-061`,
+`RELIABILITY_CHAIN`; `nl -ba src/main/java/com/eneik/production/services/operational/OperationalTruthService.java`
+around `build`, `computeBaseTrust`, `trustLevel`, `trust`, `invariants`, `sourceOfTruth` and
+`promotionPolicy`; `nl -ba src/main/java/com/eneik/production/controllers/dashboard/OperationalTruthController.java`;
+`nl -ba src/main/java/com/eneik/production/dto/operational/OperationalTruthDto.java`; `nl -ba
+src/test/java/com/eneik/production/services/operational/OperationalTruthServiceTest.java` around trust packet,
+demotion, overload, recency and audit-exclusion tests; source grep for `OperationalTruthService` callers.
+
+*Текущий статус:* strict family record filled; implementation is strong for the previous trust-default defect,
+but the whole mechanism is not declared ideal until live/consumer interpretation of `undetermined` is checked.
+
+*комментарий для Антигравити:* не правь старый дефект `score = 1.0`: в текущем коде trust уже начинается от
+`computeBaseTrust(positiveEvidenceCount)` and zero positive evidence returns `undetermined`. Сначала проверь
+focused `OperationalTruthServiceTest` and a live/fixture endpoint case with zero evidence; then, if anything
+needs implementation, work only on preserving the visible distinction `undetermined != blocked != trusted`
+for consumers. Philosophy: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман,
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`,
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`;
+common background `ACP-061 Hoare Triple Review`.
 
 # XXVIII. Отказ от Gemini: что подлежит переносу
 
