@@ -201,3 +201,32 @@ Remaining not-recorded rough-presence names after this pass: services/result car
 Not complete as implementation: status/result outcomes remain mostly free text; workspace bootstrap text can still render raw `Repository: null`; verified/unverified existing-repository `422` branches need fixture proof; stdout debug token-prefix output should be replaced by a proper log/audit path.
 
 комментарий для Антигравити: project-factory provisioning-result documentation is now a whole-family record, but implementation remains non-ideal. Do not patch one record type or one client branch separately; preserve the whole evidence chain from local workspace to GitHub proof to Linear proof to persisted project fields. Philosophy: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+
+## 2026-09-12 Codex Recovery: Claude Session Stopped, Structure Contract Repaired
+
+Status: Claude server session stopped and recoverable by Codex after the operator ordered Codex to take over. Recovery package: `/home/remotecli/claude-stop-20260912T084112Z`.
+
+What Claude completed before stop, all in `docs/FACTORY_MECHANISMS.md` and all documentation-only:
+
+- `dbf00ef`: strict family record for market corpus, statutory compliance gate and field research.
+- `a725273`: strict family record for brownfield admission / repository-stack analysis, with old section XXXI marked stale.
+- `e2be016`: strict family record for compilation family in section II.
+- `8bc98db`: strict family record for dispatch in section III, preserving the earlier Codex Jules-operation cluster.
+
+Defect confirmed and corrected: `docs/FACTORY_MECHANISM_DENOMINATOR.md` had not been updated after Claude's records. It still said the exact Antigravity-comment grep was 37 and still listed already-strict-recorded items such as `MarketResearchController` as remaining. Current exact lowercase `комментарий для Антигравити` grep in `docs/FACTORY_MECHANISMS.md`: 42.
+
+Current strict-family records visible at the top of `docs/FACTORY_MECHANISMS.md`:
+
+| Section | Strict family record | Status |
+| --- | --- | --- |
+| I | Market corpus, statutory compliance gate and field research | Not ideal; `MarketResearchService` lacks its own guard, corpus-refresh ownership and false-positive rate remain unmeasured. |
+| I | Brownfield admission / repository-stack analysis | Not ideal in one remainder; tri-state inspection is strong, but `ProjectFlowService` still discards the audit result. |
+| II | Compilation: requirement becomes tasks | Not ideal by coverage; core mechanisms are strong, compiler paths and wishlist deletion ownership need guards. |
+| III | Dispatch: task goes to work | Not ideal; target-context derivation is strong, but shared table ownership and `LeaseWatchdogService` guard are open. |
+| Later appended record | Project-factory provisioning result chain | Not ideal; phantom repository URL is strong, status/result typing and workspace unknown semantics remain weak. |
+
+Remaining not-recorded rough-presence list must be regenerated, not trusted from prior sections. Known removals from the stale list: `MarketResearchController` is now inside the market family; dispatch/Jules surfaces are now partly covered by section III but still need a fresh denominator pass before removal claims.
+
+Top-of-file structure repair applied in `docs/FACTORY_MECHANISMS.md`: the old "five fields" instruction was false after strict records began. It now requires visible fields for ideal form, boundary, inputs, outputs, state owners, invariants, strong/weak form, refutation, closure, evidence, current status and `комментарий для Антигравити`.
+
+комментарий для Антигравити: documentation mechanism is not ideal yet, but the critical visibility defect is now named. Do not write implementation code from old narrative paragraphs. Only use a mechanism record after the visible structured fields and Antigravity comment are present. Philosophy: `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for record status vs implementation status, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` for evidence commands, and `ACP-061 Hoare Triple Review` before code.
