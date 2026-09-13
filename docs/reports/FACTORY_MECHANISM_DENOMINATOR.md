@@ -1824,3 +1824,30 @@ found in this tact; `V15` is a build-summary/final-report path, not customer-acc
 acceptance/runtime evidence. `V92` remains strong as runtime telemetry. No code was changed in this tact.
 
 комментарий для Антигравити: `V100__client_acceptance_traversals.sql` / traversal entity/repository/readers: не идеален, apply `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`, add/find traversal writer and bind acceptance verdict to witness; `V92__client_runtime_observations.sql` / runtime observation writer/readers: считаю механизм идеальным; `V15__create_project_final_reports.sql` / final report path: не идеален as delivery proof, apply `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`, keep as build-summary or attach acceptance/runtime evidence before claiming customer delivery.
+
+## 2026-09-13 Codex Strict Record: Live Snapshot Freshness
+
+Status: documentation-only strict record for section XXIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: live factory snapshot protocol,
+container/actuator health probe, project-flow/merge-cadence snapshot, queued-task dispatch refusal log,
+internal Gemini observer endpoints, and table-size top-N projection.
+
+Denominator effect: section XXIII previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 43 |
+| Sections still missing visible `комментарий для Антигравити` | 20 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: the 7 September snapshot is historical, not current live truth.
+Current control check at 2026-09-13T11:11:27Z found containers up, actuator health `UP/ok`, and unauthenticated
+internal Gemini observer endpoints returning `403`. No code was changed in this tact.
+
+комментарий для Антигравити: live factory snapshot protocol не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; container/actuator health probe: считаю механизм идеальным; project-flow/merge-cadence snapshot не идеален as current evidence, remeasure before current claims; queued-task dispatch refusal log не идеален as current evidence, sample live reason before classifying; internal Gemini observer endpoints: считаю механизм идеальным; table-size top-N projection не идеален as all-table evidence, apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
