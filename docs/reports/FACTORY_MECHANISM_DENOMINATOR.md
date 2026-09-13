@@ -2070,3 +2070,57 @@ javadoc and keep it out of product-coding prompts; `ProjectController.recentActi
 `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`; `ProjectEventLogRetentionService`: считаю механизм идеальным;
 `V56/V58/V61 project_event_log migrations`: считаю текущую forward-цепочку идеальной; не повторять ошибку
 V58.
+
+## 2026-09-13 Codex Strict Record: Factory Failure Memory
+
+Status: documentation-only strict record for section XXIж in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `DefectJournalEntity`,
+`DefectJournalRepository`, `DefectJournalService.recordDefect`, `ProcessControlService.closeLoop`,
+`KaizenProposal`, `KaizenProposalEntity`, `KaizenProposalRepository`,
+`KaizenService.saveProposal/findOpenSibling`, `KaizenService.scanForOpportunities/recordUnderTheHoodDefects`,
+`KaizenService` external proposal recorders,
+`KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`, `KaizenController` with
+`ProjectTreeService.trunkAnnotations`, `DesignShopCycleEntity`, `DesignShopCycleRepository`,
+`DesignShopOrchestrationService`, `DesignSystemFalsificationService`, `DesignDriftMonitorService`, and
+`JulesDispatchService` design-concern triage.
+
+Denominator effect: section XXIж previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact, excluding the file title `# Механизмы фабрики`:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 51 |
+| Sections still missing visible `комментарий для Антигравити` | 12 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining sections without visible Antigravity comment: XVI, XXI, XXIб, XXIз, XXII, XXIIб, XXIIв, XXIIг,
+XXIIд, XXIIе, XXIIж, XXIX.
+
+Remaining non-ideal points for this section: defect memory still underuses `rootCausePatternId`; Kaizen's
+ordinary auto-action categories remain shallower than its review-only/evidence boundaries; design baseline is
+proven as captured provenance, not as external brand truth; Stitch id semantics in `DesignSystemFalsificationService`
+need schema/test verification before any code edit; design drift logs but does not create work unless a future
+evidence-backed product-runtime proposal path is added. No code was changed in this tact.
+
+комментарий для Антигравити: `DefectJournalEntity`: не идеален; apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`,
+fill `rootCausePatternId` only where cause is proven; `DefectJournalRepository`: считаю механизм идеальным;
+`DefectJournalService.recordDefect`: не идеален by producer coverage, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`;
+`ProcessControlService.closeLoop`: считаю механизм идеальным; `KaizenProposal`: считаю механизм идеальным;
+`KaizenProposalEntity`: считаю механизм идеальным; `KaizenProposalRepository`: считаю механизм идеальным;
+`KaizenService.saveProposal/findOpenSibling`: считаю механизм идеальным;
+`KaizenService.scanForOpportunities/recordUnderTheHoodDefects`: не идеален, apply
+`DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`; `KaizenService` external proposal recorders: считаю механизм
+идеальным; `KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`: не идеален for shallow
+action categories, apply `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`; `KaizenController` and
+`ProjectTreeService.trunkAnnotations`: считаю механизм идеальным; `DesignShopCycleEntity`: не идеален as
+external brand truth, apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`; `DesignShopCycleRepository`:
+считаю механизм идеальным; `DesignShopOrchestrationService`: считаю механизм идеальным;
+`DesignSystemFalsificationService`: не идеален, apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`;
+`DesignDriftMonitorService`: не идеален if drift must create work, apply
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`; `JulesDispatchService` design-concern triage: не идеален по
+тестовой защите, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.

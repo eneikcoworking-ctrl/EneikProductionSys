@@ -6467,107 +6467,492 @@ V58.
 
 # XXIж. Память о собственных отказах: журнал дефектов, предложения, цикл дизайна
 
-Три сущности без стереотипной аннотации. Все три хранят то, что фабрика знает **о себе**, и все три несут в
-себе датированные записи о происшествиях, которые их и породили.
+**Философский старт такта.** Эта секция описывает память фабрики о собственных отказах и попытках
+улучшения. Главный образец для дефектов: `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` (D007), потому что
+`rootCausePatternId` должен отличать наблюдателя симптома от причины. Главный образец для Kaizen:
+`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008), потому что предложение об улучшении должно иметь
+наблюдение, которое способно сказать "не сработало". Главный образец для дизайн-цикла:
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013), потому что бренд и readiness должны опираться на
+сохранённые факты, а не на рассказ агента. Фоновый образец для всех трёх потоков:
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010).
 
-**`DefectJournalEntity`** (107 строк) — одна запись о дефекте: тяжесть, разряд, подсистема-источник, род
-дефекта, описание, числовое значение, и отдельно — эпик и **номер корневого образца** из
-`ENGINEERING_INVARIANTS_CHARTER.md` (1–12).
-*Связи:* заводят четыре подсистемы — `AccountHealthService` (6 прямых заводов),
-`KaizenService` (3 вызова `recordDefect`), `ProjectFlowService` (2), `AutoMergeService` (1); служебный вход
-`DefectJournalService.recordDefect` | читают **двенадцать**: `ProcessControlService`, `KaizenService`,
-`OperationalTruthService`, `EvidenceCoherenceService`, `DeliveryRealityProducerService`,
-`ProjectFlowService`, `AutoMergeService`, `AccountHealthService`, `InternalGeminiObserverController`,
-`EvidenceNodeEntity`, `DefectJournalService`, `DefectJournalRepository`.
-*Ценность:* без него отказ существует только как строка в логе, у которой нет ни тяжести, ни рода, ни
-возможности быть посчитанной.
-*Комментарий:* **ядро по замыслу и по числу читателей, и при этом с пустым главным полем.**
+**`DefectJournalEntity`**
+*Философский паттерн:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`.
+*Связи:* создаётся через `DefectJournalService.recordDefect`; читается repository, `ProcessControlService`,
+Kaizen/операционными читателями и тестами producers; при `rootCausePatternId` становится входом для evidence
+graph через service.
+*Идеал:* дефект хранит symptom, source component, severity, metric, feature subgroup и, когда причина уже
+разобрана, номер корневого образца 1..12.
+*Граница:* это запись о дефекте или аудите фабрики, не доказательство доставки клиентской ценности.
+*Входы:* project id, optional feature id, optional root-cause pattern id, severity/category/source/type,
+description, metric.
+*Выходы:* строка `defect_journal`.
+*Владельцы истины/состояния:* таблица `defect_journal`; source subsystem owns the observation; charter owns
+meaning of pattern ids.
+*Инварианты:* `rootCausePatternId=null` means "not triaged", not "no root cause"; feature id is epic subgroup,
+not date bucket; audit categories are not defects.
+*Сильная текущая форма:* schema has the root-cause field and feature subgroup.
+*Слабая/неидеальная форма:* many producers still use the short overload or explicit null, so Pareto by cause
+often degrades to Pareto by observer.
+*Что сделать для идеала:* convert producers that already know a charter cause to the long overload and add
+tests that known-cause defects create evidence nodes.
+*Что не трогать:* do not force a fake root cause when the source only knows the symptom.
+*Опровержение:* a classified incident with known charter pattern is recorded with `rootCausePatternId=null`.
+*Критерий закрытия:* every known-cause producer passes a pattern id, and unknown-cause records remain visibly
+uncategorized.
+*Свидетельства записи:* `DefectJournalEntity.java:18-29`; `DefectJournalService.java:42-66`;
+`ProcessControlService.java:309-358`; migration `V70__defect_journal_feature_and_root_cause.sql`.
+*Текущий статус:* не идеален by producer coverage, strong by schema honesty.
+*комментарий для Антигравити:* `DefectJournalEntity`: не идеален; применить
+`DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, заполнять `rootCausePatternId` только там, где причина доказана,
+и не подменять unknown cause выдуманным номером.
 
-Замысел записан в самой сущности: `rootCausePatternId` связывает дефект с пронумерованным образцом устава,
-«или null, когда корневая причина ещё не разобрана», — и javadoc объясняет, ради чего: это то, «what makes
-Pareto analysis by CAUSE possible instead of only by which subsystem happened to notice the symptom».
-Различение верное и важное: Парето по тому, кто заметил, называет самую громкую подсистему, а не самую
-частую причину.
+**`DefectJournalRepository`**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* обслуживает `DefectJournalService`, `ProcessControlService` u-chart subgroup reads and account
+recovery history.
+*Идеал:* exposes only scoped windows and named histories needed by consumers.
+*Граница:* repository не решает, что является причиной; он держит query contracts.
+*Входы:* time window, project id, feature id, source component, defect type.
+*Выходы:* defect rows ordered/scoped for readers.
+*Владельцы истины/состояния:* DB table and Spring Data query contracts.
+*Инварианты:* project window stays project-scoped; feature query is full history; account recovery has
+per-account first and pooled fallback.
+*Сильная текущая форма:* query names match documented consumers.
+*Слабая/неидеальная форма:* repository integration ordering tests were not found, but current methods are
+simple derived queries.
+*Что сделать для идеала:* add repository slice tests only if ordering or query shape becomes incident-critical.
+*Что не трогать:* не заменять feature-scoped u-chart read на time-window read.
+*Опровержение:* `findByFeatureId` missing old subgroup rows would break ProcessControl close-loop cause
+analysis.
+*Критерий закрытия:* service/process-control tests cover every behavior-changing query.
+*Свидетельства записи:* `DefectJournalRepository.java:11-29`; `ProcessControlService.java:317-328`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `DefectJournalRepository`: считаю механизм идеальным.
 
-Замер: во всех измеренных местах поле не заполняется. `AutoMergeService:2650` передаёт `null` явно;
-`ProjectFlowService:424,515` пользуется коротким конструктором, где этого поля нет вовсе. И сама фабрика это
-записала — `ProcessControlService:357` выводит в описание строку «No underlying defect event carries a
-rootCausePatternId yet - candidate new invariant pattern, uncategorized». То есть поле, заведённое, чтобы
-сделать незнание явным, находится в состоянии незнания всегда, и механизм, который на него опирается, об
-этом честно сообщает.
+**`DefectJournalService.recordDefect` and audit filter**
+*Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` with `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* writes `DefectJournalEntity`; writes `EvidenceNodeEntity` only when `rootCausePatternId` exists;
+`getDefectsInWindow` filters institutional audit categories.
+*Идеал:* raw telemetry enters the journal without UI spam, but only diagnostically classified defects enter
+the evidence graph.
+*Граница:* operational telemetry vs evidence-grade cause vs institutional audit.
+*Входы:* `recordDefect` calls, `recordInstitutionalAudit` calls, time window/project id.
+*Выходы:* defect rows, optional negative evidence node, filtered defect lists.
+*Владельцы истины/состояния:* service owns category separation; evidence graph owns cross-source reasoning.
+*Инварианты:* audit categories are excluded from defect windows; null `rootCausePatternId` does not create an
+evidence node.
+*Сильная текущая форма:* tests prove institutional audit exclusion.
+*Слабая/неидеальная форма:* not all known-cause producers use the long overload, so evidence-grade path is
+underfed.
+*Что сделать для идеала:* add producer tests for any source that can know pattern id; preserve audit exclusion.
+*Что не трогать:* do not push every telemetry blip into evidence graph.
+*Опровержение:* an institutional audit appears in Kaizen defect window, or null root cause creates evidence.
+*Критерий закрытия:* audit tests stay green and known-cause producer tests show evidence-node creation.
+*Свидетельства записи:* `DefectJournalService.java:35-101`; `DefectJournalServiceTest.java:17-87`.
+*Текущий статус:* partially strong; producer coverage remains non-ideal.
+*комментарий для Антигравити:* `DefectJournalService.recordDefect`: не идеален by producer coverage; применить
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, keep audit/defect separation and only create evidence for real
+`rootCausePatternId`.
 
-Второе, что видно из связей: четыре пишущих против двенадцати читающих, и шесть из тринадцати заводов —
-из одной подсистемы, здоровья аккаунтов. Это тот же перекос, что в разделе XXIг у графа ограничения, только
-мягче: там датчик был один, здесь их четыре при двенадцати потребителях. Любой разбор по Парето над таким
-журналом сначала опишет, за чем наблюдают, и лишь потом — что ломается.
-*Философия:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` (D007) — Дональд Дэвидсон,
-`BARCAN-TAG-09 MORAL-DILEMMA`, принцип радикальной интерпретации, anchor *Truth and Meaning / radical
-interpretation — interpretation and coherence*. Сильная дословно: «подозреваемая причина считается **одним
-фактором достаточного набора**, пока альтернативы не исключены; со-факторы перечислены со свидетельством
-присутствия или отсутствия каждого». Слабая: «названо первое объяснение, совпавшее с наблюдением».
-Опровержение: «назвать вторую гипотезу, дающую то же наблюдение; её отсутствие означает, что сравнения не
-было». **Форма: слабая, и по двум причинам сразу.** Место для причины в схеме есть, но пусто, поэтому
-со-факторы не перечисляются ни для одного дефекта; а множество наблюдаемых подсистем перекошено, поэтому
-вторая гипотеза чаще всего и не может возникнуть — о ней некому донести. Схема сильной формы готова, данных
-под неё нет.
+**`ProcessControlService.closeLoop`**
+*Философский паттерн:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`.
+*Связи:* reads `DefectJournalRepository.findByFeatureId` or review concerns; calls
+`KaizenService.recordKnownPatternViolationProposal` when root cause exists, otherwise records a systemic
+candidate.
+*Идеал:* out-of-control u-chart signal closes Analyze -> Improve with either a known pattern or an honest
+uncategorized candidate.
+*Граница:* process-control signal diagnoses from underlying events; it does not invent root cause.
+*Входы:* process-control snapshot, feature id, stream, underlying defect/review-concern pattern ids.
+*Выходы:* known-pattern or systemic Kaizen proposal.
+*Владельцы истины/состояния:* snapshot owns statistical signal; underlying defect rows own pattern ids.
+*Инварианты:* dominant known pattern wins only from non-null ids; missing ids stay "candidate new invariant".
+*Сильная текущая форма:* code explicitly branches known vs uncategorized.
+*Слабая/неидеальная форма:* strength depends on upstream population of `rootCausePatternId`.
+*Что сделать для идеала:* feed it more classified defect events; do not change its honest fallback.
+*Что не трогать:* do not turn "no underlying pattern id" into a fake known pattern.
+*Опровержение:* a signal with no pattern ids creates a `KNOWN_PATTERN_VIOLATION`.
+*Критерий закрытия:* close-loop tests cover known and uncategorized branches with real feature-scoped rows.
+*Свидетельства записи:* `ProcessControlService.java:309-358`.
+*Текущий статус:* считаю механизм идеальным, upstream data coverage separate.
+*комментарий для Антигравити:* `ProcessControlService.closeLoop`: считаю механизм идеальным.
 
-**`KaizenProposalEntity`** (147 строк) — сохраняемое предложение об улучшении: заголовок, разряд, целевой
-механизм, описание действия, ожидаемая выгода, состояние, базовая метрика и **счётчик повторов**.
-*Связи:* `KaizenService:112` пишет через `fromDomain`, `KaizenService:78,154` читает через `toDomain` |
-остальной код (`KaizenController`, `ProjectTreeService`) продолжает работать с простым доменным объектом:
-преобразование живёт на границе хранения.
-*Ценность:* без него предложения жили в памяти службы и стирались при каждом перезапуске, оставляя после
-себя одну строку в логе, — это записано в javadoc как закрытая 5 августа 2026 брешь.
-*Комментарий:* **ядро, и здесь сделана вещь, которой в перечне больше нигде нет: улучшение сделано
-опровержимым.**
+**`KaizenProposal`**
+*Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`.
+*Связи:* domain object used by `KaizenService`, `KaizenController`, `ProjectTreeService`; persisted by
+`KaizenProposalEntity`.
+*Идеал:* category and status keep factory defects, product runtime defects, known-pattern findings,
+role-quality drift and ordinary tuning from becoming one kind of work.
+*Граница:* proposal is a finding/action candidate, not necessarily an action already applied.
+*Входы:* id, title, category, target component, action, gain, project identity, metrics.
+*Выходы:* domain proposal returned to API/readers and converted to storage.
+*Владельцы истины/состояния:* category/status enum and service transitions.
+*Инварианты:* review-only categories have expected gain 0 and never auto-apply by the ordinary `>=5` loop.
+*Сильная текущая форма:* comments define non-auto categories and their category boundaries.
+*Слабая/неидеальная форма:* none observed in this record.
+*Что сделать для идеала:* when adding category, specify product/factory/action boundary and auto-apply rule.
+*Что не трогать:* do not fold `PRODUCT_RUNTIME_DEFECT` into `SYSTEMIC_DEFECT`.
+*Опровержение:* a product runtime shift appears on the factory defects surface as `SYSTEMIC_DEFECT`.
+*Критерий закрытия:* category-specific tests keep review-only and product/factory separation.
+*Свидетельства записи:* `KaizenProposal.java:10-51`; `KaizenService.java:525-559`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `KaizenProposal`: считаю механизм идеальным.
 
-`recurrenceCount` несёт свой замер: до 20 августа 2026 путь записи не имел личности, тогда как путь чтения
-сводил дубликаты по паре «разряд + целевой механизм», — и **347 строк несли 10 настоящих проблем**, а
-повторение было неотличимо от новой беды. Смысл счётчика назван прямо: «the count is what makes an applied
-improvement refutable — if it keeps rising after a micro-step was applied, the improvement did not hold».
+**`KaizenProposalEntity`**
+*Философский паттерн:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+*Связи:* storage mapping for `KaizenProposal`; written/read only through `KaizenService` storage boundary.
+*Идеал:* proposals survive backend restart and carry recurrence count so repeated failure can refute an
+applied improvement.
+*Граница:* persistence mapping, not proposal policy.
+*Входы:* domain proposal.
+*Выходы:* row in `kaizen_proposals`; reconstructed domain proposal preserving original `createdAt`.
+*Владельцы истины/состояния:* DB table; `KaizenService.saveProposal` owns recurrence updates.
+*Инварианты:* `createdAt` is preserved on readback; recurrence starts at 1; lastSeenAt marks recurrence.
+*Сильная текущая форма:* tests prove proposals survive a new service instance and recurrences revise one row.
+*Слабая/неидеальная форма:* none observed.
+*Что сделать для идеала:* keep recurrence in the write path, not only read-side dedup.
+*Что не трогать:* do not return to in-memory-only proposals or create a fresh timestamp on readback.
+*Опровержение:* after a new service instance, previously recorded proposal disappears; recurrence creates a
+duplicate open row.
+*Критерий закрытия:* persistence and recurrence tests remain green.
+*Свидетельства записи:* `KaizenProposalEntity.java:11-145`; `KaizenServiceTest.java:107-124`;
+`KaizenServiceTest.java:261-304`; migration `V106__kaizen_recurrence.sql`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `KaizenProposalEntity`: считаю механизм идеальным.
 
-Это редкий случай, когда механизм несёт собственное условие опровержения. Предложение об улучшении обычно
-закрывается тем, что кто-то объявил его выполненным; здесь у него есть наблюдение, способное сказать
-«не подействовало», и это наблюдение снимается само, без участия того, кто улучшал.
-*Философия:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008) — Альфред Тарский,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип семантической теории истины (T-схема: «P» истинно ⟺ P), anchor
-*The Concept of Truth in Formalized Languages — semantic conception of truth*. Сильная дословно: «проверка,
-способная **опровергнуть** утверждение, написана **до** принятия утверждения, и показано, что она краснеет
-при дефекте». Слабая: «зелёный тест рядом с изменением». Опровержение: «снять правку и прогнать тест; не
-покраснел — это не заслон». **Форма: сильная по устройству, не мерена по покраснению.** Проверка написана
-до принятия утверждения — счётчик растёт независимо от того, объявлено ли улучшение применённым. Но я не
-показывал, что она краснеет: подстроить неподействовавшее улучшение и увидеть рост счётчика значило бы
-трогать продуктовый код. Что измерено — что признак существует и снимается не тем, кто улучшал.
+**`KaizenProposalRepository`**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* backs `KaizenService` storage, factory/project surfaces and status counts.
+*Идеал:* simple storage access for project, category/status and status-count queries.
+*Граница:* repository не deduplicates and не applies proposals.
+*Входы:* project id, category, statuses.
+*Выходы:* proposal rows/counts.
+*Владельцы истины/состояния:* table `kaizen_proposals`.
+*Инварианты:* query filters do not mix project-scope and factory-scope; dedup remains in service.
+*Сильная текущая форма:* repository surface is narrow.
+*Слабая/неидеальная форма:* no defect observed.
+*Что сделать для идеала:* keep behavior in service, add repository tests only if query semantics broaden.
+*Что не трогать:* do not hide factory-scope null project rows behind active-project substitution.
+*Опровержение:* factory proposals become unreachable while an active project exists.
+*Критерий закрытия:* `/api/kaizen/factory` and project reads each see their own scope.
+*Свидетельства записи:* `KaizenProposalRepository.java:9-14`; `KaizenService.java:798-834`;
+`KaizenController.java:33-55`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `KaizenProposalRepository`: считаю механизм идеальным.
 
-**`DesignShopCycleEntity`** (118 строк) — одна строка на проект: готовность дизайн-цеха по фронту, стадия
-цикла, путь черновика и **объявленные цвета и шрифты проекта**.
-*Связи:* читают `DesignShopOrchestrationService`, `DesignSystemFalsificationService`, `JulesDispatchService`,
-`DesignShopCycleRepository`.
-*Ценность:* без неё проект, много тактов подряд остающийся готовым к сборке, запускал бы по циклу дизайна
-на каждый такт.
-*Комментарий:* **ядро малого радиуса, и две вещи здесь сделаны верно.**
+**`KaizenService.saveProposal/findOpenSibling`**
+*Философский паттерн:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+*Связи:* called by all proposal-recording and status-transition paths; returns persisted id for evidence
+node linkage.
+*Идеал:* new open finding creates one row; recurrence revises the open sibling and increments count; updates
+to existing rows are not hijacked by siblings.
+*Граница:* identity of a proposal is decided at write time.
+*Входы:* incoming proposal.
+*Выходы:* persisted proposal id, updated recurrence metadata.
+*Владельцы истины/состояния:* repository row, category/target/project identity.
+*Инварианты:* APPLIED/STANDARDIZED/REVERTED rows are never revived by recurrence; evidence node uses persisted
+id, not caller's discarded id.
+*Сильная текущая форма:* tests prove recurrence revision and no revival after PROPOSED.
+*Слабая/неидеальная форма:* `findAll` search is not ideal for scale, but no behavior defect is shown here.
+*Что сделать для идеала:* if scale hurts, add repository query/unique open identity without changing
+semantics.
+*Что не трогать:* do not move dedup back to read side only.
+*Опровержение:* two open rows with same category, target component and project id; or evidence node points to
+an id that was never saved.
+*Критерий закрытия:* recurrence and FK/id tests stay green.
+*Свидетельства записи:* `KaizenService.java:81-150`; `KaizenServiceTest.java:261-304`.
+*Текущий статус:* считаю механизм идеальным by behavior; possible future performance work must preserve it.
+*комментарий для Антигравити:* `KaizenService.saveProposal/findOpenSibling`: считаю механизм идеальным.
 
-Первое — **срабатывание по фронту, а не по уровню**: поле `lastWasReady` хранится, поэтому один цикл
-начинается на один переход из «не готов» в «готов», и новый цикл возможен, только когда готовность
-по-настоящему падала и поднималась снова. Это то же средство, что `finalizing` у требования из раздела XXIб,
-приложенное к другому месту: состояние заводится специально, чтобы повтор не был неотличим от первого раза.
+**`KaizenService.scanForOpportunities/recordUnderTheHoodDefects`**
+*Философский паттерн:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`.
+*Связи:* records stale queue, DBR buffer and Six Sigma defects; reads recent defect window; creates
+WASTE/BUFFER/DEFECT/ROLE proposals; observes CTQ targeting lever.
+*Идеал:* silent telemetry becomes deduplicated, scoped proposals without pretending observer distribution is
+cause distribution.
+*Граница:* turns measured telemetry into candidate improvements, not known root-cause fixes.
+*Входы:* task counts, DBR status, Six Sigma audit, CTQ breakdown, recent defect journal window.
+*Выходы:* Kaizen proposals and lever observations.
+*Владельцы истины/состояния:* source services own measurements; defect journal owns raw observations;
+proposal table owns improvement memory.
+*Инварианты:* 2-hour window; active proposal blocks duplicate scan proposal; CTQ retargeting only after lever
+promotion.
+*Сильная текущая форма:* tests cover observe-only vs promoted CTQ targeting.
+*Слабая/неидеальная форма:* generated defect records still lack `rootCausePatternId`; categories can still
+reflect what is observed most, not what causes most.
+*Что сделать для идеала:* when a telemetry source can prove a charter cause, pass the long defect overload;
+otherwise keep candidate status explicit.
+*Что не трогать:* do not auto-classify causes from category/source alone.
+*Опровержение:* a proposal claims known root-cause repair when underlying defects have no root-cause ids.
+*Критерий закрытия:* every known-cause proposal traces to defect rows with pattern ids; unknown-cause proposals
+stay candidate/uncategorized.
+*Свидетельства записи:* `KaizenService.java:214-453`; `KaizenServiceTest.java:216-259`.
+*Текущий статус:* не идеален by causal coverage.
+*комментарий для Антигравити:* `KaizenService.scanForOpportunities/recordUnderTheHoodDefects`: не идеален;
+применить `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, не выдавать symptom grouping за root-cause knowledge.
 
-Второе — **основание берётся, а не выдумывается**. Цвета и шрифты захватываются из **первой** генерации
-этого проекта, и комментарий говорит «never invented», чтобы последующая проверка сравнивала с собственной
-маркой проекта, а не с подставкой. Оговорю границу этого достоинства: основание верно как **происхождение**,
-но ничем не подтверждено как **правильное**; если первая генерация была не в марке, оснований для сомнения
-у механизма нет. Прежде измеренное мною отвержение восьми экранов из восьми при доле прослеживания около
-0,09 против требуемых 0,9 (замер прошлой смены, здесь не повторён) с этим согласуется, но причиной я его не
-называю: чтобы связать, нужно сравнить захваченное основание с настоящей маркой заказчика, а такого замера
-в записи нет.
-*Философия:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн,
-`BARCAN-TAG-00 CODE-GUARDIAN`, принцип языковых игр, anchor *Philosophical Investigations — language-games,
-meaning as use, private-language argument*. Сильная дословно: «утверждение о работе системы опирается на
-логи, метрики, проверки здоровья или состояние свода, и ссылка приведена». Слабая: «утверждение опирается на
-собственный рассказ агента о том, что он сделал». Опровержение: «потребовать команду, которой замер снят;
-её отсутствие и есть нарушение». **Форма: сильная.** Основание — не рассказ механизма о том, какой марки
-проект, а сохранённые идентификаторы настоящей первой генерации; предъявить источник можно, он в двух
-столбцах. Слабой формы здесь нет ровно потому, что выдумывание запрещено явно и заменено захватом.
+**`KaizenService` external proposal recorders**
+*Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`.
+*Связи:* `recordSystemicDefectProposal`, `recordProductRuntimeDefectProposal`,
+`recordKnownPatternViolationProposal`, `recordRoleQualityDriftProposal`; all write proposal and evidence.
+*Идеал:* factory defects, product runtime shifts, known pattern violations and role drift remain separate
+types with review-only behavior unless a bounded autonomous action exists.
+*Граница:* category boundary and evidence-source boundary.
+*Входы:* project/factory scope, title/action, optional Gemini finding id, pattern id/name, role drift record.
+*Выходы:* proposal row and evidence node with correct polarity/source.
+*Владельцы истины/состояния:* caller owns finding; Kaizen service owns storage category; evidence graph owns
+source typing.
+*Инварианты:* `expectedGainPercent=0` for review-only categories; Gemini assertion evidence is typed by
+provenance; product runtime not mixed with factory source.
+*Сильная текущая форма:* tests prove systemic evidence node and no false "applied" for no-action findings.
+*Слабая/неидеальная форма:* none observed.
+*Что сделать для идеала:* keep new recorder methods explicit by category and source type.
+*Что не трогать:* do not route factory defects into client product wishlist unless a specific autonomous
+consumer exists.
+*Опровержение:* a no-action systemic proposal moves to APPLIED with no wishlist/action.
+*Критерий закрытия:* category tests protect review-only and evidence-source boundaries.
+*Свидетельства записи:* `KaizenService.java:455-623`; `KaizenServiceTest.java:126-185`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `KaizenService` external proposal recorders: считаю механизм идеальным.
+
+**`KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`**
+*Философский паттерн:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+*Связи:* applies safe categories, escalates the one actionable design-review systemic stream to wishlist,
+evaluates post metrics and writes positive/negative evidence.
+*Идеал:* only bounded autonomous actions are applied; evidence-only findings remain evidence; a bad
+micro-step can be reverted.
+*Граница:* Do/Check/Act boundary of Kaizen loop.
+*Входы:* proposal status/category, baseline metrics, DBR/Six Sigma measurements.
+*Выходы:* applied/standardized/reverted proposal, wishlist for review-concern pattern, evidence node.
+*Владельцы истины/состояния:* proposal row, TOC/SixSigma services, wishlist repository.
+*Инварианты:* only PROPOSED can be applied; only APPLIED can be evaluated; review-only categories don't fake
+application.
+*Сильная текущая форма:* tests cover PDCA, actionable systemic escalation and no-action systemic refusal.
+*Слабая/неидеальная форма:* ordinary WASTE/SPEED actions are still mostly logged rather than deeply proven in
+this section.
+*Что сделать для идеала:* if a category gets a real action, add a category-specific refutation test.
+*Что не трогать:* do not mark evidence-only proposals APPLIED just to close them.
+*Опровержение:* no-action finding gets status APPLIED while no command or wishlist was produced.
+*Критерий закрытия:* every category has either a tested action or a tested refusal to fake action.
+*Свидетельства записи:* `KaizenService.java:625-796`; `KaizenServiceTest.java:143-203`.
+*Текущий статус:* partially strong; action depth depends on category.
+*комментарий для Антигравити:* `KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`: не
+идеален for shallow action categories; применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` before widening
+auto-apply.
+
+**`KaizenController` and `ProjectTreeService.trunkAnnotations`**
+*Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`.
+*Связи:* controller exposes project opportunities, factory opportunities, history, scan, step; tree service
+shows trunk-level annotations from proposals.
+*Идеал:* UI/API readers see factory vs project proposals separately and do not guess branch attribution from
+free text.
+*Граница:* read/command surface for Kaizen memory, not a causal classifier.
+*Входы:* optional project id, proposal id.
+*Выходы:* proposal lists, scan count, applied result, trunk annotations.
+*Владельцы истины/состояния:* KaizenService owns proposal scope; UI surface owns projection.
+*Инварианты:* `/factory` is separate from `/opportunities`; trunk annotation is not per-branch.
+*Сильная текущая форма:* comments explicitly preserve factory/project and trunk/branch boundaries.
+*Слабая/неидеальная форма:* none observed in this section.
+*Что сделать для идеала:* keep separate route if more factory-scope proposal types appear.
+*Что не трогать:* do not add a nullable scope parameter that makes factory and project look like one kind.
+*Опровержение:* factory proposal disappears while an active project exists, or proposal is attached to a
+random branch by targetComponent text.
+*Критерий закрытия:* route tests prove project and factory surfaces remain separate.
+*Свидетельства записи:* `KaizenController.java:25-78`; `ProjectTreeService.java:142-151`;
+`KaizenService.java:802-834`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `KaizenController` and `ProjectTreeService.trunkAnnotations`: считаю механизм
+идеальным.
+
+**`DesignShopCycleEntity`**
+*Философский паттерн:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
+*Связи:* owned by `DesignShopOrchestrationService`; read by design-system falsification, design drift monitor
+and Jules design-concern triage; accessed via `DesignShopCycleRepository`.
+*Идеал:* one row per project remembers readiness edge, review stage, draft path, Stitch ids, captured tokens,
+edit-iteration count and in-flight start claim.
+*Граница:* state of the design-shop cycle for one project, not the whole product design truth.
+*Входы:* readiness front, generated draft, Stitch ids, extracted tokens, review/triage progress.
+*Выходы:* persisted cycle state and token baseline used by later design checks.
+*Владельцы истины/состояния:* `design_shop_cycles`; first implementable Stitch draft owns token baseline
+origin.
+*Инварианты:* one row per project; `lastWasReady` fires on rising edge; start claim separate from readiness;
+edit iteration bounded.
+*Сильная текущая форма:* tests cover rising edge, no refire, re-arm, baseline capture/reuse.
+*Слабая/неидеальная форма:* captured tokens prove provenance, not correctness against an external brand source.
+*Что сделать для идеала:* if a real client-brand source exists, compare captured baseline against it before
+treating baseline as brand truth; until then it is only the project's first generated baseline.
+*Что не трогать:* do not replace captured project tokens with factory default tokens.
+*Опровержение:* second steady tick starts another design cycle, or later generation uses factory tokens
+instead of stored project tokens.
+*Критерий закрытия:* edge and baseline tests remain green; external-brand comparison exists if the system
+claims brand correctness.
+*Свидетельства записи:* `DesignShopCycleEntity.java:7-117`;
+`DesignShopOrchestrationServiceTest.java:107-205`; `DesignShopOrchestrationServiceLaw15Test.java:136-202`.
+*Текущий статус:* strong as cycle memory; not ideal as independent brand truth.
+*комментарий для Антигравити:* `DesignShopCycleEntity`: не идеален as external brand truth; применить
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, keep captured tokens but do not call them verified brand
+without external evidence.
+
+**`DesignShopCycleRepository`**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* `findByProjectId`, atomic `claimStartCycle`, `releaseStartCycleClaim`.
+*Идеал:* repository prevents duplicate cycle starts across overlapping ticks without turning failed generation
+into a permanent block.
+*Граница:* DB-level claim and lookup for one project's cycle row.
+*Входы:* project id, claim timestamp.
+*Выходы:* optional cycle row, claim update count, released claim.
+*Владельцы истины/состояния:* DB row and `start_cycle_claimed_at`.
+*Инварианты:* claim only when `startCycleClaimedAt is null` and `lastWasReady=false`; release on unavailable
+or wrong-kind generation.
+*Сильная текущая форма:* tests verify already-held claim skips work and failures release claim.
+*Слабая/неидеальная форма:* none observed.
+*Что сделать для идеала:* preserve compare-and-set shape for any future claim.
+*Что не трогать:* do not replace atomic DB update with in-memory lock.
+*Опровержение:* two overlapping ticks both dispatch a design review for one readiness edge.
+*Критерий закрытия:* non-concurrency/race tests remain green.
+*Свидетельства записи:* `DesignShopCycleRepository.java:13-33`;
+`DesignShopOrchestrationServiceTest.java:89-104`, `207-224`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `DesignShopCycleRepository`: считаю механизм идеальным.
+
+**`DesignShopOrchestrationService`**
+*Философский паттерн:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
+*Связи:* scheduled design shop; reads project/readiness/settings/context; calls `DesignAssetService`,
+GitHub, `ProjectFlowService`, wishlist; writes cycle row.
+*Идеал:* on each readiness rising edge, generate an implementable HTML mockup, capture baseline on first
+draft, dispatch review, advance to implementation only after approved mockup exists, and close stale review
+cycles without blocking product work forever.
+*Граница:* design-shop orchestration, not ordinary continuous orchestration and not final delivery proof.
+*Входы:* active projects, readiness ratio/frontier, settings, draft artifact, approved artifact.
+*Выходы:* review/implementation tasks, cycle state, hold log, wishlist concern for wrong-kind generation.
+*Владельцы истины/состояния:* readiness service owns readiness; GitHub owns artifact presence; cycle row owns
+cycle memory.
+*Инварианты:* disabled flag does nothing; no transaction across Stitch call; wrong-kind artifact is recorded
+not retried; awaiting review times out after 48h.
+*Сильная текущая форма:* tests cover flag, edge, baseline, no steady refire, re-arm, failure retry, wrong-kind
+rejection, approval and timeout.
+*Слабая/неидеальная форма:* no defect observed in this section; external-brand truth caveat belongs to
+`DesignShopCycleEntity`.
+*Что сделать для идеала:* keep tests in lockstep with any new stage; add a test before widening wrong-kind
+retry or acceptance.
+*Что не трогать:* do not infer implementability from model name; do not put long Stitch calls inside one DB
+transaction.
+*Опровержение:* available image-only draft dispatches review or gets retried endlessly without a visible
+concern.
+*Критерий закрытия:* design-shop test suite covers every stage transition and failure branch.
+*Свидетельства записи:* `DesignShopOrchestrationService.java:26-451`;
+`DesignShopOrchestrationServiceTest.java:80-352`; `DesignShopOrchestrationServiceLaw15Test.java:87-202`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `DesignShopOrchestrationService`: считаю механизм идеальным.
+
+**`DesignSystemFalsificationService`**
+*Философский паттерн:* `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
+*Связи:* scheduled backend Stitch pass over shipped UI epics; reads `DesignShopCycleEntity.stitchProjectId`;
+writes dismissed wishlist audit trail.
+*Идеал:* apply design-system tooling to real merged UI, record audit trail, and avoid self-attested Jules
+claims.
+*Граница:* backend API composition against shipped UI, not speculative mockup generation.
+*Входы:* active projects, merged UI epics, Stitch key, optional Stitch project id.
+*Выходы:* Stitch design system result and dismissed wishlist audit record.
+*Владельцы истины/состояния:* readiness service owns shipped UI list; Stitch owns design-system id; wishlist
+row owns audit trail.
+*Инварианты:* disabled/no key returns; already-processed epic skipped; missing Stitch project id omitted
+rather than replaced by Eneik row id for creation.
+*Сильная текущая форма:* code reads persisted Stitch project id before `createDesignSystem`.
+*Слабая/неидеальная форма:* this section did not verify the exact `applyDesignSystem` API semantics; do not
+change that call from this documentation tact.
+*Что сделать для идеала:* before any code edit, verify Stitch API schema and test that Eneik project id is not
+used where Stitch project id is required.
+*Что не трогать:* do not replace direct backend verification with a Jules session saying it called Stitch.
+*Опровержение:* a Stitch call receives an Eneik DB UUID in a field that requires Stitch project id.
+*Критерий закрытия:* API-schema-backed test proves create/apply id semantics.
+*Свидетельства записи:* `DesignSystemFalsificationService.java:23-165`.
+*Текущий статус:* не идеален until apply-id semantics are verified by schema/test.
+*комментарий для Антигравити:* `DesignSystemFalsificationService`: не идеален; применить
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, verify Stitch id semantics before touching code.
+
+**`DesignDriftMonitorService`**
+*Философский паттерн:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
+*Связи:* called during runtime observability live window; reads design baseline from `DesignShopCycleEntity`;
+fetches live HTML via launcher client; audits with `DesignConsistencyAuditService`.
+*Идеал:* compare live running product against a real per-project baseline only when that baseline exists.
+*Граница:* live runtime drift check, not source-code static audit and not launcher ownership.
+*Входы:* project, root URL, design-shop enabled flag, cycle baseline, fetched HTML.
+*Выходы:* pass/fail/cannot-judge log.
+*Владельцы истины/состояния:* runtime launcher owns live window; cycle row owns baseline; consistency audit
+owns token predicate.
+*Инварианты:* no baseline means no fetch/comparison; blank body is cannot-check, not fail; SPA shell without
+tokens is cannot-judge.
+*Сильная текущая форма:* code explicitly skips rather than using factory default tokens.
+*Слабая/неидеальная форма:* no persisted drift proposal is emitted here; only logs.
+*Что сделать для идеала:* if drift should drive backlog, route failed drift through `KaizenService` product
+runtime defect proposals with evidence.
+*Что не трогать:* do not reintroduce Verdant Flow/factory tokens as client baseline.
+*Опровержение:* project with no baseline fetches live HTML and judges brand drift against default tokens.
+*Критерий закрытия:* no-baseline test proves skip; failure path has a deliberate consumer if product backlog
+impact is required.
+*Свидетельства записи:* `DesignDriftMonitorService.java:13-114`.
+*Текущий статус:* partially strong; backlog closure is non-ideal if drift is meant to create work.
+*комментарий для Антигравити:* `DesignDriftMonitorService`: не идеален if drift must create work; применить
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, keep no-baseline skip and add only evidence-backed product
+runtime proposal flow.
+
+**`JulesDispatchService` design-concern triage**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* reads `DesignShopCycleEntity`; if review still open, applies bounded Stitch `editScreens`; otherwise
+escalates actionable concerns to wishlist.
+*Идеал:* design review concerns affect the open mockup only while that mockup is still the live review
+object; otherwise they become normal backlog evidence.
+*Граница:* open design review edit loop, not infinite post-hoc rewriting.
+*Входы:* triage entries, mockup path, cycle stage, Stitch ids, edit iteration count.
+*Выходы:* committed edited mockup assets or wishlist escalation.
+*Владельцы истины/состояния:* cycle stage and Stitch ids own whether edit is possible; GitHub owns committed
+files.
+*Инварианты:* edit cap is enforced; missing Stitch ids stop edit; closed cycle escalates instead of editing.
+*Сильная текущая форма:* code checks open stage and iteration cap before edit.
+*Слабая/неидеальная форма:* full tests for this exact branch are outside the evidence read in this tact.
+*Что сделать для идеала:* keep/add focused tests for open-cycle edit, cap, missing ids and closed-cycle
+wishlist escalation.
+*Что не трогать:* do not edit approved/closed mockups as if the cycle were still awaiting review.
+*Опровержение:* actionable concern edits a mockup after `DesignShopCycleEntity.stage` is no longer
+`AWAITING_REVIEW`.
+*Критерий закрытия:* focused tests prove all four triage branches.
+*Свидетельства записи:* `JulesDispatchService.java:4509-4555`.
+*Текущий статус:* не идеален по test evidence read in this tact.
+*комментарий для Антигравити:* `JulesDispatchService` design-concern triage: не идеален по тестовой защите;
+применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and test open/closed/cap/missing-id branches.
+
+## Комментарии для Антигравити по механизмам
+
+- `DefectJournalEntity`: не идеален; применить `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, заполнять
+  `rootCausePatternId` только там, где причина доказана, и не подменять unknown cause выдуманным номером.
+- `DefectJournalRepository`: считаю механизм идеальным.
+- `DefectJournalService.recordDefect`: не идеален by producer coverage; применить
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, keep audit/defect separation and only create evidence for real
+  `rootCausePatternId`.
+- `ProcessControlService.closeLoop`: считаю механизм идеальным.
+- `KaizenProposal`: считаю механизм идеальным.
+- `KaizenProposalEntity`: считаю механизм идеальным.
+- `KaizenProposalRepository`: считаю механизм идеальным.
+- `KaizenService.saveProposal/findOpenSibling`: считаю механизм идеальным.
+- `KaizenService.scanForOpportunities/recordUnderTheHoodDefects`: не идеален; применить
+  `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, не выдавать symptom grouping за root-cause knowledge.
+- `KaizenService` external proposal recorders: считаю механизм идеальным.
+- `KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`: не идеален for shallow action
+  categories; применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` before widening auto-apply.
+- `KaizenController` and `ProjectTreeService.trunkAnnotations`: считаю механизм идеальным.
+- `DesignShopCycleEntity`: не идеален as external brand truth; применить
+  `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, keep captured tokens but do not call them verified brand
+  without external evidence.
+- `DesignShopCycleRepository`: считаю механизм идеальным.
+- `DesignShopOrchestrationService`: считаю механизм идеальным.
+- `DesignSystemFalsificationService`: не идеален; применить `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`,
+  verify Stitch id semantics before touching code.
+- `DesignDriftMonitorService`: не идеален if drift must create work; применить
+  `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, keep no-baseline skip and add only evidence-backed
+  product-runtime proposal flow.
+- `JulesDispatchService` design-concern triage: не идеален по тестовой защите; применить
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and test open/closed/cap/missing-id branches.
 
 # XXIз. Состояние задачи и точка входа: последнее несущее слоя 2
 
