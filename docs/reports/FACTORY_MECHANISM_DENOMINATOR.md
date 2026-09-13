@@ -1768,3 +1768,31 @@ and cause action; `DefectJournalService` needs an explicit duty-to-record rule f
 need auth/public-read and projection-boundary decisions. No code was changed in this tact.
 
 комментарий для Антигравити: `SchedulingConfig`: считаю механизм идеальным; `TocAnomalyDetector`: не идеален, apply `DZHUDA_PERL_01_PERCEPTION_ACTION_LOOP`; `DefectJournalService`: не идеален, apply `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`; `GithubConfig`: считаю механизм идеальным; `GlobalExceptionHandler`: не идеален, apply `NUEL_BELNAP_02_PARACONSISTENT_QUARANTINE`; `WebConfig`: не идеален, apply `GARET_EVANS_19_BOUNDARY_TOPOLOGY`; `GreetingMapper`: считаю механизм идеальным; all named read controllers in section XVIIb: не идеальны как open read-surface, apply `GARET_EVANS_19_BOUNDARY_TOPOLOGY` and `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`.
+
+## 2026-09-13 Codex Strict Record: Migration Layer Closure
+
+Status: documentation-only strict record for section XXIIл in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit comments: migration-layer closure denominator, shape-only migration
+exclusion, and the 13 behavior-changing migration candidates that are still unclassified by strict mechanism
+record: `V103`, `V116`, `V141`, `V23`, `V26`, `V37`, `V40`, `V43`, `V66`, `V71`, `V74`, `V78`, `V91`.
+
+Denominator effect: section XXIIл previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 41 |
+| Sections still missing visible `комментарий для Антигравити` | 22 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: migration-layer closure is not ideal. Current direct scan is
+`141` migrations, `86` mentioned by version/name somewhere in the document, `55` not mentioned by version/name,
+`13` unmentioned behavior-changing candidates and `42` unmentioned shape-only files. Live Flyway/schema
+conformity is still not proven. No code was changed in this tact.
+
+комментарий для Антигравити: migration-layer closure record не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; shape-only migration exclusion: считаю механизм идеальным; `V103`, `V116`, `V141`, `V23`, `V26`, `V37`, `V40`, `V43`, `V66`, `V71`, `V74`, `V78`, `V91` не идеальны as unclassified behavior-changing migration candidates; fold each into its owning mechanism or write a strict record before coding.

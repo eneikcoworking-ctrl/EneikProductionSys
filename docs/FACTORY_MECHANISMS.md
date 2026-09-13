@@ -7628,42 +7628,127 @@ meaning as use, private-language argument*. Сильная дословно: «�
 
 # XXIIл. Чем закрывается слой 3
 
-Замер по всем 137 файлам (`python3`: описанные — те, чьё имя встречается в этом файле; остальные разложены
-по признаку «есть ли в файле `UNIQUE`, `CHECK`, `UPDATE`, `DELETE` или `INSERT`»):
+**Имена механизма или семейства** — closure-record слоя миграций:
+`src/main/resources/db/migration/V*.sql`, демаркация shape-only migrations, behavior-changing migrations,
+и список оставшихся unclassified behavior-changing candidates:
+`V103__gemini_findings_and_sessionless_reality.sql`, `V116__wishlist_source_task_id.sql`,
+`V141__project_product_namespace.sql`, `V23__create_falsification_runs.sql`,
+`V26__add_onboarding_mode_and_audit_findings.sql`, `V37__add_pr_reviews_jules_session_fk.sql`,
+`V40__add_task_source_wishlist_id.sql`, `V43__add_role_thread_account.sql`,
+`V66__create_flow_spine_events.sql`, `V71__create_review_concerns.sql`,
+`V74__jules_session_remote_deleted_at.sql`, `V78__pr_review_number_and_code_integrity_findings.sql`,
+`V91__project_launchability_checked_at.sql`.
 
-    всего миграций                    137
-    описано полными записями           31
-    осталось                          106
-      из них меняют множество состояний 29
-      из них меняют только форму        77
+**Философский паттерн** — `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, D010 Data lineage loss: слою миграций можно
+верить только когда способ получения denominator-а воспроизводим и свеж. Для version drift применяется
+`DZHUDA_PERL_17_WORLD_VERSION_MAP`, D003 Contract drift: schema-world нельзя объявлять закрытым, пока
+неизвестные версии не разложены по текущим мирам.
 
-**Семьдесят семь меняют только форму** — добавляют столбец, таблицу, индекс или внешний ключ. По принятой в
-разделе XXII демаркации они механизмами не являются: множество возможных состояний базы они не меняют, и
-поведение другого механизма от их изменения не меняется иначе как через код, который их читает. Это
-суждение, а не замер, и запись называет его суждением.
+**Связи** — Flyway применяет файлы миграций; backend-сущности, repositories, services и controllers читают
+схему, созданную этими файлами; `TechnicalLeadCompiler` даёт задачам инструкции по новым migration files.
+Соседние записи XXII-XXIIж описывают отдельные families, а эта запись отвечает только за closure слоя:
+сколько файлов есть, какие уже fold-in, какие исключены как shape-only, и какие ещё нельзя считать закрытыми.
 
-**Двадцать девять оставшихся меняют множество состояний**, и они распадаются на семьи, у каждой из которых
-уже есть описанный представитель:
+**Идеальная форма** — слой закрыт только если каждый behavior-changing migration либо имеет strict record,
+либо fold-in в описанный механизм с явной причиной, либо исключён with reason. Shape-only migrations
+исключаются только как schema form, а не как поведенческий факт. Live DB conformity проверяется отдельным
+startup/readiness check или явным evidence command.
 
-- **Возвращающие отнятое** (`V122`, `V124`, `V125`, `V129`, `V130`, `V131`, `V133`, `V134`) — представители
-  `V126` и `V132` описаны в разделе XXIIв; предикаты и основания у остальных того же рода, и `V132` прямо
-  переприменяет предикат `V129` дословно.
-- **Чистки и прекращения** (`V112`, `V113`, `V117`, `V119`) — тот же приём, что у описанной `V123`: элемент,
-  структурно неспособный получить вердикт, покидает множество, по которому принимается решение, один раз в
-  данных, а не фильтром у каждого читающего.
-- **Полномочия аккаунтов** (`V31`, `V32`, `V46`, `V50`, `V89`) — перечисление ролевых меток и пределов
-  одновременной работы; словарь тот же, что у описанного `JulesRoleCapabilities`, и та же слабость, что у
-  описанной `V19`: состав задаётся перечислением, а не правилом.
-- **Основания** (`V2`, `V3`, `V6`, `V10`, `V16`, `V17`, `V29`) — начальная схема и настройки; их предмет
-  описан через сущности и типы, которые они заводят (`TaskEntity`, `WishlistEntity`, `AccountStatus`,
-  `JulesSessionEntity`, `SystemSettingsService`).
-- **Уже описанные по своему поводу** (`V48`, `V65`, `V93`, `V106`, `V114`) — упомянуты в разделах XXIIб,
-  XXIIд, XXIIж и XXIж как части соответствующих механизмов.
+**Граница** — эта запись не описывает каждую migration заново. Она решает denominator и routing: какие
+migrations являются механизмами, какие являются частями механизмов, какие только формой схемы, и где
+осталась дырка. Она не должна подменять записи `TaskEntity`, `WishlistEntity`, account authority, evidence
+или delivery mechanisms.
 
-**Итог по слою.** Механизмами в слое миграций являются немногие, и все они описаны. Общее у них названо в
-разделе XXII: каждая несёт замер происшествия, которое её вызвала, и разбор причины, — и это единственное
-место на фабрике, где причина изменения хранится рядом с изменением. Слабость слоя тоже названа и остаётся
-открытой задачей 49: соответствие этих файлов живой базе при запуске никто не проверяет.
+**Входы** — список файлов `src/main/resources/db/migration/V*.sql`, текст `docs/FACTORY_MECHANISMS.md`,
+keyword scan по `UNIQUE`, `CHECK`, `UPDATE`, `DELETE`, `INSERT`, и наличие точного имени/версии migration в
+документе.
+
+**Выходы** — current migration denominator, list of unclassified behavior-changing candidates, and coding
+guidance для следующего агента: не объявлять слой закрытым, пока эти версии не folded/recorded/excluded.
+
+**Владельцы истины и состояния** — source truth: migration files in `src/main/resources/db/migration`;
+documentation truth: `docs/FACTORY_MECHANISMS.md`; runtime truth для применённой схемы должна находиться в
+Flyway schema history/live DB, но текущая запись её не проверяла.
+
+**Инварианты** — stale migration counts must not be reported as current truth; version mention is not a
+strict mechanism record; shape-only exclusion cannot hide an `UPDATE`/`DELETE`/`INSERT` migration; layer
+closure requires live DB conformity evidence, not only source-file presence.
+
+**Сильная форма сейчас** — direct source scan is reproducible and names the exact remaining behavior-changing
+candidates. Old text no longer pretends that all migration mechanisms are described.
+
+**Слабая/неидеальная форма сейчас** — previous numbers were stale: direct scan now shows `141` migrations,
+`86` migrations whose version or filename is mentioned somewhere in the document, `55` unmentioned by
+version/name, `13` unmentioned files containing behavior-changing keywords, and `42` unmentioned shape-only
+files. Live DB conformity at startup is still not verified in this record.
+
+**Что сделать для идеала** — run a dedicated migration-denominator tact: for each of the 13 named candidates,
+fold it into its owning mechanism or add a strict record/exclusion. Then add or document a live Flyway/DB
+conformity check so source migrations and actual schema cannot drift silently.
+
+**Что не трогать** — do not rewrite migrations to make the denominator prettier; do not delete shape-only
+migrations; do not treat mere filename mention as a full mechanism record; do not move behavior from
+migration history into runtime code without preserving migration causality.
+
+**Опровержение** — any migration file containing `UNIQUE`, `CHECK`, `UPDATE`, `DELETE` or `INSERT` is neither
+folded into a strict mechanism record nor listed as unclassified; or a running DB has a Flyway/schema state
+that does not correspond to the source migration set while the factory reports readiness.
+
+**Критерий закрытия** — remaining unclassified behavior-changing migration count is `0`; all shape-only
+exclusions are reproducible by command; startup/readiness evidence can name current Flyway/schema conformity.
+
+**Свидетельства записи** — `python3` scan over `src/main/resources/db/migration/V*.sql` counted
+`total=141`, `described_or_mentioned=86`, `remaining=55`, `remaining_behaviorish=13`,
+`remaining_shapeish=42`; exact remaining behaviorish names are listed in this section. Source search:
+`grep -RIn 'flyway\|migration\|schema' src/main/java src/main/resources | head -60`.
+
+**Текущий статус** — не идеален: closure record is now honest, but migration-layer denominator is still open.
+
+## XXIIл.1. Комментарии для Антигравити по механизмам
+
+* Migration-layer closure record — **комментарий для Антигравити:** механизм не идеален: применить
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; не объявлять слой закрытым, пока 13 behavior-changing candidates не
+  folded/recorded/excluded and live DB conformity is checked.
+* Shape-only migration exclusion — **комментарий для Антигравити:** считаю механизм идеальным
+* `V103__gemini_findings_and_sessionless_reality.sql` — **комментарий для Антигравити:** механизм не идеален:
+  применить `DZHUDA_PERL_17_WORLD_VERSION_MAP`; fold into Gemini/sessionless reality mechanism or write a
+  strict record before coding.
+* `V116__wishlist_source_task_id.sql` — **комментарий для Антигравити:** механизм не идеален: применить
+  `DZHUDA_PERL_17_WORLD_VERSION_MAP`; fold into wishlist-source/task identity mechanism or write a strict
+  record before coding.
+* `V141__project_product_namespace.sql` — **комментарий для Антигравити:** механизм не идеален: применить
+  `DZHUDA_PERL_17_WORLD_VERSION_MAP`; fold into project/product namespace mechanism or write a strict record
+  before coding.
+* `V23__create_falsification_runs.sql` — **комментарий для Антигравити:** механизм не идеален: применить
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; fold into falsification-run evidence mechanism or write a strict
+  record before coding.
+* `V26__add_onboarding_mode_and_audit_findings.sql` — **комментарий для Антигравити:** механизм не идеален:
+  применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; fold into onboarding/audit-finding mechanism or write a
+  strict record before coding.
+* `V37__add_pr_reviews_jules_session_fk.sql` — **комментарий для Антигравити:** механизм не идеален:
+  применить `DZHUDA_PERL_17_WORLD_VERSION_MAP`; fold into PR-review/Jules-session identity mechanism or write
+  a strict record before coding.
+* `V40__add_task_source_wishlist_id.sql` — **комментарий для Антигравити:** механизм не идеален: применить
+  `DZHUDA_PERL_17_WORLD_VERSION_MAP`; fold into task-source/wishlist identity mechanism or write a strict
+  record before coding.
+* `V43__add_role_thread_account.sql` — **комментарий для Антигравити:** механизм не идеален: применить
+  `DZHUDA_PERL_17_WORLD_VERSION_MAP`; fold into role-thread account ownership mechanism or write a strict
+  record before coding.
+* `V66__create_flow_spine_events.sql` — **комментарий для Антигравити:** механизм не идеален: применить
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; fold into FlowSpine event/evidence mechanism or write a strict record
+  before coding.
+* `V71__create_review_concerns.sql` — **комментарий для Антигравити:** механизм не идеален: применить
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; fold into review-concern evidence mechanism or write a strict record
+  before coding.
+* `V74__jules_session_remote_deleted_at.sql` — **комментарий для Антигравити:** механизм не идеален:
+  применить `DZHUDA_PERL_17_WORLD_VERSION_MAP`; fold into Jules session remote-deletion lifecycle or write a
+  strict record before coding.
+* `V78__pr_review_number_and_code_integrity_findings.sql` — **комментарий для Антигравити:** механизм не
+  идеален: применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; fold into PR-review/code-integrity evidence
+  mechanism or write a strict record before coding.
+* `V91__project_launchability_checked_at.sql` — **комментарий для Антигравити:** механизм не идеален:
+  применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; fold into launchability-check evidence mechanism or write a
+  strict record before coding.
 
 # XXIV. Скрипты: инструменты, которые запускает рука
 
