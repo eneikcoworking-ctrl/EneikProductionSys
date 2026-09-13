@@ -8828,65 +8828,114 @@ per-mechanism Antigravity comments.
 
 # XXX. Клиент к предсказателю: единственная дверь фабрики к внешней модели
 
-**`MLPredictionServiceClient`** (486 строк) — единственный путь бэкенда к ML-сайдкару: считает вложения,
-ведёт разговор с моделью, гоняет цикл с инструментами и спрашивает предсказание узкого места.
-*Связи:* зовут **одиннадцать механизмов** — `GeminiContextService`, `JulesDispatchService`,
-`ProjectFlowService`, `AutoMergeService`, `FlowSpineService`, `OpsAuditorService`,
-`ContinuousOrchestrationService`, `InfrastructureVerdictLayer`, `OnboardingAuditService`,
-`SelfFalsificationEpicMatcher`, `GreetingController` | ходит в `http://<ml>/api/v1/embed` и далее |
-докладывает исходы `AiHealthTracker`.
-*Ценность:* через него проходит **весь смысловой отбор фабрики**: выборка знаний для подсказок считает
-близость его вложениями (раздел XXVI). Без него подсказки теряют ранжирование по смыслу, а не только
-предсказание.
-*Комментарий:* **ядро, и притом самое узкое место всей постройки — одна дверь на одиннадцать механизмов.**
-Два решения здесь сделаны заметно лучше обычного.
+**Имена механизма или семейства:** `MLPredictionServiceClient` как единая Java-дверь к ML-сайдкару;
+`src/models/ml/PredictionService.py` как FastAPI-сайдкар; `docker-compose.yml` healthcheck контейнера `ml`;
+`AiHealthTracker` и `SystemStatusService.aiHealth` как видимость исходов; части механизма
+`MLPredictionServiceClient.EpicPlan` и `TaskSliceMetadata`.
 
-Первое: **отказ отдаёт пустоту, а не правдоподобие.** При разомкнутом предохранителе, при снятом флаге, при
-пустом или неразборчивом ответе `embed` возвращает `null` и записывает неудачу. Он **не сочиняет вектор**.
-Это важнее, чем кажется: поддельное вложение не отличить от настоящего на глаз, оно тихо испортило бы
-ранжирование, и выборка продолжала бы выдавать «самое близкое» из бессмыслицы. Сравнить с `parseLeanValue`
-(раздел XXIб), где неизвестное превращалось в утвердительный вердикт.
+**Философский паттерн:** основной `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010, `RELIABILITY_CHAIN`): факту
+предсказателя можно верить только когда названы источник, свежесть и путь проверки. Для отказов вложений
+добавлен фабричный `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`: доверие к зависимости теряется быстро и
+возвращается медленно. Для healthcheck применим `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008), потому что
+проверка здоровья должна уметь опровергнуть именно утверждение «сайдкар считает рабочие вложения», а не
+«страница документации открылась». Для `null`/пустого ответа применим `NUEL_BELNAP_03_TRUTH_STATUS_TABLE`
+(D012): неизвестное должно оставаться неизвестным, а не превращаться в смысл.
 
-Второе: **предохранитель устроен несимметрично, и это записано с обоснованием.** Он размыкается после пяти
-подряд неудач, остывает пятнадцать минут, а после остывания пропускается **одна** проба, причём счётчик
-намеренно не сбрасывается — «so a still-dead dependency reopens the breaker on that single failure instead
-of after another five». То есть доверие к зависимости теряется быстро и возвращается медленно, ровно как у
-лестницы доверия к решающим механизмам (раздел XXIд). Это **четвёртый случай** одного приёма на фабрике и
-лишнее подтверждение образцу `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`.
-*Живое, 7 сентября 2026:* сайдкар поднят двое суток и по собственной проверке здоров
-(`docker inspect eneikproductionsys-ml-1` → `healthy`, пять проб, последняя в 20:48 с кодом 0). Неудач
-вложений в журнале бэкенда за сутки нет.
+**Связи:** `GreetingController` вызывает `checkSystemRisk`; `GeminiContextService` и `FlowSpineService`
+вызывают `embed`; `OpsAuditorService` и `JulesDispatchService` вызывают `chatCritical`; `ProjectFlowService`,
+`JulesDispatchService` и `SelfFalsificationEpicMatcher` используют `EpicPlan`/`TaskSliceMetadata` как
+носители плана; `SystemStatusService` публикует `AiHealthTracker.snapshot()` в `aiHealth`. Java-клиент ходит
+в `http://<ml>/api/v1/embed`, `/api/v1/assistant/chat` и `/api/v1/predict/bottleneck`; критические суждения
+при наличии бина уходят в `JudgmentAgentClient`.
 
-Но **проверка здоровья меряет не то.** Её команда — `urllib.request.urlopen('http://127.0.0.1:8000/docs')`,
-то есть открытие страницы документации. Это доказывает, что процесс жив и отвечает по HTTP, и **ничего не
-говорит о том, считаются ли вложения**: страница документации отдаётся без всякого обращения к модели.
-Сайдкар может числиться здоровым при полностью неработающем счёте вложений, и первым, кто это заметит,
-будет предохранитель — после пяти неудач, то есть уже внутри работы.
+**Идеальная форма:** одна дверь к внешней модели не подделывает смысловой факт. Вложения либо возвращают
+реальный вектор от объявленного источника, либо `null` с учётом отказа; чат либо возвращает текст провайдера,
+либо явный недоступный ответ; tool-loop завершается по внешнему сигналу вызывающего и лимиту раундов;
+healthcheck проверяет рабочую функцию, а не только HTTP-присутствие; bottleneck-оценка не становится живым
+решением без доказанного владельца данных и проверки на реальных исходах.
 
-**Задача для кодинга.** Проверка здоровья ML-сайдкара обязана проверять предмет, а не присутствие: считать
-вложение постоянной короткой строки и сверять размерность ответа. Место: `Healthcheck` контейнера `ml` в
-`docker-compose.yml` (нынешняя команда открывает `/docs`). Проверка: при сломанном счёте вложений контейнер
-перестаёт числиться здоровым. Опровергнет: состояние `healthy` при неработающем `/api/v1/embed`.
+**Граница:** механизм имеет право вызывать ML-сайдкар, judgment sidecar, Gemini-текстовый endpoint, локальный
+embedding endpoint, записывать `AiHealthTracker` и возвращать DTO плана. Он не имеет права решать статус
+задач, менять проектные сущности, подменять неответ модели фиктивным вектором или объявлять sidecar здоровым
+по признаку, который не проверяет предмет.
 
-Это ровно та же болезнь, что записана в `V85` (раздел XXIIж): заслон проверял **наличие**, а не смысл —
-«presence-only gate, content never read semantically».
-*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип четырёхзначной логики (True/False/Both/Neither), anchor *A
-Useful Four-Valued Logic / how a computer should think — many-valued diagnostics*. Сильная дословно:
-«истинное, ложное, **неизвестное** и противоречивое представлены явно, и показано, как каждое хранится,
-отображается и разрешается. Третий исход невозможно проигнорировать на стороне вызывающего». Слабая:
-«булево плюс `null`, трактуемый по месту». Опровержение: «найти вызывающего, который компилируется, не
-обработав „неизвестно“». **Форма: сильная на стороне производителя, не мерена на стороне вызывающих.**
-Неизвестное представлено явно и честно — пустотой вместо подделки. Но `null` здесь и есть тот самый «булево
-плюс `null`», и пока все одиннадцать читающих не проверены, нельзя утверждать, что никто не принимает пустой ответ за пустой смысл. До этого обхода сильной формой считается только производство.
-Второй образец: `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008) — Альфред Тарский,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип семантической теории истины (T-схема: «P» истинно ⟺ P), anchor
-*The Concept of Truth in Formalized Languages — semantic conception of truth*. Сильная дословно: «проверка,
-способная **опровергнуть** утверждение, написана **до** принятия утверждения, и показано, что она краснеет
-при дефекте». Слабая: «зелёный тест рядом с изменением». Опровержение: «снять правку и прогнать тест; не
-покраснел — не заслон». **Форма: слабая, и относится она к проверке здоровья, а не к самому клиенту.**
-Утверждение «сайдкар здоров» проверкой на открытие страницы документации опровергнуть нельзя: она зелена и
-при мёртвом счёте вложений.
+**Входы:** `ml.service.url`, `gemini_enabled`, `gemini_api_key`, модели из settings/env, prompt,
+`systemInstruction`, `cacheKey`, tool declarations, accumulated `contents`, `wip_count`, `avg_cycle_time`,
+текст для embedding, HTTP-ответы FastAPI, состояние judgment sidecar.
+
+**Выходы:** `float[]` или `null` для embedding; текстовый ответ или sentinel-недоступность для chat;
+`ToolLoopResult`; `Map.of("is_bottleneck_predicted", boolean)`; `BottleneckResponse`; счётчики и последние
+ошибки `AiHealthTracker`; поле `aiHealth` в системной сводке.
+
+**Владельцы истины и состояния:** истина о векторах — `PredictionService.py` endpoint `/api/v1/embed` и его
+локальная `fastembed`-модель; истина о текстовом Gemini-ответе — `/api/v1/assistant/chat` и настройки модели;
+истина о критическом суждении — `JudgmentAgentClient`; истина о здоровье вызовов — process-local
+`AiHealthTracker`; истина о контейнерной готовности — Docker healthcheck `ml`; Java-клиент владеет только
+маршрутом, предохранителем и явной формой отказа.
+
+**Инварианты:** пустой/битый embedding не превращается в вектор; открытый breaker возвращает `null`; после
+cooldown проходит одна проба без сброса счётчика; `chatCritical` при доступном `JudgmentAgentClient` не идёт
+в Gemini; cache применяется только к статическому `systemInstruction`; tool-loop не доверяет модели решение
+о бесконечном продолжении без внешнего `continuation`; healthcheck должен краснеть при поломанном предмете.
+
+**Сильная форма сейчас:** `MLPredictionServiceClient.embed` возвращает `null` при открытом breaker, отключённом
+Gemini, пустом/невалидном ответе и исключении, пишет failure/success в `AiHealthTracker`, сбрасывает счётчик
+только при успешном векторе. `PredictionService.py` endpoint `/api/v1/embed` уже использует локальный
+`fastembed` и не делает mock/fallback-вектор. `chatCritical` при наличии `JudgmentAgentClient` возвращает его
+ответ и сохраняет старый sentinel при пустом ответе. `chatWithTools` держит Java-owned loop, внешний
+continuation и hard cap. `AiHealthTracker` публикуется в `SystemStatusService.aiHealth`.
+
+**Слабая/неидеальная форма сейчас:** healthcheck контейнера `ml` всё ещё открывает `/docs`, поэтому Docker
+может считать контейнер здоровым при сломанном `/api/v1/embed`. Обычный `chat` и `chatWithTools` остаются
+Gemini-текстовым путём, а `chatCritical` имеет fallback в `chatWithTier(..., "pro", "")`, если бин
+`JudgmentAgentClient` отсутствует; это допустимо для ручных unit-конструкторов, но не является строгим
+runtime-доказательством пост-Gemini границы. `predictBottleneck` сейчас не живой решающий механизм: sidecar
+сам пишет, что endpoint не подключён к реальному TOC-решению, а единственный прямой caller
+`GreetingController` результат не использует.
+
+**Что сделать для идеала:** заменить healthcheck `ml` на предметную пробу `/api/v1/embed` с постоянной
+строкой и проверкой размерности/непустого массива; добавить контрактную проверку, где сломанный embedding
+делает контейнер unhealthy. Для runtime-границы critical chat зафиксировать, что production wiring без
+`JudgmentAgentClient` не стартует либо явно краснеет, а не падает в Gemini. Перед превращением
+`predictBottleneck` в живой gate написать владельца реальных TOC-исходов, свежесть выборки и shadow-сравнение
+кандидатного logistic score с фактическими блокировками.
+
+**Что не трогать:** не заменять `null` на пустой или нулевой вектор; не сбрасывать breaker-счётчик после
+cooldown; не переносить tool-loop в Python без `SUBSTITUTION_ORACLE`; не включать pro-модель как «быстрое»
+решение; не считать `EpicPlan`/`TaskSliceMetadata` самостоятельными механизмами вне план-компилятора.
+
+**Опровержение:** описание ложно, если `/api/v1/embed` не работает, а `docker inspect ... State.Health.Status`
+остаётся `healthy`; если `embed` возвращает непустой вектор при отключённом/битом источнике; если критический
+caller без judgment sidecar получает Gemini-вердикт как будто это замена; если `predictBottleneck` начнёт
+менять live-статусы без реального owner/freshness/evidence контракта.
+
+**Критерий закрытия:** section считается описанным, когда каждый named путь внешней модели имеет источник,
+владельца истины, форму отказа, видимость в `aiHealth` или Docker health, и per-mechanism comment. Кодово
+механизм идеален после предметного healthcheck embedding, production-запрета Gemini fallback для
+`chatCritical` и доказанного shadow-контракта до promotion `predictBottleneck` в live gate.
+
+**Свидетельства записи:** `nl -ba src/main/java/com/eneik/production/services/MLPredictionServiceClient.java
+| sed -n '1,190p'` для `embed`/breaker; `sed -n '191,360p'` и `sed -n '361,520p'` для
+`chatCritical`/chat/tool-loop/DTO; `nl -ba src/models/ml/PredictionService.py | sed -n '296,590p'` для
+bottleneck, chat endpoint и local embedding; `grep -n -A26 -B6 "ml:" docker-compose.yml` для `/docs`
+healthcheck; `nl -ba src/main/java/com/eneik/production/services/monitor/AiHealthTracker.java | sed -n
+'1,240p'`; `nl -ba src/main/java/com/eneik/production/services/dashboard/SystemStatusService.java | sed -n
+'60,150p'`; `grep -R -n "mlPredictionServiceClient\\." src/main/java/com/eneik/production`.
+
+**Текущий статус:** частично силён. `embed`, local embedding, breaker, tool-loop и health projection описаны
+как сильные в своих границах; `ml` healthcheck, production-граница fallback для `chatCritical` и возможное
+будущее повышение `predictBottleneck` до live-gate остаются неидеальными, пока проверок выше нет.
+
+**комментарий для Антигравити по механизмам:**
+- `MLPredictionServiceClient.embed`: считаю механизм идеальным
+- `PredictionService.py /api/v1/embed`: считаю механизм идеальным
+- `docker-compose.yml services.ml.healthcheck`: механизм не идеален; заменить `/docs` на предметную embedding-пробу с проверкой размерности и красным случаем при сломанном `/api/v1/embed`, философия `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` и `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `MLPredictionServiceClient.chatCritical`: механизм не идеален; сохранить judgment-first route и sentinel, но production wiring должен явно запрещать отсутствие `JudgmentAgentClient` вместо молчаливого Gemini fallback, философия `LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE` и `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
+- `MLPredictionServiceClient.chat` / cached chat: механизм не идеален; не подменять post-Gemini контракт обычным Gemini endpoint, сначала описать разрешённую границу текстового провайдера и наблюдения сохранения смысла, философия `LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE`.
+- `MLPredictionServiceClient.chatWithTools`: считаю механизм идеальным
+- `MLPredictionServiceClient.checkSystemRisk` / `predictBottleneck` и `PredictionService.py /api/v1/predict/bottleneck`: механизм не идеален как будущий live gate; не продвигать в решение до owner/freshness/shadow-evidence контракта на реальных TOC исходах, философия `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `AiHealthTracker` и `SystemStatusService.aiHealth`: считаю механизм идеальным
+- `MLPredictionServiceClient.EpicPlan` и `TaskSliceMetadata`: считаю механизм идеальным
 
 # XXXI. Разбор чужого репозитория: неудача, ставшая утверждением о заказчике
 

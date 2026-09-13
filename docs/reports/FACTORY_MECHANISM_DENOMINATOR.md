@@ -1284,3 +1284,37 @@ scope. Provider-retirement questions for Stitch/Gemini remain in section XXVIII.
 tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXIX; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: ML Predictor Client Door
+
+Status: documentation-only strict-family replacement for section XXX in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `MLPredictionServiceClient.embed` and its breaker,
+`PredictionService.py /api/v1/embed`, `docker-compose.yml` `ml` healthcheck,
+`MLPredictionServiceClient.chatCritical`, `MLPredictionServiceClient.chat` / cached chat,
+`MLPredictionServiceClient.chatWithTools`, `MLPredictionServiceClient.checkSystemRisk` /
+`predictBottleneck` with `PredictionService.py /api/v1/predict/bottleneck`, `AiHealthTracker` with
+`SystemStatusService.aiHealth`, and the plan DTO parts `EpicPlan` / `TaskSliceMetadata`.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with per-mechanism
+Antigravity comments. Key correction: the section no longer treats the Java client as one undivided comment;
+the embedding path, healthcheck, critical-chat boundary, normal chat/tool paths, bottleneck path and health
+projection each have their own comment.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 39 |
+| Sections still missing visible `комментарий для Антигравити` | 24 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal points for this section: Docker `ml` healthcheck still checks `/docs`; production
+`chatCritical` boundary still needs a no-judgment-agent fail-red guarantee; normal text chat remains a Gemini
+provider path; bottleneck prediction must not become a live gate until owner/freshness/shadow-evidence are
+proved. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXX; family summary is not a substitute.
