@@ -4571,12 +4571,207 @@ associated with this repo»: это заготовка, а не боевая п�
 
 # XVII. Что здесь мертво или обездвижено
 
-* **`GeminiProjectObserverService`** — выведен навсегда, заперт миграцией.
-* **`ChessService`** — пустой файл в одну строку.
-* **Ревью Gemini** — отключено директивой оператора после происшествия со стоимостью; всякий PR идёт в
-  запасное ревью Jules. Строка лога «Gemini review unavailable» — след того решения, а не поломка.
+Эта секция не является списком "неважного". Это реестр механизмов, чья правильная форма - быть
+неживыми, инертными или замененными запретом. Для них тоже нужны связи, границы и комментарии, потому
+что иначе следующий агент может принять пустоту за пропуск и оживить то, что оператор уже запретил.
 
-Записи этого раздела намеренно без четырёх полей: у мёртвого механизма нет ни связей, ни ценности.
+## XVII.1. `GeminiProjectObserverService` как инертный совместимый stub
+
+**Философский паттерн:** `GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE` - запрет должен быть исполнен
+не обещанием, а исполняемой формой; здесь это пустой `runObserverCycle()` и миграция-настройка. Второй
+паттерн: `DZHONATAN_SHAFFER_01_ACTUAL_OBJECT_REGISTER` - код оставлен только как фактический объект
+совместимости Spring Context, а не как доменный наблюдатель.
+
+**Связи и взаимодействия:** класс остается `@Service`, чтобы не ломать возможные DI-контракты Spring;
+`runObserverCycle()` найден только в самом файле и не имеет живого вызывающего потока. Комментарий в
+классе прямо переносит фактическую работу на `ContinuousOrchestrationService`,
+`PlannedWorkRecoveryService` и `OpsAuditorService`; сам observer ничего не читает, не пишет и не
+вызывает.
+
+**Идеальная форма:** сервис существует только как нулевая совместимость: конструктор без зависимостей,
+цикл без действия, без репозиториев, без API-вызовов Gemini, без планировщика и без записи состояния.
+
+**Граница:** граница этого механизма - запрет на восстановление прежнего наблюдателя. Входы отсутствуют;
+выходы отсутствуют; владелец истины - исходник `GeminiProjectObserverService.java` плюс настройка
+`gemini_project_observer_enabled=false`.
+
+**Инварианты:** `runObserverCycle()` остается пустым; класс не получает тяжелые зависимости; настройка
+observer не становится `true`; ни один scheduler не превращает stub обратно в активный цикл.
+
+**Сильная форма сейчас:** код соответствует идеалу: файл содержит только stub, `runObserverCycle()` не
+вызывает ничего, а комментарий фиксирует причину вывода как Muda.
+
+**Слабая/неидеальная форма:** любая новая зависимость, чтение репозитория, Gemini-вызов, scheduled-cycle
+или возврат `gemini_project_observer_enabled=true` превращают механизм из запрета обратно в источник
+стоимости и дрейфа.
+
+**Что кодить для идеала:** ничего, пока доказательства ниже остаются истинными. Если появится новый
+вызывающий поток или зависимость, кодить не "observer", а защиту: тест/проверку, запрещающую оживление
+stub без отдельного операторского решения.
+
+**Что не трогать:** не удалять stub без проверки DI-контрактов; не возвращать старый observer; не
+подключать Gemini или репозитории; не маскировать запрет флагом, который можно случайно включить.
+
+**Опровержение/проверка:** `grep -RIn 'runObserverCycle' src/main/java` должен показывать только сам
+метод; `GeminiProjectObserverService.java` должен оставаться без зависимостей и без тела цикла.
+
+**Критерий закрытия:** механизм идеален, если он сохраняет совместимость Spring и не производит никакой
+работы.
+
+**Свидетельства записи:** `src/main/java/com/eneik/production/services/GeminiProjectObserverService.java:7-29`;
+`grep -RIn 'runObserverCycle' src/main/java` -> только строка метода в этом файле.
+
+**Текущий статус:** идеален как обездвиженный механизм.
+
+**комментарий для Антигравити:** `GeminiProjectObserverService`: считаю механизм идеальным
+
+## XVII.2. `gemini_project_observer_enabled` и `V111__permanently_disable_gemini_project_observer.sql`
+
+**Философский паттерн:** `GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE` - запрещенное действие должно
+получить исполняемый запрет с видимой причиной. Здесь запрет выражен миграцией, которая удаляет старое
+значение и заново вставляет `false`.
+
+**Связи и взаимодействия:** `SystemSettingsService` сохраняет определение ключа
+`gemini_project_observer_enabled`; ранняя миграция `V65` когда-то включала observer, но поздняя миграция
+`V111` перезаписывает системную истину в `false`. Документ плана также фиксирует выключенное состояние.
+
+**Идеальная форма:** системная настройка должна быть не двусмысленным пожеланием, а запретом по
+умолчанию и в базе: ключ существует, но его истинное состояние - `false`.
+
+**Граница:** вход - ключ системной настройки; выход - запрет запуска observer-cycle. Владелец истины -
+Flyway-миграция `V111` и registry-определение в `SystemSettingsService`.
+
+**Инварианты:** поздняя миграция должна оставлять `gemini_project_observer_enabled=false`;
+документация не должна трактовать этот флаг как обычную экспериментальную опцию; включение требует
+отдельного операторского решения и нового механизма защиты стоимости.
+
+**Сильная форма сейчас:** `V111` удаляет прежнюю строку и вставляет `false`; `SystemSettingsService`
+помечает настройку как permanently disabled as Muda.
+
+**Слабая/неидеальная форма:** если более поздняя миграция или env-конфигурация делает ключ `true`, это
+не улучшение, а снятие запрета без нового доказательства.
+
+**Что кодить для идеала:** ничего. При обнаружении будущего включения кодить проверку/тест миграции,
+который явно показывает, кто и почему снял запрет.
+
+**Что не трогать:** не удалять строку настройки так, чтобы потерять явный запрет; не переименовывать
+ключ без миграционного следа; не считать старую `V65` текущей истиной.
+
+**Опровержение/проверка:** `grep -RIn 'gemini_project_observer_enabled' src/main/java
+src/main/resources/db/migration docs/LIVE_PRODUCT_PLAN_2026-08-19.md` должен показывать текущее
+определение и позднюю миграцию `V111` с `false`.
+
+**Критерий закрытия:** запрет закрыт, если последний миграционный смысл для ключа - `false`, а registry
+не представляет observer как живую опцию.
+
+**Свидетельства записи:** `src/main/resources/db/migration/V111__permanently_disable_gemini_project_observer.sql:1-3`;
+`src/main/java/com/eneik/production/services/settings/SystemSettingsService.java:462-463`;
+`docs/LIVE_PRODUCT_PLAN_2026-08-19.md:762`.
+
+**Текущий статус:** идеален как запрет-настройка.
+
+**комментарий для Антигравити:** `gemini_project_observer_enabled` / `V111__permanently_disable_gemini_project_observer.sql`: считаю механизм идеальным
+
+## XVII.3. `ChessService` как пустой производственный носитель
+
+**Философский паттерн:** `DZHONATAN_SHAFFER_01_ACTUAL_OBJECT_REGISTER` - код создается только для
+актуального доменного объекта с владельцем, жизненным циклом и границей. Пустой `ChessService` в
+производственном пакете не является таким объектом и не должен становиться механизмом фабрики.
+
+**Связи и взаимодействия:** файл существует как `src/main/java/com/eneik/production/services/ChessService.java`
+и имеет ноль строк. Производитель задач `TechnicalLeadCompiler` может создавать пути для настоящего
+продуктового пакета, например `com/eneik/epidemiology`, но тест `TechnicalLeadCompilerIntegrationTest`
+проверяет, что фабричный путь `src/main/java/com/eneik/production/services/ChessService.java` не
+попадает в scope задачи.
+
+**Идеальная форма:** в фабричном namespace не должно быть поведения шахматного продукта. Если продукт
+нужен, его сервис появляется в product namespace, а не в `com.eneik.production`.
+
+**Граница:** входов нет; выходов нет; владельца состояния нет. Граница - пустой файл как
+исключение-with-reason, а не недописанный механизм.
+
+**Инварианты:** файл остается пустым или удаляется только после явной проверки, что его отсутствие не
+ломает tooling; factory compiler не должен выдавать этот production-path как допустимый product scope.
+
+**Сильная форма сейчас:** файл имеет `0` строк и `0` байт; тестовый слой явно защищает от попадания
+production `ChessService` в task file scope.
+
+**Слабая/неидеальная форма:** добавление кода в этот файл без переноса в product namespace создает
+категорийную ошибку: продуктовая логика поселится внутри фабрики.
+
+**Что кодить для идеала:** ничего в этом файле. Если нужен шахматный продукт, кодить его только в
+сгенерированном product package и держать тест, запрещающий production `ChessService` в file scope.
+
+**Что не трогать:** не добавлять сюда `@Service`, состояние, репозитории, контроллерные зависимости или
+правила игры; не использовать этот файл как быстрый путь для продуктовой реализации.
+
+**Опровержение/проверка:** `wc -l src/main/java/com/eneik/production/services/ChessService.java` должен
+оставаться `0`, а `grep -RIn 'ChessService' src/main/java src/test/java` не должен показывать фабричный
+production-service как живой механизм.
+
+**Критерий закрытия:** механизм идеален, если production `ChessService` не содержит поведения и не
+выдается как задача для фабричного namespace.
+
+**Свидетельства записи:** `wc -l src/main/java/com/eneik/production/services/ChessService.java` -> `0`;
+`ls -l src/main/java/com/eneik/production/services/ChessService.java` -> `0` bytes;
+`src/test/java/com/eneik/production/services/compiler/TechnicalLeadCompilerIntegrationTest.java:242`.
+
+**Текущий статус:** идеален как пустой исключенный носитель.
+
+**комментарий для Антигравити:** `ChessService`: считаю механизм идеальным
+
+## XVII.4. Gemini PR review disablement and Jules fallback review
+
+**Философский паттерн:** `GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE` - дорогое ревью Gemini
+запрещено исполняемым маршрутом, а не устным правилом. Дополнительный паттерн:
+`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` - сигнал "Gemini unavailable" полезен только если меняет
+следующее действие; здесь он ведет к Jules fallback review, а не к ожиданию.
+
+**Связи и взаимодействия:** `executeCodeReview(...)` больше не вызывает Gemini-review, а кладет PR в
+`PendingFallbackReview`; `dispatchReviewerFallbackBatch(...)` создает отдельную Jules reviewer session;
+ветка reconciliation для найденного PR тоже отправляет его в тот же fallback-batch.
+
+**Идеальная форма:** всякий PR получает review-проход без Gemini-расхода. Запрет не должен останавливать
+merge-flow: Gemini убран, но Jules fallback остается обязательным действием.
+
+**Граница:** входы - `TaskEntity`, `JulesSessionEntity`, `prUrl`, sibling PR URLs; выход - pending fallback
+review и Jules reviewer batch. Владелец состояния - `JulesDispatchService` и связанная session/task
+модель; Gemini не является владельцем истины в PR review.
+
+**Инварианты:** `executeCodeReview` не вызывает `mlPredictionServiceClient.reviewPr`; каждый PR добавляется
+в `fallbackCollector`; найденные abandoned PR идут через `dispatchReviewerFallbackBatch`; текст prompt для
+fallback reviewer ограничивает задачу review-вердиктом, а не реализацией кода.
+
+**Сильная форма сейчас:** комментарий в коде фиксирует operator directive и cost incident; код на строке
+`2245` добавляет `PendingFallbackReview`; reconciliation на строке `5807` вызывает
+`dispatchReviewerFallbackBatch(...)`.
+
+**Слабая/неидеальная форма:** прямой Gemini review вернется в поток, fallback станет необязательным, или
+лог "Gemini unavailable" останется без действия и начнет маскировать остановку PR.
+
+**Что кодить для идеала:** ничего, пока прямой Gemini review отсутствует и fallback batch вызывается. Если
+прямой Gemini review появится снова, кодить запретный тест и явное операторское разрешение, а не тихое
+включение.
+
+**Что не трогать:** не возвращать Gemini PR review; не удалять Jules fallback; не превращать fallback
+reviewer в исполнителя кода; не считать строку "Gemini unavailable" ошибкой, если PR уходит в Jules review.
+
+**Опровержение/проверка:** в `JulesDispatchService` `executeCodeReview(...)` должен добавлять
+`PendingFallbackReview`, а не вызывать Gemini; reconciliation должен идти через
+`dispatchReviewerFallbackBatch(...)`.
+
+**Критерий закрытия:** механизм идеален, если запрет Gemini-review сохраняет поток review через Jules,
+а PR не остается без reviewer action.
+
+**Свидетельства записи:** `src/main/java/com/eneik/production/services/jules/JulesDispatchService.java:2237-2245`;
+`src/main/java/com/eneik/production/services/jules/JulesDispatchService.java:3793-3796`;
+`src/main/java/com/eneik/production/services/jules/JulesDispatchService.java:5804-5808`;
+`grep -RIn 'reviewPr|dispatchReviewerFallbackBatch|PendingFallbackReview'
+src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
+
+**Текущий статус:** идеален как запрет с обязательным fallback-действием.
+
+**комментарий для Антигравити:** Gemini PR review disablement and Jules fallback review: считаю механизм идеальным
 
 ---
 

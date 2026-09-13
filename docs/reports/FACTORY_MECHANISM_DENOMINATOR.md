@@ -1705,3 +1705,34 @@ repository/field/transition ownership and field-level owners for Jules session l
 changed in this tact.
 
 комментарий для Антигравити: в section XIII смотри `Комментарии для Антигравити по механизмам`; для будущего кода сначала owner-map, потом правка состояния.
+
+## 2026-09-13 Codex Strict Record: Dead And Disabled Mechanisms
+
+Status: documentation-only strict record for section XVII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments:
+`GeminiProjectObserverService`, `gemini_project_observer_enabled` /
+`V111__permanently_disable_gemini_project_observer.sql`, `ChessService`, and Gemini PR review disablement with
+Jules fallback review.
+
+Denominator effect: section XVII previously lacked a visible Antigravity comment, so the visible-section
+denominator changes by one. A direct heading scan after this tact gives the current denominator below; this
+corrects older stale denominator snapshots in this report.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 39 |
+| Sections still missing visible `комментарий для Антигравити` | 24 |
+
+This is a visible-section denominator, not a mechanism count and not a claim that all older visible sections
+already satisfy the per-mechanism-comment rule.
+
+Remaining non-ideal points for this section: none found from current evidence. These entries are ideal only as
+dead, disabled, or explicitly rerouted mechanisms. If future code revives the observer, fills production
+`ChessService`, or restores Gemini PR review, that is a new defect and must be handled with a separate operator
+decision plus executable prohibition checks. No code was changed in this tact.
+
+комментарий для Антигравити: `GeminiProjectObserverService`: считаю механизм идеальным; `gemini_project_observer_enabled` / `V111__permanently_disable_gemini_project_observer.sql`: считаю механизм идеальным; `ChessService`: считаю механизм идеальным; Gemini PR review disablement and Jules fallback review: считаю механизм идеальным
