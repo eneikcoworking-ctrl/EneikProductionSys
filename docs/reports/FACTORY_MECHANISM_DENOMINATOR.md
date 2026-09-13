@@ -2124,3 +2124,53 @@ external brand truth, apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`; `De
 `DesignDriftMonitorService`: не идеален if drift must create work, apply
 `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`; `JulesDispatchService` design-concern triage: не идеален по
 тестовой защите, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+
+## 2026-09-13 Codex Strict Record: Task State and Entry Point
+
+Status: documentation-only strict record for section XXIз in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `TaskStatus`,
+`TaskEntity.setStatus/isTerminal`, `TaskEntity.initializeStatus`, `TaskRepository.compareAndSetStatus`,
+`TaskRepository.writeStatusUnlessTerminal`, `TaskRepository.lockNextQueuedTask/lockNextQueuedTaskForProject`,
+`InternalTaskController.updateTask`, `TaskDispatchVerdict` with task payload verdict,
+`TaskEntity` acceptance criteria and delivery verdict predicates, `TaskEntity` carrier marker,
+`EneikProductionApplication.flywayMigrationStrategy`, `application.properties` Flyway validation flags, and
+`EneikProductionApplication.compactH2StoreOnShutdown`.
+
+Denominator effect: section XXIз previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact, excluding the file title `# Механизмы фабрики`:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 52 |
+| Sections still missing visible `комментарий для Антигравити` | 11 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining sections without visible Antigravity comment: XVI, XXI, XXIб, XXII, XXIIб, XXIIв, XXIIг, XXIIд,
+XXIIе, XXIIж, XXIX.
+
+Remaining non-ideal points for this section: terminal status guards, repository terminal no-op, internal
+terminal-conflict API, carrier marker and Flyway default startup are strong. `initializeStatus` is still a broad
+constructor bypass that must remain initial-queued-only in production. Queue dependency semantics deliberately treat
+only `done` as satisfied and need explicit review before broadening to `spike_completed`. Dispatch verdicts still
+have a legacy text fallback until old rows are migrated. Delivery predicates and H2 shutdown compaction need focused
+test protection. No code was changed in this tact.
+
+комментарий для Антигравити: `TaskStatus`: считаю механизм идеальным; `TaskEntity.setStatus/isTerminal`:
+считаю механизм идеальным; `TaskEntity.initializeStatus`: не идеален; применить
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, держать production-вызовы только для initial `queued`;
+`TaskRepository.compareAndSetStatus`: считаю механизм идеальным; `TaskRepository.writeStatusUnlessTerminal`:
+считаю механизм идеальным; `TaskRepository.lockNextQueuedTask`: не идеален, пока terminal-семантика
+зависимостей явно не пересмотрена; применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`;
+`InternalTaskController.updateTask`: считаю механизм идеальным; `TaskDispatchVerdict` и verdict в payload
+задачи: не идеален; применить `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, убрать legacy text fallback только
+после миграции строк; `TaskEntity` acceptance criteria and delivery verdict predicates: не идеален по инвентарю
+тестов; применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`; `TaskEntity` carrier marker: считаю механизм
+идеальным; `EneikProductionApplication.flywayMigrationStrategy`: считаю механизм идеальным;
+`application.properties` Flyway validation flags: считаю механизм идеальным;
+`EneikProductionApplication.compactH2StoreOnShutdown`: не идеален по тестовой защите; применить
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и покрыть тестами ветки H2/non-H2/null/double/failure.

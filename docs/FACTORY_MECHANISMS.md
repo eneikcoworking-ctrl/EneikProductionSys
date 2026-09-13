@@ -6956,112 +6956,349 @@ wishlist escalation.
 
 # XXIз. Состояние задачи и точка входа: последнее несущее слоя 2
 
-**`TaskStatus`** (9 значений: `queued claimed in_progress pending_review review done failed spike_completed
-blocked`) — пространство состояний задачи, **самое широкое на фабрике**: имя встречается в 40 файлах `main`.
-*Связи:* читают 40 файлов | правило `isTerminal()` исполняется в `TaskEntity.setStatus:175-181` | обход
-`initializeStatus` зовут 5 механизмов (`OpsAuditorService`, `PlannedWorkRecoveryService`,
-`TechnicalLeadCompiler`, `ProjectFlowService` — 9 мест, `MarketResearchService`).
-*Ценность:* без него нет ни понятия «попытка завершена», ни защиты от возврата завершённой задачи в работу.
-*Комментарий:* **ядро, и здесь запрет исполнен полностью — редкий случай в этом перечне.**
+**Философский старт такта.** Для задачи главный образец — `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006):
+запрет перезаписи terminal-status должен быть исполнимым отказом, а не комментарием. Второй образец —
+`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` (D007): статус задачи — институциональный факт, созданный
+правилами.
+Для запуска и миграций главный образец — `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008), потому что
+старт должен падать на подмененной примененной миграции. Поддерживающий образец —
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (D010): база и история задач должны сохранять тождество при
+restart/shutdown.
 
-Правило записано в самом типе как двусторонняя связь: конечное состояние ⟺ статус принадлежит
-{`done`, `failed`, `spike_completed`}, и конечность необратима (закон 20, инвариант S2). Существенно, что
-это **не осталось javadoc'ом**: `setStatus` бросает `IllegalStateException`, если нынешнее состояние
-конечно и новое от него отлично, и сообщение называет задачу и оба состояния, то есть отказ объясним.
+**`TaskStatus`**
+*Философский паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
+*Связи:* used across task readers/writers; `TaskEntity.isTerminal` delegates to it; repository guards copy
+its terminal set.
+*Идеал:* exactly three terminal statuses exist: `done`, `failed`, `spike_completed`; `blocked` remains
+recoverable.
+*Граница:* status vocabulary only; transition enforcement lives in `TaskEntity` and `TaskRepository`.
+*Входы:* enum value.
+*Выходы:* terminal/non-terminal predicate.
+*Владельцы истины/состояния:* enum source and tests.
+*Инварианты:* `done`, `failed`, `spike_completed` terminal; every other status non-terminal.
+*Сильная текущая форма:* unit test covers every enum value.
+*Слабая/неидеальная форма:* no explicit `unknown`; default task state and real queued work both read as
+`queued`.
+*Что сделать для идеала:* do not add or reclassify status values without updating `TaskEntity`,
+`TaskRepository.writeStatusUnlessTerminal`, dispatch/recovery rules and status tests together.
+*Что не трогать:* do not make `blocked` terminal; it is deliberately resumable in dispatch-recovery logic.
+*Опровержение:* `TaskStatus.blocked.isTerminal()` becomes true, or a new terminal enum value is not in the
+repository guard.
+*Критерий закрытия:* enum predicate, repository guard and tests agree on the same terminal set.
+*Свидетельства записи:* `TaskStatus.java:3-12`; `TaskEntityLaw20Test.java:18-33`.
+*Текущий статус:* считаю механизм идеальным с явной оговоркой: состояния `unknown` здесь нет.
+*комментарий для Антигравити:* `TaskStatus`: считаю механизм идеальным.
 
-Обходной путь есть — `initializeStatus` пишет поле напрямую, минуя проверку. Замер по всем найденным
-местам вызова: **каждое ставит `TaskStatus.queued`**, то есть обход употребляется ровно так, как объявлен
-в его javadoc, — при заведении новой сущности. Ни одного места, где им ставилось бы конечное или
-промежуточное состояние, замер не нашёл.
+**`TaskEntity.setStatus/isTerminal`**
+*Философский паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
+*Связи:* called by task lifecycle services/controllers; protects entity-level writes; external PATCH checks it
+before saving.
+*Идеал:* once a task is terminal, any different status write is refused with an explainable error; idempotent
+same-status writes remain allowed.
+*Граница:* in-entity transition guard for ordinary JPA mutation, not bulk JPQL race protection.
+*Входы:* current status, requested new status.
+*Выходы:* updated status or `IllegalStateException`.
+*Владельцы истины/состояния:* task row field `status`; enum owns terminal predicate.
+*Инварианты:* terminal cannot be overwritten by another status; non-terminal transitions remain possible.
+*Сильная текущая форма:* tests cover all terminal statuses and mutation refusals.
+*Слабая/неидеальная форма:* entity guard is bypassed by bulk updates by design, so repository guards are also
+needed.
+*Что сделать для идеала:* keep entity guard and repository guard in sync whenever terminal semantics change.
+*Что не трогать:* do not replace the explicit refusal with silent no-op; callers need to know they attempted
+an illegal transition.
+*Опровержение:* `done -> queued` through `setStatus` succeeds.
+*Критерий закрытия:* Law 20 tests stay green for every terminal state.
+*Свидетельства записи:* `TaskEntity.java:166-191`; `TaskEntityLaw20Test.java:64-129`;
+`InternalTaskController.java:129-135`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `TaskEntity.setStatus/isTerminal`: считаю механизм идеальным.
 
-Заслон существует и снаружи типа: `test/java/com/eneik/production/models/persistence/TaskEntityLaw20Test.java`
-(контроль: в дереве 175 тестовых классов, инструмент видит), плюс `PrReviewEntityLaw20Test` и
-`AutoMergeLaw20InvariantS4Test`.
+**`TaskEntity.initializeStatus`**
+*Философский паттерн:* `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
+*Связи:* production callers initialize newly-created tasks; tests use it broadly to construct fixtures.
+*Идеал:* bypass exists only for initial entity construction, so a new task can start at `queued` without
+pretending it transitioned from a previous state.
+*Граница:* construction-time assignment, not lifecycle mutation.
+*Входы:* initial `TaskStatus`.
+*Выходы:* direct status field assignment.
+*Владельцы истины/состояния:* creator service owns why a new task exists; task row owns initial state.
+*Инварианты:* production use should initialize fresh tasks to `queued`; lifecycle changes use guarded paths.
+*Сильная текущая форма:* production grep shows callers setting `TaskStatus.queued`.
+*Слабая/неидеальная форма:* method itself accepts any status, and tests use it for fixtures in non-queued
+states; production safety relies on caller discipline and grep/test review.
+*Что сделать для идеала:* add a test/static check that production `initializeStatus` calls pass only
+`TaskStatus.queued`, or replace with `initializeQueued()` if future drift appears.
+*Что не трогать:* do not route normal recovery/completion through `initializeStatus`.
+*Опровержение:* production code calls `initializeStatus(TaskStatus.done)` or any non-queued status.
+*Критерий закрытия:* static/prod-call test fails on non-queued production initializer use.
+*Свидетельства записи:* `TaskEntity.java:193-198`; production grep for `initializeStatus(TaskStatus.queued)`.
+*Текущий статус:* не идеален по форме метода, сейчас безопасен по производственным вызовам.
+*комментарий для Антигравити:* `TaskEntity.initializeStatus`: не идеален; применить
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, guard production use to initial `queued` only.
 
-Чего в типе **нет** — того же, чего нет во всех девяти пространствах состояний раздела XXIб: явного
-«неизвестно». Задача, о которой ничего не установлено, и задача, поставленная в очередь, обе суть `queued`.
-*Философия:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз, `BARCAN-TAG-10 DEONTIC-PROHIBITION`,
-принцип исключающих причин, anchor *Practical Reason and Norms / The Authority of Law*. Сильная дословно:
-«запрет — **исполнимый путь отказа** с объяснимой причиной, и на него есть тест». Слабая: «запрет записан в
-документе или комментарии». Опровержение: «совершить запрещённое действие; если оно прошло — запрета нет,
-есть пожелание». **Форма: сильная, и все три условия выполнены порознь**: путь отказа исполним (исключение),
-причина объяснима (сообщение называет оба состояния и задачу), тест есть и назван. Опровержение выполнить
-не удалось: единственный путь мимо проверки во всех измеренных местах ставит начальное состояние.
-Второй образец: `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` (D007) — Джон Сёрл,
-`BARCAN-TAG-12 SOCIAL-CONTRACT`, статусные функции и институциональные факты («X считается Y в контексте C»),
-anchor *Speech Acts / The Construction of Social Reality — institutional facts*. Сильная дословно: «статус
-создаётся **правилом**, и есть запись аудита о том, что правило применилось». Слабая: «статус присваивается
-в коде там, где показалось уместным». Опровержение: «назвать правило, создающее статус; если названо место,
-а не правило — регистра нет». **Форма: слабая.** Правило назвать можно — оно в типе, и это уже больше, чем
-слабая форма обычно даёт. Но записи аудита о применении правила нет: отказ бросает исключение и не
-оставляет следа в журнале дефектов или в событиях проекта. Правило есть, регистра нет.
+**`TaskRepository.compareAndSetStatus`**
+*Философский паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
+*Связи:* recovery and dependency paths use compare-and-set for exact expected status changes.
+*Идеал:* status transition that depends on a precise prior state succeeds only if DB still has that state.
+*Граница:* exact-state race guard at DB write time.
+*Входы:* task id, expected status, new status, movement timestamp.
+*Выходы:* update count.
+*Владельцы истины/состояния:* DB row is final truth at update time; `updatedAt` is written in same update.
+*Инварианты:* no stale in-memory read can authorize a transition after status changed; movement timestamp
+tracks status movement.
+*Сильная текущая форма:* JPQL update writes status and `updatedAt` atomically.
+*Слабая/неидеальная форма:* callers must check update count.
+*Что сделать для идеала:* every caller must treat `0` rows as "lost the race / do not proceed".
+*Что не трогать:* do not replace CAS with `findById` + `setStatus` + `save` on race-sensitive paths.
+*Опровержение:* stale expected status update still changes row after another writer moved it.
+*Критерий закрытия:* race tests verify callers stop on `0`.
+*Свидетельства записи:* `TaskRepository.java:60-79`; `ProjectFlowServiceTest.java` and recovery tests use
+CAS expectations.
+*Текущий статус:* считаю механизм идеальным, conditional on caller update-count handling.
+*комментарий для Антигравити:* `TaskRepository.compareAndSetStatus`: считаю механизм идеальным.
 
-**`EneikProductionApplication`** (82 строки) — точка входа, и в ней два решения, переживающие каждый
-запуск: как исполняются миграции и что происходит с базой при остановке.
-*Связи:* объявляет бин `FlywayMigrationStrategy` | `@PreDestroy` сжимает хранилище H2 | источник данных
-внедряется необязательным, чтобы срезовые тесты поднимались без него.
-*Ценность:* без стратегии миграций запуск определяется умолчанием Spring; без сжатия файл базы растёт
-безвозвратно.
-*Комментарий:* **ядро, и две половины его прямо противоположны по качеству.**
+**`TaskRepository.writeStatusUnlessTerminal`**
+*Философский паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
+*Связи:* ClaimService, dispatch-budget handling, Jules/AutoMerge/Branch GC paths; used when exact prior
+status is unknown but terminal must not be overwritten.
+*Идеал:* any write that would resurrect or overwrite a terminal task becomes a zero-row no-op at the DB.
+*Граница:* bulk/JPQL race guard for terminal irreversibility.
+*Входы:* task id, new status, timestamp.
+*Выходы:* update count.
+*Владельцы истины/состояния:* tasks table at update time.
+*Инварианты:* if current DB status is `done`, `failed`, or `spike_completed`, the write does not land.
+*Сильная текущая форма:* integration test proves terminal row refuses a later queued write.
+*Слабая/неидеальная форма:* terminal set is duplicated in JPQL, so enum changes require synchronized edit.
+*Что сделать для идеала:* add/keep a guard test that compares enum terminal set to JPQL terminal set if
+status vocabulary changes.
+*Что не трогать:* do not remove DB-level guard because entity guard cannot protect bulk updates.
+*Опровержение:* `done` task becomes `queued` via repository write.
+*Критерий закрытия:* `TaskClaimServiceTest.writeStatusUnlessTerminalRefusesOnceARowReachesTerminal` stays
+green, and terminal-set drift test exists if new status is added.
+*Свидетельства записи:* `TaskRepository.java:81-104`; `TaskClaimServiceTest.java:242-258`.
+*Текущий статус:* считаю механизм идеальным; watch enum/JPQL duplication.
+*комментарий для Антигравити:* `TaskRepository.writeStatusUnlessTerminal`: считаю механизм идеальным.
 
-Первая половина — сжатие — сделана образцово, и её основание измерено, а не предположено: MVStore не
-возвращает страницы файлу, когда процесс умирает, не закрыв хранилище, а этот контейнер умирал так
-неоднократно (нехватка памяти, `wsl --shutdown`, зависший движок Docker); файл вырос до **1,84 ГБ**,
-перестал помещаться в страничный кэш, и отказы чтения положили конвейер. Отдельно верно решены два случая:
-любая ошибка сжатия **намеренно проглатывается** с названной ценой — «база, которая не сжалась, это
-медленная база; исключение из `@PreDestroy` прерывает остановку, а это ровно то состояние, которое и
-порождает разрастание»; и повторный вызов защищён сравнением-с-обменом, потому что 28 августа второй вызов
-нашёл хранилище уже закрытым и оставил предупреждение, читающееся как отказ, — «a warning that is not a
-problem teaches the reader to ignore warnings».
+**`TaskRepository.lockNextQueuedTask` / `lockNextQueuedTaskForProject`**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* claim/dispatch entry to queued work; reads candidates, checks dependency and file-scope conflict,
+locks one row with `FOR UPDATE SKIP LOCKED`.
+*Идеал:* a worker claims only active-project queued work it can perform, with no unresolved dependency and no
+active file-scope conflict.
+*Граница:* repository-level candidate selection and locking, not role capability definition.
+*Входы:* capable role tags or project id; current active tasks; dependency status; file scopes.
+*Выходы:* one locked task or empty.
+*Владельцы истины/состояния:* tasks table, project status and active-task query.
+*Инварианты:* only `queued`; only active projects; priority desc then created asc; unresolved dependency blocks.
+*Сильная текущая форма:* SQL lock plus repository conflict/dependency checks.
+*Слабая/неидеальная форма:* dependency is satisfied only by `TaskStatus.done`; `spike_completed` terminal is
+not enough by this predicate.
+*Что сделать для идеала:* do not broaden dependency satisfaction until downstream readiness semantics agree
+on what `spike_completed` means for real work.
+*Что не трогать:* do not remove `FOR UPDATE SKIP LOCKED` or active-project filter.
+*Опровержение:* two workers claim the same task, or a task with unfinished dependency is returned.
+*Критерий закрытия:* claim tests cover duplicate claim, dependency blocking and file-scope conflict.
+*Свидетельства записи:* `TaskRepository.java:113-180`.
+*Текущий статус:* частично сильный; семантика зависимостей намеренно консервативна.
+*комментарий для Антигравити:* `TaskRepository.lockNextQueuedTask`: не идеален, пока terminal-семантика
+зависимостей явно не пересмотрена; применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
 
-Вторая половина — стратегия миграций — `flyway.repair()` перед каждым `flyway.migrate()`. Замер:
-`src/main/resources/application.properties:55` содержит `spring.flyway.validate-on-migrate=false`. То есть
-сверка того, что применённая миграция не изменилась с тех пор, отключена **дважды и независимо**: настройкой
-и вызовом восстановления, переписывающим контрольные суммы истории. Файлов миграций 137, повторяемых
-(`R__`) — ноль (замер: `ls src/main/resources/db/migration | grep -c "^R__"`).
+**`InternalTaskController.updateTask`**
+*Философский паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
+*Связи:* internal administrative PATCH surface; reads/saves `TaskEntity`; guarded by API auth interceptor.
+*Идеал:* manual repair can adjust task metadata, but terminal status cannot be overwritten through the
+operator surface.
+*Граница:* manual correction API, not autonomous lifecycle engine.
+*Входы:* task id and patch fields.
+*Выходы:* saved task, `404`, `400`, or `409 CONFLICT`.
+*Владельцы истины/состояния:* task row and API authorization layer.
+*Инварианты:* terminal status conflict returns 409 and does not save; list endpoints are bounded.
+*Сильная текущая форма:* focused test covers terminal overwrite rejection.
+*Слабая/неидеальная форма:* direct field edits are broad; safety relies on operator auth and per-field guards.
+*Что сделать для идеала:* add field-specific tests before widening manual mutation; keep terminal conflict
+check before `task.setStatus`.
+*Что не трогать:* do not expose unbounded full-table writes or bypass terminal status guard.
+*Опровержение:* PATCH `done -> in_progress` returns OK or saves the task.
+*Критерий закрытия:* controller test remains green and mutating route stays operator-authorized.
+*Свидетельства записи:* `InternalTaskController.java:24-36`, `105-136`;
+`InternalTaskControllerTest.java:162-176`.
+*Текущий статус:* считаю механизм идеальным for terminal guard; broad manual-edit surface remains operator-only.
+*комментарий для Антигравити:* `InternalTaskController.updateTask`: считаю механизм идеальным.
 
-Следствие называю осторожно, потому что живую базу я не трогал: **изменение уже применённого файла миграции
-не может остановить запуск.** Это не значит, что такое изменение происходило; это значит, что если бы оно
-произошло, узнать об этом при запуске было бы нечем.
-*Философия:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008) — Альфред Тарский,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип семантической теории истины (T-схема: «P» истинно ⟺ P), anchor
-*The Concept of Truth in Formalized Languages — semantic conception of truth*. Сильная дословно: «проверка,
-способная **опровергнуть** утверждение, написана **до** принятия утверждения, и показано, что она краснеет
-при дефекте». Слабая: «зелёный тест рядом с изменением». Опровержение: «снять правку и прогнать тест; не
-покраснел — это не заслон». **Форма: отсутствует, а не слабая.** Проверка, способная опровергнуть
-утверждение «схема базы соответствует файлам», в этом механизме существует у Flyway и выключена в двух
-местах. Опровергать нечем не потому, что заслон слаб, а потому, что его выключили намеренно.
-Второй образец: `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (D010) — Дерек Парфит,
-`BARCAN-TAG-05 NECESSARY-IDENTITY`, принцип психологической непрерывности идентичности, anchor *Reasons and
-Persons — psychological continuity and identity*. Сильная дословно: «личность долгоживущей сущности
-сохраняется через снимки и миграции, есть свидетельство воспроизведения». Слабая: «идентификатор стабилен,
-пока никто не пересоздаёт». Опровержение: «восстановить состояние на прошлый момент; если сущность не
-опознаётся — снимка нет». **Форма: слабая.** Миграции есть и их 137, но их применённость не сверяется, а
-значит «состояние на прошлый момент» определено файлами лишь до тех пор, пока файлы не менялись, — и
-проверить это допущение механизм не даёт.
+**`TaskDispatchVerdict` и `TaskEntity` dispatch-verdict payload**
+*Философский паттерн:* `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`.
+*Связи:* dispatch-budget tests and ClaimService recovery read/write typed verdicts from task payload.
+*Идеал:* distinguish renewable capacity exhaustion, renewable unattributed provider refusal, terminal
+non-external budget exhaustion and no verdict.
+*Граница:* dispatch refusal meaning, not task lifecycle status itself.
+*Входы:* verdict enum or legacy `julesDispatchStatus`.
+*Выходы:* payload `dispatch_verdict`, resumability predicates.
+*Владельцы истины/состояния:* task payload is current truth; legacy status text only transitional fallback.
+*Инварианты:* only `UNTESTED_WITHIN_CAPACITY` and `UNATTRIBUTED_DISPATCH_REFUSAL` are resumable; NONE is not.
+*Сильная текущая форма:* tests cover verdict persistence/resumability in dispatch-budget suite.
+*Слабая/неидеальная форма:* legacy fallback still exists, so two encodings can answer until historical rows
+age out.
+*Что сделать для идеала:* migrate/remove legacy `julesDispatchStatus` fallback once all rows carry typed
+payload verdict.
+*Что не трогать:* do not infer resumability from `blocked` alone.
+*Опровержение:* a task blocked for `DISPATCH_BUDGET_EXHAUSTED` is treated as resumable.
+*Критерий закрытия:* dispatch-budget tests prove each verdict category and legacy fallback removal is safe.
+*Свидетельства записи:* `TaskDispatchVerdict.java:3-25`; `TaskEntity.java:206-247`;
+`DispatchAttemptBudgetTest.java:196-330`.
+*Текущий статус:* не идеален, пока legacy fallback нельзя безопасно убрать.
+*комментарий для Антигравити:* `TaskDispatchVerdict` и verdict в payload задачи: не идеален; применить
+`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, убрать legacy text fallback только после миграции строк.
+
+**`TaskEntity` acceptance criteria and delivery verdict predicates**
+*Философский паттерн:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+*Связи:* compiler writes `acceptance_criteria`; judgment/readiness/flow predicates read
+`acceptance_verdict`, verdict reason, delivery checks and quality-gate report.
+*Идеал:* a task's "done for delivery" claim is verified by its own acceptance criteria or by real delivery
+quality-gate checks that actually applied.
+*Граница:* delivery verification, not task-status terminality.
+*Входы:* payload acceptance criteria/verdict/reason, quality gate report and `qualityGatePassed`.
+*Выходы:* `deliveryRuledByCriteria`, `deliveryRefuted`, `isVerifiedForDelivery`,
+`deliveryChecksApplied`.
+*Владельцы истины/состояния:* task payload and quality-gate report.
+*Инварианты:* blank acceptance criteria refused; UNDECIDABLE/NOT_JUDGED are not delivery rulings; zero
+delivery checks means not verified by gate.
+*Сильная текущая форма:* entity comments encode the measured defect and predicate union.
+*Слабая/неидеальная форма:* нужен отдельный проверочный набор для всех веток judgement/readiness; источник
+показывает правило, но тестовая сетка должна закреплять его целиком.
+*Что сделать для идеала:* keep focused tests around blank criteria, satisfied/refuted/undecidable verdicts and
+zero applicable delivery checks.
+*Что не трогать:* do not treat `qualityGatePassed=true` from task-spec gate as delivery evidence.
+*Опровержение:* a task with no applicable implementation-result checks reports `isVerifiedForDelivery=true`.
+*Критерий закрытия:* predicate tests prove criteria/gate union and silence-as-zero behavior.
+*Свидетельства записи:* `TaskEntity.java:141-165`, `279-435`.
+*Текущий статус:* частично сильный; перед правкой кода нужен focused inventory тестов predicate-веток.
+*комментарий для Антигравити:* `TaskEntity` acceptance criteria and delivery verdict predicates: не идеален
+по инвентарю тестов; применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+
+**`TaskEntity` carrier marker**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* compiler/ProjectFlow/Jules carrier paths and repository carrier grouping use materialized `carrier`
+plus payload `taskType`.
+*Идеал:* carrier status is one materialized predicate derived from payload, so factory housekeeping tasks are
+not counted as product delivery tasks.
+*Граница:* factory carrier vs product task classification.
+*Входы:* payload `taskType`, materialized `carrier` column.
+*Выходы:* `isCarrier`, `carrierTaskType`, `isWishlistCompiler`, `isHousekeepingCarrier`.
+*Владельцы истины/состояния:* payload is semantic source; column is query mirror.
+*Инварианты:* setting payload recomputes carrier; `prePersist` backfills false carrier; role-specific callers
+use central predicates.
+*Сильная текущая форма:* single predicate family exists and repository uses materialized carrier for grouping.
+*Слабая/неидеальная форма:* mirror consistency depends on payload setter/prePersist and migrations for legacy
+rows.
+*Что сделать для идеала:* keep carrier-backfill candidates and tests before changing payload schema.
+*Что не трогать:* do not reintroduce ad hoc `payload.has("taskType")` copies in callers.
+*Опровержение:* task with carrier payload is counted in non-carrier status dashboard.
+*Критерий закрытия:* carrier predicate and repository counts agree on legacy and new rows.
+*Свидетельства записи:* `TaskEntity.java:46-51`, `306-367`; `TaskRepository.java:282-289`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `TaskEntity` carrier marker: считаю механизм идеальным.
+
+**`EneikProductionApplication.flywayMigrationStrategy`**
+*Философский паттерн:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+*Связи:* Spring Boot startup bean; reads `spring.flyway.repair-on-startup`; calls `flyway.migrate` and only
+calls `flyway.repair` when explicitly configured.
+*Идеал:* normal startup validates applied migrations and aborts on tampering; repair is an explicit operator
+choice, not automatic reconciliation.
+*Граница:* startup migration execution, not migration authoring.
+*Входы:* Flyway instance and `repair-on-startup` flag.
+*Выходы:* migrate call, optional repair-then-migrate.
+*Владельцы истины/состояния:* Flyway schema history and migration files.
+*Инварианты:* default strategy never repairs; explicit repair logs warning and runs before migrate.
+*Сильная текущая форма:* tests prove default no-repair, explicit repair order and tampered applied migration
+failure.
+*Слабая/неидеальная форма:* migration file `V113` still contains stale historical comment saying validation
+was off; текущее поведение уже исправлено.
+*Что сделать для идеала:* update stale migration comment in documentation-only or forward note if it confuses
+future workers; do not change applied migration file unless policy allows.
+*Что не трогать:* do not restore unconditional `flyway.repair()`.
+*Опровержение:* modifying an applied migration checksum still lets default startup pass.
+*Критерий закрытия:* `FlywayMigrationValidationTest` remains green.
+*Свидетельства записи:* `EneikProductionApplication.java:30-39`; `application.properties:53-56`;
+`FlywayMigrationValidationTest.java:27-132`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `EneikProductionApplication.flywayMigrationStrategy`: считаю механизм
+идеальным.
+
+**`application.properties` Flyway validation flags**
+*Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
+*Связи:* feeds Spring/Flyway startup; paired with strategy test.
+*Идеал:* `spring.flyway.validate-on-migrate=true` and `spring.flyway.repair-on-startup=false` by default.
+*Граница:* configuration default, not operator emergency repair.
+*Входы:* properties file and optional override.
+*Выходы:* Flyway validation behavior and repair flag.
+*Владельцы истины/состояния:* `application.properties` and environment override.
+*Инварианты:* default validates; default does not repair; explicit override required for repair.
+*Сильная текущая форма:* test reads classpath and main properties file.
+*Слабая/неидеальная форма:* none observed.
+*Что сделать для идеала:* keep a test on both classpath and source properties when packaging changes.
+*Что не трогать:* do not set validate-on-migrate false as a convenience for edited applied migrations.
+*Опровержение:* source properties default to `validate-on-migrate=false` or `repair-on-startup=true`.
+*Критерий закрытия:* properties test stays green.
+*Свидетельства записи:* `application.properties:53-56`; `FlywayMigrationValidationTest.java:43-64`.
+*Текущий статус:* считаю механизм идеальным.
+*комментарий для Антигравити:* `application.properties` Flyway validation flags: считаю механизм идеальным.
+
+**`EneikProductionApplication.compactH2StoreOnShutdown`**
+*Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
+*Связи:* `@PreDestroy` hook; optional DataSource; H2 metadata check; executes `SHUTDOWN COMPACT`.
+*Идеал:* normal shutdown compacts H2 MVStore once, skips non-H2, and never aborts shutdown because compaction
+failed.
+*Граница:* shutdown hygiene only, not runtime DB repair.
+*Входы:* DataSource, database product metadata.
+*Выходы:* H2 compaction command or safe skip/warn.
+*Владельцы истины/состояния:* H2 store file and shutdown hook.
+*Инварианты:* optional DataSource; one-shot atomic boolean; non-H2 skipped; exceptions swallowed with warning.
+*Сильная текущая форма:* source carries measured 1.84GB MVStore incident and protects double invocation.
+*Слабая/неидеальная форма:* no focused test found for non-H2 skip, double invocation, or swallowed failure.
+*Что сделать для идеала:* add tests/mocks for H2 execution once, non-H2 skip, null DataSource skip and
+exception swallowing.
+*Что не трогать:* do not throw from `@PreDestroy`; that risks the unclosed-store state this hook prevents.
+*Опровержение:* second shutdown attempt logs/executes another compact, or non-H2 datasource gets
+`SHUTDOWN COMPACT`.
+*Критерий закрытия:* shutdown compaction branches have focused tests.
+*Свидетельства записи:* `EneikProductionApplication.java:42-85`; grep found no test for
+`compactH2StoreOnShutdown`.
+*Текущий статус:* не идеален по тестовой защите, но форма реализации сильная.
+*комментарий для Антигравити:* `EneikProductionApplication.compactH2StoreOnShutdown`: не идеален по тестовой
+защите; применить `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и покрыть тестами ветки H2/non-H2/null/double/failure.
 
 ## Чем закрывается слой 2
 
-Замер остатка: **119 классов** без записи, разложенные по признаку «несёт ли что-нибудь, кроме хранения».
+Старый вывод этой секции про `flyway.repair()` и `validate-on-migrate=false` устарел: текущие источники
+показывают `spring.flyway.validate-on-migrate=true`, `spring.flyway.repair-on-startup=false`, и тесты, где
+измененная примененная миграция падает при default strategy. Поэтому главный дефект этой секции перенесен
+с поведения старта на устаревший исторический текст и отсутствующие тесты shutdown-hook.
 
-    DTO и записи-переносчики        55
-    прочее без поведения            42
-    репозитории-интерфейсы          10
-    ещё несут набор значений         6
-      PrReviewEntity, GateStage, GreetingStatus, Status, WishlistItemType, TaskStatus
+Остаточный классификатор "не механизм" остается правилом различения, а не счетчиком классов: DTO/result/helper
+types являются частями механизмов, пока сами не создают, не блокируют, не разрешают, не сохраняют, не стирают
+и не показывают фабричный факт. Записи о состоянии задачи и старте выше закрывают поведенческие части
+этой секции.
 
-`TaskStatus` описан выше. `WishlistItemType` уже разобран в разделе XXIб — он назван в общей строке с
-`WishlistItemStatus`, и признак записи, считающий только первое имя строки, его не видит; это оговорка к
-признаку, а не пропуск.
+## Комментарии для Антигравити по механизмам
 
-Основание не считать остальные механизмами — то же, по которому в перечень попали девять перечислений и не
-попали DTO: **удержать поток может лишь то, чьё изменение меняет поведение другого механизма.** У
-переносчика нет ни правила, ни закрытого набора: переименование его поля ломает сборку, но не решение.
-У репозитория-интерфейса поведение порождается Spring из имени метода и живёт в вызывающем. Это суждение,
-а не замер, и запись называет его суждением.
-
-Одна поправка к признаку разделения слоёв, третья по счёту: он не видел `@SpringBootApplication`, поэтому
-точка входа числилась классом без аннотации. Затрагивает один класс — тот, что описан выше.
+- `TaskStatus`: считаю механизм идеальным.
+- `TaskEntity.setStatus/isTerminal`: считаю механизм идеальным.
+- `TaskEntity.initializeStatus`: не идеален; применить `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, guard
+  production-вызовы только для initial `queued`.
+- `TaskRepository.compareAndSetStatus`: считаю механизм идеальным.
+- `TaskRepository.writeStatusUnlessTerminal`: считаю механизм идеальным.
+- `TaskRepository.lockNextQueuedTask`: не идеален, пока terminal-семантика зависимостей явно не пересмотрена;
+  применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `InternalTaskController.updateTask`: считаю механизм идеальным.
+- `TaskDispatchVerdict` и verdict в payload задачи: не идеален; применить
+  `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, убрать legacy text fallback только после миграции строк.
+- `TaskEntity` acceptance criteria and delivery verdict predicates: не идеален по инвентарю тестов; применить
+  `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+- `TaskEntity` carrier marker: считаю механизм идеальным.
+- `EneikProductionApplication.flywayMigrationStrategy`: считаю механизм идеальным.
+- `application.properties` Flyway validation flags: считаю механизм идеальным.
+- `EneikProductionApplication.compactH2StoreOnShutdown`: не идеален по тестовой защите; применить
+  `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и покрыть тестами ветки H2/non-H2/null/double/failure.
 
 # XXII. Миграции: запреты, которые исполняет база
 
