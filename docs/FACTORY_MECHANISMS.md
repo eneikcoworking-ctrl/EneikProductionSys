@@ -1870,88 +1870,169 @@ callers/consumers grep: `ContinuousOrchestrationService.java:285`, `ProjectContr
 
 # XII. Журнал, память, санитария
 
-**`LogScope`**, **`ScopedBufferAppender`**, **`LogScopeBuffer`**, **`DurableProjectLogAppender`**,
-**`ProjectLogFlushQueue`**, **`ProjectEventLogService`**, **`ProjectEventLogRetentionService`** — разметка
-всякой строки областью, кольцевой буфер, долговечный журнал проекта и его ограничение по смыслу.
-*Связи:* `LogScope` **вызывают 13 механизмов** — самая широкая связь в системе; долговечная часть идёт от
-логбэка и по расписанию.
-*Ценность:* заводской шум не имеет права протечь в контекст, который читают роли проекта.
-*Комментарий:* **периферия; лучшее разделение областей во всей системе.** Это тот же закон 2 (носитель
-отдельно от продукта), применённый к **записям**. Три решения образцовы: точка исполнения запрета названа
-явно; ограничение журнала **по смыслу, а не по возрасту** — из непринятого проекта не удаляется ничего,
-сколько бы лет ни прошло, а удаление по возрасту было бы категориальной ошибкой, где время принято за
-незначимость; очередь сброса ограничена, чтобы отказ базы вырождался в «недавняя история потеряна», а не в
-падение.
-*Философия:* `PROHIBITION_AS_CODE` (D006) — **сильная**. Опровержение: найти заводскую строку в проектном
-буфере.
+**Имена механизма или семейства:** `LogScope.system/project/clear`, `ScopedBufferAppender.append`,
+`LogScopeBuffer.append/recent`, `DurableProjectLogAppender.append`, `ProjectLogFlushQueue.offer/drain`,
+`ProjectEventLogService.flush/recent/since`,
+`ProjectEventLogRetentionService.enforceRetention/deleteBefore/trimToCeiling`,
+`SystemSettingsService.listSettings/toDto/effectiveValue/effectiveBoolean/save/reportValuelessBooleanFlags/recordSettingMutationAudit`,
+`ProjectTreeService.getTree/trunkAnnotations`, `IdleProjectAdviceService.generateIdleProjectAdvice`,
+`RoleAdviceLoopService.afterTaskComplete`, `RoleCapabilityLoader.loadRules/loadRawCharter`,
+`RoleRulesParser.parse/extractForbidden/extractSection`, `JulesRoleCapabilities.canonicalCapabilities/isKnownRole`,
+`TaskTitleBuilder.displayTitle/build/enforceTwoOrThreeWords`,
+`ProjectAuditPipelineService.getStage/startPipeline/executeSequentialAuditPipeline`.
 
-**`SystemSettingsService`** — настройки, база выше конфигурации.
-*Связи:* вызывающих в коде почти нет — идёт от контроллера; читают многие через `effectiveValue`.
-*Ценность:* умеет докладывать о **булевых флагах без значения** — настройка, которую никто не читает, есть муда.
-*Комментарий:* **ядро по последствиям** — настройка может остановить поток, что сегодня и произошло. И вот
-измеренный изъян: **настройки пишет одна строка кода, и только `system_stall_status`**. Всё остальное — включая
-привязку компилятора — меняется снаружи и **не оставляет следа о том, кто и когда**.
-*Философия:* `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` (D007) — Джон Сёрл, `BARCAN-TAG-12
-SOCIAL-CONTRACT`, статусные функции и институциональные факты («X считается Y в контексте C»), anchor
-*Speech Acts / The Construction of Social Reality*. Сильная форма дословно: «статус создаётся **правилом**, и
-есть **запись аудита** о том, что правило применилось». Слабая: «статус присваивается в коде там, где
-показалось уместным». Опровержение образца: «назвать правило, создающее статус; если названо место, а не
-правило — регистра нет».
+**Философский паттерн:** журнал держится на `GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE` (D006):
+запрещённый заводской шум должен иметь исполняемую точку отказа, а не соглашение. Настройки держатся на
+`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` (D007): настройка становится институциональным фактом только через
+объявленное правило и аудит его применения. Живое дерево держится на `DZHUDA_PERL_13_SUPERVENIENCE_WATCH`
+(D013): видимый узел обязан объясняться нижним фактом. Сигналы советов и аудит-конвейер держатся на
+`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011): сигнал годен только если меняет следующее действие или
+предотвращает ошибочное действие. Уставы ролей и заголовки держатся на `GARET_EVANS_01_RIGID_API_REFERENT`
+(D003): публичный идентификатор должен оставаться привязан к тому же поведению. Общий фон:
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` и `ACP-061`.
 
-*Форма: **слабая**, и замером 2026-09-06 она разложена надвое — половина держится, половина отсутствует.*
+**Связи:** `LogScope` пишет MDC-область, `ScopedBufferAppender` и `DurableProjectLogAppender` читают её из
+Logback-события; первый пополняет `LogScopeBuffer`, второй кладёт запись в `ProjectLogFlushQueue`, а
+`ProjectEventLogService.flush` раз в 5 секунд превращает очередь в строки `project_event_log`.
+`ProjectEventLogRetentionService` читает проекты и журнал, удаляет только через `ProjectEventLogRepository`.
+`SystemSettingsService` идёт от HTTP-поверхности настроек и от всех читателей `effectiveValue/effectiveBoolean`,
+пишет `system_settings` и аудит в `defect_journal`. `ProjectTreeService` вызывается контроллером дерева,
+читает источники readiness, feature, task, session, wishlist, thread, SixSigma и Kaizen и не создаёт новый владелец
+факта. `IdleProjectAdviceService` срабатывает расписанием по активным проектам; `RoleAdviceLoopService`
+вызывается из `AutoMergeService` после завершения задачи. `RoleCapabilityLoader` обслуживает контроллер ролей,
+отправку Jules и контекст Gemini; `TaskTitleBuilder` вызывается dashboard, Jules API/dispatch, compiler,
+project flow, operational context и delivery reality-поверхностями. `ProjectAuditPipelineService` запускается
+оркестрационным тиком, зовёт `ProjectFlowService.checkAndDispatchCoverageAudits` и `DesignAssetService`.
 
-**Правило есть и применяется.** `save(key, value)` начинается с `requireDefinition(key)` и
-`rejectIfMalformed`: неизвестный ключ не пройдёт. Проверено опытом снаружи —
-`PUT /api/settings {"key":"kljuch_kotorogo_net"}` даёт `HTTP 400 {"error":"unknown setting key"}`. Это ровно
-сёрловское «X считается Y в контексте C»: значение становится настройкой не потому, что его записали, а
-потому, что оно прошло определение.
+**Идеальная форма:** строка лога попадает в проектный контекст только если она явно помечена `PROJECT:{id}`;
+долговечный журнал переживает деплой, но не может уронить фабрику; очистка журнала удаляет по смыслу проекта, а не
+по голому возрасту. Настройка принимается только как известный ключ, с проверкой формы значения, источником
+effective value и audit-записью при изменении. Живое дерево только проецирует уже существующие факты. Совет
+может называться советом только если видно, какое следующее действие он изменил; иначе это должен быть честно
+названный наблюдающий предохранитель. Устав роли должен грузиться из канонического файла и при необходимости
+передаваться сырым текстом, потому что краткий parser заведомо теряет часть смысла. Заголовок должен резаться в одной
+точке перед внешней системой. Audit pipeline должен содержать только стадии, которые выполняют проверку или
+передают проверяемый результат дальше.
 
-**Записи о применении правила нет.** Тело `save` — один `UPDATE system_settings SET "value" = ?,
-updated_at = CURRENT_TIMESTAMP`, и при нуле затронутых строк `INSERT`. Ни строки в журнал, ни записи о том,
-**кто** сменил, **откуда** и **каково было прежнее значение**. Единственный след — `updated_at`, то есть
-**время без действующего лица**.
+**Граница:** это семейство имеет право размечать, сохранять, показывать, ограничивать и объяснять факты о
+работе фабрики. Оно не имеет права превращать системный шум в проектный факт, делать новую продуктовую
+работу из простоя, выдумывать статус настройки без зарегистрированного ключа, считать дерево новым
+источником истины, менять устав роли по ключевым словам parser-а или добавлять стадию конвейера только ради
+лога.
 
-*Опыт, поставленный вместо рассуждения.* Записал настройке `project_event_log_enabled` её же значение:
-`HTTP 200`, журнал не вырос **ни на строку**. Две контрольные пробы, чтобы ноль не оказался неисправностью
-прибора: неизвестный ключ отвергается `400` — путь исполняется и различает; журнал за 70 секунд вырос на 16
-строк — прибор видит записи, и ни одна из них не про настройки.
+**Входы:** MDC `scope`, событие Logback, project id, уровень лога, очередь сброса, `project_event_log_enabled`,
+`system_settings`, свойства окружения, HTTP-команда настройки и необязательная причина, тег роли, путь к файлу
+правил роли, markdown устава и mtime, заголовок/payload/описание задачи, строки project/task/wishlist/session/
+thread, проекции SixSigma и Kaizen, id активного проекта, открытые falsification-wishlist и результат Stitch.
 
-*Что чинить, и это меньше, чем «завести регистр».* Правило строить не нужно, оно есть. Нужна **запись о его
-применении**: ключ, прежнее и новое значение, время, источник запроса. Одна строка в журнал дефектов или в
-`project_event_log` закрывает половину, которой недостаёт, и делает выполнимым пункт 21.
+**Выходы:** свежий in-memory-срез лога, записи очереди долговечного журнала, строки `project_event_log`,
+ограниченные удаления retention, `SettingDto`, строки институционального аудита в `defect_journal`,
+startup-предупреждения по boolean-флагам без значения, `ProjectTreeDto`, observation-логи по idle/completed
+задачам, `RoleRules`, сырой текст устава, канонические capabilities ролей, внешний заголовок задачи из двух
+или трёх слов, смена стадии audit pipeline, dispatch coverage audit и один ограниченный Stitch design request.
 
-*Опровержение, назначенное вперёд:* сменить настройку и найти запись, называющую действующее лицо. Найдётся —
-форма становится сильной.
+**Владельцы истины и состояния:** MDC владеет текущей областью лога; `LogScopeBuffer` владеет временным recent
+context; `ProjectLogFlushQueue` владеет короткой очередью передачи; `project_event_log` владеет долговечной
+историей проекта; `system_settings`, `SystemSettingsService.DEFINITIONS` и свойства окружения владеют истиной
+настроек; `defect_journal` владеет свидетельством аудита; строки ролей и файлы уставов владеют правилами ролей;
+payload задачи и тег роли кормят выбор заголовка, но `TaskTitleBuilder` владеет нормализацией внешнего
+заголовка; таблицы feature/task/session/wishlist/thread и сервисы SixSigma/Kaizen владеют фактами дерева;
+`ProjectAuditPipelineService.projectStages` владеет in-memory-стадией аудита.
 
-**`ProjectTreeService`** — «живое дерево»: **только новая проекция уже существующих вычислений**, без единого
-нового.
-*Связи:* вызывающих нет — от контроллера; зовёт 7 механизмов.
-*Ценность:* вид, который считает своё, становится вторым источником истины — помехой по определению.
-*Комментарий:* **периферия; образцовое самоограничение.**
-*Философия:* `SUPERVENIENCE_WATCH` (D013) — **сильная**. Опровержение: найти в нём собственное вычисление.
+**Инварианты:** строки без `PROJECT:{id}` и строки `SYSTEM` не попадают в проектные буферы или долговечный
+project log; DEBUG/TRACE не попадают в долговечную историю проекта; переполнение очереди превращается в потерю
+недавней истории, а не в падение процесса; выключенный флаг долговечного лога очищает очередь, а не растит её;
+active/frozen-проекты держат историю, кроме per-project ceiling; accepted-проект можно чистить только после
+grace period; неизвестный ключ настройки и malformed value падают до записи; изменение настройки оставляет
+institutional audit row с rule, caller, reason и masked secrets; tree projection не изобретает lower-level fact;
+advice-log нельзя считать delivered work; raw charter роли доступен даже когда parsed fields теряют информацию;
+title trimming остаётся централизованным; pipeline stages без реальной проверки отсутствуют.
 
-**`IdleProjectAdviceService`**, **`RoleAdviceLoopService`** — советы при простое.
-*Связи:* вызывающих нет.
-*Ценность:* проект, стоящий без работы, получает названную причину и предложение, а не молчание.
-*Комментарий:* **периферия.** Вопрос о читателе открыт: совет, который никто не исполняет, — муда, как бы верен
-он ни был.
-*Философия:* `TELEOSEMANTIC_FEEDBACK` (D011) — **не мерено**. Опровержение: назвать действие, изменённое советом.
+**Сильная форма сейчас:** область лога исполняется в обоих appenders; in-memory and durable logs ограничены;
+durable flush очищает очередь даже при выключенной persistence; retention удаляет по смыслу и держит
+per-project ceiling. У настроек теперь есть половина, которую старый текст считал отсутствующей: `save`
+пишет `SYSTEM_SETTING_MUTATION_RULE`, caller, reason, old/new values and masked secrets при реальном изменении.
+Дерево read-only и переиспользует существующие readiness/feature/session/wishlist/thread/SixSigma/Kaizen
+факты. Role loading хранит и parsed fields, и raw markdown, with cache invalidation by file mtime; parser
+обрабатывает known Forbidden-section shapes; canonical role capability list имеет одного владельца;
+title selection/trimming централизован. Audit pipeline намеренно свёрнут до `COVERAGE_AUDIT` and
+`STITCH_DESIGN`; empty Stitch briefs он пропускает вместо отправки unrelated work.
 
-**`RoleCapabilityLoader`**, **`RoleRulesParser`**, **`JulesRoleCapabilities`**, **`TaskTitleBuilder`** —
-загрузка уставов, разбор правил, канонические возможности ролей, заголовки.
-*Связи:* `TaskTitleBuilder` вызывают 7 механизмов.
-*Ценность:* роль без загруженного устава не знает своих обязанностей, а заголовок сверх меры внешняя система отвергает.
-*Комментарий:* **ядро** — `JulesRoleCapabilities` решает, что роль вообще умеет. `TaskTitleBuilder` мелочь, но
-показательная: ограничение внешней системы вынесено в одну точку, а не размазано по вызовам.
-*Философия:* `RIGID_API_REFERENT` (D003) — **сильная**. Опровержение: найти второе место, режущее заголовок.
+**Слабая/неидеальная форма сейчас:** `IdleProjectAdviceService` и `RoleAdviceLoopService` пока пишут только
+observation log. В исходниках не назван долговечный advice record, потребитель или downstream decision, который
+меняется этим советом. Поэтому эти два механизма не идеальны именно как advice-механизмы, хотя их запрет на
+speculative work правилен.
 
-**`ProjectAuditPipelineService`** — конвейер аудита, свёрнутый с пяти стадий до двух.
-*Связи:* вызывает общий тик; зовёт 4.
-*Ценность:* две снятые стадии были чистыми «записать и пойти дальше» — они **ничего не проверяли**.
-*Комментарий:* **периферия; лучший пример вычистки муды в коде.** Самая опасная разновидность муды: стадия
-существует, лог пишется, отчёт зелен, работы нет. Третья снятая была бы **помехой**: настоящий философский трек
-идёт своим кроном, и вторая точка отправки конкурировала бы с ним за один предмет.
-*Философия:* `TELEOSEMANTIC_FEEDBACK` (D011) — **сильная**. Опровержение: найти стадию без проверки.
+**Что сделать для идеала:** для log scope, durable project log, retention, settings audit, tree projection,
+role charter loading, role capability list, title builder and audit-pipeline sanitation ничего кодить не надо,
+пока не воспроизведено их опровержение ниже. Для `IdleProjectAdviceService` и `RoleAdviceLoopService` после
+явного разрешения на код нужно либо направить наблюдение в видимый/долговечный факт совета, который читает
+следующий planning/operator gate, либо переименовать и зафиксировать механизм как только наблюдающий
+предохранитель, без претензии на совет. Нельзя создавать wishlist work из простоя: источником новой
+продуктовой работы остаётся falsification.
+
+**Что не трогать:** не ослаблять фильтр `PROJECT:{id}`, не заставлять appender-потоки ждать database IO, не
+останавливать draining очереди при выключенной persistence, не заменять retention-семантику age-only cleanup,
+не обходить `requireDefinition/rejectIfMalformed`, не убирать setting mutation audit, не позволять
+`ProjectTreeService` вычислять новую product truth, не заставлять Jules зависеть от lossy parsed role fields,
+когда нужен raw charter text, не добавлять вторую точку обрезки заголовка и не возвращать pipeline stages,
+которые только логируют и переводят указатель дальше.
+
+**Опровержение:** строка `SYSTEM` или строка без scope появляется в project buffer или durable project log;
+смена настройки обновляет `system_settings` без `INSTITUTIONAL_AUDIT` evidence; неизвестный ключ успешно
+записывается; `ProjectTreeService` создаёт product fact без опоры на перечисленные источники; idle/completed
+task advice message не имеет видимого потребителя и не меняет downstream action; role dispatch теряет raw
+charter content из-за перехода только на parsed fields; второй caller сам режет Jules titles; pipeline stage
+пишет success без проверки, результата или downstream consumer.
+
+**Критерий закрытия:** этот раздел завершён как запись механизма, когда у каждого названного механизма есть
+комментарий для Антигравити по механизму, сильная/слабая форма, граница, свидетельство и опровержение.
+Реализация полностью идеальна только после того, как два advice-механизма получат доказанный потребитель/
+изменённое действие или будут формально названы только наблюдающими предохранителями.
+
+**Свидетельства записи:** `git status --short`; `git log -1 --oneline`; process check for Claude/Antigravity;
+`sed -n '1,80p' docs/HOW_TO_READ_BEFORE_FIXING.md`; `sed -n '1871,1957p' docs/FACTORY_MECHANISMS.md`;
+`grep -n` rows for `GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE`,
+`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, `DZHUDA_PERL_13_SUPERVENIENCE_WATCH`,
+`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `GARET_EVANS_01_RIGID_API_REFERENT`,
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`;
+`nl -ba` source ranges for `LogScope.java:7-31`, `ScopedBufferAppender.java:8-29`,
+`LogScopeBuffer.java:9-45`, `DurableProjectLogAppender.java:10-42`, `ProjectLogFlushQueue.java:9-39`,
+`ProjectEventLogService.java:18-82`, `ProjectEventLogRetentionService.java:20-135`,
+`ProjectEventLogRepository.java:16-33`, `SystemSettingsService.java:42-57`, `60-80`, `180-238`,
+`450-475`, `ProjectTreeService.java:32-152`, `IdleProjectAdviceService.java:32-60`,
+`RoleAdviceLoopService.java:14-18`, `RoleCapabilityLoader.java:30-69`, `RoleRulesParser.java:14-86`,
+`JulesRoleCapabilities.java:5-33`, `TaskTitleBuilder.java:28-165`,
+`ProjectAuditPipelineService.java:23-199`; caller grep for `afterTaskComplete`,
+`IdleProjectAdviceService`, `TaskTitleBuilder`, `JulesRoleCapabilities`, `loadRules` and `loadRawCharter`.
+
+**Текущий статус:** частично силён. Все названные механизмы, кроме `IdleProjectAdviceService` и
+`RoleAdviceLoopService`, идеальны по текущему source evidence в границе этого раздела. Два advice-механизма
+остаются неидеальными, пока у их сигнала нет названного потребителя/изменённого действия или честной
+переклассификации в только наблюдающий предохранитель.
+
+**Комментарии для Антигравити по механизмам:**
+
+- `LogScope.system/project/clear`: считаю механизм идеальным
+- `ScopedBufferAppender.append`: считаю механизм идеальным
+- `LogScopeBuffer.append/recent`: считаю механизм идеальным
+- `DurableProjectLogAppender.append`: считаю механизм идеальным
+- `ProjectLogFlushQueue.offer/drain`: считаю механизм идеальным
+- `ProjectEventLogService.flush/recent/since`: считаю механизм идеальным
+- `ProjectEventLogRetentionService.enforceRetention/deleteBefore/trimToCeiling`: считаю механизм идеальным
+- `SystemSettingsService.listSettings/toDto/effectiveValue/effectiveBoolean`: считаю механизм идеальным
+- `SystemSettingsService.reportValuelessBooleanFlags`: считаю механизм идеальным
+- `SystemSettingsService.save/recordSettingMutationAudit`: считаю механизм идеальным
+- `ProjectTreeService.getTree/trunkAnnotations`: считаю механизм идеальным
+- `IdleProjectAdviceService.generateIdleProjectAdvice`: механизм не идеален как advice; применить `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, сохранить запрет на speculative wishlist и либо доказать долговечного потребителя/изменённое действие, либо переименовать и зафиксировать как только наблюдающий предохранитель.
+- `RoleAdviceLoopService.afterTaskComplete`: механизм не идеален как advice; применить `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, сохранить запрет на создание wishlist work и доказать изменённое следующее действие либо честно снять claim advice.
+- `RoleCapabilityLoader.loadRules/loadRawCharter`: считаю механизм идеальным
+- `RoleRulesParser.parse/extractForbidden/extractSection`: считаю механизм идеальным
+- `JulesRoleCapabilities.canonicalCapabilities/isKnownRole`: считаю механизм идеальным
+- `TaskTitleBuilder.displayTitle/build/enforceTwoOrThreeWords`: считаю механизм идеальным
+- `ProjectAuditPipelineService.getStage/startPipeline/executeSequentialAuditPipeline`: считаю механизм идеальным
+
+**комментарий для Антигравити:** смотри комментарии по механизмам выше; общий комментарий семейства не заменяет комментарий к каждому механизму.
 
 ---
 

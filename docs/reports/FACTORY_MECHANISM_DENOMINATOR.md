@@ -1639,3 +1639,40 @@ Remaining non-ideal points for this section: none identified from current source
 changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XLIV; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Log Memory Sanitation
+
+Status: documentation-only strict rewrite for section XII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit per-mechanism comments:
+`LogScope.system/project/clear`, `ScopedBufferAppender.append`, `LogScopeBuffer.append/recent`,
+`DurableProjectLogAppender.append`, `ProjectLogFlushQueue.offer/drain`,
+`ProjectEventLogService.flush/recent/since`,
+`ProjectEventLogRetentionService.enforceRetention/deleteBefore/trimToCeiling`,
+`SystemSettingsService.listSettings/toDto/effectiveValue/effectiveBoolean`,
+`SystemSettingsService.reportValuelessBooleanFlags`, `SystemSettingsService.save/recordSettingMutationAudit`,
+`ProjectTreeService.getTree/trunkAnnotations`, `IdleProjectAdviceService.generateIdleProjectAdvice`,
+`RoleAdviceLoopService.afterTaskComplete`, `RoleCapabilityLoader.loadRules/loadRawCharter`,
+`RoleRulesParser.parse/extractForbidden/extractSection`, `JulesRoleCapabilities.canonicalCapabilities/isKnownRole`,
+`TaskTitleBuilder.displayTitle/build/enforceTwoOrThreeWords`, and
+`ProjectAuditPipelineService.getStage/startPipeline/executeSequentialAuditPipeline`.
+
+Denominator effect: section XII previously lacked a visible Antigravity comment, so the visible-section
+denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 45 |
+| Sections still missing visible `комментарий для Антигравити` | 18 |
+
+This is a visible-section denominator, not a mechanism count and not a full count of historical family-level
+comments that still lack per-mechanism detail.
+
+Remaining non-ideal points for this section: `IdleProjectAdviceService.generateIdleProjectAdvice` and
+`RoleAdviceLoopService.afterTaskComplete` still have no named durable consumer/action proof and therefore remain
+non-ideal as advice mechanisms. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XII; family summary is not a substitute.
