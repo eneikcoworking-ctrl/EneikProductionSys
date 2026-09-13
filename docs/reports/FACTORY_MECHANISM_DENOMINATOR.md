@@ -1906,3 +1906,31 @@ content-hash skip lacks equivalence/golden evidence in this record; `depends_on`
 focused proof; string settings must not be measured from boolean `enabled`. No code was changed in this tact.
 
 комментарий для Антигравити: `V55__create_context_chunks.sql` / `GeminiContextService` RAG retrieval не идеален, apply `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE`; `V62__add_context_chunk_content_hash.sql` не идеален, apply `ALONZO_CHERCH_01_SUBSTITUTION_ORACLE`; `V25__add_depends_on_and_hotspots.sql` не идеален, apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; `gemini_context_learning_enabled`: считаю механизм идеальным; `verdict_gating_project_slug` measurement не идеален, apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; `OpsAuditorService` no-action context consumer не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+
+## 2026-09-13 Codex Strict Record: Manual Script Layer
+
+Status: documentation-only strict record for section XXIV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `generate_philosopher_patterns.py`,
+`append_role_logic.py`, `audit_pr.py`, `deploy.sh`, `linear_sync.py`, `linear_webhook.py`,
+`check_system_drift.ps1`, `generate_report.py`, `mock_test_runner.py`, `reset_project_data.sql`, and
+`scripts/modules/*`.
+
+Denominator effect: section XXIV previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 46 |
+| Sections still missing visible `комментарий для Антигравити` | 17 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: `append_role_logic.py` lacks explicit regenerate/validate
+handoff into the generated corpus, and `mock_test_runner.py` remains a false-evidence risk because it prints
+PASS-like output without real integration assertions. No code was changed in this tact.
+
+комментарий для Антигравити: `generate_philosopher_patterns.py`: считаю механизм идеальным; `append_role_logic.py`: не идеален, apply `GARET_EVANS_19_BOUNDARY_TOPOLOGY`; `audit_pr.py`: считаю механизм идеальным; `deploy.sh`: считаю механизм идеальным; `linear_sync.py`: считаю механизм идеальным; `linear_webhook.py`: считаю механизм идеальным; `check_system_drift.ps1`: считаю механизм идеальным; `generate_report.py`: считаю механизм идеальным; `mock_test_runner.py`: не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; `reset_project_data.sql`: считаю механизм идеальным; `scripts/modules/*`: считаю механизм идеальным.
