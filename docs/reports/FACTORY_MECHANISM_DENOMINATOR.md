@@ -1575,3 +1575,36 @@ Remaining non-ideal points for this section: focused MVC/integration boundary te
 and successful-mutation audit evidence were not added or run in this tact. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXVIII; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: TOC Rope Comments
+
+Status: documentation-only per-mechanism correction for section XLIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit per-mechanism comments:
+`TocOptimizer.evaluateConstraintsAndDbr`, `TocOptimizer.shouldAdmit`, `TocOptimizer.computeRecommendation`,
+`TocOptimizer.setMaxBufferCapacity/configured maxBufferCapacity`, `TocSentinelService.startExecution`,
+`TocSentinelService.enterStep/exitStep/endExecution`, `TocSentinelService.getDbrStatus/refreshDbrStatus`,
+`TocExecutionGraph`, `TocNode`, `TocToken`, `DbrStatus`, `TocSentinelController` read/event surfaces,
+`AutoMergeService.processAutoMerge`, `KaizenService` DBR buffer defect emission,
+`SixSigmaAuditService` TOC metrics projection, and `SystemAuditController` TOC audit projection.
+
+Denominator effect: this section already had a visible Antigravity comment, so the visible-comment denominator
+does not change. This tact removes the family-level-only weakness for section XLIII by adding per-mechanism
+comments. It does not claim that all older visible sections already satisfy the per-mechanism rule.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 44 |
+| Sections still missing visible `комментарий для Антигравити` | 19 |
+
+This is a visible-section denominator, not a mechanism count and not a full count of historical family-level
+comments that still lack per-mechanism detail.
+
+Remaining non-ideal points for this section: built-in factory-flow instrumentation, derived/explicit capacity
+policy evidence, and controlled production-path throttle/bypass proof were not added or run in this tact. No
+code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XLIII; family summary is not a substitute.

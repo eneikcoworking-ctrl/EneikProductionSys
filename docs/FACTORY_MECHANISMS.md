@@ -10552,9 +10552,13 @@ correct; current Java production usage of `cacheKey` is not proven in this tact.
 
 ## Семейство: TOC DBR admission rope and flow-control telemetry
 
-**Имена механизмов и частей:** `TocOptimizer`, `TocSentinelService`, `TocExecutionGraph`, `TocNode`,
-`TocToken`, `DbrStatus`, `TocSentinelController`, `AutoMergeService.processAutoMerge`,
-`KaizenService`, `SixSigmaAuditService`, `SystemAuditController`.
+**Имена механизма или семейства:** `TocOptimizer.evaluateConstraintsAndDbr`,
+`TocOptimizer.shouldAdmit`, `TocOptimizer.computeRecommendation`,
+`TocOptimizer.setMaxBufferCapacity/configured maxBufferCapacity`, `TocSentinelService.startExecution`,
+`TocSentinelService.enterStep/exitStep/endExecution`, `TocSentinelService.getDbrStatus/refreshDbrStatus`,
+`TocExecutionGraph`, `TocNode`, `TocToken`, `DbrStatus`, `TocSentinelController` read/event surfaces,
+`AutoMergeService.processAutoMerge`, `KaizenService` DBR buffer defect emission,
+`SixSigmaAuditService` TOC metrics projection, and `SystemAuditController` TOC audit projection.
 
 **Философский паттерн:** primary `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, defect `D008 False green`:
 the rope is only a real limiter if a reachable counterexample can make admission turn red. Supporting patterns:
@@ -10656,14 +10660,37 @@ caller grep: `startExecution`, `enterStep`, `exitStep` and `endExecution` show t
 **Текущий статус:** не идеален: engine-level rope is testable and no longer falsely optimal, but built-in
 factory-flow instrumentation and buffer derivation are not yet sufficient to call the release limiter ideal.
 
-**комментарий для Антигравити:** механизм не идеален. Применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
-`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `ALONZO_CHERCH_21_DERIVED_CUTOFF`,
-`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`,
-`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`: не правь `TocOptimizer` как локальную константу
-буфера; сначала докажи whole release-control contract для реального factory flow. Сохрани cached `getDbrStatus`,
-explicit `refreshDbrStatus`, low-priority throttle, high-priority bypass and single-stage "Flow unmeasured".
-Править надо разметку реальных стадий/очередей или вывести capacity из наблюдаемой пропускной способности,
-потом добавить пробу, где built-in production path дает и `DBR_THROTTLE`, и `DBR_BYPASS`.
+**Комментарии для Антигравити по механизмам:**
+- `TocOptimizer.evaluateConstraintsAndDbr`: считаю механизм идеальным
+- `TocOptimizer.shouldAdmit`: считаю механизм идеальным
+- `TocOptimizer.computeRecommendation`: считаю механизм идеальным
+- `TocOptimizer.setMaxBufferCapacity/configured maxBufferCapacity`: механизм не идеален как factory-capacity
+  policy; do not lower the buffer just to make logs appear. Either derive capacity from observed safe
+  concurrency or record the explicit operator decision and source. Philosophy:
+  `ALONZO_CHERCH_21_DERIVED_CUTOFF`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
+  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `TocSentinelService.startExecution`: считаю механизм идеальным
+- `TocSentinelService.enterStep/exitStep/endExecution`: считаю механизм идеальным
+- `TocSentinelService.getDbrStatus/refreshDbrStatus`: считаю механизм идеальным
+- `TocExecutionGraph`: считаю механизм идеальным
+- `TocNode`: считаю механизм идеальным
+- `TocToken`: считаю механизм идеальным
+- `DbrStatus`: считаю механизм идеальным
+- `TocSentinelController` read/event surfaces: механизм не идеален only as proof of factory flow; preserve
+  cached reads, event `429` throttling and operator ingress, but do not treat HTTP event instrumentation as proof
+  that built-in factory stages are measured. Philosophy: `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
+  `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
+  `ACP-061 Hoare Triple Review`.
+- `AutoMergeService.processAutoMerge`: механизм не идеален as the built-in production path; it currently names
+  only `AUTOMERGE_CYCLE` / `AUTOMERGE_PROCESSING`. Instrument real release stages or queues, then prove one
+  controlled `DBR_THROTTLE` and one `DBR_BYPASS` without breaking the existing throttled-token early return.
+  Philosophy: `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`,
+  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `KaizenService` DBR buffer defect emission: считаю механизм идеальным
+- `SixSigmaAuditService` TOC metrics projection: считаю механизм идеальным
+- `SystemAuditController` TOC audit projection: считаю механизм идеальным
+
+**комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
 # XLIV. Очистка журнала проекта: предел настоящий, частота выведена из роста
 
