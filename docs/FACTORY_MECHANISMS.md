@@ -9637,7 +9637,10 @@ current source/test contract; only test execution remains for fresh operational 
 
 # XXXVII. Сторож ТОС: чтение, которое пересчитывает
 
-**`TocSentinelService`**, **`TocExecutionGraph`**, **`TocAnomalyDetector`**, **`TocOptimizer`**,
+*Имена механизма или семейства:* **`TocSentinelService.startExecution/startExecutionWithId`**,
+**`TocSentinelService.enterStep/exitStep`**, **`TocSentinelService.periodicWatchdog`**,
+**`TocSentinelService.getDbrStatus/refreshDbrStatus`**, **`TocExecutionGraph`**,
+**`TocAnomalyDetector`**, **`TocOptimizer.evaluateConstraintsAndDbr/getLatestDbrStatus/shouldAdmit`**,
 **`TocSentinelController`**, **`TocNode`**, **`TocEdge`**, **`TocToken`** — семейство TOC sentinel runtime:
 execution-token telemetry, graph state, anomaly detection, primary-constraint calculation and DBR admission.
 
@@ -9731,14 +9734,31 @@ single-stage unmeasured DBR recommendation.
 *Текущий статус:* strict family record filled. Current source/test contract is strong for the old TOC
 observer defects; no code change is advised before fresh test/live evidence.
 
-*комментарий для Антигравити:* не кодь старые TOC defects as if still open: `getDbrStatus()` is currently a
-cached pure read, leaky component getters are gone, and cadence is dynamically derived. First verify
-`TocSentinelServiceTest`, `TocOptimizerTest` and `TocSentinelControllerTest`; preserve read/refresh
-separation, facade ownership and dynamic cadence. Philosophy:
-`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`,
-`ALONZO_CHERCH_21_DERIVED_CUTOFF`, common background `ACP-061 Hoare Triple Review`.
+**комментарий для Антигравити по механизмам:**
+- `TocSentinelService.startExecution/startExecutionWithId`: считаю механизм идеальным
+- `TocSentinelService.enterStep/exitStep`: считаю механизм идеальным
+- `TocSentinelService.periodicWatchdog`: считаю механизм идеальным
+- `TocSentinelService.getDbrStatus`: считаю механизм идеальным
+- `TocSentinelService.refreshDbrStatus`: считаю механизм идеальным
+- `TocSentinelService` facade accessors for graph/anomalies/buffer: считаю механизм идеальным
+- `TocExecutionGraph`: считаю механизм идеальным
+- `TocAnomalyDetector.checkAndRegisterStepEnter`: считаю механизм идеальным
+- `TocAnomalyDetector.scanForStalls`: считаю механизм идеальным
+- `TocAnomalyDetector` resource ownership and wait-for graph: считаю механизм идеальным
+- `TocOptimizer.evaluateConstraintsAndDbr`: считаю механизм идеальным
+- `TocOptimizer.getLatestDbrStatus`: считаю механизм идеальным
+- `TocOptimizer.shouldAdmit`: считаю механизм идеальным
+- `TocOptimizer.computeRecommendation`: считаю механизм идеальным
+- `TocSentinelController` read endpoints: считаю механизм идеальным
+- `TocSentinelController` event/resource endpoints: считаю механизм идеальным
+- `TocNode`: считаю механизм идеальным
+- `TocEdge`: считаю механизм идеальным
+- `TocToken`: считаю механизм идеальным
 
-**`VideoAssetService`**, **`GoogleAiResourceService`**, **`GoogleAiResourceController`**, **`AutoMergeService`**
+*Имена механизма или семейства:* **`VideoAssetService.generateAsset`**, **`VideoAssetService.VideoAssetResult`**,
+**`GoogleAiResourceService.callInteraction` video-generation path**,
+**`GoogleAiResourceController.generateVideoAsset`**, **`GoogleAiResourceController.listVideoAssets`**,
+**`AutoMergeService` video-asset request path**
 — peripheral video-asset generation family that asks the configured Google/Veo model for a video block and
 writes the resulting media plus metadata to disk.
 
@@ -9811,11 +9831,30 @@ controller and automation usage grep; no focused `VideoAssetServiceTest` found.
 *Текущий статус:* strict peripheral record filled. Implementation has clear fail-closed branches but is not
 ideal by test evidence.
 
-*комментарий для Антигравити:* механизм не идеален. Do not rewrite `VideoAssetService` as a generic media
-helper or merge it into design-image generation; first add focused branch tests preserving disabled,
-missing-key, unavailable, no-video, write-error and ok statuses plus metadata/media evidence. Philosophy:
-`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, common background
-`ACP-061 Hoare Triple Review`.
+**комментарий для Антигравити по механизмам:**
+- `VideoAssetService.generateAsset`: механизм не идеален; add/run focused branch tests for disabled
+  `veo_enabled`, missing key, unavailable interaction, no-video metadata, ok media write and write-error while
+  preserving fail-closed statuses and metadata/media evidence. Philosophy:
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `VideoAssetService.VideoAssetResult`: механизм не идеален; keep `available`, `status`, `model`,
+  `videoPath`, `metadataPath`, `mimeType` and `message` distinct in tests so `no_video` and `unavailable`
+  cannot masquerade as delivered media. Philosophy: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `GoogleAiResourceService.callInteraction` video-generation path: механизм не идеален; preserve key/settings
+  fail-closed boundary and prove the `video_generation` tool path is invoked only when video generation is
+  enabled and keyed. Philosophy: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `GoogleAiResourceController.generateVideoAsset`: механизм не идеален; preserve endpoint as caller of
+  `VideoAssetResult`, do not translate `unavailable`, `no_video` or `write_error` into delivered asset proof.
+  Philosophy: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`,
+  `ACP-061 Hoare Triple Review`.
+- `GoogleAiResourceController.listVideoAssets`: механизм не идеален; keep listing rooted under the video asset
+  directory and do not let listed files become proof that a specific generation request succeeded. Philosophy:
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `AutoMergeService` video-asset request path: механизм не идеален; preserve peripheral status semantics, so
+  merge automation logs generated/unavailable video separately and never treats absent video as client delivery
+  proof. Philosophy: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`,
+  `ACP-061 Hoare Triple Review`.
 
 # XXXVIII. Вход к ресурсам модели: изменяющие запросы под заслоном
 

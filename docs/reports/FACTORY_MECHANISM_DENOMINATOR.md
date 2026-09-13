@@ -1510,3 +1510,36 @@ Remaining non-ideal points for this section: focused task-status tests were not 
 changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXVI; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: TOC Sentinel And Video Asset Comments
+
+Status: documentation-only per-mechanism correction for section XXXVII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit per-mechanism comments: `TocSentinelService.startExecution/startExecutionWithId`,
+`TocSentinelService.enterStep/exitStep`, `TocSentinelService.periodicWatchdog`,
+`TocSentinelService.getDbrStatus/refreshDbrStatus`, `TocExecutionGraph`, `TocAnomalyDetector`,
+`TocOptimizer.evaluateConstraintsAndDbr/getLatestDbrStatus/shouldAdmit`, `TocSentinelController`, `TocNode`,
+`TocEdge`, `TocToken`, `VideoAssetService.generateAsset`, `VideoAssetService.VideoAssetResult`,
+`GoogleAiResourceService.callInteraction` video-generation path, `GoogleAiResourceController.generateVideoAsset`,
+`GoogleAiResourceController.listVideoAssets`, and `AutoMergeService` video-asset request path.
+
+Denominator effect: this section already had visible Antigravity comments, so the visible-comment denominator
+does not change. This tact removes the family-level-only weakness for section XXXVII by adding per-mechanism
+comments. It does not claim that all older visible sections already satisfy the per-mechanism rule.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 44 |
+| Sections still missing visible `комментарий для Антигравити` | 19 |
+
+This is a visible-section denominator, not a mechanism count and not a full count of historical family-level
+comments that still lack per-mechanism detail.
+
+Remaining non-ideal points for this section: focused TOC tests and focused `VideoAssetService` branch tests
+were not run in this tact; `VideoAssetService` remains non-ideal by test evidence. No code was changed in
+this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXVII; family summary is not a substitute.
