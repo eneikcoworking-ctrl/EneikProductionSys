@@ -9387,10 +9387,13 @@ diagnostic breadth and unrun focused tests remain non-ideal. Code was not change
 
 # XXXV. Выбор аккаунта: наказание порядком, а не исключением
 
-**`AccountRepository`**, **`AccountEntity`**, **`ProjectFlowService`**, **`JulesDispatchService`**,
-**`AccountHealthService`**, **`InternalGeminiObserverController`** — семейство выбора Jules-аккаунта для
-следующей работы, где пул становится очередью с атомарным взятием строки, capacity filters and refusal-aware
-ordering.
+*Имена механизма или семейства:* **`AccountRepository.lockNextJulesAccountWithCapacity`**,
+**`AccountRepository.lockAccountByNameWithCapacity`**, **`AccountEntity`**,
+**`ProjectFlowService.dispatchToGeneralPool`**, **`ProjectFlowService.evaluateGeneralPoolAdmissionDecision`**,
+**`JulesDispatchService.dispatch`**, **`AccountHealthService.reportDispatchOutcome`**,
+**`InternalGeminiObserverController.dispatchCapacityProbe`**,
+**`InternalGeminiObserverController.dispatchEligibilityDetail`** — семейство выбора Jules-аккаунта для следующей
+работы, где пул становится очередью с атомарным взятием строки, capacity filters and refusal-aware ordering.
 
 *Философский паттерн:* главный паттерн записи — `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`
 (`BARCAN-TAG-10 DEONTIC-PROHIBITION`, Джозеф Раз, local factory-derived pattern): взыскание должно быть
@@ -9495,13 +9498,25 @@ source grep for `lockNextJulesAccountWithCapacity`, `lockAccountByNameWithCapaci
 *Текущий статус:* strict family record filled. The core account-selection mechanism is treated as strong and
 not a coding target; only verification evidence remains to close it as ideal in operation.
 
-*комментарий для Антигравити:* считаю ядро механизма выбора аккаунта идеальным по текущему source/test
-contract; не правь `AccountRepository.lockNextJulesAccountWithCapacity` как isolated cleanup. Сначала докажи
-дефект тестом against the invariants above. Preserve penalty as ordering, not exclusion; preserve
-accepted-session reset; preserve row locking; preserve eligibility filters. Philosophy:
-`BARCAN-TAG-10 DEONTIC-PROHIBITION`, Джозеф Раз, `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`;
-`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`;
-`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+**комментарий для Антигравити по механизмам:**
+- `AccountRepository.lockNextJulesAccountWithCapacity`: считаю механизм идеальным
+- `AccountRepository.lockAccountByNameWithCapacity`: считаю механизм идеальным
+- `AccountEntity` account-selection state fields: считаю механизм идеальным
+- `ProjectFlowService.dispatchToGeneralPool`: считаю механизм идеальным
+- `JulesDispatchService.dispatch` accepted/refused session evidence writer: считаю механизм идеальным
+- `AccountHealthService.reportDispatchOutcome`: считаю механизм идеальным
+- `ProjectFlowService.evaluateGeneralPoolAdmissionDecision`: механизм не закрыт operational proof; не правь Java
+  как cleanup, сначала запусти `GeneralPoolAdmissionCoherenceIntegrationTest` и докажи, что diagnostic mirror не
+  создаёт отдельную истину от SQL selector. Философия:
+  `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман,
+  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+- `InternalGeminiObserverController.dispatchCapacityProbe`: считаю механизм идеальным
+- `InternalGeminiObserverController.dispatchEligibilityDetail`: механизм не закрыт как идеальный diagnostic
+  mirror; не превращай endpoint в владельца admission truth, сначала проверь bounded predicate against
+  `AccountRepository.lockNextJulesAccountWithCapacity`. Философия:
+  `BARCAN-TAG-10 DEONTIC-PROHIBITION`, Джозеф Раз, `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`;
+  `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and
+  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
 
 # XXXVI. Хранилище задач: запрет, стоящий на обоих уровнях
 

@@ -1445,3 +1445,34 @@ Remaining non-ideal points for this section: account/session diagnostic breadth 
 there is `pom.xml` but no `mvnw` and no `mvn` on PATH. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXIV; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Account Selection Penalty Ordering
+
+Status: documentation-only strict-family correction for section XXXV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `AccountRepository.lockNextJulesAccountWithCapacity`,
+`AccountRepository.lockAccountByNameWithCapacity`, `AccountEntity` account-selection state fields,
+`ProjectFlowService.dispatchToGeneralPool`, `ProjectFlowService.evaluateGeneralPoolAdmissionDecision`,
+`JulesDispatchService.dispatch`, `AccountHealthService.reportDispatchOutcome`,
+`InternalGeminiObserverController.dispatchCapacityProbe`, and
+`InternalGeminiObserverController.dispatchEligibilityDetail`.
+
+Denominator effect: one more section now has visible per-mechanism Antigravity comments. The core selector is
+not presented as a coding target: `lockNextJulesAccountWithCapacity` is recorded as ideal by current source
+contract, while diagnostic mirror closure still requires focused tests/probe evidence.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 44 |
+| Sections still missing visible `комментарий для Антигравити` | 19 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal points for this section: focused account-selection tests and a concurrent-dispatch probe
+were not run in this tact. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXV; family summary is not a substitute.
