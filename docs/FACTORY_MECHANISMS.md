@@ -9261,131 +9261,129 @@ not ideal until test execution and frontend display are closed. Code was not cha
 - `VerdictGate.constrain`: считаю механизм идеальным
 - frontend/operator rendering for `command-dashboard`: механизм не идеален; добавить видимое отображение `acceptanceReadiness.clientAcceptanceWitnessed` и сохранить `unknown` отдельно от `not ready`, философия `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` и `NUEL_BELNAP_03_TRUTH_STATUS_TABLE`.
 
-# XXXIV. Внутренний вход наблюдателя: запрет, записанный в комментарии
+# XXXIV. Внутренний вход наблюдателя: запрет является исполнимой границей
 
-**`InternalGeminiObserverController`**, **`ApiAuthorizationInterceptor`**, **`WebConfig`**,
-**`GeminiObserverJournalRepository`**, **`GeminiObserverActionRepository`**, **`EvidenceNodeRepository`**,
-**`CoherenceRunRepository`**, **`OperationalRealityFindingRepository`**, **`PersistentWorkerSessionRepository`**,
-**`JulesSessionRepository`**, **`PrReviewRepository`**, **`AccountRepository`**, **`TaskRepository`**,
-**`WishlistRepository`**, **`ContinuousOrchestrationService`**, **`GeminiObserverActionService`** — семейство
-внутренней наблюдательной поверхности Gemini/observer diagnostics and repair actions.
+**Имена механизма или семейства:** `WebConfig.addInterceptors`, `ApiAuthorizationInterceptor`,
+`InternalGeminiObserverController` read diagnostics, mutating repair endpoints
+`retireStuckWorkerNow`, `releaseFinalizingWishlist`, `resetDailySessionCountsNow`,
+`clearCorruptedSessionPrUrl`, observer evidence repositories, dispatch/account diagnostics,
+`ContinuousOrchestrationService.resetDailyLimitedAccounts`, `GeminiObserverActionService.retireStuckWorker`.
 
-*Философский паттерн:* главный текущий паттерн — `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`
-(`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, D010 Data lineage loss): internal diagnostics are
-useful only when the acquisition chain names which repository/table owns the fact and which boundary protects
-the read or mutation. Для границ уровня применяется `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`: observer
-journal evidence, dispatch-account diagnostics, persistent-worker diagnostics, and repair commands are not
-one kind of endpoint. Local security pattern already present in code: `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`
-for executable denial, with `ACP-061 Hoare Triple Review` before any later code.
+**Философский паттерн:** основной `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010,
+`RELIABILITY_CHAIN`): internal diagnostics are trustworthy only when source table/repository and protection
+boundary are named. `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` keeps observer journal evidence, dispatch
+capacity diagnostics and mutating repairs as different levels. Security form is executable prohibition:
+`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, supported by `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` for deny/allow
+tests.
 
-*Связи:* `WebConfig` registers `ApiAuthorizationInterceptor` for `/api/**` and `/internal/**`.
-`InternalGeminiObserverController` exposes `/internal/gemini-observer/**`. Read endpoints publish journal,
-actions, evidence nodes, coherence runs, operational-reality findings, db table sizes, wishlist compiler task
-diagnostics, account defect journal, persistent workers, dispatch capacity, dispatch eligibility, account
-capacity and task merge evidence. Mutating endpoints call real repair/reset paths:
-`GeminiObserverActionService.retireStuckWorkerNow`, wishlist release through repository state change,
-`ContinuousOrchestrationService.resetDailyLimitedAccounts`, and `clearCorruptedSessionPrUrl`.
+**Связи:** `WebConfig` registers `ApiAuthorizationInterceptor` on `/api/**` and `/internal/**`.
+`InternalGeminiObserverController` exposes `/internal/gemini-observer/**`. Read endpoints publish
+wishlist-compiler, account-defect, table-size, worker, dispatch, account-capacity, task-merge and observer
+journal/action/evidence/coherence/reality facts. Mutating endpoints call owner paths:
+`GeminiObserverActionService.retireStuckWorker`, `WishlistRepository.compareAndSetStatus`,
+`ContinuousOrchestrationService.resetDailyLimitedAccounts`, and `JulesSessionRepository.save`.
 
-*Идеальная форма:* internal observer access is an evidence surface with an executable boundary. Safe reads are
-allowed from loopback or with a valid operator key and must return scoped, bounded facts from the owning
-repository. Mutating internal operations require valid credentials even from localhost, and must either call a
-named owner service or perform one narrow repair with before/after evidence. A diagnostic endpoint may expose
-why dispatch or observer state is blocked, but it must not become a public dashboard or a hidden actuator.
+**Идеальная форма:** internal observer access is a protected evidence surface. Safe reads are allowed from
+loopback or with valid operator credentials; mutating internal operations require configured server key and
+request credentials even from loopback. Diagnostics are scoped by project/account/task/tag where possible.
+Repair endpoints must be narrow, named, and return or record before/after evidence.
 
-*Граница:* this family may expose internal evidence and run explicitly named internal repairs. It must not be
-treated as ordinary public API, must not bypass the owner services for broad state changes, must not leak raw
-secrets, and must not let the inert/retired observer status erase the need to protect repair commands. The
-security boundary belongs to `ApiAuthorizationInterceptor`; the controller javadoc is documentation, not the
-guard.
+**Граница:** this family may expose internal evidence and named repairs. It must not become public API, must
+not bypass owner services for broad state changes, must not leak raw secrets, must not rely on controller
+javadoc as security, and must not let retired Gemini observer status weaken protection of still-live repair
+commands.
 
-*Входы:* request path/method/remote address/API key or bearer token; query params `projectId`, `wishlistId`,
-`carrierTaskId`, `sessionId`, `taskId`, `accountName`, `tag`, date windows, feature/pr filters; repository
-rows for observer journal/actions/evidence/coherence/reality findings, sessions, reviews, accounts, tasks,
-projects, persistent workers and wishlist rows; raw table-size metadata through `JdbcTemplate`; API key
-setting `eneik.security.api-key`.
+**Входы:** HTTP method/path, remote address, `X-API-Key`/Bearer token, `eneik.security.api-key`, query params
+`projectId`, `wishlistId`, `carrierTaskId`, `sessionId`, `taskId`, `accountName`, `tag`, date windows and
+filters; repositories for observer journal/actions/evidence/coherence/reality findings, sessions, reviews,
+accounts, tasks, projects, persistent workers and wishlists; `JdbcTemplate` table metadata.
 
-*Выходы:* JSON/list diagnostics for journals/actions/evidence/coherence/findings/table sizes/dispatch
-capacity/account capacity/task merge evidence; string or map results for retire/release/reset/clear repair
-commands; interceptor denials with `401` for missing credentials on mutating internal operations, `403` for
-external internal reads without credentials or invalid credentials, and allow for loopback safe reads or valid
-operator credentials.
+**Выходы:** JSON diagnostics; string/map repair results; 401 denial for missing mutating credentials; 403
+denial for external internal reads without valid credentials or invalid mutating credentials; loopback safe
+read allow; valid credential allow; `UNDETERMINED_PROJECT` for no single active project; before/after repair
+facts where available.
 
-*Владельцы истины и состояния:* observer journal and action rows own what the observer saw/did; evidence and
-coherence repositories own graph/coherence facts; operational reality repository owns task reality findings;
-Jules/session/review/account/task/project repositories own dispatch and capacity facts; wishlist repository
-owns finalizing release state; `ContinuousOrchestrationService` owns daily account-limit reset; interceptor
-owns the authorization decision; controller methods own only diagnostic shape or the explicitly named repair
-command.
+**Владельцы истины и состояния:** `ApiAuthorizationInterceptor` owns authorization; `WebConfig` owns route
+attachment; observer repositories own observer/evidence/coherence/reality facts; `TaskRepository`,
+`JulesSessionRepository`, `PrReviewRepository`, `AccountRepository`, `PersistentWorkerSessionRepository` and
+`ProjectRepository` own dispatch diagnostics; `WishlistRepository` owns finalizing release state;
+`ContinuousOrchestrationService` owns daily-limit reset; `GeminiObserverActionService` owns stuck-worker
+retirement.
 
-*Инварианты:* (1) all `/internal/**` requests pass through the interceptor; (2) external non-loopback safe
-reads require a valid operator credential; (3) mutating internal operations require credentials even from
-localhost; (4) missing server API key disables mutating operations; (5) read diagnostics must be scoped by
-project/account/task/tag where possible; (6) persistent-workers without a single active project returns
-`UNDETERMINED_PROJECT`, not a full table dump; (7) dispatch capacity without a single active project returns
-`UNDETERMINED_PROJECT`, not HTTP 500; (8) repairs record or return before/after facts where possible.
+**Инварианты:** all `/internal/**` requests pass through the interceptor; non-loopback internal reads require
+valid credentials; mutating internal operations require credentials even from localhost; missing server key
+disables mutating operations; no-single-active-project diagnostics return `UNDETERMINED_PROJECT`; repair
+commands are narrow and named; diagnostic endpoints do not expose raw API keys; source repositories remain
+the owners of facts.
 
-*Сильная форма сейчас:* the old security defect in this section is no longer current at the interceptor
-level. `ApiAuthorizationInterceptor` enforces `/internal/**`: safe reads are allowed only from loopback or
-valid operator credentials; mutating internal methods require a configured key and request credentials.
-Tests pin external internal read denial, loopback read allow, external read with valid key allow, mutating
-internal localhost without credentials denied with `401`, and mutating internal with valid credentials allowed.
-The earlier `/persistent-workers` and `/dispatch-capacity-probe` 500 class is also stronger now:
-controller tests pin explicit project, single-active-project fallback and `UNDETERMINED_PROJECT` without
-`findAll()` when no single active project exists.
+**Сильная форма сейчас:** interceptor code enforces `/internal/**`; tests cover external read denial,
+loopback read allow, external valid-key read allow, mutating localhost without credentials denied with 401,
+and mutating internal with valid credentials allowed. `WebConfig` attaches the interceptor to `/internal/**`.
+`persistentWorkers` and `dispatchCapacityProbe` return `UNDETERMINED_PROJECT` instead of dumping all rows or
+500ing, with tests that verify no `findAll()` for no-project worker diagnostics. Repair commands are specific
+and owner-routed.
 
-*Слабая/неидеальная форма сейчас:* this documentation record was stale and still described the internal
-boundary as only a comment. Remaining non-ideal points are diagnostic breadth, not the old missing guard:
-`dispatchEligibilityDetail` still scans all accounts for a tag diagnostic, `accountCapacity` scans all
-sessions/accounts and then counts in memory, and this tact did not run controller/security tests or an
-external live probe. The observer itself may be inert/retired, but several repair commands remain live and
-must stay protected.
+**Слабая/неидеальная форма сейчас:** this shell could not run the focused test suite because the repo has
+`pom.xml` but no `mvnw`, and `mvn` is not on PATH. Diagnostic breadth remains non-ideal:
+`dispatchEligibilityDetail` still scans `accountRepository.findAll()`, and `accountCapacity` scans
+`julesSessionRepository.findAll()` plus `accountRepository.findAll()`. They are protected diagnostics, but not
+bounded by project/account query.
 
-*Что сделать для идеала:* do not code the old `/internal/**` localhost guard from scratch. First run focused
-`ApiAuthorizationInterceptorTest` and `InternalGeminiObserverControllerTest`, plus a live or fixture probe for
-external safe read denial and mutating localhost-without-key denial. If implementation is later requested,
-only then narrow the remaining diagnostic scans with projection/bounded repository methods while preserving
-the exact diagnostic questions and `UNDETERMINED_PROJECT` behavior.
+**Что сделать для идеала:** do not re-code the old `/internal/**` guard. First run
+`ApiAuthorizationInterceptorTest` and `InternalGeminiObserverControllerTest` with an available Maven runner and
+probe external read denial plus localhost mutating denial. Then, if code is authorized, replace the remaining
+diagnostic `findAll()` scans with bounded repository methods or require explicit project/account scope while
+preserving current diagnostic questions.
 
-*Что не трогать:* keep the interceptor registration for `/internal/**`, the distinction between safe reads
-and mutating operations, the requirement that mutating internal operations need credentials even from
-localhost, the `UNDETERMINED_PROJECT` semantics, the observer journal/action evidence boundary, and
-before/after evidence on repair commands. Do not weaken internal reads into public API because they are
-"only diagnostics".
+**Что не трогать:** keep `/internal/**` in `WebConfig`, safe-read versus mutating distinction, credential
+requirement for mutating loopback calls, `UNDETERMINED_PROJECT`, observer journal/action evidence boundary,
+owner-service repair paths and before/after evidence. Do not weaken internal reads because they are
+"diagnostics".
 
-*Опровержение:* send a non-loopback GET to `/internal/gemini-observer/db-table-sizes` without credentials; if
-it succeeds, the internal read boundary is false. Send a localhost POST to
-`/internal/gemini-observer/retire-stuck-worker-now` without credentials; if it succeeds, mutating internal
-authorization is false. Call `/persistent-workers` or `/dispatch-capacity-probe` with no project and no single
-active project; if either 500s or dumps all rows instead of `UNDETERMINED_PROJECT`, the diagnostic boundary is
-false.
+**Опровержение:** non-loopback GET `/internal/gemini-observer/db-table-sizes` without credentials succeeds;
+localhost POST `/internal/gemini-observer/retire-stuck-worker-now` without credentials succeeds; no-project
+`/persistent-workers` or `/dispatch-capacity-probe` dumps rows or 500s instead of `UNDETERMINED_PROJECT`;
+diagnostic endpoint leaks raw API keys.
 
-*Критерий закрытия:* this family is ideal when focused security/controller tests and live/fixture probes show:
-external internal reads deny without credentials, valid operator credentials allow intended reads, mutating
-internal operations require credentials even from loopback, no-single-active-project diagnostics return
-`UNDETERMINED_PROJECT`, account/session diagnostics are bounded or explicitly accepted as secured diagnostics,
-and no endpoint leaks raw API keys or changes state without owner-service/repair evidence.
+**Критерий закрытия:** ideal after focused security/controller tests and fixture/live probes prove read deny,
+credentialed allow, mutating credential requirement, `UNDETERMINED_PROJECT` behavior, bounded or explicitly
+accepted account/session diagnostics and no raw secret leakage.
 
-*Свидетельства записи:* `git status --short`; `git log -1 --oneline`; no active Claude process; protocol
-reads from `/home/remotecli/codex-mechanisms-session/SESSION.md`, `docs/HOW_TO_READ_BEFORE_FIXING.md` and top
-`Как читать`; philosopher rows `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
-`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`, `RELIABILITY_CHAIN`; `grep -nE` endpoint inventory
-for `InternalGeminiObserverController`; `nl -ba` on constructor/mutating and diagnostic methods; `nl -ba
-src/main/java/com/eneik/production/security/ApiAuthorizationInterceptor.java`; `grep -RIn` for `/internal/**`
-registration and tests; focused reads of `ApiAuthorizationInterceptorTest` relations 5, 6, 7, 15 and 16, and
-`InternalGeminiObserverControllerTest` persistent-worker / dispatch-capacity cases.
+**Свидетельства записи:** `grep -R -n "class InternalGeminiObserverController\\|@GetMapping\\|@PostMapping"
+src/main/java/com/eneik/production/controllers/InternalGeminiObserverController.java`; `nl -ba
+src/main/java/com/eneik/production/controllers/InternalGeminiObserverController.java | sed -n '1,180p'`,
+`sed -n '180,360p'`, `sed -n '360,480p'`; `nl -ba
+src/main/java/com/eneik/production/security/ApiAuthorizationInterceptor.java | sed -n '1,240p'`; `nl -ba
+src/main/java/com/eneik/production/config/WebConfig.java | sed -n '1,75p'`; `nl -ba
+src/test/java/com/eneik/production/security/ApiAuthorizationInterceptorTest.java | sed -n '127,172p;341,370p'`;
+`nl -ba src/test/java/com/eneik/production/controllers/InternalGeminiObserverControllerTest.java | sed -n
+'77,190p'`; `grep -R -n "findAll()" src/main/java/com/eneik/production/controllers/InternalGeminiObserverController.java`;
+`ls -1 | grep -E 'mvnw|pom.xml'; command -v mvn || true`.
 
-*Текущий статус:* strict family record filled. Implementation is strong for the old "comment-only internal
-guard" defect; not declared ideal until focused tests/live probes and bounded diagnostic decisions are
-recorded.
+**Текущий статус:** partially ideal. Security boundary and no-project diagnostics are strong; account/session
+diagnostic breadth and unrun focused tests remain non-ideal. Code was not changed in this tact.
 
-*комментарий для Антигравити:* не кодь старую задачу "сделать `/internal/**` исполнимым запретом" как будто
-её нет: current `ApiAuthorizationInterceptor` already guards `/internal/**`, and tests cover external denial,
-loopback read allow, credentialed read allow, and mutating-internal credential requirement. First verify those
-tests and a live/fixture probe; later code, if any, should narrow `dispatchEligibilityDetail` and
-`accountCapacity` diagnostics without weakening the security boundary. Philosophy:
-`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
-`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`;
-local support `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`; common background `ACP-061 Hoare Triple Review`.
+**комментарий для Антигравити по механизмам:**
+- `WebConfig.addInterceptors`: считаю механизм идеальным
+- `ApiAuthorizationInterceptor` internal safe-read guard: считаю механизм идеальным
+- `ApiAuthorizationInterceptor` mutating internal guard: считаю механизм идеальным
+- `InternalGeminiObserverController` observer journal/actions/evidence/coherence/reality read endpoints: считаю механизм идеальным
+- `InternalGeminiObserverController.wishlistCompilerTasks`: считаю механизм идеальным
+- `InternalGeminiObserverController.accountDefectJournal`: считаю механизм идеальным
+- `InternalGeminiObserverController.dbTableSizes`: считаю механизм идеальным
+- `InternalGeminiObserverController.retireStuckWorkerNow`: считаю механизм идеальным
+- `InternalGeminiObserverController.wishlistCompilerTask`: считаю механизм идеальным
+- `InternalGeminiObserverController.releaseFinalizingWishlist`: считаю механизм идеальным
+- `InternalGeminiObserverController.persistentWorkers`: считаю механизм идеальным
+- `InternalGeminiObserverController.resetDailySessionCountsNow`: считаю механизм идеальным
+- `InternalGeminiObserverController.dispatchCapacityProbe`: считаю механизм идеальным
+- `InternalGeminiObserverController.dispatchEligibilityDetail`: механизм не идеален; заменить unscoped `accountRepository.findAll()` на ограниченную диагностику по проекту или аккаунту без ослабления `/internal/**` security, философия `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `InternalGeminiObserverController.accountCapacity`: механизм не идеален; заменить full `julesSessionRepository.findAll()`/`accountRepository.findAll()` scan на ограниченную диагностику, сохранив текущий вопрос о capacity, философия `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `InternalGeminiObserverController.taskMergeEvidence`: считаю механизм идеальным
+- `InternalGeminiObserverController.clearCorruptedSessionPrUrl`: считаю механизм идеальным
+- `GeminiObserverActionService.retireStuckWorker` as called here: считаю механизм идеальным
+- `ContinuousOrchestrationService.resetDailyLimitedAccounts` as called here: считаю механизм идеальным
+- observer and dispatch repositories used here: считаю механизм идеальным
 
 # XXXV. Выбор аккаунта: наказание порядком, а не исключением
 

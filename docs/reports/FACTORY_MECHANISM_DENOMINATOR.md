@@ -1414,3 +1414,34 @@ surface must visibly render `clientAcceptanceWitnessed` and preserve `unknown`; 
 from this shell because no `./mvnw` exists and `mvn` is not on PATH. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXIII; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Internal Observer Boundary
+
+Status: documentation-only strict-family replacement for section XXXIV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `WebConfig.addInterceptors`, `ApiAuthorizationInterceptor`,
+`InternalGeminiObserverController` read diagnostics, mutating repair endpoints, observer evidence repositories,
+dispatch/account diagnostics, `ContinuousOrchestrationService.resetDailyLimitedAccounts`, and
+`GeminiObserverActionService.retireStuckWorker`.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with per-mechanism
+Antigravity comments. Key correction: the old "comment-only internal guard" defect is no longer current:
+`/internal/**` is registered through the interceptor, and relation tests describe external denial, loopback
+read allow, credentialed read allow and mutating-internal credential requirement.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 43 |
+| Sections still missing visible `комментарий для Антигравити` | 20 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal points for this section: account/session diagnostic breadth remains too wide in
+`dispatchEligibilityDetail` and `accountCapacity`, and focused tests could not be run from this shell because
+there is `pom.xml` but no `mvnw` and no `mvn` on PATH. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXIV; family summary is not a substitute.
