@@ -1736,3 +1736,35 @@ dead, disabled, or explicitly rerouted mechanisms. If future code revives the ob
 decision plus executable prohibition checks. No code was changed in this tact.
 
 комментарий для Антигравити: `GeminiProjectObserverService`: считаю механизм идеальным; `gemini_project_observer_enabled` / `V111__permanently_disable_gemini_project_observer.sql`: считаю механизм идеальным; `ChessService`: считаю механизм идеальным; Gemini PR review disablement and Jules fallback review: считаю механизм идеальным
+
+## 2026-09-13 Codex Per-Mechanism Comments: Twenty One Previously Unnamed Mechanisms
+
+Status: documentation-only per-mechanism comment completion for section XVIIb in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit comments: `SchedulingConfig`, `TocAnomalyDetector`,
+`DefectJournalService`, `GithubConfig`, `GlobalExceptionHandler`, `WebConfig`, `GreetingMapper`,
+`ClientDeliveryController`, `CommandDashboardController`, `DashboardController`, `HomeController`,
+`InternalJulesActivitiesProbeController`, `JulesMonitorController`, `LinearSyncController`,
+`OperationalTruthController`, `QualityGateController`, `QualityMetricsController`, `RoleRulesController`,
+`SystemAuditController`, `SystemDriftController`, `VerdictController`, and `SystemStatusController`.
+
+Denominator effect: section XVIIb previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 40 |
+| Sections still missing visible `комментарий для Антигравити` | 23 |
+
+This is a visible-section denominator, not a mechanism count and not a claim that every older visible section
+already has per-mechanism comments.
+
+Remaining non-ideal points for this section: `TocAnomalyDetector` needs proof that anomaly signals are read
+and cause action; `DefectJournalService` needs an explicit duty-to-record rule for factory failures;
+`GlobalExceptionHandler` needs client-abort vs server-fault quarantine; `WebConfig` and the read controllers
+need auth/public-read and projection-boundary decisions. No code was changed in this tact.
+
+комментарий для Антигравити: `SchedulingConfig`: считаю механизм идеальным; `TocAnomalyDetector`: не идеален, apply `DZHUDA_PERL_01_PERCEPTION_ACTION_LOOP`; `DefectJournalService`: не идеален, apply `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`; `GithubConfig`: считаю механизм идеальным; `GlobalExceptionHandler`: не идеален, apply `NUEL_BELNAP_02_PARACONSISTENT_QUARANTINE`; `WebConfig`: не идеален, apply `GARET_EVANS_19_BOUNDARY_TOPOLOGY`; `GreetingMapper`: считаю механизм идеальным; all named read controllers in section XVIIb: не идеальны как open read-surface, apply `GARET_EVANS_19_BOUNDARY_TOPOLOGY` and `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`.

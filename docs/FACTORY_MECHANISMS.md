@@ -4836,6 +4836,31 @@ src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
 *Комментарий:* **периферия по демаркации** — вопрос «может ли механизм удержать поток» даёт «нет» для каждого: они только читают. Но все они открыты наружу без пароля наравне с изменяющими, поэтому в пункт 24 входят как поверхность утечки сведений, а не как рычаг
 *Философия:* `LEVEL_OF_ABSTRACTION_LOCK` (D010) — форма: **не мерено**; ни один из них не объявляет, что отдаёт проекцию, а не предмет, — та самая ошибка, на которой я попадался трижды
 
+## XVIIб.1. Комментарии для Антигравити по механизмам
+
+* `SchedulingConfig` — **комментарий для Антигравити:** считаю механизм идеальным
+* `TocAnomalyDetector` — **комментарий для Антигравити:** механизм не идеален: применить `DZHUDA_PERL_01_PERCEPTION_ACTION_LOOP`; проверить, какие аномалии он реально находит, кто их читает и какое действие запускает сигнал, прежде чем писать код.
+* `DefectJournalService` — **комментарий для Антигравити:** механизм не идеален: применить `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`; сохранить единую точку записи дефекта, но добавить явное правило, какие фабричные отказы обязаны попадать в журнал.
+* `GithubConfig` — **комментарий для Антигравити:** считаю механизм идеальным
+* `GlobalExceptionHandler` — **комментарий для Антигравити:** механизм не идеален: применить `NUEL_BELNAP_02_PARACONSISTENT_QUARANTINE`; отделить оборванное чтение клиента от настоящего сбоя сервера, не ломая последний рубеж обработки исключений.
+* `WebConfig` — **комментарий для Антигравити:** механизм не идеален: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY`; сверить CORS/static boundary с фактом внешнего доступа и не чинить это изменением бизнес-потока.
+* `GreetingMapper` — **комментарий для Антигравити:** считаю механизм идеальным
+* `ClientDeliveryController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `CommandDashboardController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `DashboardController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `HomeController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `InternalJulesActivitiesProbeController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `JulesMonitorController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `LinearSyncController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `OperationalTruthController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `QualityGateController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `QualityMetricsController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `RoleRulesController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `SystemAuditController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `SystemDriftController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `VerdictController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+* `SystemStatusController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
+
 ---
 
 # XIX. Сайдкары: механизмы вне бэкенда
