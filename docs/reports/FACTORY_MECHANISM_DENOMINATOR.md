@@ -1318,3 +1318,35 @@ provider path; bottleneck prediction must not become a live gate until owner/fre
 proved. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXX; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Foreign Repository Onboarding Audit
+
+Status: documentation-only strict-family replacement for section XXXI in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `RepositoryStackAnalyzer.analyze`,
+`RepositoryStackAnalyzer.ownerFromRepositoryUrl`, `StackProfile`, `InspectionStatus`,
+`OnboardingAuditService.runOnboardingAudit`, `OnboardingAuditService.scanForSecrets`,
+`OnboardingAuditService.generateMarkdownReport`, `OnboardingAuditFindingRepository`, and report artifact
+`docs/reports/onboarding-audit-{slug}.md`.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with per-mechanism
+Antigravity comments. Key correction: the section no longer keeps the old defect narrative as current truth;
+it states that the GitHub access-failure/category-boundary defect is closed by tri-state `InspectionStatus`
+and focused tests, while preserving the exact refutation.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 40 |
+| Sections still missing visible `комментарий для Антигравити` | 23 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal point for this section: none for the access-failure/category-boundary defect recorded
+here. A fresh live onboarding audit can be run later as runtime evidence, but it is not required to preserve
+the mechanism shape. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXI; family summary is not a substitute.

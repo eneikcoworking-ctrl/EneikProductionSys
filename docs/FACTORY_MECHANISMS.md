@@ -8937,75 +8937,105 @@ healthcheck; `nl -ba src/main/java/com/eneik/production/services/monitor/AiHealt
 - `AiHealthTracker` и `SystemStatusService.aiHealth`: считаю механизм идеальным
 - `MLPredictionServiceClient.EpicPlan` и `TaskSliceMetadata`: считаю механизм идеальным
 
-# XXXI. Разбор чужого репозитория: неудача, ставшая утверждением о заказчике
+# XXXI. Разбор чужого репозитория: неудача фабрики не становится фактом о заказчике
 
-*Замер этого раздела устарел; исправлено 12 сентября 2026, без правки кода.* Дефект, ради которого раздел
-написан, **починен**: `StackProfile` больше не несёт булевых — `hasCI`, `hasTests`, `isMonorepo` имеют тип
-`InspectionStatus` (`YES / NO / UNCHECKED`), все три точки отката анализатора возвращают `StackProfile.unchecked(...)`
-(`RepositoryStackAnalyzer:52` нет токена, `:99` не удалось получить дерево, `:326` ошибка разбора), читающий
-различает неизвестность (`OnboardingAuditService:139` — `if (!stackProfile.isUnchecked())`), а отчёт печатает
-`displayValue()` (`:220–222`), а не «No». Заслоны: `missingGithubTokenReturnsUncheckedProfileWithTriStateStatus`,
-`blankGithubTokenReturnsUncheckedProfile`, `auditWithoutGithubTokenProducesZeroFindingsAndUncheckedMarkdownReport`,
-`categoryBoundaryPreservedBetweenAccessFailureAndRepositoryReality`. Устарели также два числа ниже: в анализаторе
-**466** строк, а не 432; в `StackProfile` **12** полей, а не одиннадцать. Полная запись семейства — в разделе I.
-Текст ниже сохранён как история замера 6 сентября, а не как нынешнее состояние.
+**Имена механизма или семейства:** `RepositoryStackAnalyzer.analyze`, `RepositoryStackAnalyzer.ownerFromRepositoryUrl`,
+`StackProfile`, `InspectionStatus`, `OnboardingAuditService.runOnboardingAudit`,
+`OnboardingAuditService.scanForSecrets`, `OnboardingAuditService.generateMarkdownReport`,
+`OnboardingAuditFindingRepository`, отчёт `docs/reports/onboarding-audit-{slug}.md`.
 
-**`RepositoryStackAnalyzer`** (432 строки) — обходит репозиторий заказчика через GitHub и составляет
-описание его устройства: основной язык, каркас, база, есть ли непрерывная сборка и тесты, одиночный ли это
-репозиторий, ветка по умолчанию, отметка исходного слепка и сколько файлов разобрано.
-*Связи:* вызывающий **один** — `OnboardingAuditService` | ходит в GitHub за содержимым файлов | отдаёт
-`StackProfile` вместе со списком файлов к разбору.
-*Ценность:* без него фабрика берётся за чужой продукт, ничего о нём не зная.
-*Комментарий:* **ядро по замыслу — это первое, что фабрика узнаёт о заказчике, — и в нём тот же дефект,
-который повторяется по всей фабрике, здесь в самой чистой форме.**
+**Философский паттерн:** основной `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012,
+`TRUTH_STATUS_TABLE`): `YES`, `NO` и `UNCHECKED` должны быть разными исходами, иначе неизвестность становится
+ложным утверждением. Второй паттерн — `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002): состояние доступа фабрики
+к GitHub нельзя присваивать полю, описывающему реальность репозитория заказчика. Для источника применяется
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010): профиль репозитория достоверен только при названном GitHub owner,
+ветке, baseline SHA и списке разобранных файлов.
 
-`StackProfile` состоит из трёх строк и трёх признаков-булевых. Замер: профиль строится в **трёх** местах с
-одними и теми же значениями `"Unknown", "None", "None", false, false, false` — при отсутствии токена
-GitHub (строка 52, с записью «GitHub token not configured, returning empty StackProfile»), при неудаче
-обхода (100) и при ошибке (290). То есть **«мы не смогли посмотреть» и «в репозитории этого нет» дают одно
-и то же значение**.
+**Связи:** `OnboardingAuditService.runOnboardingAudit` вызывает
+`RepositoryStackAnalyzer.analyze(project.getRepositoryName(), owner)`, где owner берётся из
+`RepositoryStackAnalyzer.ownerFromRepositoryUrl(project.getRepositoryUrl())`; анализатор читает GitHub repo
+info, branch info, recursive tree and file contents; результат возвращается как `AnalysisResult(StackProfile,
+filesToScan)`. Сервис сохраняет `defaultBranch`, `baselineCommitSha` и `productNamespace` в `ProjectEntity`,
+удаляет старые findings, пишет новые через `OnboardingAuditFindingRepository.saveAll`, создаёт markdown report
+и отдаёт `StackProfile` вызывающему.
 
-Со строками ещё честно: `primaryLanguage` получает «Unknown», и это слово различимо. С признаками нечестно
-по устройству: `hasCI = false` означает разом и «непрерывной сборки нет», и «мы не проверяли».
+**Идеальная форма:** аудит чужого репозитория говорит о заказчике только то, что фабрика реально проверила.
+Если нет GitHub token, дерево не получено или анализ упал, `StackProfile` возвращает `UNCHECKED`, findings о
+CI/tests/документации не создаются, а отчёт показывает `не проверено`. Если репозиторий проверен и в нём нет
+CI/tests, это становится `NO` и может породить findings. Разница между «нет» и «не смогли посмотреть» не
+теряется ни в типе, ни в отчёте, ни в тесте.
 
-И читающий на этом действует. Замер по `OnboardingAuditService`: строка 130 — `if (!stackProfile.hasCI())`
-заводит находку; строка 103 — на `!hasTests()` при упоминании production заводит находку; строки 216–217
-печатают в отчёт «Has CI: No», «Has Tests: No». Значит **неудача фабрики превращается в утверждение о
-репозитории заказчика**, и утверждение это попадает в отчёт как установленный факт.
+**Граница:** механизм имеет право читать GitHub, описывать stack profile, искать секреты в выбранных файлах,
+создавать onboarding findings и markdown report. Он не имеет права делать вывод о свойствах репозитория из
+отсутствия доступа, выдавать factory access failure за customer defect, менять task/workflow state, запускать
+исправления или скрывать неизвестность словом `No`.
 
-Это тот же подлог, что уже записан в перечне трижды: журнал фабрики, выданный за деятельность продукта
-(раздел XXIе); единственный размеченный шаг, названный узким местом фабрики (XXIг); сгенерированный самой
-фабрикой заголовок, принятый за тождество требования заказчика (XXIIв). Здесь он в самой чистой форме,
-потому что предмет утверждения — прямо чужая собственность.
+**Входы:** `ProjectEntity.repositoryName`, `ProjectEntity.repositoryUrl`, `ProjectStatus`, `force`,
+`github_token`, `github.org`, `github.api-base-url`, GitHub ответы по repo/branch/tree/file content,
+старые `OnboardingAuditFindingEntity`, `StackProfile`, `filesToScan`, regex patterns for secrets.
 
-**Задача для кодинга.** Признаки профиля обязаны различать три исхода вместо двух: есть, нет, не проверено.
-Место: `RepositoryStackAnalyzer` — три конструктора `new StackProfile("Unknown", "None", "None", false,
-false, false, …)` на строках 52, 100 и 290, и сама запись `StackProfile`; читающий —
-`OnboardingAuditService:103,130,216-217`. Проверка: при отсутствии токена GitHub отчёт не должен содержать
-ни одной находки о заказчике. Опровергнет: находка «нет тестов», заведённая при неудавшемся обходе.
-*Живое, 7 сентября 2026:* **механизм не работает.** В журнале за 45 тысяч строк — ноль упоминаний
-`OnboardingAudit`, `StackProfile` и «GitHub token not configured» (контроль: слово `github` встречается
-7952 раза, значит греп видит). Разбор нового репозитория на живой фабрике не запускался, потому что новых
-проектов не заводили. Дефект от этого не исчезает, а становится отложенным: он сработает при первом же
-заказчике, к репозиторию которого не будет доступа.
-*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип четырёхзначной логики (True/False/Both/Neither), anchor *A
-Useful Four-Valued Logic / how a computer should think — many-valued diagnostics*. Сильная дословно:
-«истинное, ложное, **неизвестное** и противоречивое представлены явно, и показано, как каждое хранится,
-отображается и разрешается. Третий исход невозможно проигнорировать на стороне вызывающего». Слабая:
-«булево плюс `null`, трактуемый по месту». Опровержение: «найти вызывающего, который компилируется, не
-обработав „неизвестно“». **Форма: слабая, и опровержение выполнено дословно.** Вызывающий найден —
-`OnboardingAuditService`, — он компилируется и не обрабатывает неизвестное, потому что обрабатывать нечего:
-у булева поля третьего значения не бывает. Строковые поля здесь сильнее булевых ровно потому, что строка
-вмещает «Unknown», а `boolean` — нет.
-Второй образец: `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) — Гилберт Райл,
-`BARCAN-TAG-00 CODE-GUARDIAN`, принцип различия «знать что» и «знать как», anchor *The Concept of Mind —
-knowing-how versus knowing-that, category mistakes*. Сильная дословно: «назван тип, схема или переходник,
-удерживающий границу рода: процесс не выдаётся за объект, наблюдение за полномочие, политика за данные».
-Слабая: «мы понимаем разницу». Опровержение: «найти место, где значение одного рода присваивается полю
-другого без преобразования». **Форма: слабая.** Значение рода «состояние нашего доступа к GitHub»
-присваивается полю рода «свойство репозитория заказчика», и преобразования между ними не существует —
-как не существовало его между журналом фабрики и деятельностью продукта.
+**Выходы:** обновлённые `ProjectEntity.defaultBranch`, `baselineCommitSha`, `productNamespace`; сохранённый
+набор `OnboardingAuditFindingEntity`; файл `docs/reports/onboarding-audit-{slug}.md`; возвращённый
+`StackProfile`; лог анализа.
+
+**Владельцы истины и состояния:** GitHub API владеет repo tree, branch and file content; `StackProfile` владеет
+снимком наблюдения; `InspectionStatus` владеет tri-state truth for CI/tests/monorepo; `ProjectEntity` владеет
+baseline branch/SHA/namespace; `OnboardingAuditFindingRepository` владеет persistent findings; markdown report
+владеет человекочитаемой проекцией аудита.
+
+**Инварианты:** `UNCHECKED` не приводит к findings against customer repository; `InspectionStatus.NO`, not
+`UNCHECKED`, is required for "no CI" and "no tests" findings; report uses `displayValue()` for tri-state
+fields; access failure returns empty `filesToScan`; owner from repo URL overrides global `github.org` when
+present; old findings are replaced by the current audit run; binary files are skipped by secret scan.
+
+**Сильная форма сейчас:** all fallback exits in `RepositoryStackAnalyzer` use `StackProfile.unchecked(...)`
+for missing token, failed tree fetch and catch-all error. `StackProfile` stores `hasCI`, `hasTests` and
+`isMonorepo` as `InspectionStatus`, and `unchecked(...)` sets all three to `UNCHECKED`. `OnboardingAuditService`
+creates no CI/test findings unless status is `NO`; minor documentation finding is also skipped when profile is
+unchecked. Markdown report prints `displayValue()`. Tests cover missing token, blank token, zero findings and
+the paired category-boundary case: access failure produces zero findings, inspected repo with `NO` CI/tests
+produces findings.
+
+**Слабая/неидеальная форма сейчас:** в границе section XXXI дефект закрыт. Остаётся только обычный
+runtime-evidence gap: эта запись опирается на source/test evidence, not a fresh live onboarding run against a
+new customer repository in this tact.
+
+**Что сделать для идеала:** ничего не кодить для прежнего дефекта. При любой будущей правке добавить или
+сохранить test pair: `UNCHECKED` access failure gives zero customer findings, inspected `NO` gives findings.
+Если нужен live proof, запускать отдельный onboarding audit на controlled project with missing/blank token and
+verify report says `не проверено`.
+
+**Что не трогать:** не возвращать boolean в `StackProfile`; не заменять `UNCHECKED` на `NO`; не писать
+finding when `filesToScan` is empty because access failed; не удалять owner extraction from repository URL; не
+делать markdown report английским `No` for unchecked fields.
+
+**Опровержение:** описание ложно, если при missing/blank GitHub token или failed tree fetch появляется
+finding "no tests", "no CI" or documentation defect against the customer; если report says `No` instead of
+`не проверено`; если `StackProfile` loses `InspectionStatus`; если inspected repository with explicit
+`InspectionStatus.NO` no longer produces the expected CI/tests findings.
+
+**Критерий закрытия:** механизм описан и кодово закрыт, пока named tests pass or remain present with the same
+assertions, and every repository-access failure remains visibly `UNCHECKED` from analyzer through DB findings
+and markdown report.
+
+**Свидетельства записи:** `nl -ba src/main/java/com/eneik/production/services/onboarding/RepositoryStackAnalyzer.java
+| sed -n '1,140p;300,350p'`; `nl -ba src/main/java/com/eneik/production/services/onboarding/InspectionStatus.java
+| sed -n '1,90p'`; `nl -ba src/main/java/com/eneik/production/services/onboarding/StackProfile.java | sed -n
+'1,90p'`; `nl -ba src/main/java/com/eneik/production/services/onboarding/OnboardingAuditService.java | sed -n
+'1,310p'`; `grep -R -n "missingGithubTokenReturnsUncheckedProfileWithTriStateStatus\\|blankGithubTokenReturnsUncheckedProfile\\|auditWithoutGithubTokenProducesZeroFindingsAndUncheckedMarkdownReport\\|categoryBoundaryPreservedBetweenAccessFailureAndRepositoryReality" src/test`.
+
+**Текущий статус:** считаю механизм идеальным for the access-failure/category-boundary defect recorded in this
+section. No code was changed in this tact.
+
+**комментарий для Антигравити по механизмам:**
+- `RepositoryStackAnalyzer.analyze`: считаю механизм идеальным
+- `RepositoryStackAnalyzer.ownerFromRepositoryUrl`: считаю механизм идеальным
+- `StackProfile`: считаю механизм идеальным
+- `InspectionStatus`: считаю механизм идеальным
+- `OnboardingAuditService.runOnboardingAudit`: считаю механизм идеальным
+- `OnboardingAuditService.scanForSecrets`: считаю механизм идеальным
+- `OnboardingAuditService.generateMarkdownReport`: считаю механизм идеальным
+- `OnboardingAuditFindingRepository`: считаю механизм идеальным
 
 # XXXII. Завод репозиториев: адрес, который существует раньше репозитория
 
