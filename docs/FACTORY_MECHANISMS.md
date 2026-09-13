@@ -8037,115 +8037,149 @@ relative to full ECHO in one more way, honestly»), три источника с
 
 # XXIIж. Надзор за процессом: чем отличают обычный разброс от настоящего сдвига
 
-Три миграции заводят способ **не называть причину там, где её нет**. Это прямая противоположность тому, что
-обнаружено в графе ограничения (раздел XXIг): там единственный датчик всегда объявлялся узким местом, здесь
-отклонение обязано выйти за границы, вычисленные из собственной истории, прежде чем его признают событием.
+**Имена механизма или семейства** — `V72__create_process_control_snapshots.sql`, таблица
+`process_control_snapshots`, `ProcessControlSnapshotEntity`, `ProcessControlSnapshotRepository`,
+`ProcessControlService.periodicRecompute/recomputeForProject/recomputeStream/detectWesternElectricSignal/closeLoop`,
+`V85__process_control_snapshot_metric_label.sql`, `V90__trust_signal_snapshots.sql`,
+`TrustSignalSnapshotEntity`, `TrustSignalSnapshotRepository`,
+`TrustSnapshotService.captureAndBackfillSnapshots/captureSnapshot/backfillResolvedOutcomes/recordInvariantTransitions`,
+и текущий расчет `OperationalTruthService.trust`, который эти снимки должны позже откалибровать.
 
-**`V72__create_process_control_snapshots.sql`** — заводит долговечный временной ряд контрольной карты: по
-строке на «проект, эпик, поток», с центральной линией, верхней и нижней границами, признаком выхода
-из-под контроля и меткой правила Western Electric.
-*Связи:* пишет `ProcessControlService` | таблицу знают `ProcessControlSnapshotEntity` и
-`ProcessControlSnapshotRepository` | питается журналом дефектов (раздел XXIж).
-*Ценность:* без истории нельзя ни закрепить исходный уровень, ни обнаружить сдвиг относительно него.
-*Комментарий:* **ядро, и причина заведения названа точно.** До неё показатель дефектности вычислялся по
-запросу и не хранился: «no Phase 1 baseline could be locked and no Phase 2 drift could be detected against
-it». То есть механизм существовал, а сравнивать было не с чем — тот же изъян, что у графа ограничения, где
-среднее по Уэлфорду обнуляется при перезапуске (раздел XXIг). Здесь он закрыт хранением.
+**Философский паттерн** — process-control часть использует `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` (D007): не
+называть причину, пока точка не вышла за доказанные границы обычного разброса; и
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (D010): сохранить временной ряд так, чтобы прошлое состояние процесса
+можно было восстановить. Metric-label часть использует `POL_GRAYS_01_CONVERSATION_MAXIM` (D007) и
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` (D010): описание числа должно быть привязано к тому же уровню,
+что и само число, и должно оставаться описанием, а не математическим признаком. Trust-snapshot часть использует
+`ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` (D006): не назначать веса доверия из уверенности, пока нет
+размеченных исходов.
 
-Существенно, что границы вычисляются, а не назначаются, и что отдельным столбцом хранится **какое именно
-правило** сработало. Это и есть отказ от одной общей тревоги в пользу названного признака: механизм
-сообщает не «плохо», а «сработало такое-то правило на такой-то последовательности».
-*Живое, 7 сентября 2026:* ряд действительно накапливается — `PROCESS_CONTROL_SNAPSHOTS` 184 строки,
-`DEFECT_JOURNAL` 445 (замер: `db-table-sizes`). То есть у карты есть история, из которой границы можно
-вычислить, а не назначить, — ровно то, чего не хватало графу ограничения.
+**Связи** — `ProcessControlService` запускается раз в два часа, берет defect/opportunity counts из
+`SixSigmaAuditService`, читает завершенные эпики через `FeatureRepository` и `TaskRepository`, сохраняет строки
+u-chart через `ProcessControlSnapshotRepository` и закрывает live out-of-control latest point через
+`KaizenService`, используя `DefectJournalRepository` или `ReviewConcernRepository` как evidence причины. `V85` и
+`ProcessControlSnapshotEntity.sixSigmaMetricLabel` связывают `FeatureEntity.sixSigmaMetric` эпика с тем же
+snapshot и proposal description, не подавая label в u-chart math. `TrustSnapshotService` запускается раз в два
+часа, читает active projects и `OperationalTruthService.build(projectId)`, сохраняет
+`TrustSignalSnapshotEntity`, дозаписывает `eventual_outcome` из `ClientDeliverableReadinessService` и project
+status, и записывает invariant status
+transitions in `InvariantStatusChangeRepository`.
 
-*Философия:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` (D007) — Дональд Дэвидсон,
-`BARCAN-TAG-09 MORAL-DILEMMA`, принцип радикальной интерпретации, anchor *Truth and Meaning / radical
-interpretation — interpretation and coherence*. Сильная дословно: «подозреваемая причина считается **одним
-фактором достаточного набора**, пока альтернативы не исключены; со-факторы перечислены со свидетельством
-присутствия или отсутствия каждого». Слабая: «названо первое объяснение, совпавшее с наблюдением».
-Опровержение: «назвать вторую гипотезу, дающую то же наблюдение; её отсутствие означает, что сравнения не
-было». **Форма: сильная по устройству.** Вторая гипотеза здесь встроена в сам прибор и называется «обычный
-разброс»: пока точка внутри границ, объяснению причины отказано. Оговорю границу похвалы: со-факторы
-поимённо не перечисляются, столбец правила говорит, **какой** признак сработал, но не какие условия при
-этом присутствовали.
-Второй образец: `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (D010) — Дерек Парфит,
-`BARCAN-TAG-05 NECESSARY-IDENTITY`, принцип психологической непрерывности идентичности, anchor *Reasons and
-Persons — psychological continuity and identity*. Сильная дословно: «личность долгоживущей сущности
-сохраняется через снимки и миграции, есть свидетельство воспроизведения». Слабая: «идентификатор стабилен,
-пока никто не пересоздаёт». Опровержение: «восстановить состояние на прошлый момент; если сущность не
-опознаётся — снимка нет». **Форма: сильная по устройству, не мерена по свидетельству.** Порядковый номер в
-последовательности и хранимые границы позволяют восстановить, каким процесс виделся в прошлый момент; восстановление на прошлый момент не проводилось.
+**Идеальная форма** — обычный разброс не является событием фабрики; process event существует только после того,
+как точка попала в monitoring phase и пробила fixed Phase-1 control limits или named Western Electric rule.
+Snapshot row должен сохранять project, epic, stream, sequence, measured u-value, denominator, defect count,
+center line, limits, phase, signal и computation time. Metric label объясняет, что измеряемый stream значил для
+epic owner, и никогда не меняет arithmetic. Trust-score calibration остается двухэтапным механизмом: сначала
+реальные input signals и eventual outcomes, потом fitted weights только после достаточной labeled history.
 
-**`V85__process_control_snapshot_metric_label.sql`** — привязывает к снимку словесное определение того, что
-его числа означают, и **объявляет это определение чисто описательным**.
-*Связи:* добавляет `process_control_snapshots.six_sigma_metric_label` | в вычислениях карты не участвует
-(центральная линия, границы и распознавание правил не затронуты).
-*Ценность:* без него числа снимка не имеют операционного определения, и читающий домысливает, что именно
-считали.
-*Комментарий:* **периферия по действию, ядро по уроку, и урок этот про метку, принятую за данные.**
-Основание — живая проверка, приведённая в самом файле: показатель «вычислялся на каждый эпик при компиляции
-и показывался в подсказках и на панелях, но **никогда не привязывался к тому ряду контрольной карты,
-который должен был описывать**», и заслон, который должен был это ловить, оказался «presence-only gate,
-content never read semantically» — проверял наличие, а не смысл.
+**Граница** — секция наблюдает process drift и prerequisites для обучения. Она не решает customer delivery, не
+заменяет counts `SixSigmaAuditService`, не подбирает trust model и не делает `FeatureEntity.sixSigmaMetric`
+частью u-chart formula. `closeLoop` может создать review-only Kaizen proposal; он не должен auto-apply code или
+сам переписывать defect taxonomy.
 
-То есть метка присутствовала, читалась людьми как объяснение чисел, и ни с какими числами связана не была.
-Это ровно тот подлог, на котором я сам попался, приняв упоминание имени в тексте за разбор механизма
-(раздел XVIII), и тот же, что в разделе XXIе выдал журнал фабрики за деятельность продукта.
+**Входы** — завершенные non-dismissed canonical epics; terminal task status и `updatedAt`; defect/opportunity
+counts for streams `qualityGate`, `prConflicts`, `taskRevival` и `reviewConcerns`; review-concern и defect
+journal root-cause pattern ids; `baselineEpicCount`; epic `sixSigmaMetric`; active project list;
+`OperationalTruthDto` evidence/trust/defect/invariant fields; project status; readiness totals; unresolved trust
+snapshots.
 
-Починка сделана скупо и верно: метку привязали к ряду и **сразу оговорили, что в арифметику она не входит**.
-Описание объявлено описанием, а не признаком.
-*Философия:* `POL_GRAYS_01_CONVERSATION_MAXIM` (D007) — Пол Грайс, `BARCAN-TAG-00 CODE-GUARDIAN`, принцип
-кооперативного дискурса, anchor *Logic and Conversation — cooperative principle and conversational maxims*.
-Сильная дословно: «вывод достаточно информативен, истинен, уместен и однозначен для следующего работника;
-названы минимальные поля статуса, ссылки на свидетельство и следующее действие». Слабая: «отчёт длинный и
-подробный». Опровержение: «дать отчёт следующему работнику и спросить, что делать; невозможность ответить и
-есть дефект». **Форма: сильная после починки, слабая до неё.** Сама миграция и называет себя гриcевой —
-«Gricean quantity-optimal grounding follow-on», — и это четвёртый случай, когда код фабрики ссылается на
-корпус. До починки метка была уместна и неоднозначна одновременно: следующий работник не мог сказать, к
-какому ряду она относится, потому что она не относилась ни к какому.
+**Выходы** — rows in `process_control_snapshots`; `out_of_control` и `western_electric_signal`; log warnings;
+review-only Kaizen proposals для known pattern violation или systemic defect; rows in `trust_signal_snapshots`;
+`eventual_outcome`/`outcome_recorded_at`; invariant-transition rows с previous/current status.
 
-**`V90__trust_signal_snapshots.sql`** — копит наблюдения, на которых когда-нибудь можно будет подобрать веса
-оценки доверия вместо нынешних, выбранных рукой.
-*Связи:* пишет `TrustSnapshotService.captureAndBackfillSnapshots`, `@Scheduled(fixedRate = 7200000)` —
-раз в два часа, он же дозаписывает исход через `findByEventualOutcomeIsNull` и `setEventualOutcome` |
-столбцы `eventual_outcome` и `outcome_recorded_at` допускают пустоту по устройству.
-*Ценность:* без размеченной истории подбор весов невозможен, и остаются штрафы, назначенные рукой.
-*Комментарий:* **ядро, и это лучший отказ во всём хранилище.** Миграция намеренно **не** заводит ни
-вычисления весов-кандидатов, ни таблицы подобранных коэффициентов, и основание названо дословно: размеченной
-истории пока недостаточно, «and inventing placeholder weights here would repeat the exact mistake this whole
-lever exists to fix».
+**Владельцы истины и состояния** — `process_control_snapshots` владеет historical u-chart series;
+`FeatureEntity` владеет epic и его quality label; `TaskEntity` владеет terminal completion ordering;
+`SixSigmaAuditService` владеет count definitions; `DefectJournalEntity` и `ReviewConcernEntity` владеют cause
+hints; `trust_signal_snapshots` владеет captured trust inputs и later outcomes; `OperationalTruthService`
+владеет текущим observe-only trust scoring; project status и deliverable readiness владеют eventual outcome
+classification.
 
-Сопоставлю с уже описанным в перечне. `PredictionService` в сайдкарах (раздел XIX) содержит логистическую
-оценку с коэффициентами, выбранными рукой, и обучения у неё нет. Здесь — та же задача, тот же соблазн и
-прямо противоположное решение: **не сочинять число, которого нечем обосновать, и вместо этого завести
-предпосылку для настоящего обоснования.** Одна фабрика, одно правило, два разных исполнения.
+**Инварианты** — baseline points are the first completed epics in project order и никогда не проверяются against
+themselves; monitoring points use fixed baseline center line and limits; Western Electric signals are named
+strings, not one generic alarm; only latest saved point может close the loop on recompute; metric label копируется
+onto snapshot and proposal text, но не читается math; trust snapshots are data collection, not weight fitting;
+unresolved trust outcomes remain null until delivered or abandoned; invariant confirmations write nothing,
+transitions write previous status.
 
-Замер о нынешнем положении: сбор идёт, исходы записываются, а вот подбора весов **не существует** — ни
-таблицы коэффициентов, ни кода подбора; единственные упоминания рычага во всём коде суть сама служба
-снимков и эта миграция (контроль: греп по имени рычага находит один файл). Достаточно ли накопилось
-размеченной истории замер **не проводился**: это состояние живой базы, а не репозитория. Поэтому «этап второй не
-наступил» запись утверждает как факт о коде, а не как упрёк.
-*Философия:* `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` (D006) — Элвин Голдман,
-`BARCAN-TAG-07 SECOND-ORDER-KNOWLEDGE`, принцип релайабилизма процессов, anchor *A Causal Theory of Knowing
-/ Epistemology and Cognition — reliabilism*. Сильная дословно: «рискованное действие требует свидетельства
-знаниевого качества, а не убеждения или намерения; приложена проверка или источник полномочия». Слабая:
-«действие разрешено, потому что „мы уверены“». Опровержение: «потребовать источник; ссылка на собственное
-убеждение и есть дефект». **Форма: сильная, и в редком виде — через воздержание.** Рискованное действие
-здесь — назначить веса, — и оно не совершено именно потому, что свидетельства знаниевого качества нет.
-Опровержение образца выполнить нельзя: источник не подменён убеждением, он объявлен отсутствующим.
+**Сильная форма сейчас** — migrations создают durable rows and indexes; `ProcessControlServiceTest` covers
+baseline lock, 3-sigma excursion, metric-label propagation, systemic-defect proposal и
+`8_CONSECUTIVE_SAME_SIDE` Western Electric rule. `TrustSnapshotServiceTest` covers captured DTO inputs,
+delivered/abandoned/unresolved outcome backfill, once-per-project readiness computation, first invariant
+transition, no write on unchanged invariant и previous-status capture. `OperationalTruthService.trust` still
+uses explicit hand-written packets/penalties, while `V90` deliberately refuses to pretend they are fitted
+coefficients.
 
-## Суждение по этой части слоя
+**Слабая/неидеальная форма сейчас** — `ProcessControlService.recomputeForProject` still reads PR reviews and
+task conflicts as whole evidence lists once per recompute; that is better than per-epic N+1 but not a project
+scoped acquisition. `detectWesternElectricSignal` has visible code for `6_POINT_TREND`, but the focused test seen
+in this tact covers only `8_CONSECUTIVE_SAME_SIDE`. `closeLoop` has source for known-pattern proposals, but the
+focused process-control tests seen here assert only the systemic-defect branch. `TrustSnapshotService` selects
+active projects by `projectRepository.findAll()` plus Java filtering; that should become an active-project
+repository predicate. Current trust scoring remains a hand-picked formula until the snapshot table contains
+sufficient labeled history.
 
-Эти три миграции показывают фабрику с лучшей стороны и притом ровно в том месте, где прежний метод склонен находить у
-неё худшее. `V72` даёт истории, без которой сравнивать не с чем. `V85` признаёт, что метка, показываемая
-людям, ни к чему не привязана, и привязывает её, сразу оговорив её бессилие. `V90` отказывается сочинить
-коэффициенты и заводит вместо них предпосылку.
+**Что сделать для идеала** — после явного разрешения на код ограничить process-control evidence reads
+project/session/feature boundary или доказать тестами, почему stream denominator требует factory-wide evidence;
+добавить focused six-point-trend test; добавить known-pattern `closeLoop` test with dominant
+`rootCausePatternId`; заменить project acquisition в `TrustSnapshotService.captureAndBackfillSnapshots` на
+active-project predicate; менять или подбирать trust weights только через named labeled-history check over
+`trust_signal_snapshots`.
 
-Общее у всех трёх — **отказ выдавать наличие за смысл**: точка внутри границ не событие, метка не признак,
-собранные строки не модель. Это и есть та самая дисциплина, отсутствие которой в других местах дало и
-единственный датчик, объявленный узким местом, и заголовок фабрики, принятый за тождество требования
-заказчика.
+**Что не трогать** — не пересчитывать baseline как running average; не помечать baseline points как process
+failures; не сводить Western Electric signals к unnamed boolean; не пускать `sixSigmaMetricLabel` в
+center-line/UCL/LCL math; не создавать placeholder trust coefficients; не записывать invariant confirmations как
+events; не auto-apply Kaizen proposal, созданный из u-chart signal.
+
+**Опровержение** — baseline point marked out of control; later point changes baseline center line; label change
+changes u-chart arithmetic; process event lacks project/feature/stream/sequence; six-point trend cannot be
+tested; known root-cause pattern does not create known-pattern proposal branch; trust weights are changed without
+querying labeled outcomes; unresolved active project snapshots are marked delivered or abandoned.
+
+**Критерий закрытия** — section is complete as a documentation tact when every process-supervision, metric-label
+and trust-snapshot mechanism has a per-mechanism Antigravity comment. Implementation becomes ideal when
+acquisition scope is project-aware, all u-chart rule branches and both close-loop branches have focused tests, and
+trust-score weight changes are gated by a reproducible labeled-history sufficiency check.
+
+**Свидетельства записи** — `src/main/resources/db/migration/V72__create_process_control_snapshots.sql:1-24`;
+`V85__process_control_snapshot_metric_label.sql:1-6`; `V90__trust_signal_snapshots.sql:1-25`;
+`ProcessControlService.java:33-418`; `ProcessControlSnapshotEntity.java:7-117`;
+`ProcessControlSnapshotRepository.java:9-16`; `ProcessControlServiceTest.java:40-266`;
+`TrustSnapshotService.java:21-173`; `TrustSignalSnapshotEntity.java:7-83`;
+`TrustSignalSnapshotRepository.java:10-13`; `TrustSnapshotServiceTest.java:29-242`;
+`OperationalTruthService.java:186-208`, `526-572`; philosopher rows named above.
+
+**Текущий статус** — частично сильный. Storage, baseline discipline, metric-label boundary и trust-data
+collection are real. Остаточные дефекты — acquisition scope и branch/test coverage, а не разрешение tune math by
+taste.
+
+## комментарий для Антигравити по механизмам
+
+- `V72__create_process_control_snapshots.sql` / `process_control_snapshots`: считаю механизм идеальным.
+- `ProcessControlSnapshotEntity`: считаю механизм идеальным.
+- `ProcessControlSnapshotRepository`: считаю механизм идеальным.
+- `ProcessControlService.periodicRecompute`: считаю механизм идеальным.
+- `ProcessControlService.recomputeForProject/recomputeStream`: не идеален по scope of evidence acquisition;
+  применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` и ограничить PR/conflict evidence by project/session/feature или
+  явно доказать wider denominator.
+- `ProcessControlService.detectWesternElectricSignal`: не идеален по тестовой защите; применить
+  `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` и добавить focused `6_POINT_TREND` test while preserving
+  `8_CONSECUTIVE_SAME_SIDE`.
+- `ProcessControlService.closeLoop`: не идеален по тестовой защите; применить
+  `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` и протестировать dominant `rootCausePatternId` known-pattern branch.
+- `V85__process_control_snapshot_metric_label.sql`: считаю механизм идеальным.
+- `ProcessControlService` metric-label propagation: считаю механизм идеальным.
+- `V90__trust_signal_snapshots.sql`: считаю механизм идеальным.
+- `TrustSignalSnapshotEntity`: считаю механизм идеальным.
+- `TrustSignalSnapshotRepository`: считаю механизм идеальным.
+- `TrustSnapshotService.captureAndBackfillSnapshots`: не идеален по active-project acquisition; применить
+  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` и использовать active-project repository predicate вместо `findAll()` plus
+  Java filtering.
+- `TrustSnapshotService.captureSnapshot`: считаю механизм идеальным.
+- `TrustSnapshotService.backfillResolvedOutcomes`: считаю механизм идеальным.
+- `TrustSnapshotService.recordInvariantTransitions`: считаю механизм идеальным.
+- `OperationalTruthService.trust`: не идеален as fitted trust model; применить
+  `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` и не менять weights, пока у `trust_signal_snapshots` нет named
+  sufficiency check over labeled outcomes.
 
 # XXIII. Живой замер фабрики, 7 сентября 2026
 

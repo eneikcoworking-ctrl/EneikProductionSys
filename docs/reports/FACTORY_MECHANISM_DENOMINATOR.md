@@ -2174,3 +2174,60 @@ test protection. No code was changed in this tact.
 `application.properties` Flyway validation flags: считаю механизм идеальным;
 `EneikProductionApplication.compactH2StoreOnShutdown`: не идеален по тестовой защите; применить
 `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и покрыть тестами ветки H2/non-H2/null/double/failure.
+
+## 2026-09-13 Codex Strict Record: Process Supervision
+
+Status: documentation-only strict record for section XXIIж in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `V72__create_process_control_snapshots.sql`
+with `process_control_snapshots`, `ProcessControlSnapshotEntity`, `ProcessControlSnapshotRepository`,
+`ProcessControlService.periodicRecompute`, `ProcessControlService.recomputeForProject/recomputeStream`,
+`ProcessControlService.detectWesternElectricSignal`, `ProcessControlService.closeLoop`,
+`V85__process_control_snapshot_metric_label.sql`, `ProcessControlService` metric-label propagation,
+`V90__trust_signal_snapshots.sql`, `TrustSignalSnapshotEntity`, `TrustSignalSnapshotRepository`,
+`TrustSnapshotService.captureAndBackfillSnapshots`, `TrustSnapshotService.captureSnapshot`,
+`TrustSnapshotService.backfillResolvedOutcomes`, `TrustSnapshotService.recordInvariantTransitions`, and
+`OperationalTruthService.trust`.
+
+Denominator effect: section XXIIж previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact, excluding the file title `# Механизмы фабрики`:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 53 |
+| Sections still missing visible `комментарий для Антигравити` | 10 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining sections without visible Antigravity comment: XVI, XXI, XXIб, XXII, XXIIб, XXIIв, XXIIг, XXIIд,
+XXIIе, XXIX.
+
+Remaining non-ideal points for this section: storage, baseline discipline, metric-label boundary and trust-data
+collection are strong. Remaining implementation gaps are process-control evidence acquisition scope,
+test coverage for `6_POINT_TREND`, test coverage for the known-pattern close-loop branch, active-project
+acquisition in `TrustSnapshotService`, and a knowledge-grade sufficiency check before changing trust weights.
+No code was changed in this tact.
+
+комментарий для Антигравити: `V72__create_process_control_snapshots.sql` / `process_control_snapshots`: считаю
+механизм идеальным; `ProcessControlSnapshotEntity`: считаю механизм идеальным;
+`ProcessControlSnapshotRepository`: считаю механизм идеальным; `ProcessControlService.periodicRecompute`:
+считаю механизм идеальным; `ProcessControlService.recomputeForProject/recomputeStream`: не идеален по scope of
+evidence acquisition; применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` и ограничить PR/conflict evidence by
+project/session/feature или явно доказать wider denominator; `ProcessControlService.detectWesternElectricSignal`:
+не идеален по тестовой защите; применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` и добавить focused
+`6_POINT_TREND` test while preserving `8_CONSECUTIVE_SAME_SIDE`; `ProcessControlService.closeLoop`: не идеален
+по тестовой защите; применить `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` и протестировать dominant
+`rootCausePatternId` known-pattern branch; `V85__process_control_snapshot_metric_label.sql`: считаю механизм
+идеальным; `ProcessControlService` metric-label propagation: считаю механизм идеальным;
+`V90__trust_signal_snapshots.sql`: считаю механизм идеальным; `TrustSignalSnapshotEntity`: считаю механизм
+идеальным; `TrustSignalSnapshotRepository`: считаю механизм идеальным;
+`TrustSnapshotService.captureAndBackfillSnapshots`: не идеален по active-project acquisition; применить
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` и использовать active-project repository predicate вместо `findAll()` plus
+Java filtering; `TrustSnapshotService.captureSnapshot`: считаю механизм идеальным;
+`TrustSnapshotService.backfillResolvedOutcomes`: считаю механизм идеальным;
+`TrustSnapshotService.recordInvariantTransitions`: считаю механизм идеальным; `OperationalTruthService.trust`:
+не идеален as fitted trust model; применить `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` и не менять weights, пока у
+`trust_signal_snapshots` нет named sufficiency check over labeled outcomes.
