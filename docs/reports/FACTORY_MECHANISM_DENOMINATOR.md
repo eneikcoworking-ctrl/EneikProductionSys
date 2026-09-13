@@ -1878,3 +1878,31 @@ The live conformance audit for current branches/writes was not re-run in this ta
 are strong from source evidence. No code was changed in this tact.
 
 комментарий для Антигравити: `V21__add_file_scope_and_conflicts.sql` / `tasks.file_scope` / `task_conflicts`: не идеален, apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, preserve conflict accounting but do not treat predicted file scope as authorization; `V69__create_project_file_claims.sql` / `project_file_claims`: считаю механизм идеальным; `V99__task_conflict_preserved_branch.sql` / `task_conflicts.preserved_branch`: считаю механизм идеальным; `V123__drop_task_conflicts_without_a_task.sql`: считаю механизм идеальным.
+
+## 2026-09-13 Codex Strict Record: Execution Context And RAG
+
+Status: documentation-only strict record for section XXIIи in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `V55__create_context_chunks.sql` with
+`GeminiContextService` RAG retrieval, `V62__add_context_chunk_content_hash.sql`, `V25__add_depends_on_and_hotspots.sql`,
+`gemini_context_learning_enabled`, `verdict_gating_project_slug` measurement practice, and `OpsAuditorService`
+as a no-action context consumer.
+
+Denominator effect: section XXIIи previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 45 |
+| Sections still missing visible `комментарий для Антигравити` | 18 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: prompt citation of exact RAG source/pattern IDs is not proven;
+content-hash skip lacks equivalence/golden evidence in this record; `depends_on` cycle/hotspot behavior needs
+focused proof; string settings must not be measured from boolean `enabled`. No code was changed in this tact.
+
+комментарий для Антигравити: `V55__create_context_chunks.sql` / `GeminiContextService` RAG retrieval не идеален, apply `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE`; `V62__add_context_chunk_content_hash.sql` не идеален, apply `ALONZO_CHERCH_01_SUBSTITUTION_ORACLE`; `V25__add_depends_on_and_hotspots.sql` не идеален, apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; `gemini_context_learning_enabled`: считаю механизм идеальным; `verdict_gating_project_slug` measurement не идеален, apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; `OpsAuditorService` no-action context consumer не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.

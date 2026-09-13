@@ -7453,125 +7453,111 @@ conflicts absent from decision denominators.
 
 # XXIIи. Контекст: что исполнитель видит перед работой
 
-Три миграции решают, **какое знание попадёт в подсказку**. Это то самое место, через которое 9 августа
-пришло 38-часовое заражение (раздел XXIе), поэтому живое описание здесь особенно нужно.
+**Имена механизма или семейства** — `V55__create_context_chunks.sql`, `context_chunks`,
+`ContextChunkEntity`, `ContextChunkRepository`, `GeminiContextService.reindexStandingKnowledge`,
+`GeminiContextService.retrieveRelevantContext*`, `buildRoleAndPatternContext`, `buildRoleScopedContext`,
+`buildPhilosopherPatternContext`; `V62__add_context_chunk_content_hash.sql`,
+`context_chunks.content_hash`; `V25__add_depends_on_and_hotspots.sql`, `tasks.depends_on`,
+`project_hotspot_files`, `TechnicalLeadCompiler` hotspot expansion; live setting reads
+`gemini_context_learning_enabled` and `verdict_gating_project_slug`; and `OpsAuditorService` as context
+consumer.
 
-**`V55__create_context_chunks.sql`** — заводит выборку знаний: куски постоянных документов с их вложениями,
-чтобы в каждый вызов уходили только несколько самых близких по смыслу, а не весь свод.
-*Связи:* создаёт `context_chunks` (тип источника, ссылка на источник, номер куска, содержимое, вложение,
-размерность) с индексом по источнику | читает `GeminiContextService`, ранжируя по точной косинусной близости
-| переиндексация идемпотентна: удаление и вставка по ссылке на источник, поэтому правка документа не
-оставляет устаревших кусков.
-*Ценность:* без ранжирования в каждый вызов уходит весь свод, и расход на внешнюю модель ничем не ограничен.
-*Комментарий:* **ядро, и здесь важно, что именно объявлено рычагом.** Указание оператора приведено в файле
-дословно: «нужно чтобы Джемини постоянно училась контексту моей системы и в каждом вызове была максимально
-компетентна… мат. выверенные недорогие по токенам решения». И рычагом названо **ранжирование**, а не урезание:
-компетентность не понижается, понижается объём переданного. Это разные вещи, и их часто путают.
+**Философский паттерн** — `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE`, D014 RAG hallucination: retrieved
+context must carry source, score and exact pattern identity. For content-hash substitution use
+`ALONZO_CHERCH_01_SUBSTITUTION_ORACLE`, D009 Substitution failure. For live setting interpretation use
+`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, D010 Data lineage loss.
 
-Отмечу связь, важнее прочих: среди индексируемых источников — **корпус философских образцов**
-(назван в `V62` прямо: «and now the new philosopher-patterns corpus»). То есть корпус не лежит мёртвым
-грузом в репозитории: он подаётся в подсказки через ту же выборку.
-*Живое, 7 сентября 2026:* `CONTEXT_CHUNKS` — 1518 строк (замер `db-table-sizes`), то есть выборка
-наполнена. При этом за 29 часов журнала **ни одной строки** от `GeminiContextService`, `reindex`,
-`embedding` (контроль: слово `Gemini` в журнале встречается 59 раз, `TOC-SENTINEL` — 7332, значит греп не
-слеп). Переиндексация назначена на `cron 0 0 3 * * ?`, и 03:00 в окно работы контейнера попадало.
+**Связи** — `V55` creates `context_chunks`; `GeminiContextService` indexes standing knowledge, role charters,
+philosopher-patterns and common-pattern files, then retrieves top-k relevant chunks by cosine similarity.
+`V62` adds `content_hash` so stable sources are skipped without re-embedding. `V25` adds task dependency and
+project hotspot rows; `TechnicalLeadCompiler` injects hotspot files into predicted scope. Settings gate RAG
+learning/retrieval and verdict-gate scope. `OpsAuditorService` consumes gathered evidence and model decisions.
 
-Две гипотезы, между которыми я **не выбираю**: либо переиндексация прошла и промолчала, потому что по
-хешам содержимого (`V62`) ничего не изменилось и переembedding не понадобился, — и тогда молчание есть
-признак исправности; либо она не отработала вовсе. Что разделило бы: строка журнала на входе в
-`reindexStandingKnowledge` до проверки хешей, либо отметка времени последней записи в `context_chunks`.
-Ни того, ни другого в записи нет.
-*Философия:* `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` (D014) — Алонзо Чёрч,
-`BARCAN-TAG-08 SUBSTITUTIVITY-SALVA-VERITATE`, принцип формального лямбда-исчисления, anchor *Lambda
-calculus and Church's thesis — formal computability*. Сильная дословно: «правило хранится извлекаемым куском с источником, оценкой и классом дефекта, и цитируется
-идентификатором». Слабая: «правило пересказано по памяти». Опровержение: «потребовать идентификатор образца;
-отсутствие ссылки и есть галлюцинация». **Форма: сильная по хранению, не мерена по цитированию.** Куски
-хранятся с источником и извлекаются по близости — это ровно «извлекаемый кусок с источником». Но требует ли
-подсказка от исполнителя **цитировать идентификатор образца**, проверка не проводилась; без этого сильную форму
-целиком называть нельзя, а образец её требует.
+**Идеальная форма** — each execution prompt receives bounded, relevant, source-named context instead of a
+whole unbounded corpus; unchanged sources do not spend embedding budget again; task dependency/hotspot facts
+are explicit; settings are read at the correct abstraction level; model consumers distinguish "no actionable
+decision" from transport failure.
 
-**`V62__add_context_chunk_content_hash.sql`** — хранит хеш содержимого источника, чтобы не пересчитывать
-вложения для того, что не менялось.
-*Связи:* добавляет `context_chunks.content_hash` | меняет поведение `reindexStandingKnowledge`, которая
-прежде удаляла и пересчитывала **каждый** источник на **каждый** тик.
-*Ценность:* без него неизменные документы — уставы ролей, инварианты, корпус образцов — оплачиваются заново
-при каждой переиндексации.
-*Комментарий:* **периферия по действию, ядро по разряду.** Основание — указание оператора «общая цифра
-быстро кончается», и в файле оговорено главное: «real cost, zero behavior change for anything that reads the
-chunks». То есть заявлено, что правка касается **только** цены, а не того, что видит читающий. Это редкая
-и правильная формулировка: изменение объявлено сохраняющим поведение под названным наблюдением.
+**Граница** — this family decides what knowledge enters prompts and which dependency/hotspot facts are
+available before work starts. It does not decide whether the model answer is correct, whether a task is done,
+or whether a verdict gate accepts work.
 
-Оговорю, чего в файле нет: **свидетельства** этого сохранения. Заявление сделано, проверка не названа.
-*Живое:* отдельного признака работы хешей в журнале нет; см. две гипотезы в записи `V55` — если
-переиндексация молчит потому, что хеши совпали, то это и есть работающий `V62`, но различить запись не может.
-*Философия:* `ALONZO_CHERCH_01_SUBSTITUTION_ORACLE` (D009) — Алонзо Чёрч,
-`BARCAN-TAG-08 SUBSTITUTIVITY-SALVA-VERITATE`, принцип формального лямбда-исчисления, anchor *Lambda calculus
-and Church's thesis — formal computability*. Сильная дословно: «до замены кода, зависимости, модели или схемы
-доказано сохранение под значимыми наблюдениями». Слабая: «заменили, тесты зелёные». Опровержение: «назвать
-наблюдение, под которым доказывалось сохранение; „все тесты“ ответом не является, если тесты не покрывают
-предмет замены». **Форма: слабая.** Наблюдение названо верно и точно — «что видит читающий куски», — но
-доказательства сохранения под ним нет: ни теста, ни сверки выдачи до и после. Утверждение правильной формы
-без исполнения.
+**Входы** — standing files (`OBSERVER_LOG`, invariants, AI guidelines, operator notes, operational patterns,
+role charters, philosopher-patterns), source type/ref, content hash, embedding vector/dimension, query,
+top-k, role tag, `gemini_context_learning_enabled`, `tasks.depends_on`, `project_hotspot_files`, and
+settings API fields such as `maskedValue` vs `enabled`.
 
-**`V25__add_depends_on_and_hotspots.sql`** — вводит зависимость одной задачи от другой и перечень
-«горячих» файлов проекта.
-*Связи:* добавляет `tasks.depends_on` с внешним ключом на саму таблицу задач | заводит
-`project_hotspot_files` с каскадом от проекта.
-*Ценность:* без зависимости порядок работ не выразим; без перечня горячих файлов страж столкновений не
-знает, какие пути опасны заранее.
-*Комментарий:* **периферия по содержанию, ядро по последствиям.** Самоссылающийся внешний ключ — это
-объявление, что зависимости образуют граф на задачах, а не список. Отмечу, чего здесь **нет**: ограничения,
-запрещающего цикл. Внешний ключ на ту же таблицу циклы не исключает, и обнаружение цикла остаётся заботой
-кода, а не хранилища. Сравнить с `chk_evidence_nodes_exactly_one_source` (раздел XXII), где онтологическое
-правило исполняет база.
-*Живое, 7 сентября 2026:* `PROJECT_HOTSPOT_FILES` в двадцатку крупнейших таблиц не входит, поэтому числа
-строк в записи нет — и это факт о проекции, а не о базе. Косвенно механизм наблюдаем: страж столкновений
-вычёркивает из предсказанной области именно общие пути — файлы сборки и миграции (раздел XXIIз).
-*Философия:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци, `BARCAN-TAG-01 ACTUALIST-OBJECT`,
-принцип топологии пространственно-временных границ, anchor *Parts and Places / formal ontology of boundaries
-and spatial parts*. Сильная дословно: «названа точка, где меняется владелец проверки, полномочия или
-сохранения, и на неё есть тест». Слабая: «граница „понятна из структуры пакетов“». Опровержение: «удалить
-проверку на границе; если ни один тест не покраснел, границы нет». **Форма: не мерено.** Перечень горячих
-файлов есть объявление границы опасного, но теста на неё отдельная проверка не проводилась, а удалять проверку ради опровержения
-означало бы править продуктовый код.
+**Выходы** — persisted context chunks, retrieved source-scored snippets, raw fallback role context when RAG is
+unavailable, skipped re-embedding for unchanged sources, task dependency edge, project hotspot rows, and
+audit decisions/no-decision logs.
 
-## Живое, требующее поправки к прежней записи
+**Владельцы истины и состояния** — `context_chunks` owns indexed context; source files own canonical prose;
+`SystemSettingsService` owns effective settings; `tasks.depends_on` owns task dependency; `project_hotspot_files`
+owns project hotspot list; audit logs own the fact that no actionable decision was returned.
 
-Замер настроек 7 сентября (`curl -s localhost:8080/api/settings`, поле `enabled`, источник `database`):
+**Инварианты** — reindex of one source is delete-then-insert by `source_ref`; unchanged content plus current
+embedding dimension may skip re-embed; vectors of different dimensions are not compared as "not similar";
+raw fallback must be bounded and must not reintroduce the old unbounded corpus; settings fields must be read
+according to their type; `depends_on` may express an edge but does not by itself prevent cycles.
 
-    gemini_context_learning_enabled   true
-    gemini_project_observer_enabled   true
-    verdict_gating_enabled            true
-    verdict_gating_project_slug       (пусто)
-    project_event_log_enabled         true
+**Сильная форма сейчас** — source evidence shows scheduled reindex, content hashing, dimension guard,
+top-k retrieval, scoped role/pattern retrieval, raw fallback, hotspot expansion, and setting gates.
 
-Первое уточнение текущего состояния: я прочёл область заслона вердиктов как пустую и написал, что он
-не применяется ни к одному проекту. Ошибка инструментальная: у строковой настройки значение лежит в поле
-`maskedValue`, а прежний замер смотрел `enabled`, годное лишь для булевых. Перезамер того же дня даёт
-`verdict_gating_project_slug = 'test-fiftieth'`, и живая выдача пульта управления это подтверждает: среди
-непройденных условий стоят строки от слоёв вердиктов, а они попадают туда только когда решётка
-**применилась**. Заслон включён и действует на живом проекте.
+**Слабая/неидеальная форма сейчас** — the record has not proven that prompts require exact philosopher-pattern
+IDs from retrieved chunks; `V62` names behavior preservation but no golden-master/equivalence evidence is
+recorded here; `V25` has no database cycle constraint for `tasks.depends_on`; the old 7 September settings
+notes were historical and included a field-level interpretation mistake.
 
-Второе, и это поправка к моей записи в разделе XXIIд: там сказано, что `V111` «закрепляет решение в базе».
-Живое значение флага наблюдателя — **`true`**, тогда как `V111` вставляет `'false'`, и она последняя из
-двух миграций, трогающих этот ключ (`V65` ставила `true`; замер: `grep -l gemini_project_observer_enabled`
-по всем 137 файлам). Причину расхождения я **не устанавливаю и не додумываю**. Две гипотезы: значение
-переписали после `V111` через изменяющий путь настроек, либо поле `enabled` в этом ответе не отражает
-хранимое значение для данного ключа. Что разделило бы: прямое чтение строки `system_settings` по этому
-ключу. Такого замера в записи нет, и до него утверждение «закреплено в базе» из раздела XXIIд следует считать
-**неподтверждённым**.
+**Что сделать для идеала** — add focused evidence that generated prompts cite pattern IDs/source refs when
+using RAG; add a retrieval equivalence/golden check for content-hash skip under unchanged content and current
+embedding dimension; keep `depends_on` cycle handling in code/tests; when reading settings, use field types
+correctly (`maskedValue` for strings, boolean field for booleans).
 
-На поведение это, по-видимому, не влияет: сам механизм — заглушка, «permanently inert», и включённый флаг
-включать нечего. Но запись о том, что миграция что-то закрепила, замером не подтверждена, и я её не
-оставляю без оговорки.
+**Что не трогать** — do not send the whole philosopher corpus or all role charters into every prompt; do not
+remove content-hash skip; do not bypass the dimension guard; do not treat empty RAG retrieval as proof that no
+rule exists; do not infer string settings from boolean `enabled`.
 
-## Живое, общее для раздела
+**Опровержение** — a prompt uses a philosopher rule without source/pattern id; unchanged source content is
+re-embedded every cron tick; different-dimension stored vectors silently rank as zero similarity; a dependency
+cycle recurses without guard; or `verdict_gating_project_slug` is measured from the wrong field again.
 
-Смежный механизм, питающийся тем же контекстом, работает вхолостую: `OpsAuditorService` за 29 часов
-**59 раз** собрал по 45–47 единиц свидетельств и **каждый раз** получил «Gemini returned no actionable
-decisions» (замер: `grep -c "Gemini returned" `). Это не отказ и не ошибка — механизм исправен и отвечает
-исправно; но пятьдесят девять одинаковых исходов подряд суть тот случай, который в разделе XXIг назван
-сигналом без читателя, только с другой стороны: здесь есть читатель и нет сигнала.
+**Критерий закрытия** — prompt evidence includes exact source refs/pattern IDs; content-hash skip has
+equivalence evidence; dependency cycle/hotspot behavior has focused tests or command evidence; settings
+measurements state correct field and source.
+
+**Свидетельства записи** — `src/main/resources/db/migration/V55__create_context_chunks.sql:1-19`;
+`src/main/resources/db/migration/V62__add_context_chunk_content_hash.sql:1-6`;
+`src/main/resources/db/migration/V25__add_depends_on_and_hotspots.sql:1-10`;
+`src/main/java/com/eneik/production/services/GeminiContextService.java:134-184`;
+`src/main/java/com/eneik/production/services/GeminiContextService.java:234-272`;
+`src/main/java/com/eneik/production/services/GeminiContextService.java:342-428`;
+`src/main/java/com/eneik/production/services/GeminiContextService.java:452-505`;
+`grep -RIn 'depends_on|project_hotspot_files|hotspot' src/main/java src/main/resources/db/migration`;
+`grep -RIn 'verdict_gating_project_slug|gemini_context_learning_enabled|Gemini returned no actionable decisions'`.
+
+**Текущий статус** — partially strong but not ideal: storage/retrieval/cost guard are strong by source, but
+prompt citation, content-hash equivalence proof, dependency-cycle handling and settings measurement discipline
+remain non-ideal.
+
+## XXIIи.1. Комментарии для Антигравити по механизмам
+
+* `V55__create_context_chunks.sql` / `GeminiContextService` RAG retrieval — **комментарий для Антигравити:**
+  механизм не идеален: применить `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE`; preserve bounded ranked context,
+  but require source refs and pattern IDs in prompt evidence.
+* `V62__add_context_chunk_content_hash.sql` / `context_chunks.content_hash` — **комментарий для
+  Антигравити:** механизм не идеален: применить `ALONZO_CHERCH_01_SUBSTITUTION_ORACLE`; preserve cost skip,
+  but add equivalence/golden evidence that unchanged source plus current dimension preserves retrieved
+  content behavior.
+* `V25__add_depends_on_and_hotspots.sql` / `tasks.depends_on` / `project_hotspot_files` — **комментарий для
+  Антигравити:** механизм не идеален: применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; preserve
+  dependency/hotspot facts, but prove cycle guard and hotspot expansion before coding around them.
+* `gemini_context_learning_enabled` — **комментарий для Антигравити:** считаю механизм идеальным
+* `verdict_gating_project_slug` measurement — **комментарий для Антигравити:** механизм не идеален as
+  measurement practice: применить `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; read string settings from
+  `maskedValue`, not boolean `enabled`.
+* `OpsAuditorService` no-action context consumer — **комментарий для Антигравити:** механизм не идеален:
+  применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; distinguish stable no-action decisions from missing signal
+  before coding changes to auditor prompts.
 
 # XXIIк. Приёмка: чем доказывают, что сделано для заказчика, а не для фабрики
 
