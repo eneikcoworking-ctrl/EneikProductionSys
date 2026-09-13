@@ -1543,3 +1543,35 @@ were not run in this tact; `VideoAssetService` remains non-ideal by test evidenc
 this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXVII; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: AI Resource Boundary Comments
+
+Status: documentation-only per-mechanism correction for section XXXVIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit per-mechanism comments: `ApiAuthorizationInterceptor.preHandle`,
+`ApiAuthorizationInterceptor.checkMutatingOperation`, `ApiAuthorizationInterceptor.checkInternalReadAccess`,
+`WebConfig.addInterceptors`, `GoogleAiResourceController` safe-read surfaces,
+`GoogleAiResourceController` mutating AI-resource command surfaces, `ProjectRepository.findById` project identity
+guard, `ProjectOperationalContextService.build` AI-command context handoff,
+`GoogleAiResourceService.resourceMatrix/probeModels`, `DesignAssetService` AI-resource handoff methods,
+`VideoAssetService.generateAsset`, and `StitchClient.createDesignSystem`.
+
+Denominator effect: this section already had a visible Antigravity comment, so the visible-comment denominator
+does not change. This tact removes the family-level-only weakness for section XXXVIII by adding per-mechanism
+comments. It does not claim that all older visible sections already satisfy the per-mechanism rule.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 44 |
+| Sections still missing visible `комментарий для Антигравити` | 19 |
+
+This is a visible-section denominator, not a mechanism count and not a full count of historical family-level
+comments that still lack per-mechanism detail.
+
+Remaining non-ideal points for this section: focused MVC/integration boundary tests, deploy/runbook key probe
+and successful-mutation audit evidence were not added or run in this tact. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXVIII; family summary is not a substitute.
