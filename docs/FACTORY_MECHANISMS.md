@@ -5718,125 +5718,123 @@ anchor *Practical Reason and Norms / The Authority of Law*. Сильная до�
 
 # XXIв. Алгебра решений: чем фабрика отказывает
 
-Три типа без аннотации, вместе составляющие единственное место, где фабрика умеет ответить «я этого не
-установила» и не быть понятой как «всё хорошо». Прямое продолжение раздела XXIб: там показано, что
-пространства состояний третьего исхода не имеют; здесь — что он есть, отдельным типом.
+**Имена механизма или семейства:** `Verdict`, `Verdict.and(Verdict)`, `Judgement`,
+`VerdictReconciliation.reconcile`, `VerdictGate.constrain`, `VerdictGate.Decision`,
+`VerdictGate.ActionProhibition`, `VerdictGate.evaluateActionProhibition`,
+`VerdictGate.evaluateTaskProhibition`, `OperationalPolicyService.authorize/requireAllowed`,
+`OperationalPolicyDeniedException`, `CommandDashboardService` readiness edge, `ProjectFlowService` task
+dispatch edge, `ProjectController.orchestrate` denial response, `AutoMergeService` post-merge release catch,
+and the settings keys `verdict_gating_enabled` / `verdict_gating_project_slug`.
 
-**`Verdict`** (77 строк, 3 значения) — что один слой говорит об одном объявленном утверждении: можно ли
-проекту продвинуться по этому счёту.
-*Связи:* читают `CommandDashboardService` и `VerdictGate` (`services/verdict`, `@Service`) | пять слоёв
-выносят его: `RuntimeVerdictLayer`, `SixSigmaVerdictLayer`, `AcceptanceVerdictLayer`,
-`InfrastructureVerdictLayer`, `DoctrineVerdictLayer` — замер: `grep -rln "implements VerdictLayer"`,
-контроль на самом интерфейсе прошёл.
-*Ценность:* без него слои говорят числами разных родов, и их приходится усреднять.
-*Комментарий:* **ядро, и лучший механизм из всех, что я разобрал.** Значения три, а не два, и причина
-записана замером: 15 августа четыре доктринальные роли из тринадцати стояли в «неизвестно», пока поток
-раздавал задачи и сообщал 82% готовности, — у потока не было способа сказать «не решено», и он вёл себя
-так, будто не решено значит разрешено.
+**Философский паттерн:** `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (explicit unknown state, D012),
+`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (no averaging across different kinds), `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`
+(belief/evidence/revision debt, D007), `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` (explainable prohibition, D006),
+with background `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `ACP-061 Hoare Triple Review`.
 
-`and(Verdict)` — **сильная трёхзначная конъюнкция Клини, а не взвешенная сумма**:
-`WITHHOLD ∧ что угодно = WITHHOLD`, `PERMIT ∧ ABSTAIN = ABSTAIN`. Отсюда три свойства, каждое чинит дефект
-устройством, а не по месту: одобрение не перевешивает отказ; воздержание не равно разрешению; добавление
-слоя может сделать продвижение только труднее, никогда легче, — поэтому фабрика вправе наращивать
-собственную проверку без риска, что новая проверка что-нибудь случайно разблокирует.
+**Связи:** `VerdictLayer` beans produce `Judgement` values. `VerdictReconciliation.reconcile` folds them into
+one `Reconciliation`. `CommandDashboardService` passes construction readiness into `VerdictGate.constrain`.
+`OperationalPolicyService.authorize` asks `VerdictGate.evaluateActionProhibition` before returning an
+`OperationalDecision`; `requireAllowed` turns a refusal into `OperationalPolicyDeniedException`.
+`ProjectFlowService` asks `evaluateTaskProhibition` before dispatching each queued task. `ProjectController`
+returns policy denial as HTTP `409`; `AutoMergeService` treats a denied post-merge release with no queued work
+as informational, not as a failed merge.
 
-Отдельно записан отказ усреднять как **ошибку рода**: пять слоёв сообщали о одном проекте `82%`, `blocked`,
-`954545`, `0.57` и `launchSuccess=false`; конвейер говорит о действительности, доктрина деонтически, шесть
-сигм о частоте, граф о строении. Объединение — **не одно число, а один тип**: каждый слой отвечает на
-вопрос, на который может ответить, в своих терминах, отображая свою меру в одно из трёх значений своим
-объявленным правилом. Пороги не исчезают — они становятся местными и проверяемыми внутри слоя-владельца
-вместо тайного глобального балла.
-*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап, `BARCAN-TAG-06 DEONTIC-CONSISTENCY`,
-принцип четырёхзначной логики (True/False/Both/Neither), anchor *A Useful Four-Valued Logic / how a computer
-should think — many-valued diagnostics*. Сильная дословно: «истинное, ложное, **неизвестное** и
-противоречивое представлены явно, и показано, как каждое хранится, отображается и разрешается. Третий исход
-невозможно проигнорировать на стороне вызывающего». Слабая: «булево плюс `null`, трактуемый по месту».
-Опровержение: «найти вызывающего, который компилируется, не обработав „неизвестно“».
-**Форма: сильная, и это единственное место на фабрике, где образец исполнен буквально.** Проигнорировать
-третий исход вызывающий не может не по договорённости, а по арифметике: `ABSTAIN` поглощает `PERMIT` в
-конъюнкции. Замечу и расхождение с философом: у Белнапа четыре значения, здесь три — «противоречивое»
-отсутствует, и слои, сказавшие противоположное об одном утверждении, дадут `WITHHOLD`, а не «противоречие».
-Это осознанное сужение (сам принцип в корпусе помечен как «отвергается для итогового статуса, применяется
-для диагностики»), но означает, что различить «один слой отказал» и «слои противоречат друг другу» нечем.
-Второй образец: `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) — Гилберт Райл, `BARCAN-TAG-00 CODE-GUARDIAN`,
-принцип различия «знать что» и «знать как», anchor *The Concept of Mind — knowing-how versus knowing-that,
-category mistakes*. Сильная дословно: «назван тип, схема или переходник, удерживающий границу рода: процесс
-не выдаётся за объект, наблюдение за полномочие, политика за данные». Слабая: «мы понимаем разницу».
-Опровержение: «найти место, где значение одного рода присваивается полю другого без преобразования».
-**Форма: сильная.** Переходник назван и это сам тип: каждый слой обязан отобразить свою меру в `Verdict`
-своим правилом, и складывать частоту с деонтикой становится невыразимо.
+**Идеальная форма:** the factory has one decision algebra for refusal. Every layer maps its own local measure
+to `PERMIT`, `WITHHOLD` or `ABSTAIN`; no global weighted score can mix readiness, doctrine, Six Sigma, graph
+shape and runtime launch evidence. A refusal carries layer, proposition, reason and evidence. Silence about a
+declared proposition becomes epistemic debt. A thrown layer remains visible as abstention. A readiness gate can
+only subtract permission, never add it, and only inside an explicit project scope. Operational prohibitions have
+typed rule names, explanations, action boundaries and recovery exemptions so a rule cannot lock its own repair.
 
-**`Judgement`** (42 строки) — суждение одного слоя об одном объявленном утверждении, вместе с основанием и
-свидетельством, на котором стоит.
-*Связи:* производится тремя способами — `permit`, `withhold`, `abstain`; собирается в
-`VerdictReconciliation.reconcile` (`@Service`, аннотация записана полным именем — прежний фильтр бинов
-её не видел, см. поправку к знаменателю) | наружу выходит через `VerdictController`.
-*Ценность:* без основания и свидетельства отказ нельзя ни проверить, ни пересмотреть.
-*Комментарий:* **ядро.** Основание обязательно для всего, кроме `PERMIT`, и javadoc называет причину:
-«a refusal a human cannot check is an accusation, not evidence» — отказ, который человек не может
-проверить, есть обвинение, а не свидетельство. У воздержания основание тоже обязательно, и по отдельной
-причине: воздержание без сказанной причины неотличимо от слоя, который просто не запускался.
+**Граница:** this family governs what the factory may claim about readiness and which targeted operational
+actions it must refuse. It must not block client acceptance merely because the lattice abstains, must not turn
+empty/no-scope configuration into factory-wide enablement, and must not treat a policy denial as proof that the
+underlying merge, task or product failed.
 
-Это то же различение, что несут `TaskEntity` и `WishlistEntity`, и здесь оно доведено до конца в устройстве
-свёртки: слой, **упавший с исключением**, записывается как воздержание, а не исчезает из счёта
-(«the observer must never become the outage it exists to prevent»); объявленное утверждение, по которому
-слой **промолчал**, тоже становится воздержанием — «молчание о том, что слой обещал рассудить, обязано
-считаться против продвижения, а не за». Это прямая защита от того самого подлога, что записан в
-`TaskEntity`: `allMatch` по пустому списку даёт «прошло всё».
-*Философия:* `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER` (D007) — Айзек Леви, `BARCAN-TAG-04 MODAL-QUANTIFIER`,
-принцип фиксации доксастических состояний, anchor *The Fixation of Belief and Its Undoing / Enterprise of
-Knowledge — doxastic commitment*. Сильная дословно: «записано, какое свидетельство изменило убеждение и
-какая неопределённость осталась; приложены уверенность до и после и неразрешённые гипотезы». Слабая: «новое
-убеждение изложено без старого». Опровержение: «спросить, во что агент верил час назад и что именно это
-изменило». **Форма: слабая.** Поле `evidence` несёт, на чём суждение стоит, и javadoc прямо говорит зачем —
-чтобы вердикт можно было пересмотреть, когда его предмет изменился, вместо того чтобы вечно стоять на
-факте, который с тех пор устарел. Но **прежнего суждения не хранится**: сравнить «во что верили час назад»
-не с чем, суждения строятся заново на каждый запрос. Оставшаяся неопределённость, впрочем, записана —
-`outstandingByLayer` считает невынесенные по каждому слою.
+**Входы:** layer declared propositions, layer judgements, project id/slug, construction readiness verdict,
+system settings for gating enablement and scope, operational action, task retry count/payload recovery flags,
+flow-core state, authorization status, and catch-site context from controller or merge release.
 
-**`OperationalPolicyDeniedException`** (39 строк) — отказ операционной политики, несущий, **что именно**
-было отказано и на каком основании.
-*Связи:* бросает `OperationalPolicyService`; ловят `AutoMergeService` и `ProjectController`.
-*Ценность:* без переносимого основания отказ виден только как отсутствие действия.
-*Комментарий:* **ядро, и прежнее его исключение из перечня было ошибкой.** Раздел XVIII относил его к
-двенадцати «типам результатов и исключений, у которых нет собственного поведения». По замеру он несёт
-четыре поля — проект, действие, состояние, статус полномочия — плюс причину в самом сообщении. Признак
-«есть ли методы, которые что-то делают» здесь не годится: **удержание потока состоит не в том, чтобы
-что-то сделать, а в том, чтобы остановка была объяснима**. Это ровно то, чего не было при простое 5 сентября:
-отказ по `enabled` не назвал сработавшего условия, и вопрос «кто и почему это сделал» не мог иметь ответа.
-Здесь он ответ имеет по устройству. Судить о том, всегда ли ловящие этот отказ его основание показывают, я
-не могу — двух ловящих я не разбирал.
-*Философия:* `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` (D006) — Джозеф Раз, `BARCAN-TAG-10 DEONTIC-PROHIBITION`,
-принцип исключающих причин, anchor *Practical Reason and Norms / The Authority of Law*. Сильная дословно:
-«до реализации полномочий составлена матрица прав, обязанностей, привилегий и власти, и на каждое отношение
-есть тест разрешённого и запрещённого». Слабая: «роли перечислены, проверки написаны по месту».
-Опровержение: «найти отношение, у которого нет теста запрета». **Форма: не мерено.** Тип несёт действие и
-статус полномочия, то есть материал для матрицы есть; но существует ли на каждое отношение тест
-разрешённого и запрещённого, проверка не проводилась, а без этого называть форму — догадка.
+**Выходы:** `Verdict`, `Judgement`, `Reconciliation.advance/debt/refusals/constraint`, `Decision.verdict`,
+`Decision.applied`, refusal reasons, `ActionProhibition.ruleName/explanation/exemptsRecoveryWork`,
+`OperationalDecision.allowed/reason/blockers`, `OperationalPolicyDeniedException`, HTTP `409` body, and log
+classification for a denied post-merge release.
 
-## Где эта алгебра стоит, и почему её недостаточно
+**Владельцы истины и состояния:** each `VerdictLayer` owns its native measurement; `Verdict` owns the common
+three-valued algebra; `VerdictReconciliation` owns the fold and outstanding counts; settings own whether and
+where the gate applies; `OperationalPolicyService` owns action authorization; `ProjectFlowService` owns actual
+dispatch selection; HTTP and merge catch sites own only presentation of the denial.
 
-Заслон существует — `VerdictGate` (`@Service`, 133 строки) — и он **не читающая поверхность**: он
-ограничивает готовность, которую фабрика **заявляет**. Намеренно не трогает приёмку проекта (приёмка есть
-акт заказчика, завершающий работу, и решётка, которая воздерживается, не вправе мешать человеку закончить
-своё дело) и намеренно не заслоняет раздачу задач (слой, говорящий «продукт не запускается», выдвигает
-довод **за** починку, и заслонять раздачу на этом основании значило бы лишить фабрику способности чинить
-именно то, в чём ей отказано). Оба решения записаны и оба верны.
+**Инварианты:** `ABSTAIN` is not `PERMIT`; `WITHHOLD` dominates every conjunction; adding a layer cannot make
+advancement easier; declared-but-unanswered propositions count against advancement; empty lattice and empty
+project scope stand aside rather than approve; `Decision.applied=false` is distinct from a gate that ran and
+agreed; recovery work remains dispatchable when the doctrine prohibition is the thing that needs repair.
 
-Заслон требует непустой `verdict_gating_project_slug`: пока он пуст, `activeFor` возвращает ложь. **Замер
-7 сентября опроверг прежнее утверждение, будто он пуст:** ярлык равен `test-fiftieth`, то есть заслон
-привязан к живому проекту и применяется. Прежняя ошибка была инструментальной — прежний замер читал поле
-`enabled`, годное для булевых настроек, тогда как строковое значение лежит в `maskedValue`. Значение по
-умолчанию действительно пусто — и это тоже осознано, как ступенчатое включение («значение области видимости, по
-умолчанию означающее „все“, превратило бы первую же небрежную выкладку в общефабричное изменение»).
-`Decision.applied` отдельно сообщает, участвовала ли решётка, «потому что „заслон сработал и согласился“ и
-„заслон не запускался“ — разные факты, и по неразличимым выкладку не рассудить». Установлен ли ярлык на
-этой машине — **не мерено**: это состояние живой фабрики, а не репозитория.
+**Сильная форма сейчас:** `Verdict.and` encodes the three-valued conjunction. `Judgement` requires reason and
+evidence for checkable refusals/abstentions. `VerdictReconciliation` records thrown layers and unanswered
+declared propositions as debt. `VerdictGate.constrain` is scoped, fail-soft, empty-lattice safe and monotone.
+`evaluateActionProhibition` has named infrastructure and doctrine rules; doctrine recovery dispatch is
+exempted. Tests pin refusal dominance, abstention, empty lattice, scoping, typed doctrine reason codes and
+recovery-task exemption.
 
-Итог суждения: механизм устроен строже всего, что здесь описано, и при этом действует над одним
-утверждением — над тем, что фабрика **заявляет** о готовности. Между «фабрика не вправе утверждать, что
-готово» и «фабрика не вправе действовать так, будто готово» лежит вся разница, и вторую половину эта
-алгебра по построению не покрывает.
+**Слабая/неидеальная форма сейчас:** `Judgement` is a current ruling, not a persisted before/after belief
+ledger. `OperationalPolicyDeniedException` carries project, action, state, authorization status and message,
+but not structured `ruleName` / `blockers`; `ProjectController` therefore cannot expose those fields except
+inside the error text. The rights/duties matrix for every operational relation is not represented as one
+complete table in this section; only the measured verdict-derived prohibitions are encoded.
+
+**Что сделать для идеала:** if these judgements are used for historical comparison, persist a verdict
+observation ledger with before/after confidence, evidence id and unresolved hypotheses. Extend
+`OperationalPolicyDeniedException` to carry structured prohibition fields from `OperationalDecision` and return
+them in the controller response. Before adding more prohibitions, write the Raz matrix as tests: at least one
+allowed and one denied action per relation, plus the recovery-exemption case when the prohibition would
+otherwise block its own repair.
+
+**Что не трогать:** do not collapse `ABSTAIN` into `PERMIT` or `WITHHOLD`; do not replace conjunction with a
+weighted readiness score; do not make empty slug mean all projects; do not gate client acceptance through this
+readiness lattice; do not remove the recovery exemption; do not turn an operational denial caught after a merge
+into evidence that the merge failed.
+
+**Опровержение:** this record is false if a caller can compile while ignoring `ABSTAIN`, if an empty lattice
+or empty slug can approve a project, if `DISPATCH_QUEUED_TASKS` for a recovery task is blocked by
+`DOCTRINE_UNRECOVERED_FAILURE_PROHIBITION`, if a thrown or silent layer disappears from reconciliation, or if a
+structured denial rule is lost before it reaches the operator-facing response.
+
+**Критерий закрытия:** source remains closed for the core algebra while the listed tests cover monotonic
+three-valued behavior, scoping and recovery exemptions. The whole section becomes ideal only when policy denial
+transport preserves `ruleName` / `blockers` structurally and a persisted ledger exists for any use that claims
+to compare current judgement with a past one.
+
+**Свидетельства записи:** `Verdict.java:3-76`; `Judgement.java:3-59`;
+`VerdictReconciliation.java:11-35,72-135`; `VerdictGate.java:14-49,65-109,112-149,159-272`;
+`OperationalPolicyService.java:224-272`; `OperationalPolicyDeniedException.java:5-38`;
+`CommandDashboardService.java:306-335`; `ProjectFlowService.java:6408-6417`;
+`ProjectController.java:226-243`; `AutoMergeService.java:1357-1375`; `SystemSettingsService.java:413-422`;
+`VerdictReconciliationTest.java:28-153`; `VerdictGateTest.java:52-159,164-326`;
+`OperationalPolicyServiceTest.java:280-330`. Команды: `grep -RIn 'evaluateActionProhibition\|OperationalPolicyDeniedException' src/main/java src/test/java`;
+`nl -ba src/main/java/com/eneik/production/services/verdict/VerdictGate.java`.
+
+**Текущий статус:** partially ideal. The algebra itself and the gate's monotone/scoped behavior are strong.
+The remaining non-ideal points are transport of structured operational denial fields and absence of a persisted
+belief-update ledger when historical comparison is required.
+
+**комментарий для Антигравити по механизмам:**
+- `Verdict`: считаю механизм идеальным
+- `Verdict.and(Verdict)`: считаю механизм идеальным
+- `Judgement`: не идеален как `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`: сохраняй обязательные `reason`/`evidence`, но не выдавай текущий record за историю убеждения; если нужен past-vs-current, добавь отдельный persisted observation ledger.
+- `VerdictReconciliation.reconcile`: считаю механизм идеальным
+- `VerdictGate.constrain`: считаю механизм идеальным
+- `VerdictGate.Decision`: считаю механизм идеальным
+- `VerdictGate.ActionProhibition`: не идеален как полный `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`: сохраняй `ruleName`, `explanation` and recovery exemption, но расширяй только через матрицу allowed/denied tests.
+- `VerdictGate.evaluateActionProhibition`: не идеален до полной матрицы прав и обязанностей; применить `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` and add each new prohibition only with one allowed and one denied test.
+- `VerdictGate.evaluateTaskProhibition`: считаю механизм идеальным
+- `OperationalPolicyService.authorize/requireAllowed`: не идеален на транспорт отказа; применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, чтобы `ruleName`/`blockers` не терялись между decision and exception.
+- `OperationalPolicyDeniedException`: не идеален; add structured `ruleName`/`blockers` fields instead of leaving the prohibition identity only inside message text.
+- `CommandDashboardService` readiness edge: считаю механизм идеальным
+- `ProjectFlowService` task dispatch edge: считаю механизм идеальным
+- `ProjectController.orchestrate` denial response: не идеален; once exception carries structured fields, expose them in the `409` body so the operator sees the exact prohibition without parsing prose.
+- `AutoMergeService` post-merge release catch: считаю механизм идеальным
+- `verdict_gating_enabled` / `verdict_gating_project_slug`: считаю механизм идеальным
 
 # XXIг. Граф ограничения: чем фабрика находит своё узкое место
 

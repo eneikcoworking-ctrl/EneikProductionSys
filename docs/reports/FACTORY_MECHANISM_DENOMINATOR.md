@@ -1934,3 +1934,35 @@ handoff into the generated corpus, and `mock_test_runner.py` remains a false-evi
 PASS-like output without real integration assertions. No code was changed in this tact.
 
 комментарий для Антигравити: `generate_philosopher_patterns.py`: считаю механизм идеальным; `append_role_logic.py`: не идеален, apply `GARET_EVANS_19_BOUNDARY_TOPOLOGY`; `audit_pr.py`: считаю механизм идеальным; `deploy.sh`: считаю механизм идеальным; `linear_sync.py`: считаю механизм идеальным; `linear_webhook.py`: считаю механизм идеальным; `check_system_drift.ps1`: считаю механизм идеальным; `generate_report.py`: считаю механизм идеальным; `mock_test_runner.py`: не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; `reset_project_data.sql`: считаю механизм идеальным; `scripts/modules/*`: считаю механизм идеальным.
+
+## 2026-09-13 Codex Strict Record: Decision Algebra And Operational Refusal
+
+Status: documentation-only strict record for section XXIв in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `Verdict`, `Verdict.and(Verdict)`,
+`Judgement`, `VerdictReconciliation.reconcile`, `VerdictGate.constrain`, `VerdictGate.Decision`,
+`VerdictGate.ActionProhibition`, `VerdictGate.evaluateActionProhibition`,
+`VerdictGate.evaluateTaskProhibition`, `OperationalPolicyService.authorize/requireAllowed`,
+`OperationalPolicyDeniedException`, `CommandDashboardService` readiness edge, `ProjectFlowService` task
+dispatch edge, `ProjectController.orchestrate` denial response, `AutoMergeService` post-merge release catch,
+and settings keys `verdict_gating_enabled` / `verdict_gating_project_slug`.
+
+Denominator effect: section XXIв previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 47 |
+| Sections still missing visible `комментарий для Антигравити` | 16 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: the core algebra and scoped gate are strong from source/tests.
+The remaining gaps are structured policy-denial transport (`ruleName`/`blockers` should not live only in
+message text) and a persisted before/after judgement ledger when historical belief comparison is required. No
+code was changed in this tact.
+
+комментарий для Антигравити: `Verdict`: считаю механизм идеальным; `Verdict.and(Verdict)`: считаю механизм идеальным; `Judgement`: не идеален as `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`, keep mandatory reason/evidence and add persisted observation ledger only if past-vs-current comparison is needed; `VerdictReconciliation.reconcile`: считаю механизм идеальным; `VerdictGate.constrain`: считаю механизм идеальным; `VerdictGate.Decision`: считаю механизм идеальным; `VerdictGate.ActionProhibition`: не идеален as full `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, preserve ruleName/explanation/recovery exemption and expand only through allowed/denied tests; `VerdictGate.evaluateActionProhibition`: не идеален until the rights/duties matrix is complete; `VerdictGate.evaluateTaskProhibition`: считаю механизм идеальным; `OperationalPolicyService.authorize/requireAllowed`: не идеален on refusal transport, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`; `OperationalPolicyDeniedException`: не идеален, add structured ruleName/blockers fields; `CommandDashboardService` readiness edge: считаю механизм идеальным; `ProjectFlowService` task dispatch edge: считаю механизм идеальным; `ProjectController.orchestrate` denial response: не идеален until structured denial fields appear in the 409 body; `AutoMergeService` post-merge release catch: считаю механизм идеальным; `verdict_gating_enabled` / `verdict_gating_project_slug`: считаю механизм идеальным.
