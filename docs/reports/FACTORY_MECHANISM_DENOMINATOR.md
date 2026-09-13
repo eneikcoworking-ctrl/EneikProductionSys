@@ -1966,3 +1966,32 @@ message text) and a persisted before/after judgement ledger when historical beli
 code was changed in this tact.
 
 комментарий для Антигравити: `Verdict`: считаю механизм идеальным; `Verdict.and(Verdict)`: считаю механизм идеальным; `Judgement`: не идеален as `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`, keep mandatory reason/evidence and add persisted observation ledger only if past-vs-current comparison is needed; `VerdictReconciliation.reconcile`: считаю механизм идеальным; `VerdictGate.constrain`: считаю механизм идеальным; `VerdictGate.Decision`: считаю механизм идеальным; `VerdictGate.ActionProhibition`: не идеален as full `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, preserve ruleName/explanation/recovery exemption and expand only through allowed/denied tests; `VerdictGate.evaluateActionProhibition`: не идеален until the rights/duties matrix is complete; `VerdictGate.evaluateTaskProhibition`: считаю механизм идеальным; `OperationalPolicyService.authorize/requireAllowed`: не идеален on refusal transport, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`; `OperationalPolicyDeniedException`: не идеален, add structured ruleName/blockers fields; `CommandDashboardService` readiness edge: считаю механизм идеальным; `ProjectFlowService` task dispatch edge: считаю механизм идеальным; `ProjectController.orchestrate` denial response: не идеален until structured denial fields appear in the 409 body; `AutoMergeService` post-merge release catch: считаю механизм идеальным; `verdict_gating_enabled` / `verdict_gating_project_slug`: считаю механизм идеальным.
+
+## 2026-09-13 Codex Strict Record: TOC Constraint Graph
+
+Status: documentation-only strict record for section XXIг in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `TocExecutionGraph`, `TocNode`, `TocEdge`,
+`DbrStatus`, `AnomalyReport`, `TocAnomalyDetector`, `TocOptimizer`, `TocSentinelService`,
+`TocSentinelController`, `BottleneckAwarePriorityService`, `SixSigmaAuditService` TOC projection,
+`KaizenService` buffer-tuning projection, and `SystemAuditController` TOC audit projection.
+
+Denominator effect: section XXIг previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 48 |
+| Sections still missing visible `комментарий для Антигравити` | 15 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: runtime graph mechanics, pure reads, API mutation guard and
+single-stage "unmeasured" recommendation are strong. Factory-wide constraint knowledge remains non-ideal
+because product-code instrumentation is still narrow and TOC state is in-memory unless future historical/RCA
+use is backed by snapshots. No code was changed in this tact.
+
+комментарий для Антигравити: `TocExecutionGraph`: не идеален as factory-wide truth, apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`; `TocNode`: не идеален for historical identity, apply `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` if used after restart/RCA; `TocEdge`: не идеален until multi-stage instrumentation and a consumer exist, apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`; `DbrStatus`: не идеален until observation scope/stage count travels with `primaryConstraintNode`, apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`; `AnomalyReport`: считаю механизм идеальным; `TocAnomalyDetector`: считаю механизм идеальным; `TocOptimizer`: не идеален as global bottleneck oracle without richer instrumentation, preserve single-stage unmeasured and apply `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`; `TocSentinelService`: не идеален as factory-wide observer, preserve pure read/refresh/lifecycle/cadence and add real stage producers; `TocSentinelController`: считаю механизм идеальным; `BottleneckAwarePriorityService`: не идеален while TOC scope is narrow, apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`; `SixSigmaAuditService` TOC projection: не идеален without DBR recommendation/observation scope, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; `KaizenService` buffer-tuning projection: не идеален unless buffer defects name observed scope, apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`; `SystemAuditController` TOC audit projection: не идеален unless readers see whether flow is unmeasured/single-stage, apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.

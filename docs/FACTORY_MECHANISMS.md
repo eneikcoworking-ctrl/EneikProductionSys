@@ -5838,126 +5838,114 @@ belief-update ledger when historical comparison is required.
 
 # XXIг. Граф ограничения: чем фабрика находит своё узкое место
 
-Четыре типа без аннотации в `toc/model` — вся память барабана-буфера-верёвки. Замер, определяющий всё
-остальное в этом разделе: **весь граф питает один механизм**.
+**Имена механизма или семейства:** `TocExecutionGraph`, `TocNode`, `TocEdge`, `DbrStatus`,
+`AnomalyReport`, `TocAnomalyDetector`, `TocOptimizer`, `TocSentinelService`, `TocSentinelController`,
+`BottleneckAwarePriorityService`, `SixSigmaAuditService` TOC projection, `KaizenService` buffer-tuning
+projection, and `SystemAuditController` TOC audit projection.
 
-```
-grep -rn "\.enterStep(\|\.exitStep(\|\.startExecution(\|\.endExecution(" --include=*.java . | grep -v "toc/"
-→ AutoMergeService.java:164  startExecution("AUTOMERGE_CYCLE", 40)
-  AutoMergeService.java:170  enterStep(token, "AUTOMERGE_PROCESSING")
-  AutoMergeService.java:173  exitStep(token, "AUTOMERGE_PROCESSING", true)
-  AutoMergeService.java:174  endExecution(token, true)
-→ итого мест разметки вне пакета toc: 4
-```
+**Философский паттерн:** `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`,
+`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
+`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, background `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
 
-Контрольная проба на неявную разметку: `@Aspect|HandlerInterceptor|@Around` — **ни одного файла** во всём
-`src/main`, при том что тот же греп по `@Service` находит 94 бина, то есть инструмент видит. Значит скрытого
-источника наблюдений нет: граф видит один сценарий и один шаг.
+**Связи:** product-code instrumentation outside the TOC package currently marks the automerge path:
+`AutoMergeService` starts `AUTOMERGE_CYCLE`, enters/exits `AUTOMERGE_PROCESSING`, and ends the token.
+`TocSentinelController` exposes protected `/api/toc` read/event surfaces for external/manual telemetry.
+`TocSentinelService` owns graph token lifecycle, step entry/exit, resource waits, watchdog, cached DBR reads
+and explicit refresh. `TocOptimizer` produces `DbrStatus`. Consumers project it into queue priority, Six Sigma
+audit, Kaizen defects/improvement checks, system audit and TOC HTTP status.
 
-**`TocNode`** (147 строк) — узел графа исполнения: держит число работ в полёте, завершения, ошибки, среднее
-время и его разброс по Уэлфорду, загрузку и два признака — «затор» и «главное ограничение».
-*Связи:* пишут двое, оба внутри пакета — `TocAnomalyDetector:80` (`incrementInFlight`) и
-`TocSentinelService:100-101` (`decrementInFlight`, `recordExecution`); признаки ставят `TocOptimizer:57,66`
-и `TocAnomalyDetector:91,134`. Наружу состояние выходит через `DbrStatus`, и его читают **пятеро**:
-`BottleneckAwarePriorityService:44,82` (**приоритизирует работу по имени текущего ограничения**),
-`SixSigmaAuditService:278`, `KaizenService:239,731`, `SystemAuditController:64`, `TocSentinelController:32,37`.
-*Ценность:* без него у фабрики нет ни одного места, где сказано, какой шаг держит поток.
-*Комментарий:* **ядро по замыслу и по числу читателей — и при этом инструмент, который может назвать
-ограничением только то, что сам же и размечает.** Узлы заводятся лениво, при первом входе
-(`TocExecutionGraph:27`, `computeIfAbsent`), а входят только из цикла автослияния. `TocOptimizer:44-58`
-выбирает узел с наибольшим счётом среди **имеющихся** узлов. Множество кандидатов, таким образом, равно
-множеству размеченного, а размечен один шаг. «Главное ограничение» не находится сравнением — оно
-предопределено тем, где поставили датчик.
+**Идеальная форма:** the graph names a factory bottleneck only after the candidate set is explicit. Each
+observed stage has identity, duration evidence, transition evidence and, where the value is used after restart
+or in incident reconstruction, persisted snapshot evidence. `DbrStatus` must let readers distinguish "primary
+among observed stages" from "global factory constraint". A TOC signal may reorder work only when its observation
+boundary is visible; otherwise it reports "unmeasured" rather than "optimal".
 
-Отсюда следующий шаг, и он важнее: пятеро читающих принимают это имя за факт о фабрике. Приоритизация
-работы идёт по имени, которое иначе как `AUTOMERGE_PROCESSING` получиться не может. Механизм при этом
-исправен: он честно меряет то, что ему дали мерить.
+**Граница:** this family measures execution-stage telemetry, detects cycles/stalls/deadlocks, exposes DBR
+status, and feeds priority/audit/Kaizen projections. It is not the sole truth about all factory bottlenecks
+until product stages beyond automerge are instrumented and identifiable. It must not turn manual event endpoints
+into untrusted mutation or preserve stale in-memory counts as historical truth.
 
-Второе свойство — вся эта память **живёт только в оперативной**: `AtomicLong` и `volatile`, а замер
-`grep -rln "@Entity" toc/` даёт **ноль** файлов (контроль: тот же греп по `TaskEntity` находит 55 файлов,
-инструмент работает). Среднее и разброс, накопленные Уэлфордом, обнуляются при каждом перезапуске
-контейнера, и первое решение после перезапуска принимается по выборке из одного наблюдения.
-*Живое, 7 сентября 2026:* сторож работает — в журнале идут строки `[TOC-SENTINEL][STEP_EXIT]` и
-`[END_EXECUTION]` с отметками секундной давности. То есть счётчики наполняются, и наполняет их по-прежнему
-единственный размеченный шаг: сценарий `AUTOMERGE_CYCLE`. Замер разметки, приведённый выше, за прошедшее
-время не изменился.
+**Входы:** `startExecution` scenario/priority, token id, step name, step success, resource id, active tokens,
+node counters, configured max buffer capacity, watchdog cadence bounds, HTTP `/api/toc/event/*` requests,
+current `DbrStatus`, anomaly log, and task `tocConstraintRef` values.
 
-*Философия:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` (D007) — Дональд Дэвидсон, `BARCAN-TAG-09 MORAL-DILEMMA`,
-принцип радикальной интерпретации, anchor *Truth and Meaning / radical interpretation — interpretation and
-coherence*. Сильная дословно: «подозреваемая причина считается **одним фактором достаточного набора**, пока
-альтернативы не исключены; со-факторы перечислены со свидетельством присутствия или отсутствия каждого».
-Слабая: «названо первое объяснение, совпавшее с наблюдением». Опровержение: «назвать вторую гипотезу,
-дающую то же наблюдение; её отсутствие означает, что сравнения не было».
-**Форма: слабая, и опровержение выполняется без усилий** — второй гипотезы нет не потому, что её отвергли,
-а потому, что второго узла в графе не бывает. Альтернативы не исключены, они не попали в рассмотрение.
-Второй образец: `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (D010) — Дерек Парфит,
-`BARCAN-TAG-05 NECESSARY-IDENTITY`, принцип психологической непрерывности идентичности, anchor *Reasons and
-Persons — psychological continuity and identity*. Сильная дословно: «личность долгоживущей сущности
-сохраняется через снимки и миграции, есть свидетельство воспроизведения». Слабая: «идентификатор стабилен,
-пока никто не пересоздаёт». Опровержение: «восстановить состояние на прошлый момент; если сущность не
-опознаётся — снимка нет». **Форма: слабая.** Снимка нет: ноль `@Entity` в пакете, восстанавливать нечего.
-Третий образец: `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011) — Фред Дрецке,
-`BARCAN-TAG-07 SECOND-ORDER-KNOWLEDGE`, принцип информационной пропускной способности каналов, anchor
-*Knowledge and the Flow of Information — informational epistemology*. Сильная дословно: «сигнал признан
-годным лишь если меняет следующее действие и предотвращает ошибочное». Слабая: «сигнал есть и он верен».
-Опровержение: «назвать действие, которое сигнал изменил; **сигнал без читателя не есть наблюдение**».
-**Форма: сильная — и это единственное, что здесь сильно.** Действие называется:
-`BottleneckAwarePriorityService` меняет порядок работ по имени ограничения. Сигнал читателя имеет. Беда не
-в том, что его не слушают, а в том, что слушают безоговорочно сигнал, снятый с одного датчика.
+**Выходы:** runtime graph nodes/edges/tokens, Welford mean/stddev and in-flight counts, anomaly reports,
+`DbrStatus`, rope admission decisions, scheduled watchdog updates, TOC API status/graph/anomaly responses,
+priority refresh calls, Six Sigma TOC metrics, Kaizen buffer defects and system audit TOC summary.
 
-**`TocEdge`** (34 строки) — направленное ребро между двумя узлами со счётчиком переходов.
-*Связи:* заводится и увеличивается в одном месте — `TocExecutionGraph:60` | читателей счётчика вне пакета
-по замеру нет.
-*Ценность:* без рёбер граф исполнения — набор несвязанных счётчиков, и обнаружение цикла невозможно.
-*Комментарий:* **периферия, и по той же причине, что и узел, только резче.** Ребро возникает при переходе
-между шагами, а размеченный шаг один — переходить не между чем. Тип исправен и, насколько я измерил,
-пуст в работе.
-*Философия:* `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` (D011), формы и опровержение — дословно выше.
-**Форма: слабая.** Назвать действие, которое изменил бы счётчик переходов, я не смог: читателей вне пакета
-замер не нашёл. Сигнал без читателя не есть наблюдение.
+**Владельцы истины и состояния:** `TocExecutionGraph` owns in-memory nodes/edges/tokens; `TocNode` owns step
+statistics; `TocAnomalyDetector` owns anomaly and resource-wait state; `TocOptimizer` owns current DBR status,
+constraint name and rope state; `TocSentinelService` owns lifecycle mutation boundaries; controller/audit/Kaizen
+consumers own presentation only; source instrumentation owns whether a stage can appear in the graph at all.
 
-**`DbrStatus`** (19 строк, 9 полей) — свод состояния барабана-буфера-верёвки: имя ограничения, длина
-очереди, загрузка, среднее время, размер буфера и его предел, включена ли верёвка, время оценки и
-рекомендация.
-*Связи:* производит `TocSentinelService.getDbrStatus` | читают пятеро, перечислены в записи `TocNode`.
-*Ценность:* единственная переносимая форма ответа «что сейчас держит поток».
-*Комментарий:* **ядро по употреблению.** Устроен добросовестно: несёт и время оценки, и предел буфера, и
-признак того, включено ли ограничение выпуска, — то есть даёт читателю отличить «верёвка натянута» от
-«верёвка есть». Но каждое поле наследует ту же узость: они описывают единственный размеченный шаг.
-*Философия:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн,
-`BARCAN-TAG-00 CODE-GUARDIAN`, принцип языковых игр, anchor *Philosophical Investigations — language-games,
-meaning as use, private-language argument*. Сильная дословно: «утверждение о работе системы опирается на
-логи, метрики, проверки здоровья или состояние свода, и ссылка приведена». Слабая: «утверждение опирается
-на собственный рассказ агента о том, что он сделал». Опровержение: «потребовать команду, которой замер снят;
-её отсутствие и есть нарушение». **Форма: сильная по форме, но предмет подменён.** Свод опирается на
-настоящие замеры и приводит время их снятия — придраться не к чему. Подмена в имени: `primaryConstraintNode`
-читается как «узкое место фабрики», а означает «единственный шаг, за которым мы наблюдаем». Это не ложь
-свода, а ошибка рода на стороне читателя, и её пятеро и совершают.
+**Инварианты:** a node with no completed pass is not a stall bottleneck; one observed duration is evidence and
+must be used; `getDbrStatus()` is a pure cached read; explicit `refreshDbrStatus()` is the mutating evaluation;
+single-stage and empty graphs report flow unmeasured, not optimal; high-priority work can bypass rope throttle;
+mutating `/api/**` TOC event endpoints require API authorization; returned node/edge collections are
+unmodifiable snapshots.
 
-**`AnomalyReport`** (25 строк) — запись об аномалии, найденной сторожем: цикл, затор, взаимная блокировка
-или переполнение буфера, с указанием узла, ресурса и **предпринятого действия**.
-*Связи:* производит `TocAnomalyDetector` | потребителей вне пакета замер не выявил.
-*Ценность:* без него обнаруженная аномалия остаётся в логе и не имеет ни личности, ни следа.
-*Комментарий:* **периферия по замеру, ядро по замыслу.** Устройство хорошее: тип различает четыре рода
-аномалий вместо одного «что-то не так» и отдельным полем несёт `actionTaken` — то есть отвечает не только
-«что случилось», но и «что с этим сделали», а это ровно то, чего не хватало отказу при простое 5 сентября.
-Но обнаруживать он может лишь то, что видно на одном размеченном шаге: `CYCLE_DETECTED` требует рёбер,
-которых не возникает, `DEADLOCK_DETECTED` — конкуренции за ресурсы, которую один шаг не создаёт.
-*Философия:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008) — Альфред Тарский,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип семантической теории истины (T-схема: «P» истинно ⟺ P),
-anchor *The Concept of Truth in Formalized Languages — semantic conception of truth*. Сильная дословно:
-«проверка, способная **опровергнуть** утверждение, написана **до** принятия утверждения, и показано, что
-она краснеет при дефекте». Слабая: «зелёный тест рядом с изменением». Опровержение: «снять правку и
-прогнать тест; не покраснел — это не заслон». **Форма: не мерено.** Я не проверял, краснеет ли обнаружение
-цикла на подстроенном цикле; без такой пробы называть форму — догадка. Что измерено — это область
-наблюдения, а не чувствительность.
+**Сильная форма сейчас:** false-green "single stage is optimal" is pinned by `TocOptimizerTest`; no-observation
+stall claims are blocked by `TocSentinelServiceTest`; one-observation timeout behavior is pinned by
+`TocNodeTimeoutTest`; deadlock/cycle/stall/anomaly action reports have targeted tests; read purity and
+single-writer encapsulation are tested; `/api/**` mutating operations are behind `ApiAuthorizationInterceptor`.
 
-## Суждение по разделу
+**Слабая/неидеальная форма сейчас:** product-code instrumentation still names only the automerge execution
+path outside `toc/`; richer stages exist only if pushed through the protected controller or future code. TOC
+state is in-memory only: no `@Entity` under `toc/`, so restart erases duration, edges and anomalies. Consumers
+can still read `primaryConstraintNode` without also honoring the observation boundary/recommendation. `TocEdge`
+is correct but weakly useful while there is only one product-instrumented step.
 
-Механизм барабана-буфера-верёвки построен целиком и работает исправно. Ни один из четырёх типов не сломан.
-Сломано отношение между тем, что он измеряет, и тем, за что его показания принимают: **один датчик на
-цикле автослияния, пятеро читающих, и приоритизация работ по имени, которое другим быть не может**.
-Прибавить сюда нечего, кроме датчиков, а это правка продуктового кода, и здесь я её не предлагаю.
+**Что сделать для идеала:** instrument the factory's real stage boundaries before treating the TOC graph as a
+global constraint oracle: dispatch, compile/decompose, review, merge, runtime observation, delivery and recovery
+should enter as named stages or be explicitly excluded. Extend `DbrStatus` or its projections with
+instrumented-stage count / observation scope so consumers cannot present a one-stage result as global truth.
+Persist low-volume DBR/anomaly snapshots if the signal is used for after-restart RCA or historical improvement.
+Keep the API guard tests around mutating `/api/toc/event/*` when adding new event producers.
+
+**Что не трогать:** do not remove Welford timing, no-observation stall guard, cached read purity, single-stage
+unmeasured recommendation, high-priority bypass, API mutation guard, or service-level encapsulation. Do not
+"fix" this by changing the optimizer score alone; without additional observed stages, a better score only ranks
+the same insufficient candidate set.
+
+**Опровержение:** this record is false if product code outside `toc/` instruments more than the automerge path,
+if a single-stage graph can return "System flow optimal", if `getDbrStatus()` mutates graph state, if an
+unobserved node can be called a stall bottleneck, if unauthenticated POST to `/api/toc/event/*` can mutate the
+graph, or if after restart the TOC package can replay prior nodes/edges/anomalies from persisted storage.
+
+**Критерий закрытия:** the section is ideal when the graph has either explicit multi-stage factory
+instrumentation or explicit "single-stage/diagnostic-only" presentation in every consumer, and when any claim
+requiring history has a persisted snapshot. Until then, the current code is safe as scoped runtime telemetry,
+not as complete factory bottleneck knowledge.
+
+**Свидетельства записи:** `AutoMergeService.java:165,171,174-175`; `TocExecutionGraph.java:19-28,55-65,76-81`;
+`TocNode.java:10-25,31-52,118-145`; `TocEdge.java:8-33`; `DbrStatus.java:8-18`;
+`AnomalyReport.java:8-24`; `TocAnomalyDetector.java:44-80,86-165,189-249,302-310`;
+`TocOptimizer.java:28-53,60-132,139-160,181-221`; `TocSentinelService.java:67-75,105-187,217-303,321-371`;
+`TocSentinelController.java:30-63,69-90`; `BottleneckAwarePriorityService.java:39-89`;
+`SixSigmaAuditService.java:330-336`; `KaizenService.java:238-245,729-733`; `SystemAuditController.java:61-79`;
+`WebConfig.java:55-58`; `ApiAuthorizationInterceptor.java:73-79,109-128`; `TocOptimizerTest.java:35-157`;
+`TocNodeTimeoutTest.java:21-57`; `TocSentinelServiceTest.java:41-238`. Commands:
+`grep -RInE '\.enterStep\(|\.exitStep\(|\.startExecution\(|\.endExecution\(' src/main/java | grep -v '/toc/'`;
+`grep -RIn '@Entity' src/main/java/com/eneik/production/toc || true`.
+
+**Текущий статус:** partially ideal. Runtime graph mechanics, no-false-optimal recommendation, pure reads and
+API mutation guard are strong. Factory-wide constraint knowledge is not ideal because instrumentation coverage
+and persistence are still too narrow for a global bottleneck claim.
+
+**комментарий для Антигравити по механизмам:**
+- `TocExecutionGraph`: не идеален as factory-wide truth; apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` and add/declare the observed candidate set before calling a node the factory constraint.
+- `TocNode`: не идеален for historical identity because counters are in-memory; apply `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` if node timing is used after restart or in RCA.
+- `TocEdge`: не идеален until more than one product stage is instrumented and a consumer uses transitions; apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`.
+- `DbrStatus`: не идеален as a public projection until it exposes observation scope/stage count with `primaryConstraintNode`; apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
+- `AnomalyReport`: считаю механизм идеальным
+- `TocAnomalyDetector`: считаю механизм идеальным
+- `TocOptimizer`: не идеален as a global bottleneck oracle without richer instrumentation; preserve single-stage "unmeasured" and apply `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+- `TocSentinelService`: не идеален as factory-wide observer; preserve pure read, explicit refresh, single-writer lifecycle and dynamic cadence, then add real stage producers.
+- `TocSentinelController`: считаю механизм идеальным
+- `BottleneckAwarePriorityService`: не идеален while TOC constraint scope is narrow; apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` and do not boost work from a signal whose observation boundary is hidden.
+- `SixSigmaAuditService` TOC projection: не идеален unless it carries DBR recommendation/observation scope beside primary constraint; apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `KaizenService` buffer-tuning projection: не идеален unless buffer defects name the observed scope, not whole-factory certainty; apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`.
+- `SystemAuditController` TOC audit projection: не идеален unless audit readers see whether flow is unmeasured/single-stage; apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
 
 # XXIд. Лестница доверия: чем фабрика решает, кому дать власть
 
