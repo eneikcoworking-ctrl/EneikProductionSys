@@ -1252,3 +1252,35 @@ judgment proxy and context retrieval still need post-Gemini implementation decis
 changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXVIII; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Design Asset Generation And Brand Audit
+
+Status: documentation-only strict-family replacement for section XXIX in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `DesignAssetService.generateAsset/generateViaStitch`,
+`DesignAssetService.auditExistingDrafts`, `DesignConsistencyAuditService`, `StitchClient` as the
+HTML/screenshot producer, `GoogleAiResourceService` nano-banana fallback for non-HTML callers,
+`GitHubPullRequestService` as repo artifact carrier, `DesignShopOrchestrationService.hasImplementableHtml`
+and `JulesDispatchService.completeDesignReview`.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with per-mechanism
+Antigravity comments. Key correction: the old section's requested coding task is already present in current
+source and tests: declared tokens and producer tokens are visible in prompt/log/metadata/report evidence, and
+image-only fallback is refused when implementable HTML is required.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 38 |
+| Sections still missing visible `комментарий для Антигравити` | 25 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal point for this section: none in the section's own artifact-generation and brand-audit
+scope. Provider-retirement questions for Stitch/Gemini remain in section XXVIII. No code was changed in this
+tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXIX; family summary is not a substitute.

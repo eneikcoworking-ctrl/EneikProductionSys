@@ -8707,60 +8707,124 @@ current consumer or an explicit diagnostic-only status in section XXIIe.
 
 # XXIX. Цех дизайна: порождение экранов и сверка их с маркой
 
-**`DesignAssetService`** (611 строк) — порождает образы дизайна, складывает их в черновики и сверяет
-готовые с объявленным набором цветов и шрифтов проекта.
-*Связи:* зовут `DesignShopOrchestrationService`, `JulesDispatchService`, `ProjectFlowService`,
-`ClientDeliverableReadinessService`, `ProjectAuditPipelineService`, `GoogleAiResourceController` | зовёт
-`GoogleAiResourceService` — то есть **это один из четырёх прямых путей к модели**, помеченных к переносу
-(раздел XXVIII) | держит два корня, `design/draft` и `design/approved`, и оба лежат в репозитории заказчика,
-а не у фабрики | из черновиков в утверждённое переводят двое: `DesignShopOrchestrationService:426` и
-`JulesDispatchService:4291`.
-*Ценность:* без него экраны не порождаются вовсе, а порождённые не с чем сверить.
-*Комментарий:* **ядро, и здесь одно решение образцовое, а одно наблюдение тревожное.**
+## Семейство: экранный артефакт, токены и продвижение mockup
 
-Образцовое — **отказ подменять**. Живая строка суток: «Stitch generation failed (unavailable) and the
-caller requires implementable HTML; **NOT falling back to nano-banana**, which cannot produce…». То есть
-когда основной порождатель недоступен, служба не подставляет более слабый, который выдаёт картинку вместо
-пригодного к реализации кода. Она отказывается и говорит почему. Сравнить с `parseLeanValue` из раздела
-XXIб, где неизвестное подменялось утвердительным значением: одна и та же развилка, противоположные решения.
+**Имена механизма или семейства:** `DesignAssetService.generateAsset`,
+`DesignAssetService.generateViaStitch`, `DesignAssetService.auditExistingDrafts`,
+`DesignConsistencyAuditService`, `StitchClient`, `GoogleAiResourceService` nano-banana fallback,
+`GitHubPullRequestService.commitFile/deleteFile/copyFile` as the repo artifact carrier,
+`DesignShopOrchestrationService.hasImplementableHtml/startCycle`, and
+`JulesDispatchService.completeDesignReview`.
 
-Тревожное — в паре чисел, которые сами по себе понятны, а вместе означают больше. Сверка выдаёт
-`traceRatio` около **0,07–0,10** при требуемых 0,9 — то есть почти ни один цвет на экране не восходит к
-объявленному набору. И одновременно `crossScreenJaccard = 1.0` — экраны **согласны между собой полностью**.
+**Философский паттерн:** primary `NUEL_BELNAP_15_TOKEN_TRACE_UNITY`, defect `D015 Aesthetic drift`:
+every color and font value rendered on a screen must trace back to the project's declared token set and the
+ratio must be computed. Supporting `NUEL_BELNAP_18_CROSS_SCREEN_JACCARD_GATE`, also `D015`: screens generated
+under one design-system id must be compared with each other, not only with the declared system. Supporting
+`NUEL_BELNAP_06_SUBSTITUTION_ORACLE`, defect `D009 Substitution failure`: an image-only generator cannot
+substitute for an implementable HTML producer where the caller requires `mockup.html`.
 
-Вместе это значит: экраны сделаны в одной палитре, но не в той, которая объявлена. Разнобоя нет, есть
-**единодушное отклонение**. Две гипотезы, между которыми в записи нет замера. Либо основание, захваченное из
-первой генерации проекта (`DesignShopCycleEntity`, раздел XXIж), не то, с чем сверяет аудит, — тогда
-сверяют с одним, а порождают по другому. Либо порождатель вовсе не получает объявленных токенов на вход, и
-тогда сверка меряет то, чего никто не пытался соблюсти. Что разделило бы: сравнить набор, переданный на
-вход порождателю, с набором, по которому считает сверка.
+**Связи:** `DesignShopOrchestrationService.startCycle` calls `DesignAssetService.generateAsset(...,
+requireImplementableHtml=true)` after readiness and baseline checks. `DesignAssetService` prefers `StitchClient`
+when Stitch is enabled and keyed, can fall back to `GoogleAiResourceService.callInteraction` only when HTML is
+not required, writes local files under `design-service.asset-root`, commits repo drafts under `design/draft`,
+and returns `DesignAssetResult` carrying repo path plus Stitch project/screen ids. `DesignConsistencyAuditService`
+extracts visual tokens, computes trace ratio and cross-screen Jaccard, and delegates layout/viewport evidence
+to `LayoutGeometryAuditService`. `JulesDispatchService.completeDesignReview` promotes an approved draft from
+`design/draft/{basename}` to `design/approved/{basename}` by copying `mockup.html` and screenshot files.
 
-**Задача для кодинга.** Показать в самой записи сверки, **с каким набором** она сравнивала и **какой набор**
-получил порождатель, чтобы единодушное отклонение отличалось от несовпадения оснований. Место: расчёт
-`traceRatio` в `DesignAssetService` (строка вывода «consistency audit traceRatio=… offTokens=[…]») и
-передача объявленных цветов и шрифтов в `generateAsset`. Проверка: по одной строке журнала видно оба
-набора. Опровергнет: прогон, где отклонение объяснимо одним лишь несовпадением оснований, а сверка об этом
-молчит.
-*Живое, 7 сентября 2026:* служба работает — 508 строк за сутки. Но **порождатель недоступен всё это время**:
-410 отказов `Stitch generation failed`, первый в 06:20 шестого сентября, последний в 20:30 седьмого, то есть
-непрерывно тридцать восемь часов. Сверка при этом продолжает считать по уже лежащим черновикам и выдаёт
-названные выше числа. Отмечу отдельно: **служба при недоступности порождателя не портит ничего** — она
-отказывается и пишет причину.
-*Философия:* `NUEL_BELNAP_15_TOKEN_TRACE_UNITY` (D015) — Нуэль Белнап, `BARCAN-TAG-06 DEONTIC-CONSISTENCY`,
-принцип четырёхзначной логики, anchor *A Useful Four-Valued Logic / how a computer should think —
-many-valued diagnostics*. Сильная дословно: «всякий цвет и шрифт на экране восходит к объявленному набору
-токенов, отношение прослеживания посчитано». Слабая: «дизайн-система приложена к заданию». Опровержение:
-«посчитать долю значений вне набора». **Форма: сильная как измерение, отрицательная как результат.** Образец
-требует, чтобы отношение было **посчитано**, — и оно посчитано, названо числом и сопровождено перечнем
-значений вне набора. Опровержение образца выполняется самим механизмом, добросовестно: доля вне набора
-посчитана и она почти полная.
-Второй образец: `NUEL_BELNAP_18_CROSS_SCREEN_JACCARD_GATE` (D015), тот же философ и якорь. Сильная
-дословно: «экраны одной дизайн-системы сверяются **между собой**, а не только с объявленной системой; мера
-названа». Слабая: «каждый экран сверен с системой по отдельности». Опровержение: «взять два экрана одной
-системы и посчитать пересечение словаря; проходили порознь — не значит согласованы». **Форма: сильная.**
-Экраны сверяются между собой, мера названа и выведена числом, и живой замер даёт 1,0. Именно эта сильная
-форма и позволила увидеть, что беда не в разнобое: без неё низкое прослеживание читалось бы как «экраны
-разные», а на деле они одинаковые и одинаково не те.
+**Идеальная форма:** a design round must produce the kind of artifact the next mechanism can consume. If the
+caller needs implementable HTML, the only acceptable success is a repo-visible `design/draft/.../mockup.html`
+plus optional screenshot and metadata; image-only output is a wrong kind, not a weaker success. When declared
+tokens exist, generation receives those tokens, the audit records both declared and producer token sets, and
+off-token HTML is rejected before it is committed. Empty SPA shells and missing baselines must be
+`CANNOT_JUDGE`, not false green or false red.
+
+**Граница:** this section owns generation, local metadata, repo draft commit/delete, consistency audit, and
+promotion of approved mockups. It does not own whole design-shop readiness, live drift, client delivery
+acceptance, provider retirement from Gemini/Stitch, or final PR merge policy; those are covered in sections X,
+XXVIII and the flow sections.
+
+**Входы:** `design_service_enabled`, `stitch_enabled`, Stitch key, `nano_banana_enabled`, Gemini key/model
+settings, project id/name/slug/repository, operational context, brief, asset type, quality,
+`useGoogleSearch`, `designSystemId`, declared colors/fonts, local draft HTML/metadata files, GitHub draft path,
+review verdict and concerns.
+
+**Выходы:** `DesignAssetResult`, local `.html`/image/`.json` files, `design/draft/.../mockup.html`,
+`mockup.png|jpg|webp`, `design/approved/...` copies, consistency report, audit metadata
+(`auditVerdict`, `tokenTraceRatio`, `crossScreenJaccard`, `declaredTokens`, `producerTokens`), unavailable or
+`aesthetic_drift` status, deleted rejected draft folders.
+
+**Владельцы истины и состояния:** generated remote screen truth belongs to `StitchClient`; image-model output
+truth belongs to `GoogleAiResourceService`; local generated bytes and metadata belong to `DesignAssetService`;
+repo-visible artifact truth belongs to `GitHubPullRequestService` and the customer's repository;
+token/audit truth belongs to `DesignConsistencyAuditService`; approved-design state is the copied
+`design/approved` repo path.
+
+**Инварианты:**
+- `design_service_enabled=false` returns unavailable and does not generate;
+- when `requireImplementableHtml=true`, nano-banana is not a fallback for Stitch because it cannot emit HTML;
+- a draft path is useful only if committed to the customer's repo, not merely present on the Eneik backend disk;
+- off-token Stitch HTML with declared tokens is rejected before repo commit;
+- declared tokens are passed to the producer prompt and recorded beside producer tokens;
+- `CANNOT_JUDGE` is persisted for SPA shell/empty/no-baseline cases instead of pretending acceptance or failure;
+- approved design promotion requires an explicit `approve` verdict.
+
+**Сильная форма сейчас:** current source satisfies the old coding task in this section. `generateViaStitch`
+passes brand colors/fonts into the prompt, computes `producerTokens`, logs `declaredTokens` and
+`producerTokens`, and writes both sets to metadata. `DesignAssetServiceTest` proves producer prompt/metadata
+capture, rejection message content, existing-draft audit exposure, off-token no-commit, on-token commit,
+Stitch preference, nano-banana fallback only for non-HTML callers, and SPA-shell `CANNOT_JUDGE` pass-through.
+`DesignConsistencyAuditServiceTest` proves trace ratio, off-token rejection, cross-screen Jaccard, and
+`CANNOT_JUDGE`. `DesignShopOrchestrationService` checks the artifact property `mockup.html`, and
+`JulesDispatchService` promotes approved drafts by copying that exact file.
+
+**Слабая/неидеальная форма сейчас:** no current implementation weakness was identified for this section's
+scope. The old live concern, "the audit does not show which token set was producer input and which was audit
+baseline", is now resolved in logs, metadata and tests. Remaining provider-retirement questions for Stitch,
+nano-banana and Gemini belong to section XXVIII, not this section.
+
+**Что сделать для идеала:** no code change is required from this section record. Future work should only be
+taken after a counterexample: brand tokens missing from producer prompt, metadata lacking declared/producer
+sets, off-token HTML committed as a usable draft, image-only fallback returned where HTML is required, or
+approval promotion without explicit approve.
+
+**Что не трогать:** do not remove the `requireImplementableHtml` boundary; do not reintroduce image fallback
+for design-shop HTML rounds; do not commit off-token rejected HTML before the audit; do not drop
+`declaredTokens`/`producerTokens` from logs or metadata; do not turn `CANNOT_JUDGE` into pass/fail.
+
+**Опровержение:** this record is false if `DesignAssetServiceTest.generateAssetPassesDeclaredBrandTokens...`
+or `rejectionMessageIncludesBothDeclaredTokens...` fails; if a grep shows `requireImplementableHtml` callers can
+fall through to nano-banana; if an off-token screen is committed under `design/draft`; or if approved promotion
+does not require the `approve` verdict.
+
+**Критерий закрытия:** closed as an ideal documentation record while the named tests and source contracts hold,
+because the section now has an explicit artifact boundary, token ownership, audit outputs, refutation checks and
+per-mechanism Antigravity comments.
+
+**Свидетельства записи:** `DesignAssetService.java:32-40,82-124,176-190,220-301,395-547,641-658`;
+`DesignConsistencyAuditService.java:12-25,49-137,139-273`; `DesignAssetServiceTest.java:52-190,193-311`;
+`DesignConsistencyAuditServiceTest.java:19-160`; `DesignShopOrchestrationService.java:252-345`;
+`JulesDispatchService.java:4368-4389`; philosopher rows
+`NUEL_BELNAP_15_TOKEN_TRACE_UNITY` and `NUEL_BELNAP_18_CROSS_SCREEN_JACCARD_GATE`; pattern strength rows
+`TOKEN_TRACE_UNITY` and `CROSS_SCREEN_JACCARD_GATE`.
+
+**Текущий статус:** идеален for this section's artifact generation and brand-audit scope.
+
+### Комментарии для Антигравити по механизмам
+
+**`DesignAssetService.generateAsset/generateViaStitch`:** считаю механизм идеальным
+
+**`DesignConsistencyAuditService`:** считаю механизм идеальным
+
+**`StitchClient` as the HTML/screenshot producer consumed here:** считаю механизм идеальным
+
+**`GoogleAiResourceService` nano-banana fallback for non-HTML callers:** считаю механизм идеальным
+
+**`GitHubPullRequestService` draft commit/delete/copy carrier for design assets:** считаю механизм идеальным
+
+**`DesignShopOrchestrationService.hasImplementableHtml/startCycle` consumption of `mockup.html`:** считаю механизм идеальным
+
+**`JulesDispatchService.completeDesignReview` promotion of approved design drafts:** считаю механизм идеальным
 
 # XXX. Клиент к предсказателю: единственная дверь фабрики к внешней модели
 
