@@ -7563,68 +7563,102 @@ decisions» (замер: `grep -c "Gemini returned" `). Это не отказ �
 
 # XXIIк. Приёмка: чем доказывают, что сделано для заказчика, а не для фабрики
 
-**`V100__client_acceptance_traversals.sql`** — хранит свидетельство того, что заявленная цепочка ценности
-была **пройдена на развёрнутом образце, заказчиком, на настоящем содержимом**.
-*Связи:* создаёт `client_acceptance_traversals` с индексом по проекту и убыванию времени | цепочка
-опознаётся `profile_id` и **дословным текстом звена**, а не порядковым номером | поле `walked_by` различает
-проход заказчика и проход фабрики | поле `evidence` несёт то, что можно перепроверить.
-*Ценность:* без неё «доставлено» вычисляется из числа слияний.
-*Комментарий:* **ядро, и формулировка задачи в самой миграции точнее моей.** Дефект назван так: каждая
-цепочка в корпусе рынка говорит, что должно быть **возможно**, и ничто не говорило, что что-либо было
-**сделано**, — «so DELIVERED was computed from merge counts: a claim about what was built standing in for a
-claim about what was shown».
+**Имена механизма или семейства** — acceptance/evidence migrations and consumers:
+`V100__client_acceptance_traversals.sql`, `ClientAcceptanceTraversalEntity`,
+`ClientAcceptanceTraversalRepository`, `AcceptanceVerdictLayer`, `FlowSpineService`,
+`CommandDashboardService`; `V92__client_runtime_observations.sql`, `ClientRuntimeObservationEntity`,
+`ClientRuntimeObservationRepository`, `ClientRuntimeObservabilityService`, `ProductCapabilityService`,
+`RuntimeVerdictLayer`, `TocSubordinationLever`, `BetaPosterior`; `V15__create_project_final_reports.sql`,
+`ProjectFinalReportEntity`, `ProjectFinalReportRepository`, `ProjectFlowService.generateFinalReport`.
 
-Три решения здесь верны и каждое стоит назвать. Опознание по тексту звена, а не по номеру: номер «молча
-пере-указал бы на другую цепочку, стоит профилю приобрести или переставить путь». Различение прохода: проход
-со стороны фабрики «есть свидетельство о другом утверждении и обязан быть отличим, а не тихо посчитан тем
-же» — **четвёртое появление** того же различения в перечне. И требование перепроверяемости: «a witness nobody
-can re-check is an assertion, not evidence».
-*Живое, 7 сентября 2026:* **свидетельств не производится.** В журнале за 42159 строк — ноль упоминаний
-`traversal`/`traversed` (контроль: слово `acceptance` встречается 19 раз, и все 19 — о запасном разборе
-запросов на слияние, то есть греп не слеп; `DELIVERED`/`delivered` — 2352 раза, из них 2309 пишет
-`DeliveredWorkJudgmentService`). То есть суждение о доставке выносится непрерывно, а свидетель, ради
-которого таблица заведена, молчит.
-**Задача для кодинга:** производить запись обхода при живой проверке продукта и различать в ней проход
-заказчика от прохода фабрики; до тех пор «доставлено» остаётся утверждением о построенном, а не о
-показанном. Проверка: доля заявленных цепочек, имеющих обход, перестаёт быть нулевой. Опровергнет:
-утверждение о доставке, вынесенное без единого обхода.
-*Философия:* `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` (D007) — Нуэль Белнап,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип четырёхзначной логики, anchor *A Useful Four-Valued Logic / how
-a computer should think — many-valued diagnostics*. Сильная дословно: «успешное завершение — **значение**,
-которое не может существовать без выполненных предусловий, и оно несёт свидетельство для следующего шага».
-Слабая: «статус `done` в поле и запись в лог». Опровержение: «сконструировать результат успеха, не имея
-свидетельства; если это удаётся — форма слабая». **Форма: слабая, и опровержение выполняется живым замером.**
-Схема сильной формы заведена — свидетельство отделено от статуса и снабжено проверяемым следом, — но
-результат успеха конструируется без него: 2309 суждений о доставке при нуле обходов.
+**Философский паттерн** — `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`, D007 Evidence gap: delivery success
+must be a value carrying the evidence required by the next step. For runtime observation also
+`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, D013 Runtime drift: trust external telemetry over the
+factory's own story about what it built.
 
-**`V92__client_runtime_observations.sql`** — заводит наблюдение за живым продуктом заказчика: удался ли
-запуск, сколько длился, что ответила проверка здоровья.
-*Связи:* создаёт `client_runtime_observations` с индексом по проекту и времени | позже `V104` добавляет
-сюда различение отказа продукта и отказа прибора (раздел XXIIв) | потребитель — `BetaPosterior`.
-*Ценность:* без неё о поставленном продукте фабрика не знает ничего, кроме того, что сама же его собрала.
-*Комментарий:* **ядро, и это единственное место, где фабрика смотрит на продукт снаружи.** Отмечу
-устройство: таблица только дополняется, наблюдение есть событие в момент времени, и продукт, изменившийся
-после, его не отменяет.
-*Живое, 7 сентября 2026:* наблюдения идут — 34 упоминания `launch_success` в журнале за 29 часов.
-*Философия:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн,
-`BARCAN-TAG-00 CODE-GUARDIAN`, принцип языковых игр, anchor *Philosophical Investigations — language-games,
-meaning as use, private-language argument*. Сильная дословно: «утверждение о работе системы опирается на
-логи, метрики, проверки здоровья или состояние свода, и ссылка приведена». Слабая: «утверждение опирается на
-собственный рассказ агента о том, что он сделал». Опровержение: «потребовать команду, которой замер снят;
-её отсутствие и есть нарушение». **Форма: сильная.** Наблюдение снимается извне, с живого образца, и его
-источник предъявим — код ответа и задержка проверки здоровья хранятся в самой строке.
+**Связи** — `V100` creates `client_acceptance_traversals`; `AcceptanceVerdictLayer`, `FlowSpineService` and
+`CommandDashboardService` read traversal rows. Source search in this tact found no
+`ClientAcceptanceTraversalRepository.save(...)` and no `new ClientAcceptanceTraversalEntity` outside the
+entity itself. `V92` creates `client_runtime_observations`; `ClientRuntimeObservabilityService` creates and
+saves rows, `ProductCapabilityService` also saves runtime rows, and verdict/TOC services read them.
+`V15` creates `project_final_reports`; `ProjectFlowService` builds and saves final reports from task/item
+counts.
 
-**`V15__create_project_final_reports.sql`** — хранит итоговый отчёт по проекту: сколько задач завершено,
-сколько пунктов пожеланий, и содержимое отчёта.
-*Связи:* создаёт `project_final_reports` | числа берутся из подсчёта завершённых задач и пунктов.
-*Ценность:* без него итог проекта нигде не закреплён.
-*Комментарий:* **периферия, и здесь тот самый счёт, который `V100` объявляет негодным.** Итог описан двумя
-числами — сколько задач завершено и сколько было пожеланий, — то есть утверждением о **построенном**.
-Показанного заказчику в этой схеме нет вовсе.
-*Живое:* отдельных строк об итоговом отчёте в журнале за сутки нет; `PROJECT_FINAL_REPORTS` в двадцатку
-крупнейших таблиц не входит, поэтому числа строк в записи нет — факт о проекции, не о базе.
-*Философия:* `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` (D007), формы дословно выше. **Форма: слабая.**
-Итог есть счёт статусов, а не носитель свидетельства: отчёт можно составить, не имея ни одного обхода.
+**Идеальная форма** — customer acceptance is proven by traversal evidence of a declared value chain on a
+deployed instance, with `walked_by`, `evidence` and `instance_url` distinguishing customer walk, factory walk
+and re-checkable witness. Runtime health is append-only external observation. Final report is honest only if
+it is labeled as build-summary or carries acceptance/runtime evidence instead of only completed-task counts.
+
+**Граница** — acceptance traversal decides "shown to/customer-walked"; runtime observation decides "launched
+and externally observed"; final report summarizes project completion. None of these may silently stand in
+for the others.
+
+**Входы** — declared value-chain profile/link, actor/walker, evidence URL/screenshot/summary, live instance
+URL, launch result, health status code, latency, error text, task completion counts and wishlist item counts.
+
+**Выходы** — `client_acceptance_traversals` rows, `client_runtime_observations` rows, project final report
+rows, verdict-layer signals and dashboard/flow-spine projections.
+
+**Владельцы истины и состояния** — acceptance truth belongs to `client_acceptance_traversals`; runtime truth
+belongs to `client_runtime_observations`; final report content belongs to `project_final_reports` but is not
+the owner of customer acceptance unless it references acceptance/runtime evidence.
+
+**Инварианты** — traversal identity uses `profile_id` and verbatim `link`, not mutable index; factory walk and
+customer walk remain distinguishable through `walked_by`; runtime observations are append-only events;
+health code and latency remain re-checkable telemetry; final reports must not make a delivery claim that has
+no acceptance witness.
+
+**Сильная форма сейчас** — `V100` schema has the right witness fields and readers exist; `V92` has a real
+writer path in `ClientRuntimeObservabilityService.observeOnce` and stores launch/health telemetry;
+`V15` persists final reports through `ProjectFlowService`.
+
+**Слабая/неидеальная форма сейчас** — `V100` is not ideal because this tact found only readers/setters, not a
+writer creating traversal evidence. `V15` is not ideal as delivery proof because final reports are saved from
+completed task and wishlist counts, not from acceptance traversal evidence. The old live-log counts from
+7 September remain historical evidence and were not remeasured in this tact.
+
+**Что сделать для идеала** — implement or identify the writer that creates `ClientAcceptanceTraversalEntity`
+when a live product path is actually walked; require delivery/acceptance verdicts and final reports to
+distinguish build-summary from customer acceptance; keep runtime observations as append-only external
+telemetry.
+
+**Что не трогать** — do not replace `profile_id` plus verbatim `link` with path indexes; do not collapse
+`walked_by` into a boolean; do not remove runtime health telemetry fields; do not make final report numbers
+look like customer acceptance without evidence.
+
+**Опровержение** — a delivered/accepted verdict or final report is produced for a project with no
+`client_acceptance_traversals` witness; or runtime health is asserted without a
+`client_runtime_observations` row carrying status/latency/error evidence.
+
+**Критерий закрытия** — at least one customer/factory traversal writer exists and is covered by a focused
+test or command; acceptance verdict/final report can name the traversal evidence it relies on; runtime
+observation writer/readers remain intact.
+
+**Свидетельства записи** — `src/main/resources/db/migration/V100__client_acceptance_traversals.sql:1-32`;
+`src/main/resources/db/migration/V92__client_runtime_observations.sql:1-12`;
+`src/main/resources/db/migration/V15__create_project_final_reports.sql:1-8`;
+`grep -RIn 'ClientAcceptanceTraversalRepository|ClientAcceptanceTraversalEntity' src/main/java`;
+`grep -RIn 'traversalRepository\.save|new ClientAcceptanceTraversalEntity' src/main/java`;
+`grep -RIn 'observationRepository\.save|new ClientRuntimeObservationEntity' src/main/java`;
+`grep -RIn 'ProjectFinalReportRepository|projectFinalReportRepository\.save' src/main/java`.
+
+**Текущий статус** — partially strong but not ideal: runtime observation is strong; acceptance traversal and
+final report as delivery proof are non-ideal.
+
+## XXIIк.1. Комментарии для Антигравити по механизмам
+
+* `V100__client_acceptance_traversals.sql` / `ClientAcceptanceTraversalEntity` /
+  `ClientAcceptanceTraversalRepository` / `AcceptanceVerdictLayer` — **комментарий для Антигравити:**
+  механизм не идеален: применить `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`; сохранить schema witness fields,
+  но добавить/найти writer traversal evidence and bind acceptance verdicts to that witness.
+* `V92__client_runtime_observations.sql` / `ClientRuntimeObservationEntity` /
+  `ClientRuntimeObservabilityService` / `RuntimeVerdictLayer` — **комментарий для Антигравити:** считаю
+  механизм идеальным
+* `V15__create_project_final_reports.sql` / `ProjectFinalReportEntity` /
+  `ProjectFinalReportRepository` / `ProjectFlowService.generateFinalReport` — **комментарий для
+  Антигравити:** механизм не идеален as delivery proof: применить
+  `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`; keep final report as build-summary or attach
+  acceptance/runtime evidence before it claims customer delivery.
 
 # XXIIл. Чем закрывается слой 3
 

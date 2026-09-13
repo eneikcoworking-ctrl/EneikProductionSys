@@ -1796,3 +1796,31 @@ Remaining non-ideal points for this section: migration-layer closure is not idea
 conformity is still not proven. No code was changed in this tact.
 
 комментарий для Антигравити: migration-layer closure record не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; shape-only migration exclusion: считаю механизм идеальным; `V103`, `V116`, `V141`, `V23`, `V26`, `V37`, `V40`, `V43`, `V66`, `V71`, `V74`, `V78`, `V91` не идеальны as unclassified behavior-changing migration candidates; fold each into its owning mechanism or write a strict record before coding.
+
+## 2026-09-13 Codex Strict Record: Customer Acceptance Evidence
+
+Status: documentation-only strict record for section XXIIк in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments:
+`V100__client_acceptance_traversals.sql` with traversal entity/repository/readers,
+`V92__client_runtime_observations.sql` with runtime observation writer/readers, and
+`V15__create_project_final_reports.sql` with final report repository/write path.
+
+Denominator effect: section XXIIк previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 42 |
+| Sections still missing visible `комментарий для Антигравити` | 21 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: `V100` has witness schema and readers but no traversal writer
+found in this tact; `V15` is a build-summary/final-report path, not customer-acceptance proof unless it names
+acceptance/runtime evidence. `V92` remains strong as runtime telemetry. No code was changed in this tact.
+
+комментарий для Антигравити: `V100__client_acceptance_traversals.sql` / traversal entity/repository/readers: не идеален, apply `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`, add/find traversal writer and bind acceptance verdict to witness; `V92__client_runtime_observations.sql` / runtime observation writer/readers: считаю механизм идеальным; `V15__create_project_final_reports.sql` / final report path: не идеален as delivery proof, apply `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT`, keep as build-summary or attach acceptance/runtime evidence before claiming customer delivery.
