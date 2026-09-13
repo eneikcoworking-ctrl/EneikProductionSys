@@ -6062,113 +6062,408 @@ unknown-role predicate.
 
 # XXIе. Журнал проекта: граница, которая держала — и отвечала не на тот вопрос
 
-Три типа без аннотации в `services/logging`. Вместе они — точка исполнения правила «в то, что читают о
-проекте клиента, попадает только то, что помечено этим проектом». Здесь же записан самый дорогой урок
-перечня: **верно проведённая граница не спасает, если она отвечает на другой вопрос, чем тот, ради
-которого её проводили.**
+**Философский старт такта.** Главный образец: `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002), потому что
+прошлый дефект был не в отсутствии границы, а в смешении родов: журнал работы фабрики был выдан кодеру за
+деятельность продукта. Поддерживающие образцы: `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` для точки, где событие
+получает владельца; `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` для истории, переживающей деплой;
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` для проверяемой цепочки "источник -> очередь -> база -> читатель";
+`ALONZO_CHERCH_21_DERIVED_CUTOFF` для retention-частоты, выведенной из роста таблицы. Правило секции:
+проектный журнал можно давать оператору и внешнему агенту как свидетельство работы фабрики над проектом,
+но нельзя давать сессии, которая пишет код продукта, как будто это runtime продукта.
 
-**`ScopedBufferAppender`** (31 строка) — приёмник Logback, отбирающий события с меткой `PROJECT:{id}` и
-складывающий их в кольцевой буфер проекта.
-*Связи:* подключён в `resources/logback-spring.xml:8` как приёмник `SCOPED_BUFFER` (контроль: в том же
-файле 5 объявлений `<appender>`, инструмент видит) | пишет в `LogScopeBuffer` | метку ставят **34 места**
-в коде, больше всего `JulesDispatchService` (7), `ContinuousOrchestrationService` (6),
-`IdleProjectAdviceService` (4), `AutoMergeService` (3).
-*Ценность:* без него нет ни одного места, где решается, что считается «событием этого проекта».
-*Комментарий:* **ядро.** Событие без метки или с меткой `SYSTEM` отбрасывается целиком, и javadoc называет
-это точкой исполнения правила, а не удобством. В отличие от графа ограничения из раздела XXIг, питающие
-места здесь не единичны: тридцать четыре, в разных механизмах.
-*Философия:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци, `BARCAN-TAG-01 ACTUALIST-OBJECT`,
-принцип топологии пространственно-временных границ, anchor *Parts and Places / formal ontology of boundaries
-and spatial parts*. Сильная дословно: «названа точка, где меняется владелец проверки, полномочия или
-сохранения, и на неё есть тест». Слабая: «граница „понятна из структуры пакетов“». Опровержение: «удалить
-проверку на границе; если ни один тест не покраснел, границы нет». **Форма: не мерено.** Точка названа
-однозначно — один `if` в одном приёмнике, — но опровержение я не выполнял: убрать проверку и посмотреть,
-покраснеет ли хоть один тест, значило бы править продуктовый код. Без этой пробы форму называть нельзя.
+**`LogScope`**
+*Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
+*Связи:* ставит MDC `scope`; читают `ScopedBufferAppender` и `DurableProjectLogAppender`; пример дисциплины
+в `FalsificationCycleService`, где `project(project.getId())` стоит перед проектной работой, а `clear()` в
+`finally`.
+*Идеал:* вся работа фабрики, относящаяся к одному проекту, получает `PROJECT:{id}` ровно на время этой
+единицы работы; системная работа получает `SYSTEM` или не попадает в проектный журнал.
+*Граница:* SLF4J MDC текущего потока, ключ `scope`.
+*Входы:* `UUID projectId` или явный системный режим.
+*Выходы:* `PROJECT:{id}`, `SYSTEM`, либо удалённый MDC-ключ после `clear()`.
+*Владельцы истины/состояния:* project id берётся из доменной сущности/команды; временное состояние держит
+SLF4J MDC.
+*Инварианты:* scope ставится на входе в проектную единицу; scope снимается в `finally`; строка без
+`PROJECT:` не является проектным событием.
+*Сильная текущая форма:* API минимален и не смешивает проектный и системный род.
+*Слабое / неидеальное:* слабость не в самом `LogScope`, а в дисциплине всех входов, которые должны не
+забывать поставить и снять scope.
+*Что кодить для идеала:* при новых проектных entrypoint добавлять тест или статический чек, что scope
+ставится и снимается; сам helper не расширять без нужды.
+*Что не трогать:* не превращать `SYSTEM` в запасной проектный scope и не писать в MDC продуктовую активность,
+которую фабрика не наблюдала.
+*Опровержение / проверка:* убрать `clear()` или не поставить `PROJECT:{id}` на проектной операции; проверка
+должна показать утечку или отсутствие строки в durable-журнале.
+*Критерий закрытия:* все entrypoint, создающие проектные события, имеют `try/finally` или эквивалентный
+guard, а тесты appender'ов доказывают отбрасывание `SYSTEM` и missing scope.
+*Свидетельства:* `LogScope.java:7-31`; `FalsificationCycleService.java:168-188`.
+*Статус:* сам механизм идеален; покрытие дисциплины входов должно проверяться при добавлении новых входов.
+*комментарий для Антигравити:* `LogScope`: считаю механизм идеальным.
 
-**`LogScopeBuffer`** (47 строк) — кольцевой буфер в памяти, до 200 последних строк на проект.
-*Связи:* пишет `ScopedBufferAppender` | читает **один** механизм — `ProjectController:315`, отладочная
-выдача для человека.
-*Ценность:* дешёвое окно «что только что происходило по этому проекту», не требующее запроса к базе.
-*Комментарий:* **периферия по нынешнему замеру, и это результат сознательного изъятия, а не упадка.**
-Здесь два расхождения, оба измеренные.
+**`logback-spring.xml` project-log wiring**
+*Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` плюс `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
+*Связи:* root logger подключает `SCOPED_BUFFER` и `DURABLE_PROJECT_LOG`; первый пишет in-memory окно, второй
+пишет durable-очередь.
+*Идеал:* конфигурация должна подключать оба приёмника, но описание конфигурации не должно обещать
+запрещённого потребителя.
+*Граница:* Logback root pipeline.
+*Входы:* все INFO+ события приложения с MDC.
+*Выходы:* консоль, bounded in-memory буфер, bounded durable handoff queue.
+*Владельцы истины/состояния:* Logback config владеет фактом подключения; appender'ы владеют фильтрацией.
+*Инварианты:* проектный фильтр живёт в appender'ах, не в каждом logger call; durable appender не должен
+исчезнуть из root без явного решения.
+*Сильная текущая форма:* оба appender'а подключены.
+*Слабое / неидеальное:* комментарий над `SCOPED_BUFFER` всё ещё говорит про falsification-cycle context,
+хотя этот путь удалён как источник заражения.
+*Что кодить для идеала:* поправить комментарий в `logback-spring.xml`: `SCOPED_BUFFER` только human/debug
+recent activity; `DURABLE_PROJECT_LOG` только operator/external-agent forensic access; ни один из них не
+идёт в prompt кодера продукта.
+*Что не трогать:* не удалять durable appender ради "чистоты" после запрета Gemini/Jules читать журнал.
+*Опровержение / проверка:* grep конфигурации должен показывать оба appender-ref; grep prompt-building code
+не должен находить `LogScopeBuffer.recent`.
+*Критерий закрытия:* комментарии конфигурации совпадают с фактическими потребителями.
+*Свидетельства:* `logback-spring.xml:5-20`; `FalsificationCycleService.java:1703-1719`.
+*Статус:* не идеален из-за устаревшего комментария.
+*комментарий для Антигравити:* `logback-spring.xml` project-log wiring: не идеален; применить
+`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` и убрать из комментария обещание falsification/prompt-consumption.
 
-Первое, мелкое: **собственный javadoc устарел.** Он говорит, что буфер читает цикл фальсификации, «to give
-roles more current operational context». Замер: во всём `main` вне пакета `logging` буфер читает только
-`ProjectController`. Контроль на слепоту инструмента: в `FalsificationCycleService` тот же греп находит
-5 упоминаний `LogScope`, то есть файл он видит, — но все они в комментарии, а не в коде. Описание
-механизма пережило удаление читателя.
+**`ScopedBufferAppender`**
+*Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
+*Связи:* подключён как `SCOPED_BUFFER`; читает MDC `scope`; пишет в `LogScopeBuffer`.
+*Идеал:* в in-memory окно проекта попадают только строки с валидной меткой `PROJECT:{id}`.
+*Граница:* `if` по префиксу `PROJECT:` внутри appender.
+*Входы:* `ILoggingEvent` Logback.
+*Выходы:* форматированная строка для `LogScopeBuffer`.
+*Владельцы истины/состояния:* appender владеет фильтром; `LogScopeBuffer` владеет хранением.
+*Инварианты:* missing scope, `SYSTEM` и любой другой род отбрасываются; appender не парсит бизнес-смысл
+сообщения.
+*Сильная текущая форма:* есть focused-тест, что буферится только project-scoped event.
+*Слабое / неидеальное:* appender решает только "чей проект", но не "о каком роде активности"; это нормально
+только пока потребитель не кодер продукта.
+*Что кодить для идеала:* при появлении нового потребителя добавлять тест на его род: human/operator/debug,
+не product-authoring prompt.
+*Что не трогать:* не ослаблять фильтр до "любой scope"; не добавлять сюда product-runtime догадки.
+*Опровержение / проверка:* событие `SYSTEM` или без scope не должно появиться в recent buffer.
+*Критерий закрытия:* `LogScopeBufferTest.appenderOnlyBuffersProjectScopedEvents` остаётся зелёным, а список
+потребителей буфера ограничен debug/read-only поверхностью.
+*Свидетельства:* `ScopedBufferAppender.java:8-30`; `LogScopeBufferTest.java:16-29`.
+*Статус:* механизм идеален как boundary filter; ограничение по роду потребителя записано рядом.
+*комментарий для Антигравити:* `ScopedBufferAppender`: считаю механизм идеальным.
 
-Второе — то, ради чего этот раздел написан. Читателя убрали 9 августа 2026, и причина записана в
-`FalsificationCycleService:1701-1718`: **около 38 часов накопленного заражения**, прослеженных до точного
-источника. Буфер отдавался сессии Jules под заголовком «RECENT PROJECT OPERATIONAL ACTIVITY». Буфер при
-этом был очерчен **правильно** — только строки с меткой этого проекта, никакого общесистемного шума. Но
-каждая такая строка есть запись о работе **самой фабрики** над этим проектом: раздача задач, сверка
-запросов на слияние, уборка веток, учёт сессий — дословно `event.getLoggerName()` и
-`event.getFormattedMessage()`, скопированные приёмником. Собственного времени исполнения поставленного
-продукта фабрика не видит вовсе.
+**`LogScopeBuffer`**
+*Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`.
+*Связи:* получает строки от `ScopedBufferAppender`; читает `ProjectController.recentActivity`.
+*Идеал:* короткое human/debug окно последних проектно-помеченных действий фабрики, не источник задания для
+кодера продукта.
+*Граница:* in-memory map `projectId -> deque`, максимум 200 строк.
+*Входы:* project id и готовая строка appender'а.
+*Выходы:* bounded list последних строк по project id.
+*Владельцы истины/состояния:* память процесса; durable-истиной этот буфер не является.
+*Инварианты:* не переживает restart; не больше 200 строк на проект; неизвестный проект возвращает пусто.
+*Сильная текущая форма:* лимит и empty-result поведение покрыты тестами.
+*Слабое / неидеальное:* javadoc всё ещё описывает старый потребитель "falsification cycle", хотя код его
+удалил после 38 часов загрязнения.
+*Что кодить для идеала:* обновить javadoc: only `ProjectController` human-facing recent activity; явно
+запретить prompt injection в Jules/Gemini/product-coding flows.
+*Что не трогать:* не возвращать буфер в `FalsificationCycleService` под новым названием.
+*Опровержение / проверка:* grep по `LogScopeBuffer.recent` в `main` должен показывать только debug/API
+читателя; любой prompt builder с этим вызовом красит проверку.
+*Критерий закрытия:* комментарий класса и фактические callers совпадают, тесты лимита зелёные.
+*Свидетельства:* `LogScopeBuffer.java:9-45`; `ProjectController.java:310-316`;
+`FalsificationCycleService.java:1703-1719`; `LogScopeBufferTest.java:31-48`.
+*Статус:* не идеален по документации в коде; runtime-потребитель после удаления правильный.
+*комментарий для Антигравити:* `LogScopeBuffer`: не идеален; применить
+`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`, поправить javadoc и не возвращать журнал фабрики в prompt кодера.
 
-Дальше произошло следующее, и это записано как подтверждённая цепочка: Jules читал настоящие фразы о
-`JulesApiClient`, `PipelineTelemetryService`, Flow Core и сверке задач, — и, не имея куда деть «починку»
-прочитанного, **сочинял соответствующие классы внутри репозитория заказчика**. Право на запись у той сессии
-было только туда.
+**`ProjectController.recentActivity`**
+*Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
+*Связи:* HTTP `GET /{projectId}/recent-activity`; читает только `LogScopeBuffer.recent`.
+*Идеал:* human/debug surface показывает bounded recent activity по одному project id и не становится
+машинным входом для генерации кода.
+*Граница:* controller endpoint, project id из path.
+*Входы:* `projectId`, `limit`.
+*Выходы:* JSON `{ projectId, lines }`.
+*Владельцы истины/состояния:* controller владеет формой ответа; `LogScopeBuffer` владеет строками.
+*Инварианты:* endpoint не пишет состояние; не подмешивает system-wide logs; не читает durable DB.
+*Сильная текущая форма:* единственный live caller `LogScopeBuffer.recent` вне logging-пакета.
+*Слабое / неидеальное:* тест endpoint'а как human/debug boundary не найден.
+*Что кодить для идеала:* добавить controller-level тест, что ответ bounded, project-specific и не участвует
+в prompt-building сервисах.
+*Что не трогать:* не расширять endpoint до "recent product activity" без реального product-runtime источника.
+*Опровержение / проверка:* запрос по другому project id не должен возвращать строки текущего проекта.
+*Критерий закрытия:* есть тест controller boundary и grep доказывает, что endpoint не используется кодером.
+*Свидетельства:* `ProjectController.java:310-316`; grep callers `LogScopeBuffer.recent`.
+*Статус:* поведение сейчас верное, но закрывающего controller-теста нет.
+*комментарий для Антигравити:* `ProjectController.recentActivity`: не идеален по тестовой защите; применить
+`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` и добавить boundary-тест human/debug чтения.
 
-Изъяли начисто, а не отфильтровали и не переименовали, с прямо названным основанием: «there is no version
-of „here is Eneik's own orchestration log“ that belongs in a brief for a session that can only write to the
-client's product code».
-*Философия:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) — Гилберт Райл, `BARCAN-TAG-00 CODE-GUARDIAN`,
-принцип различия «знать что» и «знать как», anchor *The Concept of Mind — knowing-how versus knowing-that,
-category mistakes*. Сильная дословно: «назван тип, схема или переходник, удерживающий границу рода: процесс
-не выдаётся за объект, наблюдение за полномочие, политика за данные». Слабая: «мы понимаем разницу».
-Опровержение: «найти место, где значение одного рода присваивается полю другого без преобразования».
-**Форма: слабая на момент происшествия, сильная после изъятия — и главное здесь не оценка, а урок.**
-Граница по проекту работала безупречно и отвечала на вопрос «о чьём проекте эта строка». Нужен же был ответ
-на другой вопрос: «эта строка о носителе или о продукте». Два рода — проект и носитель — пересекаются, и
-фильтр по первому ничего не говорит о втором. Опровержение образца выполняется буквально: значение рода
-«наблюдение за работой фабрики» присваивалось полю рода «недавняя деятельность продукта» без
-преобразования, и преобразования не существует.
-Второй образец: `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006), формы дословно выше. **Форма: сильная и
-недостаточная одновременно** — точка смены владельца названа и работала; беда в том, что владельцев два
-рода, а граница проведена по одному.
+**`FalsificationCycleService` project-log boundary**
+*Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` и `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
+*Связи:* ставит `LogScope.project` перед циклом проекта; `finally` вызывает `LogScope.clear`; в
+`collectRecentChanges` удалён старый ввод `LogScopeBuffer.recent` в prompt.
+*Идеал:* цикл фальсификации пишет свои решения в проектный durable-журнал, но не отдаёт фабричный журнал
+кодеру как activity продукта.
+*Граница:* два разных рода: evidence of factory work и evidence of product runtime.
+*Входы:* active projects, project id, PR/change evidence.
+*Выходы:* scoped log lines для forensic-журнала; prompt без factory-log contamination.
+*Владельцы истины/состояния:* service владеет циклом и prompt-составом; журнал владеет forensic следом.
+*Инварианты:* scope всегда снимается; `LogScopeBuffer` не попадает в Jules prompt; отсутствие изменений
+возвращает empty recent changes.
+*Сильная текущая форма:* код прямо хранит комментарий о 38 часах загрязнения и удалении пути.
+*Слабое / неидеальное:* поздние нарушения закона 26 этим одним дефектом не объяснены; должен существовать
+другой путь или другая причина.
+*Что кодить для идеала:* добавить negative test/static guard: prompt builder не может читать
+`LogScopeBuffer`/`ProjectEventLogService` как product activity.
+*Что не трогать:* не "переименовывать" factory log в safer label для кодера; удаление должно остаться
+удалением.
+*Опровержение / проверка:* любой путь `LogScopeBuffer.recent` или `/project-log` в coding prompt нарушает
+границу рода.
+*Критерий закрытия:* guard/test краснеет при попытке вернуть project log в prompt кодера.
+*Свидетельства:* `FalsificationCycleService.java:168-188`; `FalsificationCycleService.java:1703-1719`.
+*Статус:* архитектурное решение идеальное; нужен guard от регресса.
+*комментарий для Антигравити:* `FalsificationCycleService` project-log boundary: считаю механизм идеальным;
+для регресса добавить guard, но не менять само удаление.
 
-**`DurableProjectLogAppender`** (44 строки) — тот же отбор по метке проекта, но события уходят в очередь на
-сохранение, а не в память.
-*Связи:* подключён в `logback-spring.xml:14` как `DURABLE_PROJECT_LOG` | передаёт в
-`ProjectLogFlushQueue` | оттуда `ProjectEventLogService` пакетами пишет в таблицу; читают
-`SystemStatusController` и `SystemSettingsService`.
-*Ценность:* без него история проекта исчезает при пересоздании контейнера.
-*Комментарий:* **ядро, и заведён по прямому указанию оператора** — в javadoc сохранена дата и сама фраза:
-26 июля 2026, «лог проекта должен независеть от деплоев». Устройство осторожное: берутся только записи
-уровня INFO и выше, «forensic project history, not a full trace log»; строка с непарсируемым
-идентификатором молча отбрасывается вместо исключения в потоке, который пишет лог.
+**`DurableProjectLogAppender`**
+*Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
+*Связи:* подключён как `DURABLE_PROJECT_LOG`; фильтрует `PROJECT:{uuid}`; передаёт `PendingEntry` в
+`ProjectLogFlushQueue`.
+*Идеал:* проектная история переживает restart/deploy и не добавляет DB round-trip в log call path.
+*Граница:* appender принимает только INFO+ и валидный `PROJECT:{uuid}`.
+*Входы:* `ILoggingEvent`.
+*Выходы:* queue entry `{projectId, createdAt, level, logger, message}`.
+*Владельцы истины/состояния:* appender владеет durable-capture decision; queue владеет временным handoff.
+*Инварианты:* ниже INFO отбрасывается; invalid UUID отбрасывается; DB не вызывается из logging thread.
+*Сильная текущая форма:* код ровно отделяет forensic history от full trace.
+*Слабое / неидеальное:* прямого теста appender -> queue для durable path в найденном тестовом наборе нет.
+*Что кодить для идеала:* добавить focused test, что INFO `PROJECT:{uuid}` попадает в queue, DEBUG/SYSTEM/
+invalid UUID не попадают.
+*Что не трогать:* не писать напрямую в repository из appender.
+*Опровержение / проверка:* DEBUG или `SYSTEM` event не должен создать `PendingEntry`.
+*Критерий закрытия:* durable appender имеет такой же явный test-shield, как `ScopedBufferAppender`.
+*Свидетельства:* `DurableProjectLogAppender.java:10-43`; `logback-spring.xml:10-20`.
+*Статус:* кодовая форма сильная, тестовая защита неполная.
+*комментарий для Антигравити:* `DurableProjectLogAppender`: не идеален по тестовой защите; применить
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и покрыть durable capture без DB round-trip.
 
-Здесь же — правильно решённый случай того же рода, что в разделе XXIб был решён неправильно. Очередь
-ограничена 20 000 записей, и при переполнении новая запись **отбрасывается**, а не роняет систему: javadoc
-называет цену прямо — «a DB outage degrades to „recent history missing“, never an OOM». Это осознанный
-выбор потерять свидетельство, а не поток. Сравнить с `parseLeanValue`, где неизвестное превращалось в
-утвердительный вердикт: там потеря маскировалась под знание, здесь потеря названа потерей.
-*Философия:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (D010) — Дерек Парфит,
-`BARCAN-TAG-05 NECESSARY-IDENTITY`, принцип психологической непрерывности идентичности, anchor *Reasons and
-Persons — psychological continuity and identity*. Сильная дословно: «личность долгоживущей сущности
-сохраняется через снимки и миграции, есть свидетельство воспроизведения». Слабая: «идентификатор стабилен,
-пока никто не пересоздаёт». Опровержение: «восстановить состояние на прошлый момент; если сущность не
-опознаётся — снимка нет». **Форма: сильная по устройству, не мерена по свидетельству.** Снимок есть —
-таблица, переживающая пересоздание контейнера, с идентификатором проекта и отметкой времени события. Но
-самого восстановления на прошлый момент проверка не проводилась, а образец требует именно свидетельства
-воспроизведения. Что измерено — наличие пути сохранения; что не измерено — что по нему действительно
-восстанавливается история.
+**`ProjectLogFlushQueue`**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* принимает entries от `DurableProjectLogAppender`; отдаёт batches в `ProjectEventLogService.flush`.
+*Идеал:* DB outage или всплеск логов ухудшает полноту недавней истории, но не валит JVM и не блокирует
+logging thread.
+*Граница:* bounded static queue, максимум 20000 entries.
+*Входы:* `PendingEntry`.
+*Выходы:* drained list до batch limit.
+*Владельцы истины/состояния:* очередь владеет временным handoff; persistent truth появляется только после DB
+flush.
+*Инварианты:* при переполнении запись теряется явно; drain не возвращает больше запрошенного; loss не
+маскируется под знание.
+*Сильная текущая форма:* javadoc прямо называет деградацию "recent history missing", not OOM.
+*Слабое / неидеальное:* drop-счётчик/метрика не видны в коде очереди.
+*Что кодить для идеала:* если нужен operational alert, добавить счётчик dropped entries; не менять bounded
+semantics.
+*Что не трогать:* не делать очередь unbounded и не заставлять logging thread ждать базу.
+*Опровержение / проверка:* искусственно заполнить queue выше лимита; процесс не должен падать и не должен
+раздувать память.
+*Критерий закрытия:* bounded behavior сохранён, а при требовании наблюдаемости есть dropped metric.
+*Свидетельства:* `ProjectLogFlushQueue.java:9-40`.
+*Статус:* считаю runtime-механизм идеальным; метрика нужна только при отдельном требовании наблюдаемости.
+*комментарий для Антигравити:* `ProjectLogFlushQueue`: считаю механизм идеальным.
 
-## Что этот раздел меняет в прежних утверждениях
+**`ProjectEventLogService`**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* scheduled `flush()` drains `ProjectLogFlushQueue`; writes `ProjectEventLogEntity` через
+`ProjectEventLogRepository`; `recent` и `since` читаются `SystemStatusController`.
+*Идеал:* reliable chain сохраняет project log в DB, умеет читать recent и chronological since, а feature
+flag off не даёт queue расти бесконечно.
+*Граница:* scheduled service между volatile queue и persistent DB.
+*Входы:* drained queue batch, setting `project_event_log_enabled`, project id/read limit/since.
+*Выходы:* rows in `project_event_log`, recent desc list, since asc list.
+*Владельцы истины/состояния:* service владеет преобразованием queue entry -> entity; repository владеет DB.
+*Инварианты:* batch max 500; flag off drains and discards; read limit bounded 1..5000; save failure logs warn
+without breaking scheduler.
+*Сильная текущая форма:* код содержит явную защиту от unbounded queue при disabled flag.
+*Слабое / неидеальное:* не найден прямой тест flush-on/off, ordering recent/since и mapping полей.
+*Что кодить для идеала:* добавить unit/integration tests for flag off drain, flag on saveAll mapping, bounded
+recent, chronological since.
+*Что не трогать:* не переносить feature flag в appender; это вернёт риск unbounded queue.
+*Опровержение / проверка:* при disabled flag queue после flush должна быть drained, а repository не должен
+получить saveAll; при enabled flag поля должны сохраниться без потери projectId/createdAt.
+*Критерий закрытия:* тесты доказывают обе ветки flag и оба read order.
+*Свидетельства:* `ProjectEventLogService.java:18-83`; `SystemSettingsService.java:464-468`.
+*Статус:* не идеален по доказательству; реализация выглядит правильной.
+*комментарий для Антигравити:* `ProjectEventLogService`: не идеален; применить
+`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` и закрыть tests for queue-drain, save mapping, recent/since ordering.
 
-В разделе XXIб я предположил, что пункт 32 предписаний — план продукта в пространстве имён фабрики — может
-корениться в умолчании `TargetContext`, и назвал соперничающее объяснение: компилятор берёт имена фабрики
-из своего контекста независимо от поля цели. **Найденное здесь — свидетельство в пользу соперника, и
-довольно сильное**: подтверждённый случай, когда имена механизмов фабрики попали в репозиторий заказчика
-именно через контекст запроса, а не через поле цели. Прежнее предпочтение снимается; ни одна из двух
-гипотез не подтверждена, но у второй теперь есть задокументированный случай, а у первой нет.
+**`ProjectEventLogEntity`**
+*Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
+*Связи:* создаётся `ProjectEventLogService.flush`; читается repository/controller/retention.
+*Идеал:* каждая строка журнала несёт stable project identity, time, level, logger и message.
+*Граница:* JPA entity/table `project_event_log`.
+*Входы:* queue entry fields.
+*Выходы:* persistent row.
+*Владельцы истины/состояния:* DB row after flush.
+*Инварианты:* `project_id`, `created_at`, `level`, `logger`, `message` not null; message CLOB.
+*Сильная текущая форма:* схема entity совпадает с restored migration V61.
+*Слабое / неидеальное:* entity сама не доказывает replay; это обязанность service/controller tests.
+*Что кодить для идеала:* не добавлять nullable identity/time fields; при расширении делать migration and
+read-path together.
+*Что не трогать:* не удалять `projectId` или `createdAt` ради компактности.
+*Опровержение / проверка:* строка без project id или time не должна сохраняться.
+*Критерий закрытия:* entity schema, migration и repository methods говорят одними именами.
+*Свидетельства:* `ProjectEventLogEntity.java:7-50`; `V61__create_project_event_log.sql:7-17`.
+*Статус:* механизм идеален как persistent record shape.
+*комментарий для Антигравити:* `ProjectEventLogEntity`: считаю механизм идеальным.
 
-Остаётся вопрос, на который у меня ответа нет: этот путь заражения закрыт 9 августа, а нарушения закона 26
-наблюдались позже. Значит либо есть второй путь, которым имена фабрики попадают в контекст, либо позднейшие
-случаи имеют другую причину. Не мерено.
+**`ProjectEventLogRepository`**
+*Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* используется `ProjectEventLogService` for reads/writes and `ProjectEventLogRetentionService` for
+count/delete/oldest-boundary.
+*Идеал:* repository exposes only the queries needed for recent history, chronological reconstruction and
+safe retention.
+*Граница:* Spring Data repository over `project_event_log`.
+*Входы:* project id, pageable, since instant, cutoff.
+*Выходы:* ordered entries, count, delete count.
+*Владельцы истины/состояния:* DB table; repository owns query names/contracts.
+*Инварианты:* recent desc; since asc; retention boundary asc; delete before cutoff only for one project.
+*Сильная текущая форма:* methods exactly match service and retention needs.
+*Слабое / неидеальное:* no standalone repository integration test was found; retention unit tests verify its
+expected calls.
+*Что кодить для идеала:* add repository slice test if ordering ever becomes incident-critical.
+*Что не трогать:* не заменять project-scoped delete на global delete.
+*Опровержение / проверка:* retention test must fail if delete loses `projectId`.
+*Критерий закрытия:* service/retention tests prove every query contract that changes behavior.
+*Свидетельства:* `ProjectEventLogRepository.java:15-33`; `ProjectEventLogRetentionServiceTest.java:121-210`.
+*Статус:* считаю механизм идеальным for current use, with integration test optional on future risk.
+*комментарий для Антигравити:* `ProjectEventLogRepository`: считаю механизм идеальным.
+
+**`project_event_log_enabled` setting**
+*Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
+*Связи:* defined in `SystemSettingsService`; seeded true by V61; read by `ProjectEventLogService.flush`.
+*Идеал:* operator can disable DB persistence without letting the logging queue grow forever.
+*Граница:* setting gates only DB write, not queue drain.
+*Входы:* env/system setting/database setting.
+*Выходы:* boolean decision inside flush.
+*Владельцы истины/состояния:* `SystemSettingsService` resolves effective boolean; DB/env holds configured
+value.
+*Инварианты:* default true; disabled drains and discards; appender still enqueues so the drain path remains
+responsible for memory.
+*Сильная текущая форма:* code comment names this exact boundary.
+*Слабое / неидеальное:* none observed.
+*Что кодить для идеала:* only add tests with `ProjectEventLogService`, not new semantics.
+*Что не трогать:* do not move the flag to appender level.
+*Опровержение / проверка:* with flag false, flush must call `drain` and must not save.
+*Критерий закрытия:* service test proves the flag boundary.
+*Свидетельства:* `SystemSettingsService.java:464-468`; `ProjectEventLogService.java:42-55`;
+`V61__create_project_event_log.sql:19-20`.
+*Статус:* механизм идеален; missing proof belongs to `ProjectEventLogService` tests.
+*комментарий для Антигравити:* `project_event_log_enabled`: считаю механизм идеальным.
+
+**`SystemStatusController.projectLog`**
+*Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
+*Связи:* HTTP `GET /api/system-status/project-log/{projectId}`; calls `ProjectEventLogService.recent` or
+`since`.
+*Идеал:* external agent/operator can reconstruct what happened to one project across deploys.
+*Граница:* system-status read API, not raw SQL and not product-coding prompt input.
+*Входы:* path `projectId`, optional `since`, optional `limit`.
+*Выходы:* JSON rows `{createdAt, level, logger, message}`.
+*Владельцы истины/состояния:* controller owns projection; service/repository own rows.
+*Инварианты:* `since` returns chronological everything after instant; no `since` returns bounded recent;
+response does not expose row id as authority.
+*Сильная текущая форма:* endpoint exists without debug SQL gate because durable project history is baseline.
+*Слабое / неидеальное:* current `SystemStatusControllerTest` covers Gemini reindex removal, not project-log
+recent/since projection.
+*Что кодить для идеала:* add tests for recent branch, since branch, mapping fields, limit passthrough/bounds
+through service.
+*Что не трогать:* do not feed this API into Jules/Gemini product-coding prompts.
+*Опровержение / проверка:* when `since` is present, controller must call `since`, not `recent`.
+*Критерий закрытия:* controller test proves both branches and the endpoint remains read-only forensic access.
+*Свидетельства:* `SystemStatusController.java:40-59`; `SystemStatusControllerTest.java:30-82`.
+*Статус:* не идеален по тестовой защите.
+*комментарий для Антигравити:* `SystemStatusController.projectLog`: не идеален; применить
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и добавить recent/since controller tests.
+
+**`ProjectEventLogRetentionService`**
+*Философский паттерн:* `ALONZO_CHERCH_21_DERIVED_CUTOFF` with `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+*Связи:* scheduled sweep reads all projects, counts rows, deletes old accepted logs after grace period and
+trims per-project excess through repository.
+*Идеал:* журнал не зависит от deploy while project is alive, but cannot grow without bound after acceptance
+or under one noisy project.
+*Граница:* retention policy by project status and per-project ceiling.
+*Входы:* projects, acceptedAt, configured grace days, configured max entries.
+*Выходы:* delete counts per accepted/ceiling policy.
+*Владельцы истины/состояния:* project status owns lifecycle meaning; repository owns row counts and deletes.
+*Инварианты:* active/waiting/frozen old entries survive; accepted entries survive grace; newest entries kept
+under ceiling; one project failure does not stop sweep; delete runs in transaction.
+*Сильная текущая форма:* tests cover active, waiting, frozen, grace, accepted-drop, one-project failure,
+single-row boundary lookup and frequent fixed delay.
+*Слабое / неидеальное:* none observed in the tested policy surface.
+*Что кодить для идеала:* do not change policy without adding tests for "must survive until acceptance" and
+"newest kept".
+*Что не трогать:* не вводить age-only deletion for unaccepted/frozen projects.
+*Опровержение / проверка:* old waiting/frozen project must not call delete; ceiling trim must request one
+boundary row, not load all excess.
+*Критерий закрытия:* retention test suite remains green after any policy change.
+*Свидетельства:* `ProjectEventLogRetentionService.java:20-136`;
+`ProjectEventLogRetentionServiceTest.java:57-210`.
+*Статус:* механизм идеален.
+*комментарий для Антигравити:* `ProjectEventLogRetentionService`: считаю механизм идеальным.
+
+**`V56/V58/V61 project_event_log migrations`**
+*Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
+*Связи:* V56 created an earlier durable log, V58 dropped it with observer-watermark during overcorrection,
+V61 restored `project_event_log` and seeded `project_event_log_enabled=true`.
+*Идеал:* migration history must preserve the lesson: stop Gemini/Jules consumption of the factory log without
+deleting the operator's durable forensic log.
+*Граница:* Flyway migration chain, not editable history.
+*Входы:* schema evolution.
+*Выходы:* current table `project_event_log` with index and default setting.
+*Владельцы истины/состояния:* applied migrations and current DB schema.
+*Инварианты:* never delete already-applied migrations; repairs happen forward; current schema uses
+`created_at`, `logger`, and project index.
+*Сильная текущая форма:* V61 explicitly records that V58 fixed the consumer problem but deleted the log too
+broadly.
+*Слабое / неидеальное:* V58 is the historical warning; current forward repair is correct.
+*Что кодить для идеала:* future migration must not remove `project_event_log` to solve prompt contamination;
+solve contamination at consumer boundary.
+*Что не трогать:* do not rewrite V56/V58/V61 files after application.
+*Опровержение / проверка:* current DB/schema migration set must still produce `project_event_log` and seeded
+setting after clean migrate.
+*Критерий закрытия:* clean migration creates the table and tests/grep show no product-coding consumer.
+*Свидетельства:* `V56__create_project_event_log.sql:1-15`;
+`V58__drop_project_event_log_and_watermark.sql:1-6`; `V61__create_project_event_log.sql:1-20`.
+*Статус:* current migration chain is ideal as forward repair; V58 remains documented anti-pattern.
+*комментарий для Антигравити:* `V56/V58/V61 project_event_log migrations`: считаю текущую forward-цепочку
+идеальной; не повторять ошибку V58, contamination чинить на границе потребителя.
+
+## Итоговая граница секции
+
+Подтверждённый старый дефект: буфер был правильно ограничен `PROJECT:{id}`, но был отдан не тому роду
+потребителя. Это доказанный `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`: factory orchestration log не является
+product runtime activity. Текущий идеал: `LogScope` и appender'ы продолжают писать operator/external-agent
+history, `FalsificationCycleService` не возвращает эту history в prompt кодера, durable-журнал переживает
+deploy, retention удерживает его от бесконечного роста.
+
+Открытые неидеальные точки для кода: поправить stale comments/javadocs in `logback-spring.xml` and
+`LogScopeBuffer`; добавить тесты для `ProjectController.recentActivity`,
+`DurableProjectLogAppender`, `ProjectEventLogService`, and `SystemStatusController.projectLog`; добавить
+regression guard, что project log не может стать prompt input for product-writing agents. Открытый
+исследовательский вопрос: поздние нарушения закона 26 после удаления пути 9 августа требуют отдельного
+источника или другой причины; эта секция закрывает только доказанный путь через project log.
+
+комментарий для Антигравити: `LogScope`: считаю механизм идеальным; `logback-spring.xml` project-log wiring:
+не идеален, применить `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` and update stale comment; `ScopedBufferAppender`:
+считаю механизм идеальным; `LogScopeBuffer`: не идеален, применить `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`,
+update javadoc and keep it out of product-coding prompts; `ProjectController.recentActivity`: не идеален по
+тестовой защите, применить `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`; `FalsificationCycleService` project-log
+boundary: считаю механизм идеальным; `DurableProjectLogAppender`: не идеален по тестовой защите, применить
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`; `ProjectLogFlushQueue`: считаю механизм идеальным;
+`ProjectEventLogService`: не идеален, применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; `ProjectEventLogEntity`:
+считаю механизм идеальным; `ProjectEventLogRepository`: считаю механизм идеальным; `project_event_log_enabled`:
+считаю механизм идеальным; `SystemStatusController.projectLog`: не идеален по тестовой защите, применить
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`; `ProjectEventLogRetentionService`: считаю механизм идеальным;
+`V56/V58/V61 project_event_log migrations`: считаю текущую forward-цепочку идеальной; не повторять ошибку
+V58.
 
 # XXIж. Память о собственных отказах: журнал дефектов, предложения, цикл дизайна
 

@@ -2024,3 +2024,49 @@ gaps are a policy decision for low-agreement-without-FALSE, focused title identi
 or removing the unused `JulesRoleCapabilities.isKnownRole` helper. No code was changed in this tact.
 
 комментарий для Антигравити: `LeverAgreement`: считаю механизм идеальным; `LeverStage`: считаю механизм идеальным; `LeverPromotionService`: не идеален only for low-agreement-without-FALSE policy gap, apply `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`; `LeverObservation`: считаю механизм идеальным; `LeverPromotionStateEntity`: считаю механизм идеальным; `LeverObservationRepository`: считаю механизм идеальным; `LeverPromotionStateRepository`: считаю механизм идеальным; `AccountHealthService` lever producer: считаю механизм идеальным; `FlowSpineService` semantic-duplicate lever producer: считаю механизм идеальным; `KaizenService` CTQ lever producer: считаю механизм идеальным; `SixSigmaAuditService` EWMA lever producer: считаю механизм идеальным; `TocSubordinationLever`: считаю механизм идеальным; `TaskTitleBuilder`: не идеален по тестовой защите, apply `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT`; `JulesRoleCapabilities`: не идеален as executable prohibition while `isKnownRole` is unused, apply `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
+
+## 2026-09-13 Codex Strict Record: Project Log Boundary
+
+Status: documentation-only strict record for section XXIе in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `LogScope`, `logback-spring.xml`
+project-log wiring, `ScopedBufferAppender`, `LogScopeBuffer`, `ProjectController.recentActivity`,
+`FalsificationCycleService` project-log boundary, `DurableProjectLogAppender`, `ProjectLogFlushQueue`,
+`ProjectEventLogService`, `ProjectEventLogEntity`, `ProjectEventLogRepository`,
+`project_event_log_enabled`, `SystemStatusController.projectLog`, `ProjectEventLogRetentionService`, and
+`V56/V58/V61 project_event_log migrations`.
+
+Denominator effect: section XXIе previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact, excluding the file title `# Механизмы фабрики`:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 50 |
+| Sections still missing visible `комментарий для Антигравити` | 13 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining sections without visible Antigravity comment: XVI, XXI, XXIб, XXIж, XXIз, XXII, XXIIб, XXIIв,
+XXIIг, XXIIд, XXIIе, XXIIж, XXIX.
+
+Remaining non-ideal points for this section: the runtime split is correct after the 2026-08-09 removal, but
+the code comments around `logback-spring.xml` and `LogScopeBuffer` still mention the old falsification/prompt
+consumer; `ProjectController.recentActivity`, `DurableProjectLogAppender`, `ProjectEventLogService`, and
+`SystemStatusController.projectLog` need focused tests/guards. No code was changed in this tact.
+
+комментарий для Антигравити: `LogScope`: считаю механизм идеальным; `logback-spring.xml` project-log wiring:
+не идеален, apply `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` and update stale comment; `ScopedBufferAppender`:
+считаю механизм идеальным; `LogScopeBuffer`: не идеален, apply `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`, update
+javadoc and keep it out of product-coding prompts; `ProjectController.recentActivity`: не идеален по
+тестовой защите, apply `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`; `FalsificationCycleService` project-log boundary:
+считаю механизм идеальным; `DurableProjectLogAppender`: не идеален по тестовой защите, apply
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`; `ProjectLogFlushQueue`: считаю механизм идеальным;
+`ProjectEventLogService`: не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; `ProjectEventLogEntity`:
+считаю механизм идеальным; `ProjectEventLogRepository`: считаю механизм идеальным; `project_event_log_enabled`:
+считаю механизм идеальным; `SystemStatusController.projectLog`: не идеален по тестовой защите, apply
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`; `ProjectEventLogRetentionService`: считаю механизм идеальным;
+`V56/V58/V61 project_event_log migrations`: считаю текущую forward-цепочку идеальной; не повторять ошибку
+V58.
