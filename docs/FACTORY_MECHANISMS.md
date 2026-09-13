@@ -2376,6 +2376,58 @@ charter content из-за перехода только на parsed fields; вт
   `SessionLifecycleService` как владельца удалённой жизни Jules-сессии и дописать владельцев по полям.
   Не обходить этот сервис локальным `save`; правка нужна в owner-map и запрете обходов, а не в споре сервисов.
 
+## XIII.5. Комментарии для Антигравити по механизмам
+
+* `Factory writable state owner-map`: механизм не идеален; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` и сначала завести owner-map `repository/field/transition -> owner -> allowed writers -> write method -> refutation`, потом править код.
+* `src/main/java/com/eneik/production/repositories/*Repository.java` as writable boundary: механизм не идеален; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, не считать новый `save/delete` безопасным без записи в owner-map.
+* `WishlistRepository` as transition boundary: механизм не идеален; сохранить CAS/lease-методы и дописать owner-map переходов `WishlistStatus`.
+* `WishlistRepository.compareAndSetStatus`: считаю механизм идеальным
+* `WishlistRepository.compareAndSetStatusWithTimestamp`: считаю механизм идеальным
+* `WishlistRepository.renewFinalizingLeases/renewFinalizingLease`: считаю механизм идеальным
+* `WishlistEntity.status`: механизм не идеален как ownership contract; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, назвать владельца каждого перехода before/after.
+* `WishlistEntity.finalizingSince`: механизм частично силён; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, сохранить lease-смысл и дописать владельцев продления/сброса.
+* `WishlistStatus`: механизм не идеален как state machine record; перечислить все переходы и владельцев, не чинить enum локально.
+* `AutoMergeService` as wishlist/task/session writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, разделить PR-truth decisions from lifecycle writes.
+* `DeliveredWorkJudgmentService` as wishlist/task writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, не смешивать delivered judgment with lifecycle ownership.
+* `DeliveryRealityProducerService` as wishlist writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, не превращать delivery evidence в право менять wishlist lifecycle.
+* `DesignShopOrchestrationService` as wishlist/task writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, назвать exact design-work transitions before code.
+* `DesignSystemFalsificationService` as wishlist writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, отделить creation of falsification work from lifecycle transition.
+* `FalsificationCycleService` as wishlist/task writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, не править cycle locally until transition owners are named.
+* `FeatureService` as wishlist writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, не считать feature ownership правом менять wishlist lifecycle.
+* `GeminiObserverActionService` as wishlist/task writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, observer action не должен подменять владельца перехода.
+* `InternalGeminiObserverController` as wishlist/session writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, internal route is not ownership.
+* `InternalRepairController` as wishlist writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, repair must name transition owner and audit/refutation.
+* `JulesDispatchService` as wishlist/task/session writer: механизм не идеален без field/transition owner-map; сохранить atomic gates and dispatch ownership, but do not let it own unrelated state by size.
+* `KaizenService` as wishlist writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, proposal/kaizen fact is not automatically lifecycle authority.
+* `LaunchabilityConstraintService` as wishlist writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, launchability constraint must not silently mutate wishlist status.
+* `OpsAuditorService` as wishlist/task writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, ops audit action must name allowed state transition.
+* `PlannedWorkRecoveryService` as wishlist/task writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, recovery cannot revive terminal/leased state outside declared transition.
+* `ProductLaunchabilityService` as wishlist writer: механизм не идеален без owner-map; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, product readiness must not become hidden lifecycle ownership.
+* `ProjectFlowService` as wishlist/task/session writer: механизм не идеален until owner-map exists; apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, do not split or patch locally before state ownership is declared.
+* `StrandedFinalizingSweepService` as wishlist writer: считаю механизм идеальным
+* `TechnicalLeadCompiler` as wishlist/task writer: механизм не идеален without owner-map; apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, preserve compile/admission boundary and document allowed status writes.
+* `WishlistService` as wishlist writer: механизм не идеален without owner-map; apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, service name alone is not transition ownership.
+* `TaskRepository` as transition boundary: механизм не идеален; сохранить terminal guards/CAS methods and finish owner-map for every `TaskStatus` transition.
+* `TaskRepository.compareAndSetStatusAt`: считаю механизм идеальным
+* `TaskRepository.writeStatusUnlessTerminalAt`: считаю механизм идеальным
+* `TaskEntity.status`: механизм частично силён; terminal guard идеален, но transition owner-map is incomplete.
+* `TaskEntity.updatedAt`: механизм частично силён; keep status-time coupling and document exact owners for timestamp-moving transitions.
+* `TaskStatus`: механизм не идеален as state machine record; list all legal transitions with owners before adding statuses or writers.
+* `InternalTaskController` as task writer: механизм не идеален; apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, internal/manual patch is not universal ownership and must be secured/audited.
+* `ClaimService` as task/session writer: механизм не идеален without owner-map; preserve claim/release/fail/complete semantics and name exact transitions.
+* `GateOrchestrator` as task writer: механизм не идеален without owner-map; gate result may move task only through declared status transition.
+* `MarketResearchService` as task writer: механизм не идеален without owner-map; market research output is not task lifecycle ownership.
+* `BranchGarbageCollectorService` as task writer: механизм не идеален without owner-map; destructive branch cleanup must not imply task-status authority.
+* `TaskCarrierBackfillService` as task writer: механизм не идеален without owner-map; carrier fields and lifecycle status must remain separate.
+* `SessionLifecycleService`: считаю механизм идеальным
+* `JulesSessionRepository` as lifecycle boundary: механизм не идеален until field-level owner-map exists; apply `MARGARET_GILBERT_02_JOINT_COMMITMENT_LOCK`.
+* `JulesSessionRepository.claimPrOpenedWorkflow`: считаю механизм идеальным
+* `JulesSessionEntity.status`: механизм не идеален without field-level owner-map; separate local lifecycle status from remote Jules truth.
+* `JulesSessionEntity.remoteDeletedAt`: считаю механизм идеальным
+* `JulesSessionEntity.closedAt`: механизм не идеален without field-level owner-map; allowed writers must be named.
+* `JulesSessionEntity.closureReason`: механизм не идеален without field-level owner-map; closure reason writer must match lifecycle owner.
+* `JulesSessionController` as session writer: механизм не идеален without owner-map; manual cancel/dispatch must delegate remote-life decision to `SessionLifecycleService`.
+
 # XIV. Сверка с корпусом философских образцов
 
 ## XIV.1. Корпус философских паттернов как внешний словарь дефектов

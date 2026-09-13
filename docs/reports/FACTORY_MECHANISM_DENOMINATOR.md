@@ -1676,3 +1676,32 @@ Remaining non-ideal points for this section: `IdleProjectAdviceService.generateI
 non-ideal as advice mechanisms. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XII; family summary is not a substitute.
+
+## 2026-09-13 Codex Per-Mechanism Correction: State Ownership Map
+
+Status: documentation-only per-mechanism correction for section XIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit per-mechanism comments: the factory writable-state owner-map,
+repository writable boundary, wishlist transition boundary and writers, task transition boundary and writers,
+and Jules session lifecycle/field writers named in section XIII.
+
+Denominator effect: section XIII already had a visible Antigravity comment, so the visible-section denominator
+does not change. This tact removes the family-level-only weakness for section XIII by adding per-mechanism
+comments. It does not claim that all older visible sections already satisfy the per-mechanism rule.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 45 |
+| Sections still missing visible `комментарий для Антигравити` | 18 |
+
+This is a visible-section denominator, not a mechanism count and not a full count of historical family-level
+comments that still lack per-mechanism detail.
+
+Remaining non-ideal points for this section: the implementation still needs a machine-checkable owner-map for
+repository/field/transition ownership and field-level owners for Jules session lifecycle fields. No code was
+changed in this tact.
+
+комментарий для Антигравити: в section XIII смотри `Комментарии для Антигравити по механизмам`; для будущего кода сначала owner-map, потом правка состояния.
