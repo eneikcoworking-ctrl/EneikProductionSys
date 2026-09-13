@@ -1382,3 +1382,35 @@ webhook and CI dispatch failures remain visible warnings after repository creati
 configuration degradation, not absence of repository. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXII; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Command Dashboard Readiness Pult
+
+Status: documentation-only strict-family replacement for section XXXIII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `CommandDashboardController`,
+`CommandDashboardService.getDashboard`, `fetchData`, `fetchJulesSessions`, `lowercaseKeys`,
+`isSystemMetaTaskRow`, `calculateReadiness`, `fetchEpicKanoClasses`, `AcceptanceReadinessDto`,
+`CommandDashboardDto`, `ClientAcceptanceTraversalEntity`, `ClientAcceptanceTraversalRepository`,
+`VerdictGate.constrain`, and frontend/operator rendering for the command dashboard.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with per-mechanism
+Antigravity comments. Key correction: the old backend fifth-condition task is already implemented and tested
+in source; the remaining non-ideal point is now named precisely as frontend/operator rendering plus unavailable
+test runner evidence, not as missing backend logic.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 42 |
+| Sections still missing visible `комментарий для Антигравити` | 21 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal point for this section: backend readiness is strong for the old defect, but the operator
+surface must visibly render `clientAcceptanceWitnessed` and preserve `unknown`; focused tests could not be run
+from this shell because no `./mvnw` exists and `mvn` is not on PATH. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXIII; family summary is not a substitute.
