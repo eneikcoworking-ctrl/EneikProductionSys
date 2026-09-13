@@ -1851,3 +1851,30 @@ Current control check at 2026-09-13T11:11:27Z found containers up, actuator heal
 internal Gemini observer endpoints returning `403`. No code was changed in this tact.
 
 комментарий для Антигравити: live factory snapshot protocol не идеален, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; container/actuator health probe: считаю механизм идеальным; project-flow/merge-cadence snapshot не идеален as current evidence, remeasure before current claims; queued-task dispatch refusal log не идеален as current evidence, sample live reason before classifying; internal Gemini observer endpoints: считаю механизм идеальным; table-size top-N projection не идеален as all-table evidence, apply `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
+
+## 2026-09-13 Codex Strict Record: File Claims And Conflict Preservation
+
+Status: documentation-only strict record for section XXIIз in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `V21__add_file_scope_and_conflicts.sql`,
+`V69__create_project_file_claims.sql` with `project_file_claims` collision guard, `V99__task_conflict_preserved_branch.sql`,
+and `V123__drop_task_conflicts_without_a_task.sql`.
+
+Denominator effect: section XXIIз previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 44 |
+| Sections still missing visible `комментарий для Антигравити` | 19 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: `V21` remains weak because predicted file scope is not permission.
+The live conformance audit for current branches/writes was not re-run in this tact. `V69`, `V99`, and `V123`
+are strong from source evidence. No code was changed in this tact.
+
+комментарий для Антигравити: `V21__add_file_scope_and_conflicts.sql` / `tasks.file_scope` / `task_conflicts`: не идеален, apply `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, preserve conflict accounting but do not treat predicted file scope as authorization; `V69__create_project_file_claims.sql` / `project_file_claims`: считаю механизм идеальным; `V99__task_conflict_preserved_branch.sql` / `task_conflicts.preserved_branch`: считаю механизм идеальным; `V123__drop_task_conflicts_without_a_task.sql`: считаю механизм идеальным.
