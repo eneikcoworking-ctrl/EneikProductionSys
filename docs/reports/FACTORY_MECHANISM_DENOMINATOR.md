@@ -1476,3 +1476,37 @@ Remaining non-ideal points for this section: focused account-selection tests and
 were not run in this tact. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXV; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Task Status Atomic Guard
+
+Status: documentation-only per-mechanism correction for section XXXVI in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit per-mechanism comments: `TaskStatus.isTerminal`,
+`TaskEntity.setStatus`, `TaskEntity.initializeStatus`, `TaskEntity.preUpdate`,
+`TaskRepository.compareAndSetStatusAt`, `TaskRepository.compareAndSetStatus`,
+`TaskRepository.writeStatusUnlessTerminalAt`, `TaskRepository.writeStatusUnlessTerminal`, `ClaimService.fail`,
+`ClaimService.closeTaskAsBlocked`, `ClaimService.closeTaskAsFailed`, `ClaimService.releaseClaimToQueue`,
+`ClaimService.reopenWithAmendedBrief`, `ClaimService.retireForExhaustedDispatchBudget`,
+`PlannedWorkRecoveryService` failed-task resume, `ProjectFlowService.retireDependentBehindDeadDependency`,
+`BranchGarbageCollectorService.retireAbandonedBranchAndPR`, and
+`JulesDispatchService.reconcileClosedUnmergedPullRequest`.
+
+Denominator effect: this section already had a visible Antigravity comment, so the visible-comment denominator
+does not change. This tact removes the family-level-only weakness for section XXXVI by adding per-mechanism
+comments. It does not claim that all older visible sections already satisfy the per-mechanism rule.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 44 |
+| Sections still missing visible `комментарий для Антигравити` | 19 |
+
+This is a visible-section denominator, not a mechanism count and not a full count of historical family-level
+comments that still lack per-mechanism detail.
+
+Remaining non-ideal points for this section: focused task-status tests were not run in this tact. No code was
+changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXVI; family summary is not a substitute.

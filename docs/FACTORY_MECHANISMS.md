@@ -9520,9 +9520,17 @@ not a coding target; only verification evidence remains to close it as ideal in 
 
 # XXXVI. Хранилище задач: запрет, стоящий на обоих уровнях
 
-**`TaskRepository`**, **`TaskEntity`**, **`TaskStatus`**, **`ClaimService`**, **`PlannedWorkRecoveryService`**,
-**`BranchGarbageCollectorService`**, **`JulesDispatchService`**, **`ProjectFlowService`** — семейство
-атомарных переходов задачи, которое запрещает воскресить или перезаписать terminal task через stale read.
+*Имена механизма или семейства:* **`TaskStatus.isTerminal`**, **`TaskEntity.setStatus`**,
+**`TaskEntity.initializeStatus`**, **`TaskEntity.preUpdate`**,
+**`TaskRepository.compareAndSetStatusAt` / `compareAndSetStatus`**,
+**`TaskRepository.writeStatusUnlessTerminalAt` / `writeStatusUnlessTerminal`**, **`ClaimService.fail`**,
+**`ClaimService.closeTaskAsBlocked`**, **`ClaimService.closeTaskAsFailed`**,
+**`ClaimService.releaseClaimToQueue`**, **`ClaimService.reopenWithAmendedBrief`**,
+**`ClaimService.retireForExhaustedDispatchBudget`**, **`PlannedWorkRecoveryService` failed-task resume**,
+**`ProjectFlowService.retireDependentBehindDeadDependency`**,
+**`BranchGarbageCollectorService.retireAbandonedBranchAndPR`**,
+**`JulesDispatchService.reconcileClosedUnmergedPullRequest`** — семейство атомарных переходов задачи,
+которое запрещает воскресить или перезаписать terminal task через stale read.
 
 *Философский паттерн:* главный паттерн — `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`
 (`BARCAN-TAG-10_DEONTIC-PROHIBITION`, Джозеф Раз, D006 Authorization ambiguity): запрет должен быть
@@ -9609,10 +9617,23 @@ records that all task-reopening/terminal-writing callers use `compareAndSetStatu
 *Текущий статус:* strict family record filled. The task-status transition guard is considered ideal by the
 current source/test contract; only test execution remains for fresh operational evidence.
 
-*комментарий для Антигравити:* считаю механизм идеальным. Do not rewrite `TaskRepository` status guards as
-ordinary `save()` logic, and do not remove the apparent duplicate protection between `TaskEntity` and
-`TaskRepository`: entity lifecycle and bulk JPQL are different execution levels. Applicable philosophy:
-`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, `ACP-061 Hoare Triple Review`.
+**комментарий для Антигравити по механизмам:**
+- `TaskStatus.isTerminal`: считаю механизм идеальным
+- `TaskEntity.setStatus`: считаю механизм идеальным
+- `TaskEntity.initializeStatus`: считаю механизм идеальным
+- `TaskEntity.preUpdate`: считаю механизм идеальным
+- `TaskRepository.compareAndSetStatusAt` / `compareAndSetStatus`: считаю механизм идеальным
+- `TaskRepository.writeStatusUnlessTerminalAt` / `writeStatusUnlessTerminal`: считаю механизм идеальным
+- `ClaimService.fail`: считаю механизм идеальным
+- `ClaimService.closeTaskAsBlocked`: считаю механизм идеальным
+- `ClaimService.closeTaskAsFailed`: считаю механизм идеальным
+- `ClaimService.releaseClaimToQueue`: считаю механизм идеальным
+- `ClaimService.reopenWithAmendedBrief`: считаю механизм идеальным
+- `ClaimService.retireForExhaustedDispatchBudget`: считаю механизм идеальным
+- `PlannedWorkRecoveryService` failed-task resume: считаю механизм идеальным
+- `ProjectFlowService.retireDependentBehindDeadDependency`: считаю механизм идеальным
+- `BranchGarbageCollectorService.retireAbandonedBranchAndPR`: считаю механизм идеальным
+- `JulesDispatchService.reconcileClosedUnmergedPullRequest`: считаю механизм идеальным
 
 # XXXVII. Сторож ТОС: чтение, которое пересчитывает
 
