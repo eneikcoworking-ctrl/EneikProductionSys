@@ -10696,9 +10696,11 @@ factory-flow instrumentation and buffer derivation are not yet sufficient to cal
 
 ## Семейство: durable project log retention and forensic read boundary
 
-**Имена механизмов и частей:** `ProjectEventLogRetentionService`, `ProjectEventLogRepository`,
-`ProjectRepository`, `ProjectEntity`, `ProjectStatus`, `ProjectEventLogEntity`, `ProjectEventLogService`,
-`DurableProjectLogAppender`, `ProjectLogFlushQueue`, `SystemStatusController`.
+**Имена механизма или семейства:** `ProjectEventLogRetentionService.enforceRetention/deleteBefore/trimToCeiling`,
+`ProjectEventLogRepository` project-log read/count/boundary/delete queries, `ProjectRepository.findAll` project
+iteration, `ProjectEntity.status/acceptedAt`, `ProjectStatus`, `ProjectEventLogEntity`,
+`ProjectEventLogService.flush/recent/since`, `DurableProjectLogAppender`, `ProjectLogFlushQueue`, and
+`SystemStatusController.projectLog`.
 
 **Философский паттерн:** primary `ALONZO_CHERCH_21_DERIVED_CUTOFF`, defect `D010 Data lineage loss`: retention
 cadence and cutoff must be derived from the log's growth and evidence boundary, not from an inherited daily
@@ -10793,7 +10795,23 @@ the ceiling by more than the expected delay-window intake.
 
 **Текущий статус:** считаю механизм идеальным
 
-**комментарий для Антигравити:** считаю механизм идеальным
+**Комментарии для Антигравити по механизмам:**
+- `ProjectEventLogRetentionService.enforceRetention`: считаю механизм идеальным
+- `ProjectEventLogRetentionService.deleteBefore`: считаю механизм идеальным
+- `ProjectEventLogRetentionService.trimToCeiling`: считаю механизм идеальным
+- `ProjectEventLogRepository` project-log read/count/boundary/delete queries: считаю механизм идеальным
+- `ProjectRepository.findAll` project iteration for retention: считаю механизм идеальным
+- `ProjectEntity.status/acceptedAt`: считаю механизм идеальным
+- `ProjectStatus`: считаю механизм идеальным
+- `ProjectEventLogEntity`: считаю механизм идеальным
+- `ProjectEventLogService.flush`: считаю механизм идеальным
+- `ProjectEventLogService.recent`: считаю механизм идеальным
+- `ProjectEventLogService.since`: считаю механизм идеальным
+- `DurableProjectLogAppender`: считаю механизм идеальным
+- `ProjectLogFlushQueue`: считаю механизм идеальным
+- `SystemStatusController.projectLog`: считаю механизм идеальным
+
+**комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
 # XVIII. Чего в этом перечне нет
 

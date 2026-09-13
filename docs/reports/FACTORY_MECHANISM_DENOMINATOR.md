@@ -1608,3 +1608,34 @@ policy evidence, and controlled production-path throttle/bypass proof were not a
 code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XLIII; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: Project Event Log Retention Comments
+
+Status: documentation-only per-mechanism correction for section XLIV in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded with explicit per-mechanism comments:
+`ProjectEventLogRetentionService.enforceRetention/deleteBefore/trimToCeiling`, `ProjectEventLogRepository`
+project-log read/count/boundary/delete queries, `ProjectRepository.findAll` project iteration,
+`ProjectEntity.status/acceptedAt`, `ProjectStatus`, `ProjectEventLogEntity`,
+`ProjectEventLogService.flush/recent/since`, `DurableProjectLogAppender`, `ProjectLogFlushQueue`, and
+`SystemStatusController.projectLog`.
+
+Denominator effect: this section already had a visible Antigravity comment, so the visible-comment denominator
+does not change. This tact removes the family-level-only weakness for section XLIV by adding per-mechanism
+comments. It does not claim that all older visible sections already satisfy the per-mechanism rule.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 44 |
+| Sections still missing visible `комментарий для Антигравити` | 19 |
+
+This is a visible-section denominator, not a mechanism count and not a full count of historical family-level
+comments that still lack per-mechanism detail.
+
+Remaining non-ideal points for this section: none identified from current source/test evidence. No code was
+changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XLIV; family summary is not a substitute.
