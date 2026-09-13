@@ -9037,63 +9037,117 @@ section. No code was changed in this tact.
 - `OnboardingAuditService.generateMarkdownReport`: считаю механизм идеальным
 - `OnboardingAuditFindingRepository`: считаю механизм идеальным
 
-# XXXII. Завод репозиториев: адрес, который существует раньше репозитория
+# XXXII. Завод репозиториев: адрес существует только после GitHub-свидетельства
 
-**`GitHubProjectFactoryClient`** (403 строки) — заводит на GitHub репозиторий под новый проект, заливает
-начальные файлы, настраивает его и **выдаёт доступ исполнителям**.
-*Связи:* зовут `ProjectFactoryService` и `ProjectFlowService:358-363` | ходит в GitHub за созданием
-репозитория, загрузкой файлов, настройкой и приглашением соучастников | отдаёт `GitHubProvisioningResult`
-из пяти полей: исход строкой, адрес, идентификатор, предупреждения и список приглашённых.
-*Ценность:* без него у проекта нет ни места для работы, ни исполнителей с правом писать в него.
-*Комментарий:* **ядро — это дверь, через которую фабрика вообще получает право что-то делать, — и в нём
-одно решение верное, а одно опасное.**
+**Имена механизма или семейства:** `GitHubProjectFactoryClient.provision`,
+`GitHubProjectFactoryClient.createRepository`, `uploadBootstrapFiles` / `upsertContent`,
+`configureRepository` (`protectMainBranch`, `registerWebhook`, `dispatchCiWorkflow`),
+`inviteJulesCollaborators` / `inviteCollaborator`, `GitHubProvisioningResult`,
+`ProjectFactoryService.provision`, `ProjectFactoryService.factoryStatus`, `ProjectFactoryService.report`,
+`ProjectFlowService.createProject` external-provisioning writeback.
 
-Верное: **отказы не глотаются**. Неудачная загрузка файлов и неудачная настройка складываются в
-`warnings`, приглашения соучастников несут каждое свой исход, а `ProjectFactoryService:126` их вычитывает и
-кладёт в отчёт. Прерывание и исключение записываются как `SYSTEM CRITICAL`. Ни один из этих путей не
-притворяется успехом: исход всегда начинается со слова — `skipped:`, `failed:`, `exists or blocked`.
+**Философский паттерн:** основной `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (D008,
+`FALSIFICATION_HARNESS`): репозиторный URL считается истинным только если есть проверка, которая краснеет на
+phantom URL. Второй паттерн — `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002, `CATEGORY_ERROR_SCAN`): строка
+предполагаемого адреса не является GitHub-сущностью без remote evidence. Для статуса и идентификатора
+применим `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010): `html_url`/`id` принимаются только из GitHub create
+response или verified existing-repo response.
 
-Опасное — в первой же строке метода. `fallbackUrl` собирается из имени организации и имени проекта
-**до всякого обращения к GitHub** и возвращается **во всех без исключения исходах**: и когда заведение
-пропущено настройкой, и когда нет токена, и когда GitHub ответил ошибкой, и когда всё упало с исключением.
-То есть **адрес репозитория существует раньше самого репозитория и переживает его несоздание**.
+**Связи:** `ProjectFlowService.createProject` after local admission calls `ProjectFactoryService.provision`;
+`ProjectFactoryService` creates workspace artifacts, calls `GitHubProjectFactoryClient.provision`, then
+passes `github.repositoryUrl()` to `LinearProjectFactoryClient.provision`, writes factory report and status.
+`GitHubProjectFactoryClient` reads `github_enabled`, `github_token`, `github.repos-private`, organization,
+webhook URL and account GitHub usernames; it calls GitHub create-repo, contents API, branch protection,
+webhook, workflow dispatch and collaborator endpoints. `ProjectFlowService` writes returned URL/id/status into
+`ProjectEntity` and maps them to `ProjectDto`.
 
-Сам по себе это был бы пустяк, если бы читающий сверялся с исходом. Замер показывает, что нет:
-`ProjectFlowService:360-361` записывает адрес в проект двумя полями **безусловно**, и лишь строкой ниже, в
-`362`, кладёт исход в отдельное поле. Сведения не потеряны — но всякий, кто читает у проекта только адрес,
-получает правдоподобную ссылку на репозиторий, которого может не быть.
+**Идеальная форма:** URL and repository id appear only after GitHub has returned or verified the repository.
+Skipped/failed/interrupted provisioning returns `repositoryUrl = null` and `repositoryId = null`; warnings and
+collaborator outcomes remain visible in status/report without fabricating a repo. Existing repository is
+allowed to carry URL/id only after GET `/repos/{owner}/{repo}` returns 200. Project admission stays local and
+survives external failure, but the admitted project must not look as if a remote repository exists.
 
-**Задача для кодинга.** Адрес обязан появляться только вместе с созданным репозиторием, а при пропуске и
-отказе быть пустым — либо запись адреса в проект обязана быть обусловлена исходом. Место:
-`GitHubProjectFactoryClient.provision` (сборка `fallbackUrl` в первой строке и его возврат в четырёх ветвях
-отказа) и `ProjectFlowService:360-361`. Проверка: у проекта, чьё заведение отказало, поле адреса пусто.
-Опровергнет: проект с непустым адресом и исходом, начинающимся на `failed:` или `skipped:`.
+**Граница:** механизм имеет право create/configure/bootstrap a GitHub repository, invite collaborators,
+record warnings, register standard hotspot paths and expose provisioning status. It does not decide customer
+requirements, task readiness, PR truth, or Linear truth; it does not create a repository URL by string
+template; it does not roll back the admitted local project when external provisioning fails.
 
-Отмечу и то, что относится к уже открытому вопросу о закрытости репозиториев: приватность задаётся здесь
-одним полем `body.put("private", reposPrivate)` из настройки, то есть решение это одноместное и меняется в
-одном месте.
-*Живое, 7 сентября 2026:* механизм **не работал** — в журнале за сутки ни одной строки о заведении
-репозитория, потому что новых проектов не заводили (тот же случай, что у разборщика чужого репозитория в
-разделе XXXI: живой проект один и давний). Косвенно работоспособность подтверждается тем, что у нынешнего
-проекта репозиторий есть и в него идут слияния — 38 упоминаний слияния за сутки. Проверить ветви отказа на
-живой фабрике нельзя, не заводя проект.
-*Философия:* `NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT` (D007) — Нуэль Белнап,
-`BARCAN-TAG-06 DEONTIC-CONSISTENCY`, принцип четырёхзначной логики (True/False/Both/Neither), anchor *A
-Useful Four-Valued Logic / how a computer should think — many-valued diagnostics*. Сильная дословно:
-«успешное завершение — **значение**, которое не может существовать без выполненных предусловий, и оно несёт
-свидетельство для следующего шага». Слабая: «статус `done` в поле и запись в лог». Опровержение:
-«сконструировать результат успеха, не имея свидетельства; если это удаётся — форма слабая». **Форма:
-слабая, и опровержение выполняется буквально одной строкой кода.** Адрес репозитория и есть то самое
-значение, которое **не должно существовать без выполненного предусловия**, — а он конструируется первой же
-строкой, до всякой проверки, и возвращается при любом исходе.
-Второй образец: `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` (D009) — Дэвид Чалмерс,
-`BARCAN-TAG-02 RIGID-DESIGNATOR`, принцип двумерной семантики, anchor *Two-Dimensional Semantics — primary
-and secondary intensions*. Сильная дословно: «отображаемое имя, сохраняемый идентификатор и сущность в API
-разведены так, что перепутать их нельзя». Слабая: «одно поле служит всем трём». Опровержение: «изменить
-отображаемое имя и посмотреть, не поехали ли ссылки». **Форма: сильная в замысле, слабая в употреблении.**
-Разведение сделано правильно: адрес, идентификатор и исход — три разных поля, и идентификатор при отказе
-остаётся пустым, как и должно. Но читающий волен взять одно поле из трёх, и берёт именно то, которое
-заполнено всегда.
+**Входы:** `ProjectEntity.name`, `repositoryName`, `onboardingMode`, existing `repositoryUrl`, workspace
+artifacts, settings `github_enabled`, `github_token`, `github.repos-private`, `github.org`,
+`github.api-base-url`, `github.webhook-url`, enabled accounts with GitHub usernames, GitHub HTTP response
+codes and bodies.
+
+**Выходы:** `GitHubProvisioningResult.status`, `repositoryUrl`, `repositoryId`, `warnings`, collaborators;
+GitHub repository, bootstrap files, branch protection, webhook, workflow dispatch attempt and invitations;
+`ProjectFactoryResult.repositoryUrl`, `githubRepositoryStatus`, `githubRepositoryId`, `factoryStatus`,
+`factoryReport`; `ProjectEntity.repositoryUrl`, `repoUrl`, `githubRepositoryStatus`, `githubRepositoryId`,
+`factoryStatus`, `factoryReport`; `ProjectDto` projection.
+
+**Владельцы истины и состояния:** GitHub API owns repository existence, URL, id, branch protection, webhook,
+workflow dispatch and collaborator access; `GitHubProvisioningResult` owns the typed provisioning outcome;
+`ProjectFactoryService.report` owns the JSON evidence carried to UI; `ProjectEntity` owns persisted project
+projection after factory writeback; tests own the phantom-URL refutation.
+
+**Инварианты:** skipped or failed GitHub provisioning never emits a URL/id; `ProjectFactoryService` never
+falls back to an old `ProjectEntity.repositoryUrl`; `ProjectFlowService` writes exactly the factory result,
+including `null`; external provisioning failure sets `factoryStatus = provision_failed` and keeps URL fields
+null; warnings are preserved in report; collaborator invitation status is per username; repo privacy is
+controlled at creation by `github.repos-private`.
+
+**Сильная форма сейчас:** current source no longer constructs `fallbackUrl`. Disabled GitHub, missing token,
+HTTP failure, interrupt and exception all return null URL/id. HTTP 201 returns `html_url` and `id` from
+GitHub. HTTP 422 performs a verification GET and only uses `html_url`/`id` if that GET returns 200. Tests
+assert null URL/id for disabled/missing/blank token, null URL for skipped/failed service results, and null
+DTO URL when external provisioning throws.
+
+**Слабая/неидеальная форма сейчас:** none for the phantom repository URL defect. The only non-ideal edge is
+outside this defect: branch protection, webhook and CI dispatch failures remain warnings after repository
+creation, so downstream consumers must treat `githubRepositoryStatus` and `githubWarnings` as degraded
+repository configuration rather than perfect readiness.
+
+**Что сделать для идеала:** do not code the old URL fix again. If future work touches this path, preserve the
+red tests for skipped/failed/null URL and add one HTTP-stub test for non-422 GitHub error returning null. For
+the warning edge, future coding may add UI/status language that distinguishes "repository exists" from
+"repository fully configured"; do not block project admission on those warnings unless the operator changes
+the admission rule.
+
+**Что не трогать:** do not reintroduce string-built fallback repository URL; do not use an old `ProjectEntity`
+URL as fallback; do not treat collaborator validation warning as full failure when GitHub says invitation is
+pending; do not hide `warnings` behind a generic success label; do not change `github.repos-private` in more
+than this creation boundary.
+
+**Опровержение:** description is false if any `skipped:` or `failed:` GitHub result carries non-null
+`repositoryUrl` or `repositoryId`; if `ProjectFactoryService.provision` returns a pre-existing phantom
+`project.repositoryUrl` after skipped/failed GitHub; if `ProjectDto.repositoryUrl()` is non-null after
+external provisioning exception; if report omits GitHub warnings or collaborator outcomes.
+
+**Критерий закрытия:** mechanism remains ideal while URL/id are GitHub-sourced or null, the existing tests for
+disabled/missing/blank/skipped/failed/provisioning-exception paths remain present, and factory report keeps
+status, URL/id, warnings and collaborator outcomes separately visible.
+
+**Свидетельства записи:** `nl -ba src/main/java/com/eneik/production/services/projectfactory/GitHubProjectFactoryClient.java
+| sed -n '1,180p'` and `sed -n '180,430p'`; `nl -ba src/main/java/com/eneik/production/services/projectfactory/ProjectFactoryService.java
+| sed -n '1,145p'`; `nl -ba src/main/java/com/eneik/production/services/projectfactory/GitHubProvisioningResult.java
+| sed -n '1,60p'`; `nl -ba src/main/java/com/eneik/production/services/ProjectFlowService.java | sed -n
+'351,405p;7183,7265p'`; `nl -ba src/test/java/com/eneik/production/services/projectfactory/GitHubProjectFactoryClientTest.java
+| sed -n '1,125p'`; `nl -ba src/test/java/com/eneik/production/services/projectfactory/ProjectFactoryServiceTest.java
+| sed -n '70,120p'`; `nl -ba src/test/java/com/eneik/production/services/ProjectAdmissionLaw25aTest.java
+| sed -n '220,242p'`.
+
+**Текущий статус:** считаю механизм идеальным for the phantom-repository-url defect recorded in this section.
+Code was not changed in this tact.
+
+**комментарий для Антигравити по механизмам:**
+- `GitHubProjectFactoryClient.provision`: считаю механизм идеальным
+- `GitHubProjectFactoryClient.createRepository`: считаю механизм идеальным
+- `GitHubProjectFactoryClient.uploadBootstrapFiles` / `upsertContent`: считаю механизм идеальным
+- `GitHubProjectFactoryClient.configureRepository`: считаю механизм идеальным
+- `GitHubProjectFactoryClient.inviteJulesCollaborators` / `inviteCollaborator`: считаю механизм идеальным
+- `GitHubProvisioningResult`: считаю механизм идеальным
+- `ProjectFactoryService.provision`: считаю механизм идеальным
+- `ProjectFactoryService.factoryStatus`: считаю механизм идеальным
+- `ProjectFactoryService.report`: считаю механизм идеальным
+- `ProjectFlowService.createProject` factory writeback: считаю механизм идеальным
 
 # XXXIII. Пульт управления: механизм, который сам записал свой изъян
 

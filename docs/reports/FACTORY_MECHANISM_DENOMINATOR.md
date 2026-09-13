@@ -1350,3 +1350,35 @@ here. A fresh live onboarding audit can be run later as runtime evidence, but it
 the mechanism shape. No code was changed in this tact.
 
 комментарий для Антигравити: смотри per-mechanism comments in section XXXI; family summary is not a substitute.
+
+## 2026-09-13 Codex Strict Record: GitHub Repository Factory
+
+Status: documentation-only strict-family replacement for section XXXII in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families now recorded: `GitHubProjectFactoryClient.provision`,
+`GitHubProjectFactoryClient.createRepository`, `uploadBootstrapFiles` / `upsertContent`,
+`configureRepository`, `inviteJulesCollaborators` / `inviteCollaborator`, `GitHubProvisioningResult`,
+`ProjectFactoryService.provision`, `ProjectFactoryService.factoryStatus`, `ProjectFactoryService.report`,
+and `ProjectFlowService.createProject` factory writeback.
+
+Denominator effect: one more old/stale section is now a strict mechanism record with per-mechanism
+Antigravity comments. Key correction: the section no longer presents phantom repository URL as current
+defect. Current source and tests make skipped/failed provisioning return null URL/id, and repository URL/id
+are accepted only from GitHub create response or verified existing-repo response.
+
+Current exact section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 41 |
+| Sections still missing visible `комментарий для Антигравити` | 22 |
+
+This is a section denominator, not a mechanism count. It proves section progress only and does not claim the
+entire factory source denominator is complete.
+
+Remaining non-ideal point for this section: none for the phantom repository URL defect. Branch protection,
+webhook and CI dispatch failures remain visible warnings after repository creation and should be treated as
+configuration degradation, not absence of repository. No code was changed in this tact.
+
+комментарий для Антигравити: смотри per-mechanism comments in section XXXII; family summary is not a substitute.
