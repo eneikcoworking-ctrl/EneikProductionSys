@@ -5949,141 +5949,116 @@ and persistence are still too narrow for a global bottleneck claim.
 
 # XXIд. Лестница доверия: чем фабрика решает, кому дать власть
 
-Два типа без аннотации в `services/lever` — словарь и мера того, как решающий механизм получает право
-что-то запрещать. Здесь же — прямой ответ на раздел XXIг: **этот механизм устроен ровно так, как граф
-ограничения устроен не был**.
+**Имена механизма или семейства:** `LeverAgreement`, `LeverStage`, `LeverPromotionService`,
+`LeverObservation`, `LeverPromotionStateEntity`, `LeverObservationRepository`,
+`LeverPromotionStateRepository`, lever producers `AccountHealthService`, `FlowSpineService`,
+`KaizenService`, `SixSigmaAuditService`, `TocSubordinationLever`, display-name helper `TaskTitleBuilder`,
+and role-vocabulary helper `JulesRoleCapabilities`.
 
-**`LeverAgreement`** (47 строк, 4 значения) — диагностическая оценка одного наблюдения: оказался ли
-кандидат прав против настоящей действительности, и был ли при этом прав действующий.
-*Связи:* читают **шестеро** — `AccountHealthService`, `FlowSpineService`, `KaizenService`,
-`SixSigmaAuditService`, `TocSubordinationLever`, `LeverPromotionService` | наблюдения **сохраняются**
-через `observationRepository`.
-*Ценность:* без него «кандидат ошибся» и «свидетельства ещё нет» — одно и то же, и новый механизм получает
-власть за то, что о нём ничего не известно.
-*Комментарий:* **ядро, и единственное место, где четыре значения Белнапа взяты полностью.** В разделе XXIв
-я отметил у `Verdict` сужение до трёх: «противоречивое» отсутствует. Здесь оно есть — `BOTH` означает, что
-кандидат и действующий согласились и друг с другом, и с действительностью: свидетельство настоящее, но о
-собственной ценности кандидата не говорящее, и потому к порогу повышения не засчитывается **ни в какую
-сторону**. `NEITHER` отдельно оговорено как «свидетельства пока нет», а **не** «неизвестное, посчитанное
-как ложь».
+**Философский паттерн:** `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` for diagnostic four-value outcomes;
+`ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and derived
+`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` for staged authority; `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT`
+for task display names; `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` for executable role vocabulary.
 
-Замечательнее всего, что тип **сам ссылается на корпус**: в javadoc написано «Belnap's four-valued
-diagnostic states (BARCAN-TAG-06, philosopher 3)», и это в точности `NUEL_BELNAP` из
-`docs/philosopher-patterns`. И ссылка соблюдена не только по букве: корпус помечает принцип как
-«отвергается для итогового статуса, применяется для диагностики», а код пишет «explicitly a DIAGNOSTIC
-status, never itself the final promotion verdict (that stays single-valued)». То есть образец применён с
-его собственным ограничением, а не вопреки ему.
+**Связи:** lever producers record candidate/incumbent observations through `LeverPromotionService`.
+`LeverPromotionService` writes `LeverObservation`, reads recent observations from `LeverObservationRepository`,
+and writes the single `LeverPromotionStateEntity` row per lever. `KaizenService`, `SixSigmaAuditService` and
+`TocSubordinationLever` read `currentStage` before acting on a candidate. `TaskTitleBuilder` is called by
+dashboard, project flow, delivery, Jules client/dispatch, compiler, operational context and operational truth
+surfaces. `JulesRoleCapabilities` is used by account creation/update and by operational context projections.
 
-Есть и осознанный отказ от универсальности: `compare` объявлен помощником только для рычагов, чьи решения
-буквально сравнимы с действительностью, и javadoc запрещает прогонять через него остальные — «forcing every
-lever through one generic string-equality rule would silently misjudge those cases». Случай «оба неправы»
-свёрнут в `NEITHER` с объяснением: настоящее свидетельство есть, но о **относительной** ценности кандидата
-оно молчит, а порог спрашивает именно о ней.
-*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап, `BARCAN-TAG-06 DEONTIC-CONSISTENCY`,
-принцип четырёхзначной логики (True/False/Both/Neither), anchor *A Useful Four-Valued Logic / how a computer
-should think — many-valued diagnostics*. Сильная дословно: «истинное, ложное, **неизвестное** и
-противоречивое представлены явно, и показано, как каждое хранится, отображается и разрешается. Третий исход
-невозможно проигнорировать на стороне вызывающего». Слабая: «булево плюс `null`, трактуемый по месту».
-Опровержение: «найти вызывающего, который компилируется, не обработав „неизвестно“».
-**Форма: сильная, и полнее, чем у `Verdict`.** Все четыре состояния представлены явно; показано, как каждое
-хранится (столбец `agreement` наблюдения), как отображается (в журнале повышения) и как разрешается
-(`TRUE`/`FALSE` идут в счёт, `BOTH`/`NEITHER` не идут ни в какую сторону). Опровержение выполнить не
-удалось: вызывающий, который бы посчитал `NEITHER` за согласие, отсутствует — счёт ведётся фильтром по
-двум разрешённым значениям, а не отрицанием.
+**Идеальная форма:** a candidate mechanism receives authority only after fresh, persisted, truth-resolved
+evidence. Diagnostic outcomes preserve `TRUE`, `FALSE`, `BOTH` and `NEITHER`; only `TRUE` and `FALSE` count
+toward promotion. Unknown or malformed stage values have zero live effect. Promotion is slow and packet-based;
+demotion is immediate on one real disagreement. Task display names remain presentation only and never become
+task identity. Role vocabulary is canonical and cannot drift between account creation and operational context.
 
-**`LeverStage`** (50 строк, 5 значений) — лестница полномочий решающего механизма: только наблюдать,
-предупреждать, мягко заслонять, жёстко заслонять, чинить самому.
-*Связи:* читают `KaizenService`, `SixSigmaAuditService`, `TocSubordinationLever`,
-`LeverPromotionStateEntity`, `LeverPromotionService` | ступень **сохраняется** в `stateRepository`.
-*Ценность:* без неё новый решающий механизм либо не действует вовсе, либо действует сразу в полную силу.
-*Комментарий:* **ядро.** Три вещи здесь сделаны правильно, и каждая измерена.
+**Граница:** this section governs authority promotion, diagnostic agreement, title presentation and role
+vocabulary. It must not decide project readiness, dispatch truth, task identity or delivery acceptance by
+itself. `TaskTitleBuilder` may produce compact labels, not identifiers. `JulesRoleCapabilities` may define the
+role dictionary, but unknown-role rejection is only real where a caller enforces it.
 
-Первое: **неизвестное лишает власти, а не даёт её.** `fromWireValue` на нераспознанной строке возвращает
-`OBSERVE_ONLY`, и `currentStage` для рычага, которого нет в базе, — тоже; javadoc называет это «zero live
-effect». Сравнить с `parseLeanValue` из раздела XXIб, где неразобранный ответ становился `valuable`, то есть
-утверждением в пользу. Одна и та же ситуация, противоположные умолчания.
+**Входы:** lever key, subject id, incumbent decision, candidate decision, ground-truth outcome, agreement,
+observed time, current stage, promotion thresholds, recency window, task title/payload/description/role tag,
+account create/update request, and operational context account facts.
 
-Второе: **власть даётся только за накопленное свидетельство.** Повышение на ступень требует не менее 20
-разрешённых наблюдений при доле согласия не ниже 0,80 в окне 14 дней, проверка раз в два часа
-(`MIN_RESOLVED_SAMPLES`, `AGREEMENT_THRESHOLD`, `RECENCY_WINDOW`, `@Scheduled(fixedRate = 7200000)`).
-Javadoc отдельно оговаривает: «based on real accumulated evidence, never on a deploy or a timer».
+**Выходы:** `lever_observations` rows, `lever_promotion_state` rows, current lever stage, demotion/promotion
+log lines, candidate action enablement from `currentStage`, display task title, canonical capability string,
+known-role predicate and operational context role facts.
 
-Третье, и самое важное: **лестница несимметрична, и несимметрична в верную сторону.** Повышение медленное и
-пакетное; понижение — немедленное, при первом же настоящем расхождении, не дожидаясь следующего цикла, со
-ссылкой на надёжностный процессуализм Гоулдмана: одна подтверждённая ошибка сама по себе есть свидетельство,
-что процесс на этой ступени ещё не надёжен. Отмечу связь с пунктом 38 предписаний: там аккаунт, разжалованный
-отказами, пути назад не имеет, потому что повышение требует успеха, которого ему не дадут. Здесь путь есть в
-обе стороны, и разность скоростей задана намеренно.
+**Владельцы истины и состояния:** `LeverObservation` owns individual evidence; `LeverPromotionStateEntity`
+owns current authority; `LeverPromotionService` owns all stage mutation; producers own native truth for their
+own lever; `TaskEntity.id` owns task identity while `TaskTitleBuilder` owns only display text;
+`JulesRoleCapabilities.ALL_ROLE_TAGS` owns role vocabulary; account rows own account status/capacity, not role
+eligibility variance.
 
-Одно место, где я не соглашусь с механизмом: при доле согласия **ниже** порога в `evaluateOne` не
-происходит ничего — состояние просто сохраняется. Понижение живёт только в записи наблюдения. Рычаг,
-который систематически неправ, но не выдал ни одного `FALSE` (например, потому что его наблюдения
-разрешаются в `NEITHER`), останется на своей ступени сколь угодно долго. Это не дефект устройства, а
-незаполненный случай; называть его нарушением запись не будет, потому что не измерено, случается ли он.
+**Инварианты:** `NEITHER` is no evidence, not false; `BOTH` is real but uninformative for candidate promotion;
+unknown stage is `OBSERVE_ONLY`; unresolved or non-fresh observations do not promote; the same sample packet
+cannot promote twice; promoted levers demote immediately on `FALSE`; display titles are two or three words and
+do not change task identity; Jules account capabilities are canonicalized to the full role set.
 
-*Живое, 7 сентября 2026:* лестница работала в обе стороны за один час.
-`docker logs eneikproductionsys-backend-1 | grep LEVER-PROMOTION`:
-`19:17:32 WARN 'F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY' demoted auto_remediate -> hard_gate`, затем
-`20:17:48 INFO ... promoted hard_gate -> auto_remediate (recent resolved=358)`. Одно подтверждённое
-расхождение сняло рычаг с верхней ступени **немедленно**, а вернулся он через час по 358 разрешённым
-наблюдениям. Накоплено `LEVER_OBSERVATIONS` — 5338 строк (замер `db-table-sizes`). Прежний открытый
-вопрос — доходил ли хоть один рычаг доверху — закрыт: доходил, и не удержался с первой же ошибки.
-**Реализация здесь сильнее образцов корпуса, и по этому случаю заведён новый:**
-`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` в
-`docs/philosopher-patterns/04_FACTORY_DERIVED_PATTERNS.md`. Корпус говорит о **пороге** доверия
-(`KNOWLEDGE_FIRST_GATE`, `RELIABILITY_CHAIN`) и молчит о **скорости его изменения**; здесь скоростей две и
-они намеренно разные.
-*Философия:* `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` (D006) — Элвин Голдман,
-`BARCAN-TAG-07 SECOND-ORDER-KNOWLEDGE`, принцип релайабилизма процессов, anchor *A Causal Theory of Knowing
-/ Epistemology and Cognition — reliabilism*. Сильная дословно: «рискованное действие требует свидетельства
-знаниевого качества, а не убеждения или намерения; приложена проверка или источник полномочия». Слабая:
-«действие разрешено, потому что „мы уверены“». Опровержение: «потребовать источник; ссылка на собственное
-убеждение и есть дефект». **Форма: сильная.** Источник полномочия предъявляется по требованию: ступень
-хранится, наблюдения хранятся, порог назван числом, окно назван сроком. Убеждению здесь взяться неоткуда.
-Второй образец: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010), тот же философ и якорь. Сильная дословно:
-«данным верят только когда процесс их добычи надёжен для **этого** класса дефекта; названы источник,
-отметка времени, правило свежести и путь проверки». Слабая: «данные из базы, значит верны». Опровержение:
-«назвать возраст значения; неизвестный возраст делает свежесть недоказуемой». **Форма: сильная.** Возраст
-называется: наблюдения отбираются по `observedAt` позже отметки `Instant.now().minus(RECENCY_WINDOW)`, то
-есть свежесть не предполагается, а вычисляется. Это ровно то, чего нет у графа ограничения из раздела XXIг,
-где среднее по Уэлфорду не имеет ни возраста, ни снимка.
+**Сильная форма сейчас:** `LeverAgreement.compare` and `TocSubordinationTruthTest` pin the four diagnostic
+cases. `LeverPromotionServiceTest` pins unknown lever zero effect, state creation at `observe_only`,
+immediate demotion, insufficient-sample refusal, one-stage promotion and no double-promotion from stale
+evidence. `LeverObservation` stores observed time and ground truth; `LeverPromotionStateEntity` stores stage
+and promotion/demotion timestamps. `AccountControllerIntegrationTest` proves account creation canonicalizes
+capabilities to `ALL_CAPABILITIES`.
 
-**`TaskTitleBuilder`** (167 строк) — выводит отображаемое имя задачи: из своего заголовка, а если его нет —
-из полезной нагрузки, роли или ключевых слов, и всегда приводит к двум-трём словам.
-*Связи:* зовут **восемь механизмов** — `DashboardController`, `ProjectFlowService`,
-`DeliveryRealityProducerService`, `JulesApiClient`, `JulesDispatchService`, `TechnicalLeadCompiler`,
-`ProjectOperationalContextService`, `OperationalTruthService` | ничего не пишет, чистая функция.
-*Ценность:* без него задача без заголовка показывается пустой строкой или сырым описанием во всех восьми
-местах по-разному.
-*Комментарий:* **периферия по демаркации — поток он удержать не может, — но с оговоркой.** Устройство
-верное: имя **вычисляется, а не хранится**, личность задачи остаётся за её идентификатором, и восемь
-потребителей получают одно правило вместо восьми. Оговорка в том, что при отсутствии заголовка имя берётся
-из умолчания по роли (13 значений, по одному на `BARCAN-TAG-NN`), и тогда две разные задачи одной роли
-показываются одинаково. Имя в этом случае сообщает роль, а не предмет.
-*Философия:* `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` (D009) — Дэвид Чалмерс,
-`BARCAN-TAG-02 RIGID-DESIGNATOR`, принцип двумерной семантики, anchor *Two-Dimensional Semantics —
-primary and secondary intensions*. Сильная дословно: «отображаемое имя,
-сохраняемый идентификатор и сущность в API разведены так, что перепутать их нельзя». Слабая: «одно поле
-служит всем трём». Опровержение: «изменить отображаемое имя и посмотреть, не поехали ли ссылки».
-**Форма: сильная.** Опровержение выполнить нельзя по устройству: отображаемое имя не хранится, менять
-нечего, ссылки идут по идентификатору. По Чалмерсу это и есть развод двух интенсионалов: как задача
-предъявляется читателю и что она есть — разные вопросы, и второй решается идентификатором.
+**Слабая/неидеальная форма сейчас:** systematic low agreement without a direct `FALSE` only stalls promotion;
+it does not demote a lever. `TaskTitleBuilder` has no focused contract test in the located test set, so the
+sense/reference split is source-strong but test-weak. `JulesRoleCapabilities.isKnownRole` is not called by
+production code; the canonical all-role policy is active, but the unknown-role denial helper is unused.
 
-**`JulesRoleCapabilities`** (35 строк) — закрытый список тринадцати ролевых меток и признак «известна ли
-роль».
-*Связи:* читают `AccountController` и `ProjectOperationalContextService`.
-*Ценность:* без него список ролей повторяется в каждом месте, где заводится аккаунт, и расходится.
-*Комментарий:* **периферия, но это та периферия, которой держится словарь.** Тринадцать меток
-`BARCAN-TAG-00…12` — те же, что именуют семейства в корпусе философов и в умолчаниях `TaskTitleBuilder`.
-То есть словарь ролей фабрики и словарь корпуса — один словарь, и `isKnownRole` делает принадлежность к
-нему проверяемой.
-*Философия:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз, `BARCAN-TAG-10 DEONTIC-PROHIBITION`,
-принцип исключающих причин, anchor *Practical Reason and Norms / The Authority of Law*. Сильная дословно:
-«запрет — **исполнимый путь отказа** с объяснимой причиной, и на него есть тест». Слабая: «запрет записан
-в документе или комментарии». Опровержение: «совершить запрещённое действие; если оно прошло — запрета
-нет, есть пожелание». **Форма: не мерено.** `isKnownRole` даёт исполнимый путь отказа, но зовут его двое, и
-проверял ли я, что аккаунт с неизвестной ролью действительно не заводится, — нет. Без этой пробы форму
-называть нельзя.
+**Что сделать для идеала:** add focused tests for `TaskTitleBuilder` proving title text, task id and API
+identity cannot be confused. Either remove `isKnownRole` or wire it into the exact boundary that can reject
+unknown external role input with a visible denial. For levers, decide whether a lever with enough recent
+resolved observations below threshold but without `FALSE` should demote, pause or stay unchanged; encode that
+as a test before changing behavior.
+
+**Что не трогать:** do not collapse `BOTH` or `NEITHER` into `TRUE`/`FALSE`; do not let unknown stages grant
+authority; do not let one historical evidence packet climb multiple stages; do not store task display names as
+identity; do not reintroduce per-account partial role capability when the current operating model is a universal
+role pool.
+
+**Опровержение:** this record is false if `NEITHER` counts toward promotion, if an unknown lever acts above
+`OBSERVE_ONLY`, if a `FALSE` observation after promotion does not demote immediately, if repeated evaluation
+without new evidence can climb multiple stages, if changing a task title changes task identity, or if account
+creation can persist caller-supplied partial/unknown capabilities instead of the canonical role set.
+
+**Критерий закрытия:** the lever ladder is closed for current strong behavior while the cited tests remain
+true. The whole section is ideal only when task-title contracts are pinned and `JulesRoleCapabilities.isKnownRole`
+is either an enforced denial boundary or removed as non-behavioral vocabulary residue.
+
+**Свидетельства записи:** `LeverAgreement.java:3-45`; `LeverStage.java:3-49`;
+`LeverPromotionService.java:17-26,32-40,50-91,93-148`; `LeverObservation.java:7-34`;
+`LeverPromotionStateEntity.java:6-33`; `LeverObservationRepository.java:11-28`;
+`LeverPromotionStateRepository.java:7-9`; `AccountHealthService.java:227-236`;
+`FlowSpineService.java:1114-1118`; `KaizenService.java:290-297`; `SixSigmaAuditService.java:685-705`;
+`TocSubordinationLever.java:120-152,216-225`; `TaskTitleBuilder.java:8-166`;
+`JulesRoleCapabilities.java:5-33`; `AccountController.java:62-81,101-103`;
+`ProjectOperationalContextService.java:469-510`; `LeverPromotionServiceTest.java:41-162`;
+`TocSubordinationTruthTest.java:22-50`; `AccountControllerIntegrationTest.java:89-97`;
+`04_FACTORY_DERIVED_PATTERNS.md:21-50`. Commands: `grep -RIn 'LeverAgreement\|LeverStage\|TaskTitleBuilder\|JulesRoleCapabilities' src/main/java src/test/java`.
+
+**Текущий статус:** partially ideal. The authority ladder and diagnostic agreement are strong. The section is
+not fully ideal because title contracts lack focused tests and the role-vocabulary helper includes an unused
+unknown-role predicate.
+
+**комментарий для Антигравити по механизмам:**
+- `LeverAgreement`: считаю механизм идеальным
+- `LeverStage`: считаю механизм идеальным
+- `LeverPromotionService`: не идеален only for the low-agreement-without-FALSE policy gap; apply `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` and encode demote/pause/stay as a test before code.
+- `LeverObservation`: считаю механизм идеальным
+- `LeverPromotionStateEntity`: считаю механизм идеальным
+- `LeverObservationRepository`: считаю механизм идеальным
+- `LeverPromotionStateRepository`: считаю механизм идеальным
+- `AccountHealthService` lever producer: считаю механизм идеальным
+- `FlowSpineService` semantic-duplicate lever producer: считаю механизм идеальным
+- `KaizenService` CTQ lever producer: считаю механизм идеальным
+- `SixSigmaAuditService` EWMA lever producer: считаю механизм идеальным
+- `TocSubordinationLever`: считаю механизм идеальным
+- `TaskTitleBuilder`: не идеален по тестовой защите; apply `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` and add focused tests that display title, persisted id and API identity cannot be confused.
+- `JulesRoleCapabilities`: не идеален as executable prohibition while `isKnownRole` is unused; apply `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, either enforce it at an input boundary or remove it as non-behavioral residue.
 
 # XXIе. Журнал проекта: граница, которая держала — и отвечала не на тот вопрос
 

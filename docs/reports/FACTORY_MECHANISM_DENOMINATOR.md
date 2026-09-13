@@ -1995,3 +1995,32 @@ because product-code instrumentation is still narrow and TOC state is in-memory 
 use is backed by snapshots. No code was changed in this tact.
 
 комментарий для Антигравити: `TocExecutionGraph`: не идеален as factory-wide truth, apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`; `TocNode`: не идеален for historical identity, apply `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` if used after restart/RCA; `TocEdge`: не идеален until multi-stage instrumentation and a consumer exist, apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`; `DbrStatus`: не идеален until observation scope/stage count travels with `primaryConstraintNode`, apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`; `AnomalyReport`: считаю механизм идеальным; `TocAnomalyDetector`: считаю механизм идеальным; `TocOptimizer`: не идеален as global bottleneck oracle without richer instrumentation, preserve single-stage unmeasured and apply `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`; `TocSentinelService`: не идеален as factory-wide observer, preserve pure read/refresh/lifecycle/cadence and add real stage producers; `TocSentinelController`: считаю механизм идеальным; `BottleneckAwarePriorityService`: не идеален while TOC scope is narrow, apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`; `SixSigmaAuditService` TOC projection: не идеален without DBR recommendation/observation scope, apply `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; `KaizenService` buffer-tuning projection: не идеален unless buffer defects name observed scope, apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`; `SystemAuditController` TOC audit projection: не идеален unless readers see whether flow is unmeasured/single-stage, apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
+
+## 2026-09-13 Codex Strict Record: Lever Trust Ladder
+
+Status: documentation-only strict record for section XXIд in `docs/FACTORY_MECHANISMS.md`.
+
+Mechanisms/families recorded with explicit per-mechanism comments: `LeverAgreement`, `LeverStage`,
+`LeverPromotionService`, `LeverObservation`, `LeverPromotionStateEntity`, `LeverObservationRepository`,
+`LeverPromotionStateRepository`, lever producers `AccountHealthService`, `FlowSpineService`, `KaizenService`,
+`SixSigmaAuditService`, `TocSubordinationLever`, display-name helper `TaskTitleBuilder`, and role-vocabulary
+helper `JulesRoleCapabilities`.
+
+Denominator effect: section XXIд previously lacked a visible Antigravity comment, so the direct heading-scan
+visible-section denominator changes by one.
+
+Current exact visible-section denominator after this tact:
+
+| Counted thing | Count |
+| --- | ---: |
+| Top-level mechanism sections, excluding file title | 63 |
+| Sections with visible `комментарий для Антигравити` inside the section | 49 |
+| Sections still missing visible `комментарий для Антигравити` | 14 |
+
+This is a visible-section denominator, not a mechanism count.
+
+Remaining non-ideal points for this section: the lever ladder and diagnostic agreement are strong. The remaining
+gaps are a policy decision for low-agreement-without-FALSE, focused title identity tests, and either enforcing
+or removing the unused `JulesRoleCapabilities.isKnownRole` helper. No code was changed in this tact.
+
+комментарий для Антигравити: `LeverAgreement`: считаю механизм идеальным; `LeverStage`: считаю механизм идеальным; `LeverPromotionService`: не идеален only for low-agreement-without-FALSE policy gap, apply `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`; `LeverObservation`: считаю механизм идеальным; `LeverPromotionStateEntity`: считаю механизм идеальным; `LeverObservationRepository`: считаю механизм идеальным; `LeverPromotionStateRepository`: считаю механизм идеальным; `AccountHealthService` lever producer: считаю механизм идеальным; `FlowSpineService` semantic-duplicate lever producer: считаю механизм идеальным; `KaizenService` CTQ lever producer: считаю механизм идеальным; `SixSigmaAuditService` EWMA lever producer: считаю механизм идеальным; `TocSubordinationLever`: считаю механизм идеальным; `TaskTitleBuilder`: не идеален по тестовой защите, apply `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT`; `JulesRoleCapabilities`: не идеален as executable prohibition while `isKnownRole` is unused, apply `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
