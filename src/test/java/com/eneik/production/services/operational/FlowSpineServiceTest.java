@@ -276,6 +276,71 @@ class FlowSpineServiceTest {
     }
 
     @Test
+    void consecutiveRefusalMarkingTaskBlockedExitsBlockedByReviewState() {
+        // Prescription 35 (PERCEPTION_ACTION_LOOP / D011, Law 8):
+        // When review fallback encounters repeated identical revision refusals (>= 2), the task is marked
+        // blocked, breaking the deadlock and transitioning project state out of BLOCKED_BY_REVIEW to BLOCKED_BY_TASK.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID liveTaskId = UUID.randomUUID();
+        TaskEntity liveTask = new TaskEntity();
+        liveTask.setId(liveTaskId);
+        liveTask.setProject(project);
+        liveTask.setStatus(TaskStatus.pending_review);
+        liveTask.setDescription("Feature Slice");
+
+        JulesSessionEntity liveSession = new JulesSessionEntity();
+        liveSession.setId(UUID.randomUUID());
+        liveSession.setTaskId(liveTaskId);
+        liveSession.setStatus("running");
+
+        PrReviewEntity liveReview = new PrReviewEntity();
+        liveReview.setJulesSessionId(liveSession.getId());
+        liveReview.setCiStatus("conflict");
+        liveReview.setMerged(false);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(liveTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(liveTaskId))).thenReturn(List.of(liveSession));
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(liveReview));
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        // Before repeated refusal resolution: state is BLOCKED_BY_REVIEW
+        FlowSpineDto dtoBefore = service.build(projectId);
+        assertEquals("BLOCKED_BY_REVIEW", dtoBefore.currentState());
+
+        // Operational resolution of deadlock: second consecutive refusal marks task blocked
+        liveTask.setStatus(TaskStatus.blocked);
+        liveTask.setJulesDispatchStatus("Review fallback repeated identical revision refusal (refusal count=2); marked blocked to break BLOCKED_BY_REVIEW deadlock.");
+
+        // After resolution: project state exits BLOCKED_BY_REVIEW to BLOCKED_BY_TASK
+        FlowSpineDto dtoAfter = service.build(projectId);
+        assertNotEquals("BLOCKED_BY_REVIEW", dtoAfter.currentState());
+        assertEquals("BLOCKED_BY_TASK", dtoAfter.currentState());
+        assertEquals(1, dtoAfter.counts().blockedTasks());
+    }
+
+    @Test
     void aSupersededSessionsDeadReviewNoLongerBlocksAfterBranchGcRequeuedTheTask() {
         // Regression test for the 2026-08-01 incident: test-fortieth/PR#119, task 72ec0f54. Branch GC
         // cancelled the stale session (status="cancelled") and re-queued the TASK for a fresh attempt - the

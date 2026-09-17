@@ -5875,6 +5875,74 @@ public class ProjectFlowService {
         }
     }
 
+    // Prescription 35 (PERCEPTION_ACTION_LOOP / D011): A repeated refusal at the identical content revision
+    // is evidence of a deadlock. If review fallback was attempted for a target at a given diff hash, and is
+    // refused on subsequent attempts without any revision progress, tracking the consecutive refusal count on
+    // the target payload allows raising an operational defect and transitioning out of BLOCKED_BY_REVIEW.
+    public static final String PR_REVIEW_FALLBACK_REPEATED_REFUSALS_KEY = "reviewFallbackRepeatedRefusals";
+    public static final String PR_REVIEW_FALLBACK_LAST_REFUSED_DIFF_HASH_KEY = "reviewFallbackLastRefusedDiffHash";
+    public static final int PR_REVIEW_FALLBACK_MAX_REPEATED_REFUSALS = 2;
+
+    public int reviewFallbackRepeatedRefusalsCount(TaskEntity task) {
+        if (task == null || task.getPayload() == null) {
+            return 0;
+        }
+        return task.getPayload().path(PR_REVIEW_FALLBACK_REPEATED_REFUSALS_KEY).asInt(0);
+    }
+
+    /** Increments and persists the consecutive refusal counter for this content revision; returns the new count. */
+    public int recordReviewFallbackRepeatedRefusal(TaskEntity task, String diffHash) {
+        if (task == null) {
+            return 0;
+        }
+        ObjectMapper mapper = this.objectMapper != null ? this.objectMapper : new ObjectMapper();
+        ObjectNode payload = task.getPayload() instanceof ObjectNode existing ? existing : mapper.createObjectNode();
+        String lastDiffHash = payload.path(PR_REVIEW_FALLBACK_LAST_REFUSED_DIFF_HASH_KEY).asText("");
+        int current = (diffHash != null && diffHash.equals(lastDiffHash))
+                ? payload.path(PR_REVIEW_FALLBACK_REPEATED_REFUSALS_KEY).asInt(0)
+                : 0;
+        int next = current + 1;
+        payload.put(PR_REVIEW_FALLBACK_REPEATED_REFUSALS_KEY, next);
+        payload.put(PR_REVIEW_FALLBACK_LAST_REFUSED_DIFF_HASH_KEY, diffHash != null ? diffHash : "");
+        task.setPayload(payload);
+        return next;
+    }
+
+    /** Clears repeated refusal tracking once admitted or when revision changes. */
+    public void clearReviewFallbackRepeatedRefusals(TaskEntity task) {
+        if (task != null && task.getPayload() instanceof ObjectNode payload) {
+            boolean modified = false;
+            if (payload.has(PR_REVIEW_FALLBACK_REPEATED_REFUSALS_KEY)) {
+                payload.remove(PR_REVIEW_FALLBACK_REPEATED_REFUSALS_KEY);
+                modified = true;
+            }
+            if (payload.has(PR_REVIEW_FALLBACK_LAST_REFUSED_DIFF_HASH_KEY)) {
+                payload.remove(PR_REVIEW_FALLBACK_LAST_REFUSED_DIFF_HASH_KEY);
+                modified = true;
+            }
+            if (modified) {
+                task.setPayload(payload);
+            }
+        }
+    }
+
+    /** Records a deadlock defect in defect journal when review fallback repeatedly refuses identical revision. */
+    public void recordReviewFallbackDeadlockDefect(UUID projectId, TaskEntity task, String prUrl, String diffHash, int refusalCount) {
+        if (defectJournalService != null) {
+            defectJournalService.recordDefect(
+                    projectId,
+                    "HIGH",
+                    "PERCEPTION_ACTION_LOOP",
+                    "JulesDispatchService",
+                    "REVIEW_FALLBACK_DEADLOCK",
+                    "Poka-yoke: PR review fallback repeated refusal (count=" + refusalCount + ") for task "
+                            + (task != null ? task.getId() : "unknown") + " PR " + prUrl + " at diff " + diffHash
+                            + "; perception-action loop broken, exiting BLOCKED_BY_REVIEW (Prescription 35, D011)",
+                    (double) refusalCount
+            );
+        }
+    }
+
     public UUID createReviewFallbackBatchTask(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
         return createReviewFallbackBatchTask(originalTasks, prUrls, diffHashes, prompt, verdictPath, false);
     }

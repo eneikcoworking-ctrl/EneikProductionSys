@@ -1305,5 +1305,65 @@ class ProjectFlowServiceTest {
         assertTrue(prompt.contains("Miller's Law"));
         assertTrue(prompt.contains("Gestalt principles"));
     }
+
+    /**
+     * Prescription 35 (PERCEPTION_ACTION_LOOP / D011):
+     * Test repeated refusal tracking: increments on identical diff hash, resets on changed diff hash,
+     * and clears properly.
+     */
+    @Test
+    void reviewFallbackRepeatedRefusalTracking() {
+        ProjectFlowService service = service();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+
+        assertEquals(0, service.reviewFallbackRepeatedRefusalsCount(task));
+
+        // 1st refusal for revision "hash1"
+        int c1 = service.recordReviewFallbackRepeatedRefusal(task, "hash1");
+        assertEquals(1, c1);
+        assertEquals(1, service.reviewFallbackRepeatedRefusalsCount(task));
+
+        // 2nd refusal for same revision "hash1" -> increments to 2
+        int c2 = service.recordReviewFallbackRepeatedRefusal(task, "hash1");
+        assertEquals(2, c2);
+        assertEquals(2, service.reviewFallbackRepeatedRefusalsCount(task));
+
+        // Refusal for a NEW revision "hash2" -> resets to 1
+        int c3 = service.recordReviewFallbackRepeatedRefusal(task, "hash2");
+        assertEquals(1, c3);
+        assertEquals(1, service.reviewFallbackRepeatedRefusalsCount(task));
+
+        // Clear tracking
+        service.clearReviewFallbackRepeatedRefusals(task);
+        assertEquals(0, service.reviewFallbackRepeatedRefusalsCount(task));
+    }
+
+    /**
+     * Prescription 35 (PERCEPTION_ACTION_LOOP / D011):
+     * Deadlock defect is recorded in DefectJournalService.
+     */
+    @Test
+    void reviewFallbackDeadlockDefectEmission() {
+        ProjectFlowService service = service();
+        var defectJournalService = mock(com.eneik.production.kaizen.service.DefectJournalService.class);
+        service.setDefectJournalService(defectJournalService);
+
+        UUID projectId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+
+        service.recordReviewFallbackDeadlockDefect(projectId, task, "https://github.com/org/repo/pull/42", "hash999", 2);
+
+        verify(defectJournalService).recordDefect(
+                eq(projectId),
+                eq("HIGH"),
+                eq("PERCEPTION_ACTION_LOOP"),
+                eq("JulesDispatchService"),
+                eq("REVIEW_FALLBACK_DEADLOCK"),
+                argThat(desc -> desc.contains("task " + task.getId()) && desc.contains("PR https://github.com/org/repo/pull/42") && desc.contains("hash999")),
+                eq(2.0)
+        );
+    }
 }
 

@@ -3718,6 +3718,70 @@ class JulesDispatchServiceTest {
         verify(projectFlowService).dispatchReviewFallbackTask(carrierTaskId);
     }
 
+    @Test
+    void consecutiveReviewFallbackRefusalsBreakDeadlockAndRecordDefect() {
+        // Prescription 35 (PERCEPTION_ACTION_LOOP / D011):
+        // Repeated identical revision refusal must raise a defect event and break BLOCKED_BY_REVIEW deadlock.
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        UUID targetTaskId = UUID.randomUUID();
+        TaskEntity targetTask = new TaskEntity();
+        targetTask.setId(targetTaskId);
+        targetTask.setProject(project);
+        targetTask.setStatus(TaskStatus.pending_review);
+
+        // A completed fallback carrier already exists targeting targetTaskId at diff "hash_deadlock"
+        TaskEntity completedFallback = new TaskEntity();
+        completedFallback.setId(UUID.randomUUID());
+        completedFallback.setProject(project);
+        completedFallback.setStatus(TaskStatus.done);
+
+        JulesSessionEntity completedSession = new JulesSessionEntity();
+        completedSession.setTaskId(completedFallback.getId());
+        when(julesSessionRepository.findByTaskIdIn(anyList())).thenReturn(List.of(completedSession));
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
+        when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
+        when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
+        when(projectFlowService.reviewFallbackTargetDiffHashes(completedFallback)).thenReturn(List.of("hash_deadlock"));
+
+        // 1st refusal: returns 1 (< max 2)
+        when(projectFlowService.recordReviewFallbackRepeatedRefusal(targetTask, "hash_deadlock")).thenReturn(1);
+
+        JulesDispatchService.ReviewFallbackAdmission admission1 = julesDispatchService.admitReviewFallbackBatch(
+                projectId,
+                List.of(targetTask),
+                List.of("https://github.com/org/repo/pull/1"),
+                List.of("hash_deadlock")
+        );
+
+        assertNull(admission1);
+        assertEquals(TaskStatus.pending_review, targetTask.getStatus());
+        verify(projectFlowService, never()).recordReviewFallbackDeadlockDefect(any(), any(), any(), any(), anyInt());
+
+        // 2nd refusal: returns 2 (>= max 2)
+        when(projectFlowService.recordReviewFallbackRepeatedRefusal(targetTask, "hash_deadlock")).thenReturn(2);
+
+        JulesDispatchService.ReviewFallbackAdmission admission2 = julesDispatchService.admitReviewFallbackBatch(
+                projectId,
+                List.of(targetTask),
+                List.of("https://github.com/org/repo/pull/1"),
+                List.of("hash_deadlock")
+        );
+
+        assertNull(admission2);
+        // Task must be marked blocked to break BLOCKED_BY_REVIEW deadlock
+        assertEquals(TaskStatus.blocked, targetTask.getStatus());
+        assertTrue(targetTask.getJulesDispatchStatus().contains("Review fallback repeated identical revision refusal"));
+        verify(projectFlowService).recordReviewFallbackDeadlockDefect(
+                eq(projectId), eq(targetTask), eq("https://github.com/org/repo/pull/1"), eq("hash_deadlock"), eq(2)
+        );
+        verify(taskRepository, atLeastOnce()).save(targetTask);
+    }
+
     // ANTI_MIRROR_TELEMETRY (D013, LYUDVIG_VITGENSHTEYN_14) / Prescription 11:
     // systemProgressTracker must ONLY record progress on real external deliverables
     // (dispatch to Jules, PR opened by implementer), NOT on internal audits, compilations, or reviewer completions.

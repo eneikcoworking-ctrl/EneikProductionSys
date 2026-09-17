@@ -1,11 +1,13 @@
-# Такт L2: Ведущий инженер (2026-09-17 18:07 UTC)
+# Такт L2: Ведущий инженер (2026-09-17 19:05 UTC)
 
-1. Предписание 33 закрыто (D003 Contract drift, D008 Falsification harness):
-   - `EpistemicLayerInvariantGate`: документирована архитектурная реальность (гейты стоят на 1 из 5 путей к `done` — `ClaimService:349` — и покрывают 5 из 13 ролей; 0 из 365 задач исторически). Внедрена инспекция реального diff PR через `gitHubPullRequestService`.
-   - `AutoMergeService`: куайновская граница ядра вынесена на путь слияния в `rejectByFactoryPokaYoke` и `judgeQuineanEpistemicBoundary`. Любая периферийная задача (`BARCAN-TAG-11`, `-05`, `-06`) или задача фичи `PERIPHERY`, затронувшая ядро (`migration`, `SecurityConfig` или заражение `automerge`/`sixsigma`/`orchestrator`/`jules`), прерывает слияние, закрывает PR unmerged, блокирует задачу (`blocked`), завершает сессию (`closed_rejected`) и логирует дефект в `DefectJournalService` (`epistemic_layer_invariant`, `ciStatus = "core_violation"`).
+1. Предписание 35 закрыто (PERCEPTION_ACTION_LOOP / D011, Закон 8, LYUDVIG_VITGENSHTEYN_06):
+   - `ProjectFlowService`: внедрены счетчик повторных отказов на неизменной ревизии `recordReviewFallbackRepeatedRefusal`, сброс `clearReviewFallbackRepeatedRefusals` и регистрация происшествия `recordReviewFallbackDeadlockDefect` (`HIGH`, `PERCEPTION_ACTION_LOOP`, `REVIEW_FALLBACK_DEADLOCK`).
+   - `JulesDispatchService.admitReviewFallbackBatch`: при повторном тождественном отказе сторожа (refusalCount >= 2) отказ становится событием в дефект-журнале, а задача маркируется `TaskStatus.blocked` с записью статуса диспетчеризации.
+   - Это гарантирует немедленный выход состояния фабрики из затора `BLOCKED_BY_REVIEW` в `BLOCKED_BY_TASK` (с последующей плановой утилизацией в `failed` и регенерацией) и исключает вечный холостой опрос в `processPendingReviewBatch`.
 2. Заслон (100% green в Docker):
-   - `AutoMergePokaYokeTest`: 6 тестов на отклонение мутаций ядра периферией, допуск валидных UI PR и легитимных мутаций бекенд-инженером (`BARCAN-TAG-02`).
-   - `AutoMergeServiceTest`: сквозной тест `peripheryTaskMutatingCoreScopeIsRejectedAtMergePathAndTaskBlocked` (закрытие PR, блокировка задачи, дефект в журнал).
-   - `AutoMergeLaw20InvariantS4Test`, `GateOrchestratorIntegrationTest`, `EpistemicEntrenchmentTest` — green.
+   - `JulesDispatchServiceTest.consecutiveReviewFallbackRefusalsBreakDeadlockAndRecordDefect`: 2 тождественных отказа фиксируют дефект и переводят задачу в `blocked`.
+   - `FlowSpineServiceTest.consecutiveRefusalMarkingTaskBlockedExitsBlockedByReviewState`: маркировка задачи `blocked` немедленно выводит проект из `BLOCKED_BY_REVIEW` в `BLOCKED_BY_TASK`.
+   - `ProjectFlowServiceTest.reviewFallbackRepeatedRefusalTracking`, `reviewFallbackDeadlockDefectEmission`: поревизионный трекинг и эмиссия.
+   - `ProjectAdmissionLaw25aTest`: полная транзитивная изоляция транзакции допуска сохранена.
 3. Следующий такт:
-   - Взять следующее открытое предписание из Раздела XVI (Предписание 34: возраст сторожа `StrandedFinalizingSweepService` / D013 + D012).
+   - Взять следующее предписание из Раздела XVI (`FACTORY_MECHANISMS.md` / `MANAGER_STATE.md`: Предписание 36: DesignExcellenceGate / отказ экранов).

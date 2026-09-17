@@ -3446,10 +3446,24 @@ public class JulesDispatchService {
             String diffHash = fetchedDiffHashes.get(i);
             String targetKey = task.getId() + "::" + prUrl + "::" + diffHash;
             if (!scheduledTargets.add(targetKey)) {
-                log.info("Poka-yoke: PR review fallback was already attempted for task {} PR {} at this content revision; automatic retry is disabled.",
-                        task.getId(), prUrl);
+                int refusalCount = projectFlowService.recordReviewFallbackRepeatedRefusal(task, diffHash);
+                if (refusalCount >= com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_REPEATED_REFUSALS) {
+                    projectFlowService.recordReviewFallbackDeadlockDefect(projectId, task, prUrl, diffHash, refusalCount);
+                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.blocked);
+                    task.setJulesDispatchStatus("Review fallback repeated identical revision refusal (refusal count="
+                            + refusalCount + "); marked blocked to break BLOCKED_BY_REVIEW deadlock (Prescription 35, D011).");
+                    taskRepository.save(task);
+                    log.warn("Poka-yoke: PR review fallback repeated refusal (count={}) for task {} PR {} at diffHash {}; marked blocked to break BLOCKED_BY_REVIEW deadlock (Prescription 35, D011).",
+                            refusalCount, task.getId(), prUrl, diffHash);
+                } else {
+                    taskRepository.save(task);
+                    log.info("Poka-yoke: PR review fallback was already attempted for task {} PR {} at this content revision (refusal count={}); automatic retry is disabled.",
+                            task.getId(), prUrl, refusalCount);
+                }
                 continue;
             }
+            projectFlowService.clearReviewFallbackRepeatedRefusals(task);
+            taskRepository.save(task);
             tasks.add(task);
             prUrls.add(prUrl);
             diffHashes.add(diffHash);

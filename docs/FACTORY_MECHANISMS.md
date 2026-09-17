@@ -4035,6 +4035,11 @@ producer of the block fires in seconds, the releaser once an hour**». Заме�
 запись терминального исхода для PR, закрытого без слияния. Пункты 1 и 2 **остаются**: отказ сторожа
 повторился пять раз, и его не воспринял никто; у ключа по хешу выхода по-прежнему нет.
 
+*Закрыто (2026-09-17):*
+1. В `ProjectFlowService` введены счетчик и регистратор тождественных отказов `recordReviewFallbackRepeatedRefusal` и фиксация дефекта `recordReviewFallbackDeadlockDefect` (`PERCEPTION_ACTION_LOOP` / D011).
+2. В `JulesDispatchService.admitReviewFallbackBatch` при повторном отказе на неизменной ревизии содержимого (refusalCount >= 2) регистрируется дефект в `DefectJournalService` (`REVIEW_FALLBACK_DEADLOCK`), задача маркируется `TaskStatus.blocked`, что немедленно переводит состояние фабрики из `BLOCKED_BY_REVIEW` в `BLOCKED_BY_TASK`, разрывая взаимную блокировку.
+3. Заслоны: `JulesDispatchServiceTest.consecutiveReviewFallbackRefusalsBreakDeadlockAndRecordDefect`, `FlowSpineServiceTest.consecutiveRefusalMarkingTaskBlockedExitsBlockedByReviewState`, `ProjectFlowServiceTest.reviewFallbackRepeatedRefusalTracking`.
+
 ---
 
 ### 36. Дизайн-цех выдаёт восемь экранов и все восемь отвергает сам · `TELEOSEMANTIC_FEEDBACK` (D011) + закон 8
