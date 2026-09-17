@@ -111,26 +111,27 @@ public class SystemStatusService {
     }
 
     public Map<String, Object> getStatus(UUID projectId) {
-        List<TaskEntity> projectTasks = projectId != null
-                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+        UUID effectiveProjectId = projectId != null ? projectId : sixSigmaAuditService.getActiveProjectId();
+        List<TaskEntity> projectTasks = effectiveProjectId != null
+                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(effectiveProjectId)
                 : null;
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("integrations", safeSection(() -> settingsService.listSettings()));
-        status.put("accounts", safeSection(() -> accounts(projectId)));
+        status.put("accounts", safeSection(() -> accounts(effectiveProjectId)));
         status.put("githubAccess", safeSection(this::latestGithubAccess));
         status.put("githubApiBudget", safeSection(() -> githubApiBudgetService.snapshot().asMap()));
-        status.put("linearCompleteness", safeSection(() -> linearCompleteness(projectId)));
-        status.put("julesSessions", safeSection(() -> julesSessions(projectId, projectTasks)));
-        Object qualitySection = safeSection(() -> qualityGate(projectId, projectTasks));
+        status.put("linearCompleteness", safeSection(() -> linearCompleteness(effectiveProjectId)));
+        status.put("julesSessions", safeSection(() -> julesSessions(effectiveProjectId, projectTasks)));
+        Object qualitySection = safeSection(() -> qualityGate(effectiveProjectId, projectTasks));
         status.put("qualityGate", qualitySection);
-        status.put("tasks", safeSection(() -> tasks(projectId, projectTasks)));
-        Object conflictSection = safeSection(() -> conflictDpmo(projectId, projectTasks));
+        status.put("tasks", safeSection(() -> tasks(effectiveProjectId, projectTasks)));
+        Object conflictSection = safeSection(() -> conflictDpmo(effectiveProjectId, projectTasks));
         status.put("conflictDpmo", conflictSection);
-        status.put("emsMetrics", safeSection(() -> emsMetrics(projectId, projectTasks)));
+        status.put("emsMetrics", safeSection(() -> emsMetrics(effectiveProjectId, projectTasks)));
         status.put("sixSigma", safeSection(() -> sixSigma(extractSectionData(qualitySection), extractSectionData(conflictSection))));
         status.put("aiResources", safeSection(googleAiResourceService::resourceMatrix));
         status.put("systemHealth", safeSection(this::systemHealth));
-        status.put("operationalBlockers", safeSection(() -> operationalBlockers(projectId, projectTasks)));
+        status.put("operationalBlockers", safeSection(() -> operationalBlockers(effectiveProjectId, projectTasks)));
         status.put("runtimeSource", safeSection(this::runtimeSource));
         status.put("aiHealth", safeSection(aiHealthTracker::snapshot));
         return status;

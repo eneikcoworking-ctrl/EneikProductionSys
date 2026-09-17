@@ -184,6 +184,53 @@ class SystemStatusServiceTest {
         verify(accounts, never()).findAll();
     }
 
+    @Test
+    void getStatusNullProjectResolvesActiveProjectWhenPresentAndScopesAllSections() {
+        UUID activeProjectId = UUID.randomUUID();
+        SixSigmaAuditService audit = mock(SixSigmaAuditService.class);
+        when(audit.getActiveProjectId()).thenReturn(activeProjectId);
+
+        TaskRepository tasks = mock(TaskRepository.class);
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(activeProjectId)).thenReturn(List.of());
+
+        AccountRepository accounts = mock(AccountRepository.class);
+        when(accounts.findAvailableForProjectOrderByNameAsc(activeProjectId)).thenReturn(List.of());
+
+        ProjectRepository projects = mock(ProjectRepository.class);
+        when(projects.findById(activeProjectId)).thenReturn(Optional.empty());
+
+        SystemStatusService service = new SystemStatusService(
+                mock(SystemSettingsService.class),
+                accounts,
+                tasks,
+                mock(JulesSessionRepository.class),
+                mock(LinearIssueMetadataRepository.class),
+                mock(JdbcTemplate.class),
+                mock(PrReviewRepository.class),
+                mock(TaskConflictRepository.class),
+                mock(WishlistRepository.class),
+                projects,
+                mock(EmsMetricsService.class),
+                mock(GoogleAiResourceService.class),
+                mock(GitHubApiBudgetService.class),
+                mock(SystemProgressTracker.class),
+                mock(AiHealthTracker.class),
+                mock(Environment.class),
+                audit);
+
+        Map<String, Object> result = service.getStatus(null);
+
+        assertThat(result).isNotNull();
+        verify(audit).getActiveProjectId();
+        verify(tasks, times(1)).findByProjectIdOrderByCreatedAtDesc(activeProjectId);
+        verify(tasks, never()).findAll();
+        verify(accounts).findAvailableForProjectOrderByNameAsc(activeProjectId);
+        verify(accounts, never()).findAllByOrderByNameAsc();
+        verify(accounts, never()).findAll();
+        verify(projects, never()).findAllByOrderByCreatedAtDesc();
+        verify(projects, never()).findAll();
+    }
+
 
     @Test
     void globalQualityGateFetchesOnlyTasksWithQualityGateReports() throws Exception {
