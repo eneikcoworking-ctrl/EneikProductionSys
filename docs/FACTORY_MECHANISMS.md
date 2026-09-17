@@ -4205,6 +4205,11 @@ not**». Дальше `LIMIT 1`.
 сегодня (44%) само отличается от вчерашних 55% — величина гуляет. Порог для вывода: **не меньше тридцати
 отправок после правки**.
 
+*Решение (2026-09-17, Предписание 38, D007):* В нативном запросе `lockNextJulesAccountWithCapacity` в `AccountRepository.java`:
+1. Добавлено скользящее окно давности отказов `r.created_at > DATEADD(hour, -3, CURRENT_TIMESTAMP)`: если аккаунт молчит > 3 часов, серия отказов затухает до нуля и аккаунт реабилитируется без внешнего вмешательства (AGM-пересмотр убеждений / `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER`).
+2. Введена периодическая принудительная проба раз в 5 отправок: `((CASE WHEN MOD((SELECT COUNT(*) FROM jules_sessions), 5) = 0 THEN -1 ELSE 1 END) * COALESCE(...)) ASC`, инвертирующая штраф за отказы и выбирающая наиболее разжалованный аккаунт для зондирования (`ELVIN_GOLDMAN_03_BELIEF_UPDATE_LEDGER`).
+3. Заслоны: `demotedAccountWithRefusalStreakIsProbedWithinNAttempts` и `refusalStreakDecaysAfterThreeHoursOfSilenceRehabilitatingAccount` в `AccountRepositoryIntegrationTest`.
+
 ---
 
 ### 39. Верёвка ТОС построена, соблюдается — и привязана не к тому концу

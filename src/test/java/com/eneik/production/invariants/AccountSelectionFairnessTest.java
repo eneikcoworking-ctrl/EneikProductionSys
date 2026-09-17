@@ -96,12 +96,14 @@ class AccountSelectionFairnessTest {
     @Test
     void theGeneralPoolSelectorRanksARefusalRunBehindEverythingElse() throws IOException {
         String source = Files.readString(REPOSITORY);
-        int orderBy = source.indexOf("ORDER BY COALESCE((");
+        int orderBy = source.indexOf("ORDER BY");
         assertTrue(orderBy > 0,
                 "the general-pool selector must lead its ordering with a term a refusing account cannot "
                         + "improve by refusing");
 
-        String leadingTerm = source.substring(orderBy, source.indexOf(") ASC, (", orderBy));
+        int endOfFirstTerm = source.indexOf("ASC, (", orderBy);
+        assertTrue(endOfFirstTerm > orderBy, "first ordering term must be followed by ASC, (");
+        String leadingTerm = source.substring(orderBy, endOfFirstTerm);
         assertTrue(leadingTerm.contains("r.external_session_id IS NULL"),
                 "the term must count refusals recorded for this account");
         // A single bit saturated under load (measured 2026-08-29: every account carried a recent refusal,
@@ -116,7 +118,8 @@ class AccountSelectionFairnessTest {
     @Test
     void theRefusalRunTermIsAnOrderingAndNotAFilter() throws IOException {
         String source = Files.readString(REPOSITORY);
-        int orderBy = source.indexOf("ORDER BY COALESCE((");
+        int orderBy = source.indexOf("ORDER BY");
+        assertTrue(orderBy > 0);
         String whereClause = source.substring(0, orderBy);
 
         assertTrue(!whereClause.contains("s.external_session_id IS NULL AND s.status = 'failed'"),

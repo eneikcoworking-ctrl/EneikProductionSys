@@ -221,18 +221,22 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             -- comment inside this query text on purpose: Spring Data scans the whole annotation value for
             -- quoted ranges without excluding SQL comments, and one apostrophe here cost a 43-restart crash
             -- loop on 2026-08-29 ("starts a quoted range at 3712, but never ends it").
-            ORDER BY COALESCE((
+            -- Prescription 38 (BELIEF_UPDATE_LEDGER, D007): refusal streak must decay over a sliding 3-hour
+            -- window so silence rehabilitates demoted accounts. Forced probe every 5 dispatches inverts the
+            -- refusal penalty (-1 multiplier), selecting the most demoted account so deadlocks cannot form.
+            ORDER BY ((CASE WHEN MOD((SELECT COUNT(*) FROM jules_sessions), 5) = 0 THEN -1 ELSE 1 END) * COALESCE((
                   SELECT COUNT(*)
                   FROM jules_sessions r
                   WHERE r.account_id = a.id
                     AND r.external_session_id IS NULL AND r.status = 'failed'
+                    AND r.created_at > DATEADD(hour, -3, CURRENT_TIMESTAMP)
                     AND r.created_at > COALESCE((
                           SELECT MAX(s2.created_at) FROM jules_sessions s2
                           WHERE s2.account_id = a.id
                             AND s2.external_session_id IS NOT NULL
                             AND s2.external_session_id <> 'skipped'
                       ), TIMESTAMP '1970-01-01 00:00:00')
-              ), 0) ASC, (
+              ), 0)) ASC, (
                   SELECT COUNT(*)
                   FROM jules_sessions s
                   JOIN tasks t ON t.id = s.task_id
