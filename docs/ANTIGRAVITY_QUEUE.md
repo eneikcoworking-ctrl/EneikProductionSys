@@ -95,6 +95,12 @@
 сущности, и тогда шесть загрузок стоят в основном времени запросов, а не шестикратной памяти. Это
 соперничающая гипотеза, и её надо проверить **до** того, как приписывать весь вес этому пункту.
 
+**Закрыто (Такт 23):**
+1. Загрузка задач проекта сведена к ровно **одному** обращению за вызов: `getStatus(projectId)` единожды поднимает `projectTasks` через `findByProjectIdOrderByCreatedAtDesc(effectiveProjectId)` и передает ссылку во все шесть секций (`julesSessions`, `qualityGate`, `tasks`, `conflictDpmo`, `emsMetrics`, `operationalBlockers`).
+2. Признак `carrier` вынесен в отдельный столбец (Flyway V138) с хранилищными агрегатами `countNonCarrierTasksByStatus` и `countNonCarrierTasksByProjectIdAndStatus`.
+3. Холодный путь `getStatus(null)` привязан к единственному активному проекту (`sixSigmaAuditService.getActiveProjectId()`), исключая full-table scans таблиц `projects`, `tasks`, `wishlists`, `sessions` и N+1 каскады в `operationalBlockers`.
+4. Заслонено тестами: `getStatusConsolidatesTaskAcquisitionToOneQuery` (проверка `times(1)` обращения к хранилищу), `getStatusNullProjectResolvesActiveProjectWhenPresentAndScopesAllSections` и `tasksNullProjectUsesRepositoryCountsAndNeverFindAll`. Все 17 юнит-тестов `SystemStatusServiceTest` и 5 интеграционных тестов `SystemStatusControllerIntegrationTest` зелёные.
+
 **Состояние на 11 сентября, 00:10 — пункт 2 НЕ брать.** (1) Его починку уже сделал Codex: пять коммитов
 8 сентября (`bb4b444`, `0c59464`, `abf41a1`, `c8e4c2c`, `6ce1a6b`) — корпус не грузится при неудачном векторе
 запроса, текст кусков берётся только после отбора, выборка сужена по типу и источнику. Взять его — значит
