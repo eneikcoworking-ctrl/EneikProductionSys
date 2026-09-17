@@ -379,6 +379,7 @@ public class OperationalPolicyService {
                 "SYSTEM_STALLED",
                 "BLOCKED_BY_TASK",
                 "BLOCKED_BY_REVIEW",
+                "BLOCKED_BY_MAIN_CI",
                 "BLOCKED_BY_FAILED_FRONTIER",
                 "ACCEPTED",
                 "ARCHIVED"

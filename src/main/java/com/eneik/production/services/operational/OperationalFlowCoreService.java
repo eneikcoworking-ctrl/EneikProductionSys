@@ -288,6 +288,10 @@ public class OperationalFlowCoreService {
                     List.of("each failing review has current GitHub status", "closed/unmergeable reviews are terminalized locally"),
                     List.of("failingReviews reaches 0 or unresolved reviews get one explicit recovery path"),
                     List.of("merge failing PR", "dispatch new overlapping work before review frontier is clean"));
+            case "BLOCKED_BY_MAIN_CI" -> spec("advisory.repair_main_branch_ci",
+                    List.of("GitHub check-runs on main branch are fetched", "failing checks are identified"),
+                    List.of("main branch CI becomes green or repair task is dispatched"),
+                    List.of("mark delivery while main branch CI is red", "dispatch non-repair work that relies on main"));
             case "QUEUED" -> spec("advisory.check_dispatch_preconditions",
                     List.of("queued task has non-overlapping file scope", "dependency gates pass"),
                     List.of("one eligible task can be claimed by Jules"),
@@ -475,6 +479,7 @@ public class OperationalFlowCoreService {
                 "SYSTEM_STALLED",
                 "BLOCKED_BY_TASK",
                 "BLOCKED_BY_REVIEW",
+                "BLOCKED_BY_MAIN_CI",
                 "BLOCKED_BY_FAILED_FRONTIER"
         ).contains(state);
     }

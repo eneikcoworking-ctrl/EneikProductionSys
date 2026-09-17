@@ -4139,6 +4139,14 @@ has been red for every merge since 2026-08-26… 12 tests expecting 200 receive 
 
 *Опровержение:* найти в ответе свода поле, отвечающее на вопрос «зелен ли main». Есть — пункт снимается.
 
+*Решение (17 сентября 2026):*
+1. В `GitHubPullRequestService` добавлен метод `branchChecks(project, branch)`, считывающий check-runs ветки `main` (или `master`).
+2. В `FlowSpineDto.FlowCounts` добавлены поля `deliveredDeliverables`, `mainCiStatus`, `mainCiGreen` рядом с `mergedDeliverables`.
+3. Доставка оформлена как конструктивная конъюнкция (`CONSTRUCTIVE_PROOF_OBJECT` / D007): `deliveredDeliverables = mainCiGreen ? readiness.mergedDeliverables() : 0`. Пока CI на `main` не подтверждён, `deliveredDeliverables = 0` («слито N, а не сдано N»).
+4. В `FlowSpineService.decideState` введено состояние `BLOCKED_BY_MAIN_CI`, блокирующее поток при красной сборке `main` аналогично `BLOCKED_BY_REVIEW`.
+5. Состояние `BLOCKED_BY_MAIN_CI` интегрировано в `OperationalPolicyService.isHardBlocked` и `OperationalFlowCoreService.actionSpec`.
+6. Заслоны: `FlowSpineServiceTest.mainCiFailureBlocksFlowAndPreventsDeliveryAdvancement`, `FlowSpineServiceTest.mainCiSuccessAllowsDeliveryConjunction`, рефлексивный заслон единственного канонического 20-параметрического конструктора `FlowCounts` (`getParameterCount() == 20`).
+
 ---
 
 ### 38. Аккаунт, разжалованный отказами, не может вернуться: повышение требует успеха, которого ему не дадут · `BELIEF_UPDATE_LEDGER` (D007) + закон 8

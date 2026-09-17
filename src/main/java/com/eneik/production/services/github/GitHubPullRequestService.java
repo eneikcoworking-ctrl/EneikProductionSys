@@ -1336,6 +1336,40 @@ public class GitHubPullRequestService {
         }
     }
 
+    /**
+     * Reads the real GitHub check-runs for a branch (e.g. main).
+     * Prescription 37 (CONSTRUCTIVE_PROOF_OBJECT / D007): Delivery is a conjunction (merged AND main is green).
+     * Reading branch check-runs provides constructive proof of integrated build health on main.
+     */
+    public PullRequestChecks branchChecks(ProjectEntity project, String branch) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return PullRequestChecks.unavailable("GitHub integration is disabled");
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return PullRequestChecks.unavailable("GitHub token is missing");
+        }
+        RepoRef repoRef = repoRef(project);
+        String targetBranch = (branch == null || branch.isBlank()) ? "main" : branch.trim();
+        try {
+            String checksPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/commits/" + encode(targetBranch) + "/check-runs?per_page=100";
+            HttpResponse<String> checksResponse = sendGitHub(baseRequest(checksPath, token).GET().build());
+            if (checksResponse.statusCode() == 404 && "main".equals(targetBranch)) {
+                checksPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                        + "/commits/master/check-runs?per_page=100";
+                checksResponse = sendGitHub(baseRequest(checksPath, token).GET().build());
+            }
+            if (checksResponse.statusCode() != 200) {
+                return PullRequestChecks.unavailable("GitHub check-runs returned HTTP " + checksResponse.statusCode());
+            }
+
+            return evaluateCheckRuns(objectMapper.readTree(checksResponse.body()).path("check_runs"));
+        } catch (Exception e) {
+            return PullRequestChecks.unavailable(e.getMessage());
+        }
+    }
+
     static PullRequestChecks evaluateCheckRuns(JsonNode checkRuns) {
         if (checkRuns == null || !checkRuns.isArray() || checkRuns.isEmpty()) {
             return new PullRequestChecks(true, false, "pending", "No GitHub check-runs exist for the PR head");

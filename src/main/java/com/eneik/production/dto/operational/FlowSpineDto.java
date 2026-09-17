@@ -99,6 +99,12 @@ public record FlowSpineDto(
             int completeFeatures,
             int totalDeliverables,
             int mergedDeliverables,
+            @JsonProperty("deliveredDeliverables")
+            int deliveredDeliverables,
+            @JsonProperty("mainCiStatus")
+            String mainCiStatus,
+            @JsonProperty("mainCiGreen")
+            boolean mainCiGreen,
             boolean decompositionComplete,
             @JsonProperty("doneTasksTotal")
             long doneTasksTotal,
@@ -158,5 +164,9 @@ public record FlowSpineDto(
             String evidenceHash,
             String blockingReason
     ) {
+    }
+
+    public boolean isMainCiGreen() {
+        return counts != null && counts.mainCiGreen();
     }
 }

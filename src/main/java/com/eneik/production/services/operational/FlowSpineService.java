@@ -98,6 +98,13 @@ public class FlowSpineService {
         this.designAssetService = designAssetService;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+
+    public void setGitHubPullRequestService(com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
+        this.gitHubPullRequestService = gitHubPullRequestService;
+    }
+
     private static final Logger log = LoggerFactory.getLogger(FlowSpineService.class);
 
     public FlowSpineService(ProjectRepository projectRepository,
@@ -267,6 +274,9 @@ public class FlowSpineService {
         if (input.failingReviews() > 0) {
             return "BLOCKED_BY_REVIEW";
         }
+        if (input.isMainCiRed()) {
+            return "BLOCKED_BY_MAIN_CI";
+        }
         if (input.pendingWishlist() > 0 || input.compilingWishlist() > 0 || !input.decompositionComplete()) {
             return "DECOMPOSING";
         }
@@ -328,6 +338,8 @@ public class FlowSpineService {
                         List.of("TaskStatus.blocked"), "observe_only"),
                 matrix(60, "ANY", "failingReviews > 0", "BLOCKED_BY_REVIEW", "AutoMergeService",
                         List.of("PrReview.ciStatus in failing set"), "observe_only"),
+                matrix(65, "ANY", "mainCiStatus=failure", "BLOCKED_BY_MAIN_CI", "ContinuousOrchestrationService",
+                        List.of("GitHub check-runs on main", "mainCiStatus=failure"), "hard_gate_existing"),
                 matrix(70, "ACTIVE", "pending/compiling wishlist or decomposition incomplete", "DECOMPOSING", "TechnicalLeadCompiler",
                         List.of("Wishlist status", "decompositionComplete=false"), "observe_only"),
                 matrix(80, "ACTIVE", "queuedTasks > 0", "QUEUED", "JulesDispatchService",
@@ -358,6 +370,7 @@ public class FlowSpineService {
             case "SYSTEM_STALLED" -> "no_progress_bottleneck";
             case "BLOCKED_BY_TASK" -> "task_blocker_bottleneck";
             case "BLOCKED_BY_REVIEW" -> "review_bottleneck";
+            case "BLOCKED_BY_MAIN_CI" -> "main_ci_bottleneck";
             case "BLOCKED_BY_FAILED_FRONTIER" -> "failed_frontier_bottleneck";
             case "QUEUED" -> "dispatch_bottleneck";
             case "IMPLEMENTING" -> "agent_progress_bottleneck";
@@ -373,6 +386,7 @@ public class FlowSpineService {
             case "GITHUB_RATE_LIMITED" -> new SlaSpec(0, "high");
             case "SYSTEM_STALLED" -> new SlaSpec(45, "high");
             case "BLOCKED_BY_REVIEW" -> new SlaSpec(30, "high");
+            case "BLOCKED_BY_MAIN_CI" -> new SlaSpec(0, "critical");
             case "BLOCKED_BY_FAILED_FRONTIER" -> new SlaSpec(60, "high");
             case "BLOCKED_BY_TASK" -> new SlaSpec(60, "medium");
             case "QUEUED" -> new SlaSpec(15, "medium");
@@ -637,12 +651,30 @@ public class FlowSpineService {
             }
         }
 
+        String mainCiStatus = "unknown";
+        String mainCiDetail = "GitHub check-runs unobserved";
+        boolean mainCiGreen = false;
+        if (gitHubPullRequestService != null && projectId != null) {
+            ProjectEntity project = projectRepository.findById(projectId).orElse(null);
+            if (project != null) {
+                var checks = gitHubPullRequestService.branchChecks(project, "main");
+                if (checks != null) {
+                    mainCiStatus = checks.status() != null ? checks.status().toLowerCase(Locale.ROOT) : "unknown";
+                    mainCiDetail = checks.detail() != null ? checks.detail() : "";
+                    mainCiGreen = checks.successful();
+                }
+            }
+        }
+        int deliveredDeliverables = mainCiGreen ? readiness.mergedDeliverables() : 0;
+
         return new StateInputs(
                 projectStatus, queued, active, review, done, failed, blocked,
                 pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews,
                 reviewTasksWithoutArtifact, failingReviewComposition, failingReviews,
                 qualityGatePassed, qualityGateFailed, readiness.totalFeatures(), readiness.completeFeatures(),
-                readiness.totalDeliverables(), readiness.mergedDeliverables(), readiness.decompositionComplete(),
+                readiness.totalDeliverables(), readiness.mergedDeliverables(),
+                deliveredDeliverables, mainCiStatus, mainCiDetail, mainCiGreen,
+                readiness.decompositionComplete(),
                 systemStatus, duplicateContent, clientAcceptanceTraversals,
                 failedTotal, doneTotal, spikeCompletedTotal,
                 totalScreens, acceptedScreens, acceptedScreensRatio);
@@ -675,6 +707,10 @@ public class FlowSpineService {
                     "Repair failing/conflicted review evidence or close it as non-delivery.",
                     List.of("CI/review status becomes mergeable", "or review becomes closed_unmerged"),
                     "Failing PR evidence is not merge evidence.");
+            case "BLOCKED_BY_MAIN_CI" -> transition(state, "QUEUED", "ContinuousOrchestrationService / PlannedWorkRecoveryService",
+                    "Diagnose and repair failing main branch CI build before advancing delivery.",
+                    List.of("GitHub check-runs on main branch pass"),
+                    "Main branch CI build is failing; delivery cannot advance.");
             case "BLOCKED_BY_FAILED_FRONTIER" -> transition(state, "QUEUED", "PlannedWorkRecoveryService.resumeNextFrontier",
                     "Resume a bounded failed frontier item without creating duplicate wishlist identity.",
                     List.of("failed task compare-and-set to queued", "resume count within limit"),
@@ -730,6 +766,7 @@ public class FlowSpineService {
             case "BLOCKED_BY_REVIEW" -> input.failingReviews() + " failing/conflicted review(s) exist"
                     + (input.failingReviewComposition() == null || input.failingReviewComposition().isBlank()
                             ? "." : " " + input.failingReviewComposition() + ".");
+            case "BLOCKED_BY_MAIN_CI" -> "Main branch CI build is failing (" + input.mainCiDetail() + "). Delivery cannot advance.";
             case "BLOCKED_BY_FAILED_FRONTIER" -> input.failedTasks() + " failed task(s) exist and no live work is moving.";
             case "ARCHIVED" -> "Archived projects are terminal.";
             default -> "Flow is blocked by " + state + ".";
@@ -764,6 +801,9 @@ public class FlowSpineService {
                 input.completeFeatures(),
                 input.totalDeliverables(),
                 input.mergedDeliverables(),
+                input.deliveredDeliverables(),
+                input.mainCiStatus(),
+                input.mainCiGreen(),
                 input.decompositionComplete(),
                 input.doneTasksTotal(),
                 input.spikeCompletedTasks(),
@@ -781,6 +821,10 @@ public class FlowSpineService {
                 invariant("done_is_not_delivery", input.doneTasks() > input.mergedDeliverables() ? "warn" : "pass",
                         "done(task) is not equivalent to delivered(value).",
                         input.doneTasks() + " done-like task(s), " + input.mergedDeliverables() + " merged deliverable(s)."),
+                invariant("main_ci_green_required_for_delivery",
+                        input.isMainCiRed() ? "fail" : (input.isMainCiGreen() ? "pass" : "warn"),
+                        "delivery requires green CI build on main branch.",
+                        "mainCiStatus=" + input.mainCiStatus() + " (" + input.mainCiDetail() + ")"),
                 invariant("frozen_has_no_autonomous_flow", input.projectStatus() == ProjectStatus.frozen ? "observed" : "pass",
                         "frozen(project) forbids autonomous orchestration.",
                         "project.status=" + input.projectStatus()),
@@ -803,6 +847,8 @@ public class FlowSpineService {
                 forbidden("QUEUED", "DELIVERED", "Queued work has no artifact, review, merge, or readiness evidence."),
                 forbidden("UNDER_REVIEW", "DELIVERED", "Review must first produce merge/readiness evidence."),
                 forbidden("BLOCKED_BY_REVIEW", "MERGED", "Failing/conflicted PR evidence cannot be promoted."),
+                forbidden("BLOCKED_BY_MAIN_CI", "DELIVERED", "Failing main branch CI cannot prove deliverable readiness."),
+                forbidden("BLOCKED_BY_MAIN_CI", "VERIFYING_DELIVERY", "Failing main branch CI blocks deliverable verification."),
                 forbidden("BLOCKED_BY_DUPLICATE_CONTENT", "QUEUED", "Duplicate generated work must be collapsed before more dispatch."),
                 forbidden("GITHUB_RATE_LIMITED", "MERGED", "Unavailable GitHub state cannot prove merge readiness."),
                 forbidden("GITHUB_RATE_LIMITED", "CLOSED_UNMERGED", "Unavailable GitHub state cannot prove terminal PR state."),
@@ -1238,6 +1284,10 @@ public class FlowSpineService {
             int completeFeatures,
             int totalDeliverables,
             int mergedDeliverables,
+            int deliveredDeliverables,
+            String mainCiStatus,
+            String mainCiDetail,
+            boolean mainCiGreen,
             boolean decompositionComplete,
             String systemStatus,
             boolean duplicateContentDetected,
@@ -1249,6 +1299,50 @@ public class FlowSpineService {
             int acceptedScreens,
             double acceptedScreensRatio
     ) {
+        public StateInputs(
+                ProjectStatus projectStatus,
+                long queuedTasks,
+                long activeTasks,
+                long reviewTasks,
+                long doneTasks,
+                long failedTasks,
+                long blockedTasks,
+                long pendingWishlist,
+                long compilingWishlist,
+                long openSessions,
+                int mergedReviews,
+                int openReviews,
+                long reviewTasksWithoutArtifact,
+                String failingReviewComposition,
+                int failingReviews,
+                int qualityGatePassed,
+                int qualityGateFailed,
+                int totalFeatures,
+                int completeFeatures,
+                int totalDeliverables,
+                int mergedDeliverables,
+                boolean decompositionComplete,
+                String systemStatus,
+                boolean duplicateContentDetected,
+                int clientAcceptanceTraversals,
+                long failedTasksTotal,
+                long doneTasksTotal,
+                long spikeCompletedTasks,
+                int totalScreens,
+                int acceptedScreens,
+                double acceptedScreensRatio
+        ) {
+            this(projectStatus, queuedTasks, activeTasks, reviewTasks, doneTasks, failedTasks, blockedTasks,
+                    pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews,
+                    reviewTasksWithoutArtifact, failingReviewComposition, failingReviews,
+                    qualityGatePassed, qualityGateFailed, totalFeatures, completeFeatures,
+                    totalDeliverables, mergedDeliverables,
+                    mergedDeliverables, "success", "default", true,
+                    decompositionComplete,
+                    systemStatus, duplicateContentDetected, clientAcceptanceTraversals,
+                    failedTasksTotal, doneTasksTotal, spikeCompletedTasks,
+                    totalScreens, acceptedScreens, acceptedScreensRatio);
+        }
         public StateInputs(
                 ProjectStatus projectStatus,
                 long queuedTasks,
@@ -1365,6 +1459,14 @@ public class FlowSpineService {
 
         public long failedTasksRecoveryCanResume() {
             return failedTasks;
+        }
+
+        public boolean isMainCiRed() {
+            return "failure".equalsIgnoreCase(mainCiStatus);
+        }
+
+        public boolean isMainCiGreen() {
+            return mainCiGreen;
         }
     }
     /**

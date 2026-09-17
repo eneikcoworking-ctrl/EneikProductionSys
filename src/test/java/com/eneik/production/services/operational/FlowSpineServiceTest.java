@@ -132,12 +132,13 @@ class FlowSpineServiceTest {
 
     @Test
     void transitionMatrixContainsDeterministicPrecedenceRows() {
-        assertEquals(16, FlowSpineService.transitionMatrix().size());
+        assertEquals(17, FlowSpineService.transitionMatrix().size());
         assertEquals("FROZEN", FlowSpineService.transitionMatrix().get(0).to());
         assertEquals("GITHUB_RATE_LIMITED", FlowSpineService.transitionMatrix().get(3).to());
-        assertEquals("DECOMPOSING", FlowSpineService.transitionMatrix().get(7).to());
-        assertEquals("QUEUED", FlowSpineService.transitionMatrix().get(8).to());
-        assertEquals("IDLE_NO_ACTIONABLE_WORK", FlowSpineService.transitionMatrix().get(15).to());
+        assertEquals("BLOCKED_BY_MAIN_CI", FlowSpineService.transitionMatrix().get(7).to());
+        assertEquals("DECOMPOSING", FlowSpineService.transitionMatrix().get(8).to());
+        assertEquals("QUEUED", FlowSpineService.transitionMatrix().get(9).to());
+        assertEquals("IDLE_NO_ACTIONABLE_WORK", FlowSpineService.transitionMatrix().get(16).to());
     }
 
     @Test
@@ -624,6 +625,9 @@ class FlowSpineServiceTest {
         assertTrue(json.contains("\"failedTasksRecoveryCanResume\":2"), "JSON must include failedTasksRecoveryCanResume: " + json);
         assertTrue(json.contains("\"doneTasksTotal\":2"), "JSON must include doneTasksTotal: " + json);
         assertTrue(json.contains("\"spikeCompletedTasks\":1"), "JSON must include spikeCompletedTasks: " + json);
+        assertTrue(json.contains("\"deliveredDeliverables\":"), "JSON must include deliveredDeliverables: " + json);
+        assertTrue(json.contains("\"mainCiStatus\":"), "JSON must include mainCiStatus: " + json);
+        assertTrue(json.contains("\"mainCiGreen\":"), "JSON must include mainCiGreen: " + json);
         // The misleading field name "failedTasks" must NOT be serialized as a field
         assertFalse(json.contains("\"failedTasks\":"), "JSON must NOT serialize ambiguous failedTasks field: " + json);
 
@@ -633,11 +637,11 @@ class FlowSpineServiceTest {
         assertEquals(7, deserialized.failedTasksRecoveryCanResume(), "legacy 'failedTasks' JSON field must deserialize to failedTasksRecoveryCanResume via @JsonAlias");
 
         // 5. Structural/Reflection fence (SENSE_REFERENCE_SPLIT): FlowCounts has strictly ONE constructor
-        // with 14 parameters (no overloaded constructors that silently conflate failedTasksRecoveryCanResume with failedTasksTotal)
+        // with 20 parameters (no overloaded constructors that silently conflate metrics)
         assertEquals(1, FlowSpineDto.FlowCounts.class.getConstructors().length,
                 "FlowCounts must only have the canonical constructor to eliminate category conflation");
-        assertEquals(17, FlowSpineDto.FlowCounts.class.getConstructors()[0].getParameterCount(),
-                "Canonical constructor must accept all 17 flow metrics (including Prescription 36 screen metrics)");
+        assertEquals(20, FlowSpineDto.FlowCounts.class.getConstructors()[0].getParameterCount(),
+                "Canonical constructor must accept all 20 flow metrics (including Prescription 37 main CI metrics)");
     }
 
     @Test
@@ -950,5 +954,105 @@ class FlowSpineServiceTest {
         org.assertj.core.api.Assertions.assertThat(dto.counts().totalScreens()).isEqualTo(8);
         org.assertj.core.api.Assertions.assertThat(dto.counts().acceptedScreens()).isEqualTo(0);
         org.assertj.core.api.Assertions.assertThat(dto.counts().acceptedScreensRatio()).isEqualTo(0.0);
+    }
+
+    @Test
+    void mainCiFailureBlocksFlowAndPreventsDeliveryAdvancement() {
+        // Prescription 37 (KARL_POPPER_04_CONSTRUCTIVE_PROOF_OBJECT / D007):
+        // Delivery is a conjunction: merged AND main branch CI is green.
+        // When main CI is red (failure), flow is BLOCKED_BY_MAIN_CI and deliveredDeliverables is 0,
+        // even though mergedDeliverables > 0 ("слито 5, а не сдано 5").
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlist = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var status = mock(SystemStatusService.class);
+        var mlClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        var gitHubService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(wishlist.findByProjectId(projectId)).thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(2, 2, 5, 5, 1.0, true, 1.0));
+        when(status.getStatus(projectId)).thenReturn(
+                java.util.Map.of("status", "ok"));
+        when(gitHubService.branchChecks(project, "main")).thenReturn(
+                new com.eneik.production.services.github.GitHubPullRequestService.PullRequestChecks(
+                        true, false, "failure", "Build failed on main with 15 test failures"));
+
+        FlowSpineService service = new FlowSpineService(projects, tasks, wishlist, sessions, reviews, events,
+                readiness, status, mlClient, leverService);
+        service.setGitHubPullRequestService(gitHubService);
+
+        var dto = service.build(projectId);
+
+        assertEquals("BLOCKED_BY_MAIN_CI", dto.currentState());
+        assertTrue(FlowSpineService.isBlockingState(dto.currentState()));
+        assertEquals(5, dto.counts().mergedDeliverables(), "mergedDeliverables reflects merged PRs (слито 5)");
+        assertEquals(0, dto.counts().deliveredDeliverables(), "deliveredDeliverables is gated on green main CI (сдано 0)");
+        assertEquals("failure", dto.counts().mainCiStatus());
+        assertFalse(dto.counts().mainCiGreen());
+        assertFalse(dto.isMainCiGreen());
+        assertTrue(dto.blockingReason().contains("Main branch CI build is failing"));
+        assertEquals("main_ci_bottleneck", FlowSpineService.bottleneckType("BLOCKED_BY_MAIN_CI", "ok"));
+        assertEquals(0, FlowSpineService.slaForState("BLOCKED_BY_MAIN_CI").minutes());
+    }
+
+    @Test
+    void mainCiSuccessAllowsDeliveryConjunction() {
+        // Prescription 37 (PER_MARTIN_LEF_02_CONSTRUCTIVE_PROOF_OBJECT / D007):
+        // Constructive proof object: when main CI is green, deliveredDeliverables = mergedDeliverables
+        // and flow advances to DELIVERED when feature readiness is satisfied.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlist = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var status = mock(SystemStatusService.class);
+        var mlClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        var gitHubService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(wishlist.findByProjectId(projectId)).thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(2, 2, 5, 5, 1.0, true, 1.0));
+        when(status.getStatus(projectId)).thenReturn(
+                java.util.Map.of("status", "ok"));
+        when(gitHubService.branchChecks(project, "main")).thenReturn(
+                new com.eneik.production.services.github.GitHubPullRequestService.PullRequestChecks(
+                        true, true, "success", "All GitHub checks passed on main"));
+
+        FlowSpineService service = new FlowSpineService(projects, tasks, wishlist, sessions, reviews, events,
+                readiness, status, mlClient, leverService);
+        service.setGitHubPullRequestService(gitHubService);
+
+        var dto = service.build(projectId);
+
+        assertEquals("DELIVERED", dto.currentState());
+        assertFalse(FlowSpineService.isBlockingState(dto.currentState()));
+        assertEquals(5, dto.counts().mergedDeliverables());
+        assertEquals(5, dto.counts().deliveredDeliverables());
+        assertEquals("success", dto.counts().mainCiStatus());
+        assertTrue(dto.counts().mainCiGreen());
+        assertTrue(dto.isMainCiGreen());
     }
 }
