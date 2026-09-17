@@ -275,6 +275,13 @@ public class ProjectFlowService {
         this.verdictGate = verdictGate;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
+
+    public void setTocSentinelService(com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
+        this.tocSentinelService = tocSentinelService;
+    }
+
     /**
      * Law 25a (Clean Project Admission Law):
      * dom(admit) = { w : content(w) != empty }
@@ -6447,6 +6454,25 @@ public class ProjectFlowService {
     // now happens in its own short transaction (claimAccountForTask); the network call below runs with no
     // transaction open at all.
     public void dispatchQueuedTasks(UUID projectId) {
+        if (tocSentinelService != null) {
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("DISPATCH_QUEUED_TASKS", 50);
+            if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
+                log.info("[DISPATCH] Cycle throttled by TOC Sentinel DBR Rope due to constraint buffer overflow for project {}", projectId);
+                return;
+            }
+            try {
+                tocSentinelService.enterStep(token, "DISPATCH_PROCESSING");
+                executeDispatchQueuedTasks(projectId);
+            } finally {
+                tocSentinelService.exitStep(token, "DISPATCH_PROCESSING", true);
+                tocSentinelService.endExecution(token, true);
+            }
+        } else {
+            executeDispatchQueuedTasks(projectId);
+        }
+    }
+
+    private void executeDispatchQueuedTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);

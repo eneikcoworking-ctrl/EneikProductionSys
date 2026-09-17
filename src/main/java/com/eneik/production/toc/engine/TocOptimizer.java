@@ -25,6 +25,11 @@ public class TocOptimizer {
 
     private final TocExecutionGraph graph;
 
+    private final java.util.concurrent.atomic.AtomicLong totalThrottleActivations = new java.util.concurrent.atomic.AtomicLong(0);
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.repositories.AccountRepository accountRepository;
+
     private volatile long maxBufferCapacity = DEFAULT_MAX_BUFFER_CAPACITY;
     private volatile boolean ropeThrottlingActive = false;
     private volatile String currentConstraintName = "NONE";
@@ -49,8 +54,17 @@ public class TocOptimizer {
                 this.maxBufferCapacity,
                 false,
                 this.lastEvaluatedAt,
-                computeRecommendation(false, "NONE", 0, this.maxBufferCapacity)
+                computeRecommendation(false, "NONE", 0, this.maxBufferCapacity),
+                0L
         );
+    }
+
+    public void setAccountRepository(com.eneik.production.repositories.AccountRepository accountRepository) {
+        this.accountRepository = accountRepository;
+    }
+
+    public long getTotalThrottleActivations() {
+        return totalThrottleActivations.get();
     }
 
     /**
@@ -99,6 +113,20 @@ public class TocOptimizer {
             }
         }
 
+        if (accountRepository != null) {
+            try {
+                long derivedCapacity = accountRepository.findAll().stream()
+                        .filter(a -> a.isEnabled() && a.getStatus() != com.eneik.production.models.persistence.AccountStatus.decommissioned)
+                        .mapToLong(a -> a.getEstimatedDailyCapacity() != null ? a.getEstimatedDailyCapacity() : 15)
+                        .sum();
+                if (derivedCapacity > 0) {
+                    this.maxBufferCapacity = derivedCapacity;
+                }
+            } catch (Exception e) {
+                log.warn("[TOC-SENTINEL] Could not derive buffer capacity from accounts: {}", e.getMessage());
+            }
+        }
+
         // Drum-Buffer-Rope (DBR) Logic
         boolean previousRopeState = ropeThrottlingActive;
         ropeThrottlingActive = bufferSize >= maxBufferCapacity;
@@ -124,7 +152,8 @@ public class TocOptimizer {
                 maxBufferCapacity,
                 ropeThrottlingActive,
                 lastEvaluatedAt,
-                recommendation
+                recommendation,
+                totalThrottleActivations.get()
         );
         this.latestDbrStatus = status;
 
@@ -138,7 +167,26 @@ public class TocOptimizer {
      */
     public DbrStatus getLatestDbrStatus() {
         DbrStatus current = this.latestDbrStatus;
-        return current != null ? current : evaluateConstraintsAndDbr();
+        if (current == null) {
+            return evaluateConstraintsAndDbr();
+        }
+        long liveThrottle = totalThrottleActivations.get();
+        if (current.throttleActivations() != liveThrottle) {
+            this.latestDbrStatus = new DbrStatus(
+                    current.primaryConstraintNode(),
+                    current.constraintQueueLength(),
+                    current.constraintUtilization(),
+                    current.constraintMeanDurationMs(),
+                    current.bufferSize(),
+                    current.maxBufferCapacity(),
+                    current.ropeThrottlingActive(),
+                    current.lastEvaluatedAt(),
+                    current.recommendation(),
+                    liveThrottle
+            );
+            return this.latestDbrStatus;
+        }
+        return current;
     }
 
     /**
@@ -154,6 +202,7 @@ public class TocOptimizer {
             return true;
         }
 
+        totalThrottleActivations.incrementAndGet();
         log.warn("[TOC-SENTINEL][DBR_THROTTLE] Throttling admission for scenario '{}' (Priority: {}). Rope pulled back due to constraint buffer overflow at '{}'.",
                 scenarioName, priority, currentConstraintName);
         return false;
@@ -195,7 +244,8 @@ public class TocOptimizer {
                     maxBufferCapacity,
                     throttle,
                     current.lastEvaluatedAt(),
-                    rec
+                    rec,
+                    totalThrottleActivations.get()
             );
         }
     }

@@ -1,12 +1,15 @@
-# Такт L2: Ведущий инженер (2026-09-17 21:58 UTC)
+# Такт L2: Ведущий инженер (2026-09-17 22:52 UTC)
 
-1. Предписание 38 закрыто (BELIEF_UPDATE_LEDGER / D007, Закон 8, PITER_GERDENFORS_01 / ELVIN_GOLDMAN_03):
-   - `AccountRepository.lockNextJulesAccountWithCapacity`:
-     - Добавлено скользящее 3-часовое окно давности отказов: `r.created_at > DATEADD(hour, -3, CURRENT_TIMESTAMP)`. Молчание свыше 3 часов затухает штраф до нуля, реабилитируя аккаунт (AGM-пересмотр убеждений).
-     - Добавлена периодическая проба раз в 5 отправок: `((CASE WHEN MOD((SELECT COUNT(*) FROM jules_sessions), 5) = 0 THEN -1 ELSE 1 END) * COALESCE(...)) ASC`, инвертирующая штраф за отказы и выбирающая наиболее разжалованный аккаунт (исследование/выход из локального тупика).
+1. Предписание 39 закрыто (TELEOSEMANTIC_FEEDBACK / D011, FALSIFICATION_HARNESS / D008):
+   - `ProjectFlowService.dispatchQueuedTasks`: интегрирован шлюз TOC DBR Rope через `tocSentinelService.startExecution("DISPATCH_QUEUED_TASKS", 50)`. При статусе `THROTTLED` выпуск задач немедленно блокируется на входе конвейера.
+   - `TocOptimizer`: `maxBufferCapacity` динамически рассчитывается из суммы `estimatedDailyCapacity` операционных аккаунтов `AccountRepository`.
+   - `DbrStatus` / `TocOptimizer`: добавлен счетчик `totalThrottleActivations`. Метод `limiterStatus()` возвращает `UNVERIFIED` при 0 срабатываний и `VERIFIED` после пробития буфера.
 2. Заслон (100% green в Docker):
-   - `AccountRepositoryIntegrationTest.demotedAccountWithRefusalStreakIsProbedWithinNAttempts`: аккаунт с серией отказов гарантированно выбирается в пределах 5 попыток через периодический зонд.
-   - `AccountRepositoryIntegrationTest.refusalStreakDecaysAfterThreeHoursOfSilenceRehabilitatingAccount`: затухание отказов старше 3 часов реабилитирует аккаунт без внешнего вмешательства.
-   - `AccountSelectionFairnessTest` (5/5 green), `JulesDispatchService*` (124/124 green).
+   - `ProjectFlowServiceDbrRopeTest`:
+     - `dispatchQueuedTasksIsThrottledWhenConstraintBufferOverflows`: переполнение буфера блокирует `dispatchQueuedTasks` без запроса к очереди задач, переводя статус в `VERIFIED`.
+     - `dispatchQueuedTasksProceedsWhenConstraintBufferWithinCapacity`: нормальный пропуск при свободном буфере.
+     - `limiterStatusReportsUnverifiedWhenZeroThrottlingHasOccurred`: рапорт `UNVERIFIED` до первого срабатывания.
+     - `maxBufferCapacityDerivesFromOperationalAccounts`: динамический расчет буфера из аккаунтов.
+   - `ProjectFlowServiceTest` (44/44), `LeanPullReleaseTest` (6/6), `Toc*` (26/26).
 3. Следующий такт:
-   - Взять Предписание 39 (Верёвка ТОС) / следующее по наряду `MANAGER_STATE.md` и очереди.
+   - Взять Предписание 40 (Путь вытягивания задач Jules) / следующее по наряду `MANAGER_STATE.md`.

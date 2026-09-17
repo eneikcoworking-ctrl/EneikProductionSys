@@ -4273,6 +4273,12 @@ not**». Дальше `LIMIT 1`.
 
 *Опровержение:* найти вызов `startExecution` на пути отправки. Есть — пункт снимается.
 
+*Решение (2026-09-17, Предписание 39, D011 + D008):*
+1. Верёвка DBR подключена к входу конвейера: `ProjectFlowService.dispatchQueuedTasks` запрашивает токен `startExecution("DISPATCH_QUEUED_TASKS", 50)` у `TocSentinelService`. При `token.getStatus() == THROTTLED` цикл отправки немедленно прекращается до обращения к очереди задач (`TELEOSEMANTIC_FEEDBACK` / D011).
+2. Ёмкость буфера `maxBufferCapacity` в `TocOptimizer` динамически выводится из суммы `estimatedDailyCapacity` операционных аккаунтов `AccountRepository`.
+3. Эксплицитная видимость ограничителя: добавлен счетчик `totalThrottleActivations`. Метод `limiterStatus()` в `DbrStatus` и эндпоинты `/api/toc/status`, `/api/toc/constraint` возвращают `UNVERIFIED (0 throttle events observed; limiter has never been tested against overload under ALFRED_TARSKIY_01_FALSIFICATION_HARNESS)` при нуле срабатываний и `VERIFIED (N throttle events observed)` после срабатывания (`FALSIFICATION_HARNESS` / D008).
+4. Заслон: `ProjectFlowServiceDbrRopeTest` (4 теста: блокировка отправки при переполнении буфера ограничения, штатный пропуск при свободном буфере, UNVERIFIED статус при нуле и динамический вывод ёмкости из аккаунтов).
+
 ---
 
 ### 40. Путь вытягивания есть, им никто не пользуется, и Jules им пользоваться не может · `TELEOSEMANTIC_FEEDBACK` (D011) + `RIGHTS_DUTIES_MATRIX` (D006)

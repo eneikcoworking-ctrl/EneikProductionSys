@@ -42,6 +42,9 @@ public class TocSentinelController {
         res.put("meanDurationMs", status.constraintMeanDurationMs());
         res.put("throttlingActive", status.ropeThrottlingActive());
         res.put("recommendation", status.recommendation());
+        res.put("throttleActivations", status.throttleActivations());
+        res.put("limiterStatus", status.limiterStatus());
+        res.put("limiterVerified", status.isLimiterVerified());
         return ResponseEntity.ok(res);
     }
 
