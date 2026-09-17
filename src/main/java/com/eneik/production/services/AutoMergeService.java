@@ -35,6 +35,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.List;
+import java.util.Set;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.ArrayList;
 import java.time.Instant;
@@ -91,6 +93,13 @@ public class AutoMergeService {
     // Declared ownership, the ground substitutable() stands on - see its javadoc.
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.repositories.ProjectFileClaimRepository projectFileClaimRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.repositories.FeatureRepository featureRepository;
+
+    void setFeatureRepository(com.eneik.production.repositories.FeatureRepository featureRepository) {
+        this.featureRepository = featureRepository;
+    }
 
     /**
      * How many automatic resolution attempts one conflict gets before the flow stops trying.
@@ -2549,8 +2558,72 @@ public class AutoMergeService {
         }
     }
 
+    public static final Set<String> PERIPHERY_ROLES = Set.of("BARCAN-TAG-11", "BARCAN-TAG-05", "BARCAN-TAG-06");
+
+    static boolean isPeripheryTaskOrFeature(com.eneik.production.models.persistence.TaskEntity task,
+                                            com.eneik.production.models.persistence.FeatureEntity feature) {
+        if (task != null) {
+            if (task.getRole() != null && task.getRole().getTag() != null) {
+                if (PERIPHERY_ROLES.contains(task.getRole().getTag().trim())) {
+                    return true;
+                }
+            }
+            if (task.getPayload() != null && task.getPayload().hasNonNull("role")) {
+                if (PERIPHERY_ROLES.contains(task.getPayload().get("role").asText().trim())) {
+                    return true;
+                }
+            }
+        }
+        if (feature != null && "PERIPHERY".equalsIgnoreCase(feature.getEpistemicLayer())) {
+            return true;
+        }
+        return false;
+    }
+
+    static PokaYokeVerdict judgeQuineanEpistemicBoundary(com.eneik.production.models.persistence.TaskEntity task,
+                                                         com.eneik.production.models.persistence.FeatureEntity feature,
+                                                         List<String> changedFiles) {
+        if (changedFiles == null || changedFiles.isEmpty()) {
+            return PokaYokeVerdict.pass();
+        }
+        if (!isPeripheryTaskOrFeature(task, feature)) {
+            return PokaYokeVerdict.pass();
+        }
+
+        List<String> coreViolations = new ArrayList<>();
+        for (String path : changedFiles) {
+            if (path == null || path.isBlank()) {
+                continue;
+            }
+            // Bookkeeping artifacts belonging to .eneik/* are stripped before merge and not client code
+            if (path.startsWith(".eneik/") || path.contains("/.eneik/")) {
+                continue;
+            }
+            String lower = path.toLowerCase(Locale.ROOT);
+            if (lower.contains("migration") || lower.contains("securityconfig") || lower.contains("security_config")) {
+                coreViolations.add(path);
+            } else if (lower.contains("automerge") || lower.contains("sixsigma") || lower.contains("orchestrator") || lower.contains("jules")) {
+                coreViolations.add(path);
+            }
+        }
+
+        if (!coreViolations.isEmpty()) {
+            return new PokaYokeVerdict(true, "core_violation",
+                    "REJECTED_QUINEAN_CORE_VIOLATION: Periphery task/feature attempted to mutate core layer files: "
+                            + coreViolations);
+        }
+        return PokaYokeVerdict.pass();
+    }
+
     static PokaYokeVerdict judgeFactoryPokaYoke(List<String> changedFiles, String prTitle,
                                                 CodeChangeClassifier classifier) {
+        return judgeFactoryPokaYoke(changedFiles, prTitle, classifier, null, null);
+    }
+
+    static PokaYokeVerdict judgeFactoryPokaYoke(List<String> changedFiles, String prTitle,
+                                                CodeChangeClassifier classifier,
+                                                com.eneik.production.models.persistence.TaskEntity task,
+                                                com.eneik.production.models.persistence.FeatureEntity feature) {
         List<String> contamination = new ArrayList<>();
         if (changedFiles != null) {
             for (String path : changedFiles) {
@@ -2570,6 +2643,15 @@ public class AutoMergeService {
                     "Blocker PR rejected by factory poka-yoke: the title announces a refusal, not a change: "
                             + title);
         }
+
+        // Quine Web of Belief & Epistemic Layer Invariant (Prescription 33, D003 / D008):
+        // Periphery tasks (BARCAN-TAG-11 UI, -05 docs, -06 QA, or PERIPHERY features) are strictly forbidden
+        // from mutating CORE files (database migrations, core security configs, factory orchestrators).
+        PokaYokeVerdict quineanVerdict = judgeQuineanEpistemicBoundary(task, feature, changedFiles);
+        if (quineanVerdict.rejected()) {
+            return quineanVerdict;
+        }
+
         return PokaYokeVerdict.pass();
     }
 
@@ -2577,15 +2659,18 @@ public class AutoMergeService {
      * The merge-time poka-yoke: enforces Code(t) INTERSECT L_factory = EMPTY on the ARTIFACT, not on the
      * prompt. Returns true when the PR was rejected and the caller must abandon the merge.
      *
-     * <p>Two independent grounds for rejection, both unambiguous:
+     * <p>Three independent grounds for rejection, each unambiguous:
      * <ol>
      *   <li><b>Metalanguage contamination</b> - the PR changes a file belonging to the factory's own
      *       submission harness ({@code _temp_submit*.sh}, {@code final_submit*.sh}, {@code prep.sh},
      *       {@code *harness.html}). See {@link CodeChangeClassifier#isFactoryArtifact}.</li>
      *   <li><b>Blocker PR</b> - the title announces a refusal rather than a change.</li>
+     *   <li><b>Quinean core violation</b> - a task/feature belonging to the PERIPHERY layer attempted to
+     *       mutate CORE layer files (database migrations, security configurations, or factory orchestrator entities).
+     *       See {@link #judgeQuineanEpistemicBoundary}.</li>
      * </ol>
      *
-     * <p>The action plan lists a third ground: "the PR contains no line of product code". That one is
+     * <p>The action plan lists a fourth ground: "the PR contains no line of product code". That one is
      * deliberately NOT implemented as a merge block, and the reason is measured, not stylistic - a no-code
      * merge is a legitimate outcome for every role EmsFlowStage.requiresCodeForDelivery says does not owe
      * code (spec, design, compliance, QA-with-nothing-to-test), and classifyAndHandleBranch already treats
@@ -2612,7 +2697,11 @@ public class AutoMergeService {
         }
         List<String> changedFiles = fetchPrFiles(token, target.owner(), target.repo(), target.pullNumber());
         String title = githubPr == null || githubPr.title() == null ? "" : githubPr.title();
-        PokaYokeVerdict verdict = judgeFactoryPokaYoke(changedFiles, title, codeChangeClassifier);
+        com.eneik.production.models.persistence.FeatureEntity feature = null;
+        if (task != null && task.getFeatureId() != null && featureRepository != null) {
+            feature = featureRepository.findById(task.getFeatureId()).orElse(null);
+        }
+        PokaYokeVerdict verdict = judgeFactoryPokaYoke(changedFiles, title, codeChangeClassifier, task, feature);
 
         if (!verdict.rejected()) {
             // Clean product PR: strip the factory's transient record files off the branch before it merges,
@@ -2648,9 +2737,12 @@ public class AutoMergeService {
 
         if (defectJournalService != null && task != null && task.getProject() != null) {
             try {
+                String defectCategory = "core_violation".equals(ciStatus)
+                        ? "epistemic_layer_invariant"
+                        : "ontological_stratification";
                 defectJournalService.recordDefect(
                         task.getProject().getId(), task.getFeatureId(), null,
-                        "high", "ontological_stratification", "AutoMergeService",
+                        "high", defectCategory, "AutoMergeService",
                         ciStatus, reason + " [PR " + target.url() + ", task " + task.getId() + "]", null);
             } catch (Exception e) {
                 log.warn("AutoMergeService: poka-yoke rejected PR {} but could not journal the defect: {}",
@@ -2741,7 +2833,7 @@ public class AutoMergeService {
         });
     }
 
-    private List<String> fetchPrFiles(String token, String owner, String repo, String pullNumber) {
+    List<String> fetchPrFiles(String token, String owner, String repo, String pullNumber) {
         try {
             String filesUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + pullNumber + "/files";
             HttpClient client = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();

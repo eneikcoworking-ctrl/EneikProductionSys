@@ -3926,6 +3926,11 @@ five paths that write `TaskStatus.done` and covers five of the thirteen roles».
 *Опровержение:* найти в журнале гейтов хоть одну запись с проверкой эпистемического слоя. Есть — пункт
 снимается.
 
+*Закрыто (Такт L2, 2026-09-17):*
+1. В Javadoc `EpistemicLayerInvariantGate` документирована архитектурная реальность: `GateOrchestrator.runQualityGate` стоит строго на 1 из 5 путей к `TaskStatus.done` (`ClaimService:349`) и покрывает лишь 5 из 13 ролей; в сам гейт добавлена проверка реальных изменённых файлов PR через `gitHubPullRequestService`.
+2. Машинная куайновская демаркация (`UILLARD_KUAYN_01_HOLISM_IMPACT_MAP` / D003; `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008) вынесена на путь слияния в `AutoMergeService.rejectByFactoryPokaYoke` и `judgeQuineanEpistemicBoundary`: любая периферийная задача (`BARCAN-TAG-11`, `-05`, `-06`) или задача с периферийной фичей (`PERIPHERY`), тронувшая файлы ядра (`db/migration`, `SecurityConfig`, `security_config` или фабричное заражение `automerge`/`sixsigma`/`orchestrator`/`jules`), прерывает слияние, закрывает PR unmerged на GitHub, переводит задачу в `TaskStatus.blocked`, сессию в `closed_rejected` и фиксирует дефект в `DefectJournalService` (`epistemic_layer_invariant`, `ciStatus = "core_violation"`).
+3. Заслонено в `AutoMergePokaYokeTest` (6 тестов) и `AutoMergeServiceTest.peripheryTaskMutatingCoreScopeIsRejectedAtMergePathAndTaskBlocked`. Green (100%).
+
 ---
 
 ### 34. Возраст сторожа меряется по соседней отметке, потому что своей у него нет · `CAUSAL_PROCESS_TRACE` (D013) + `PRINCIPLED_INTEGRITY` (D012)

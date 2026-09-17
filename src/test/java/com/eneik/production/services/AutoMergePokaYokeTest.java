@@ -92,11 +92,96 @@ class AutoMergePokaYokeTest {
     }
     @Test
     void aRejectedReviewIsTerminalAndNeverPolledAgain() {
-        // If "contaminated"/"blocker_pr" were pollable, executeMerge would re-run the same rejection every
+        // If "contaminated"/"blocker_pr"/"core_violation" were pollable, executeMerge would re-run the same rejection every
         // cycle forever - the exact deadlock shape the "conflict" and "policy_denied" comments describe,
-        // only inverted. These two are genuinely dead: the PR is closed on GitHub.
+        // only inverted. These are genuinely dead: the PR is closed on GitHub.
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWith("contaminated")));
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWith("blocker_pr")));
+        assertFalse(AutoMergeService.isReviewPollCandidate(reviewWith("core_violation")));
+    }
+
+    @Test
+    void peripheryTaskMutatingMigrationIsRejectedByQuineanPokaYoke() {
+        // Prescription 33 / D003 / D008: Quine web of belief core demarcation on the merge path.
+        // A periphery UI role (BARCAN-TAG-11) attempting to mutate database migrations must be blocked before merge.
+        var role = new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag("BARCAN-TAG-11");
+        var task = new com.eneik.production.models.persistence.TaskEntity();
+        task.setRole(role);
+
+        var verdict = AutoMergeService.judgeFactoryPokaYoke(
+                List.of("src/main/resources/db/migration/V2__add_users.sql"),
+                "feat: add users migration from UI task",
+                classifier, task, null);
+
+        assertTrue(verdict.rejected());
+        assertEquals("core_violation", verdict.ciStatus());
+        assertTrue(verdict.ciStatus().length() <= 16);
+        assertTrue(verdict.reason().contains("REJECTED_QUINEAN_CORE_VIOLATION"));
+        assertTrue(verdict.reason().contains("V2__add_users.sql"));
+    }
+
+    @Test
+    void peripheryTaskMutatingSecurityConfigIsRejectedByQuineanPokaYoke() {
+        var role = new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag("BARCAN-TAG-05");
+        var task = new com.eneik.production.models.persistence.TaskEntity();
+        task.setRole(role);
+
+        var verdict = AutoMergeService.judgeFactoryPokaYoke(
+                List.of("src/main/java/com/eneik/SecurityConfig.java"),
+                "docs: add security rules",
+                classifier, task, null);
+
+        assertTrue(verdict.rejected());
+        assertEquals("core_violation", verdict.ciStatus());
+        assertTrue(verdict.reason().contains("SecurityConfig.java"));
+    }
+
+    @Test
+    void peripheryFeatureMutatingMigrationIsRejectedEvenWithGenericRole() {
+        var feature = new com.eneik.production.models.persistence.FeatureEntity();
+        feature.setEpistemicLayer("PERIPHERY");
+        var task = new com.eneik.production.models.persistence.TaskEntity();
+
+        var verdict = AutoMergeService.judgeFactoryPokaYoke(
+                List.of("backend/db/migration/V1__init.sql"),
+                "feat: init database",
+                classifier, task, feature);
+
+        assertTrue(verdict.rejected());
+        assertEquals("core_violation", verdict.ciStatus());
+    }
+
+    @Test
+    void peripheryTaskMutatingUiFilesPassesPokaYoke() {
+        var role = new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag("BARCAN-TAG-11");
+        var task = new com.eneik.production.models.persistence.TaskEntity();
+        task.setRole(role);
+
+        var verdict = AutoMergeService.judgeFactoryPokaYoke(
+                List.of("frontend/src/App.svelte", "frontend/src/Button.svelte"),
+                "feat: new button component",
+                classifier, task, null);
+
+        assertFalse(verdict.rejected());
+    }
+
+    @Test
+    void backendTaskMutatingMigrationPassesPokaYoke() {
+        // Backend engineer (BARCAN-TAG-02) owns database migrations and must not be rejected by Quinean periphery guard
+        var role = new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+        var task = new com.eneik.production.models.persistence.TaskEntity();
+        task.setRole(role);
+
+        var verdict = AutoMergeService.judgeFactoryPokaYoke(
+                List.of("src/main/resources/db/migration/V2__add_users.sql"),
+                "feat: add users migration",
+                classifier, task, null);
+
+        assertFalse(verdict.rejected());
     }
 
     private com.eneik.production.models.persistence.PrReviewEntity reviewWith(String ciStatus) {

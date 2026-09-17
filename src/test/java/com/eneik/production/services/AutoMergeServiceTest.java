@@ -1420,4 +1420,96 @@ class AutoMergeServiceTest {
         verify(wishlists, never()).save(any());
     }
 
+    @Test
+    void peripheryTaskMutatingCoreScopeIsRejectedAtMergePathAndTaskBlocked() {
+        // Prescription 33 (D003 / D008): Quinean web of belief core demarcation on the merge path.
+        // A periphery UI role (BARCAN-TAG-11) attempting to mutate database migrations is blocked at rejectByFactoryPokaYoke:
+        // the PR is closed unmerged on GitHub, the task status becomes blocked, the review ciStatus is core_violation,
+        // and the defect is recorded in DefectJournalService under epistemic_layer_invariant.
+        var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
+        var sessions = mock(com.eneik.production.repositories.JulesSessionRepository.class);
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var settings = mock(com.eneik.production.services.settings.SystemSettingsService.class);
+        var gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        var defectJournal = mock(com.eneik.production.kaizen.service.DefectJournalService.class);
+        var features = mock(com.eneik.production.repositories.FeatureRepository.class);
+
+        when(settings.effectiveValue("github_token")).thenReturn("ghp_test_token");
+
+        AutoMergeService service = new AutoMergeService(
+                prReviews, sessions, tasks, settings,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.eneik.production.services.advice.RoleAdviceLoopService.class),
+                mock(com.eneik.production.repositories.TaskConflictRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(RoleCapabilityLoader.class),
+                mock(com.eneik.production.repositories.WishlistRepository.class),
+                mock(MLPredictionServiceClient.class),
+                gitHubPullRequestService,
+                new com.eneik.production.services.github.GitHubApiBudgetService(),
+                mock(com.eneik.production.services.video.VideoAssetService.class),
+                mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
+                mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+                new CodeChangeClassifier(),
+                mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                mock(ClaimService.class),
+                mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                mock(com.eneik.production.repositories.OperationalRealityFindingRepository.class));
+
+        try {
+            var defectField = AutoMergeService.class.getDeclaredField("defectJournalService");
+            defectField.setAccessible(true);
+            defectField.set(service, defectJournal);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        service.setFeatureRepository(features);
+
+        AutoMergeService spyService = spy(service);
+        doReturn(List.of("src/main/resources/db/migration/V99__core_schema.sql"))
+                .when(spyService).fetchPrFiles(any(), any(), any(), any());
+
+        var project = new com.eneik.production.models.persistence.ProjectEntity();
+        project.setId(UUID.randomUUID());
+
+        var role = new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag("BARCAN-TAG-11");
+
+        var task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setRole(role);
+        task.setStatus(TaskStatus.review);
+
+        var session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setStatus("pr_opened");
+
+        var review = new PrReviewEntity();
+        review.setId(UUID.randomUUID());
+
+        var target = new AutoMergeService.PullRequestTarget("owner", "repo", "42", "https://github.com/owner/repo/pull/42");
+        var pr = new GitHubPullRequestService.GitHubPullRequest("https://github.com/owner/repo/pull/42", 42,
+                "UI update with unexpected core schema migration", "feature/ui-42", "agent-ui", false, "main", false, java.time.Instant.now());
+
+        boolean rejected = spyService.rejectByFactoryPokaYoke(review, task, session, target, pr);
+
+        assertTrue(rejected, "Quinean core violation must reject merge of periphery task");
+        assertEquals("core_violation", review.getCiStatus());
+        assertFalse(review.getMerged());
+        assertEquals(TaskStatus.blocked, task.getStatus());
+        assertEquals("closed_rejected", session.getStatus());
+
+        verify(tasks).save(task);
+        verify(sessions).save(session);
+        verify(prReviews).save(review);
+        verify(gitHubPullRequestService).closeSinglePullRequest(eq(project), eq(pr), any());
+        verify(defectJournal).recordDefect(eq(project.getId()), any(), any(), eq("high"),
+                eq("epistemic_layer_invariant"), eq("AutoMergeService"), eq("core_violation"), any(), any());
+    }
+
 }
