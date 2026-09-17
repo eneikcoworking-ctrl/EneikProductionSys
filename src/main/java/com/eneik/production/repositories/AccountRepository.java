@@ -22,6 +22,8 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     List<AccountEntity> findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc();
 
+    Optional<AccountEntity> findByApiKeyAndEnabledTrue(String apiKey);
+
     @Query("SELECT a FROM AccountEntity a WHERE " +
             "a.status <> com.eneik.production.models.persistence.AccountStatus.decommissioned AND " +
             "(a.currentProjectId IS NULL OR a.currentProjectId = :projectId) " +

@@ -1,15 +1,12 @@
-# Такт L2: Ведущий инженер (2026-09-17 22:52 UTC)
+# Такт L2: Ведущий инженер (2026-09-17 23:55 UTC)
 
-1. Предписание 39 закрыто (TELEOSEMANTIC_FEEDBACK / D011, FALSIFICATION_HARNESS / D008):
-   - `ProjectFlowService.dispatchQueuedTasks`: интегрирован шлюз TOC DBR Rope через `tocSentinelService.startExecution("DISPATCH_QUEUED_TASKS", 50)`. При статусе `THROTTLED` выпуск задач немедленно блокируется на входе конвейера.
-   - `TocOptimizer`: `maxBufferCapacity` динамически рассчитывается из суммы `estimatedDailyCapacity` операционных аккаунтов `AccountRepository`.
-   - `DbrStatus` / `TocOptimizer`: добавлен счетчик `totalThrottleActivations`. Метод `limiterStatus()` возвращает `UNVERIFIED` при 0 срабатываний и `VERIFIED` после пробития буфера.
+1. Предписание 40 закрыто (RONALD_DVORKIN_02_RIGHTS_DUTIES_MATRIX / D006, PATRITSIYA_CHERCHLAND_05_TELEOSEMANTIC_FEEDBACK / D011):
+   - `ClaimController` и `ProjectController`: эндпоинты `claim` закрыты деонтической авторизацией (`validateClaimantAuthorization`). Право вытягивания закреплено за аутентичным субъектом (`AccountEntity`), подтверждающим владение через `X-Account-Key`, `X-API-Key`, Bearer-токен или мастер-ключ.
+   - `ClaimService`: встроен инвариант субъекта (`validateClaimSubject`): декоммиссионированные, отключённые (`enabled = false`) и заблокированные аккаунты лишены права брать задачи. Внедрён атомарный счётчик взятых притязаний `pullClaimsCount` и логирование в журнал.
+   - `ApiAuthorizationInterceptor`: добавлена проверка API-ключей активных аккаунтов через `AccountRepository.findByApiKeyAndEnabledTrue`.
+   - `SystemStatusService`: в блок `tasks` свода фабрики добавлены `takenClaimsPast24Hours` и `pullClaimsCount`, делая нулевые притязания за сутки измеримыми.
 2. Заслон (100% green в Docker):
-   - `ProjectFlowServiceDbrRopeTest`:
-     - `dispatchQueuedTasksIsThrottledWhenConstraintBufferOverflows`: переполнение буфера блокирует `dispatchQueuedTasks` без запроса к очереди задач, переводя статус в `VERIFIED`.
-     - `dispatchQueuedTasksProceedsWhenConstraintBufferWithinCapacity`: нормальный пропуск при свободном буфере.
-     - `limiterStatusReportsUnverifiedWhenZeroThrottlingHasOccurred`: рапорт `UNVERIFIED` до первого срабатывания.
-     - `maxBufferCapacityDerivesFromOperationalAccounts`: динамический расчет буфера из аккаунтов.
-   - `ProjectFlowServiceTest` (44/44), `LeanPullReleaseTest` (6/6), `Toc*` (26/26).
+   - `ClaimRightsDutiesMatrixTest` (7 тестов): взятие задачи авторизованным субъектом и рост счётчика; отказ 401 без ключа; отказ 403 при неверном ключе; допуск по мастер-ключу; запрет вытягивания отключённым/декоммиссионированным/заблокированным; видимость 0 в своде и обновление после взятия; соответствие HTTP-статусов в ClaimController.
+   - Регрессия: `ApiAuthorizationInterceptorTest` (21/21), `TocPriorityClaimTest` (1/1), `ClaimServiceRaceGuardTest` (1/1).
 3. Следующий такт:
-   - Взять Предписание 40 (Путь вытягивания задач Jules) / следующее по наряду `MANAGER_STATE.md`.
+   - Взять Предписание 41 / следующее по очереди и наряду `MANAGER_STATE.md`.

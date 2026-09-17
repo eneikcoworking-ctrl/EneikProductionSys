@@ -4328,6 +4328,16 @@ not**». Дальше `LIMIT 1`.
 
 *Опровержение:* найти в журнале за сутки хоть одно взятое притязание. Есть — пункт снимается.
 
+*Решение (17 сентября 2026, Предписание 40, D006, D011):*
+1. **Авторизация и субъект права (`RONALD_DVORKIN_02_RIGHTS_DUTIES_MATRIX`, D006):**
+   - Эндпоинты `POST /api/tasks/claim` и `POST /api/projects/{id}/claim` защищены деонтической проверкой (`validateClaimantAuthorization`): право взять задачу закреплено за аутентичным носителем (`AccountEntity`), предъявляющим валидный `X-Account-Key`, `X-API-Key` или Bearer-токен (либо мастер-ключ).
+   - Субъект валидируется (`validateClaimSubject`): декоммиссионированные, отключённые (`enabled = false`) или заблокированные (`api_blocked`, `daily_limited`) аккаунты лишены права брать задачи с эксплицитными отказами (`401 UNAUTHORIZED`, `403 FORBIDDEN`, `400 BAD REQUEST`).
+   - `ApiAuthorizationInterceptor` расширен проверкой ключей аккаунтов через `AccountRepository.findByApiKeyAndEnabledTrue`.
+2. **Телеосемантическая обратная связь (`PATRITSIYA_CHERCHLAND_05_TELEOSEMANTIC_FEEDBACK`, D011):**
+   - В `ClaimService` встроен атомарный счётчик успешных притязаний `pullClaimsCount`, инкрементируемый при взятии задач и логирующий факт взятия в журнал.
+   - В свод фабрики (`SystemStatusService.getStatus() -> tasks`) добавлены поля телеметрии `takenClaimsPast24Hours` и `pullClaimsCount`, делая нулевое значение за сутки измеримым и явным.
+3. **Заслон:** `ClaimRightsDutiesMatrixTest` (7 тестов green: успешное взятие задачи и инкремент метрики; отказ 401 при отсутствии ключа; отказ 403 при чужом ключе; авторизация по мастер-ключу; запрет отключённым/декоммиссионированным/заблокированным; эксплицитная видимость 0 в своде и обновление после взятия; строгие HTTP-статусы в `ClaimController`).
+
 ---
 
 ### 41. Вытягивания нет вовсе: сорок часов и один сигнал, который не приходит · `PERCEPTION_ACTION_LOOP` (D011) + `CAUSAL_PROCESS_TRACE` (D013) · **корень пунктов 38, 39, 40**

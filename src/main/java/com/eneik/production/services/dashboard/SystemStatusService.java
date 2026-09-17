@@ -73,6 +73,12 @@ public class SystemStatusService {
     private final com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
     private final Environment environment;
     private final com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.ClaimService claimService;
+
+    public void setClaimService(com.eneik.production.services.ClaimService claimService) {
+        this.claimService = claimService;
+    }
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
@@ -597,6 +603,8 @@ public class SystemStatusService {
     private Map<String, Object> tasks(UUID projectId, List<TaskEntity> scopedTasks) {
         long carrierDeaths = countCarrierDeathsPast24Hours(projectId);
         long namespaceRefusals = countNamespaceRefusalsPast24Hours(projectId);
+        long takenClaimsPast24Hours = countTakenClaimsPast24Hours(projectId);
+        long pullClaimsCount = claimService != null ? claimService.getPullClaimsCount() : 0L;
         if (scopedTasks != null) {
             List<TaskEntity> realWorkTasks = scopedTasks.stream().filter(t -> !isSystemMetaTask(t)).toList();
             Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
@@ -607,6 +615,8 @@ public class SystemStatusService {
             counts.forEach((status, count) -> section.put(status.name(), count));
             section.put("carrierDeaths", carrierDeaths);
             section.put("namespaceRefusals", namespaceRefusals);
+            section.put("takenClaimsPast24Hours", takenClaimsPast24Hours);
+            section.put("pullClaimsCount", pullClaimsCount);
             return section;
         }
 
@@ -627,7 +637,28 @@ public class SystemStatusService {
         counts.forEach((status, count) -> section.put(status.name(), count));
         section.put("carrierDeaths", carrierDeaths);
         section.put("namespaceRefusals", namespaceRefusals);
+        section.put("takenClaimsPast24Hours", takenClaimsPast24Hours);
+        section.put("pullClaimsCount", pullClaimsCount);
         return section;
+    }
+
+    private long countTakenClaimsPast24Hours(UUID projectId) {
+        try {
+            java.time.Instant since = java.time.Instant.now().minus(java.time.Duration.ofHours(24));
+            if (projectId != null) {
+                Long count = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM claims c JOIN tasks t ON c.task_id = t.id WHERE t.project_id = ? AND c.claimed_at > ?",
+                        Long.class, projectId, since);
+                return count != null ? count : 0L;
+            } else {
+                Long count = jdbcTemplate.queryForObject(
+                        "SELECT count(*) FROM claims WHERE claimed_at > ?",
+                        Long.class, since);
+                return count != null ? count : 0L;
+            }
+        } catch (Exception ignored) {
+            return 0L;
+        }
     }
 
     private long countCarrierDeathsPast24Hours(UUID projectId) {

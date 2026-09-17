@@ -247,13 +247,24 @@ public class ProjectController {
     }
 
     @PostMapping("/{projectId}/claim")
-    public ResponseEntity<?> claim(@PathVariable UUID projectId, @RequestBody ProjectClaimRequestDto request) {
+    public ResponseEntity<?> claim(
+            @PathVariable UUID projectId,
+            @RequestHeader(value = "X-Account-Key", required = false) String accountKeyHeader,
+            @RequestHeader(value = "X-API-Key", required = false) String apiKeyHeader,
+            @RequestHeader(value = "Authorization", required = false) String authHeader,
+            @RequestBody ProjectClaimRequestDto request) {
+        if (request == null || request.accountId() == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "accountId is required", "code", 400));
+        }
         try {
+            claimService.validateClaimantAuthorization(request.accountId(), accountKeyHeader, apiKeyHeader, authHeader);
             ClaimDto claim = claimService.claimForProject(projectId, request.accountId());
             if (claim == null) {
                 return ResponseEntity.noContent().build();
             }
             return ResponseEntity.ok(claim);
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            return ResponseEntity.status(e.getStatusCode()).body(Map.of("error", e.getReason(), "code", e.getStatusCode().value()));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
         }

@@ -48,6 +48,8 @@ public class ClaimService {
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private final PrReviewRepository prReviewRepository;
     private final DefectJournalRepository defectJournalRepository;
+    private final String configuredApiKey;
+    private final java.util.concurrent.atomic.AtomicLong pullClaimsCount = new java.util.concurrent.atomic.AtomicLong(0);
 
     public enum ReviewAdmissionDecision {
         ADMIT("Review artifact present or role does not require code"),
@@ -95,7 +97,8 @@ public class ClaimService {
                         GateOrchestrator gateOrchestrator,
                         com.eneik.production.services.ClientDeliverableReadinessService readinessService,
                         @org.springframework.beans.factory.annotation.Autowired(required = false) PrReviewRepository prReviewRepository,
-                        @org.springframework.beans.factory.annotation.Autowired(required = false) DefectJournalRepository defectJournalRepository) {
+                        @org.springframework.beans.factory.annotation.Autowired(required = false) DefectJournalRepository defectJournalRepository,
+                        @org.springframework.beans.factory.annotation.Value("${eneik.security.api-key:}") String configuredApiKey) {
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
@@ -104,6 +107,19 @@ public class ClaimService {
         this.readinessService = readinessService;
         this.prReviewRepository = prReviewRepository;
         this.defectJournalRepository = defectJournalRepository;
+        this.configuredApiKey = configuredApiKey != null ? configuredApiKey.trim() : "";
+    }
+
+    public ClaimService(ClaimRepository claimRepository,
+                        TaskRepository taskRepository,
+                        AccountRepository accountRepository,
+                        JulesSessionRepository julesSessionRepository,
+                        GateOrchestrator gateOrchestrator,
+                        com.eneik.production.services.ClientDeliverableReadinessService readinessService,
+                        PrReviewRepository prReviewRepository,
+                        DefectJournalRepository defectJournalRepository) {
+        this(claimRepository, taskRepository, accountRepository, julesSessionRepository,
+                gateOrchestrator, readinessService, prReviewRepository, defectJournalRepository, "");
     }
 
     public ClaimService(ClaimRepository claimRepository,
@@ -113,7 +129,7 @@ public class ClaimService {
                         GateOrchestrator gateOrchestrator,
                         com.eneik.production.services.ClientDeliverableReadinessService readinessService,
                         PrReviewRepository prReviewRepository) {
-        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, prReviewRepository, null);
+        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, prReviewRepository, null, "");
     }
 
     public ClaimService(ClaimRepository claimRepository,
@@ -122,7 +138,96 @@ public class ClaimService {
                         JulesSessionRepository julesSessionRepository,
                         GateOrchestrator gateOrchestrator,
                         com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
-        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, null, null);
+        this(claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator, readinessService, null, null, "");
+    }
+
+    public long getPullClaimsCount() {
+        return pullClaimsCount.get();
+    }
+
+    public long getTakenClaimsCount() {
+        return pullClaimsCount.get();
+    }
+
+    public void resetPullClaimsCountForTesting() {
+        pullClaimsCount.set(0);
+    }
+
+    /**
+     * Subject verification for task claim operations (RONALD_DVORKIN_02_RIGHTS_DUTIES_MATRIX / D006).
+     * The claiming account must exist, be enabled, not decommissioned, and not blocked.
+     */
+    public void validateClaimSubject(AccountEntity account) {
+        if (account.getStatus() == AccountStatus.decommissioned) {
+            throw new IllegalStateException("Account " + account.getId() + " is decommissioned; cannot exercise claim right");
+        }
+        if (!account.isEnabled()) {
+            throw new IllegalStateException("Account " + account.getId() + " is disabled; cannot exercise claim right");
+        }
+        if (account.getStatus() == AccountStatus.api_blocked) {
+            throw new IllegalStateException("Account " + account.getId() + " is api_blocked; cannot exercise claim right");
+        }
+        if (account.getStatus() == AccountStatus.daily_limited) {
+            throw new IllegalStateException("Account " + account.getId() + " is daily_limited; cannot exercise claim right");
+        }
+    }
+
+    /**
+     * Deontic authorization validation for claim endpoints (RONALD_DVORKIN_02_RIGHTS_DUTIES_MATRIX / D006).
+     * Validates that the request credentials match the claiming account's API key or the master factory API key.
+     */
+    public void validateClaimantAuthorization(UUID accountId, String accountKey, String apiKey, String authHeader) {
+        AccountEntity account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+
+        validateClaimSubject(account);
+
+        String suppliedToken = null;
+        if (accountKey != null && !accountKey.isBlank()) {
+            suppliedToken = accountKey.trim();
+        } else if (apiKey != null && !apiKey.isBlank()) {
+            suppliedToken = apiKey.trim();
+        } else if (authHeader != null && !authHeader.isBlank()) {
+            String trimmed = authHeader.trim();
+            if (trimmed.regionMatches(true, 0, "Bearer ", 0, 7)) {
+                suppliedToken = trimmed.substring(7).trim();
+            } else {
+                suppliedToken = trimmed;
+            }
+        }
+
+        String accountApiKey = account.getApiKey();
+        boolean accountHasKey = accountApiKey != null && !accountApiKey.isBlank();
+        boolean masterKeyConfigured = !configuredApiKey.isBlank();
+
+        // If neither account has a key nor master key is configured, allowed (e.g. unauthenticated test env)
+        if (!accountHasKey && !masterKeyConfigured) {
+            return;
+        }
+
+        if (suppliedToken == null || suppliedToken.isBlank()) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.UNAUTHORIZED,
+                    "Authentication required: missing credentials for account " + accountId
+            );
+        }
+
+        boolean matchesAccountKey = accountHasKey && java.security.MessageDigest.isEqual(
+                accountApiKey.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                suppliedToken.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+
+        boolean matchesMasterKey = masterKeyConfigured && java.security.MessageDigest.isEqual(
+                configuredApiKey.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                suppliedToken.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+        );
+
+        if (!matchesAccountKey && !matchesMasterKey) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.FORBIDDEN,
+                    "Access denied: caller credentials do not match account " + accountId
+            );
+        }
     }
 
     /**
@@ -130,14 +235,15 @@ public class ClaimService {
      */
     @Transactional
     public ClaimDto claim(UUID accountId, List<String> capableTags) {
-        // 1. Lock one suitable task, SKIP LOCKED
+        // 1. Find and validate account first (Rights/Duties Matrix: claimant must be eligible subject)
+        AccountEntity account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+        validateClaimSubject(account);
+
+        // 2. Lock one suitable task, SKIP LOCKED
         TaskEntity task = taskRepository.lockNextQueuedTask(capableTags).orElse(null);
 
         if (task == null) return null;
-
-        // 2. Find account
-        AccountEntity account = accountRepository.findById(accountId)
-                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
 
         // 3. Create claim and update task status
         ClaimEntity claim = new ClaimEntity();
@@ -155,6 +261,10 @@ public class ClaimService {
         // 4. Update account status
         account.setStatus(AccountStatus.busy);
         accountRepository.save(account);
+
+        pullClaimsCount.incrementAndGet();
+        log.info("ClaimService.claim: account {} successfully claimed task {} (role={})",
+                accountId, task.getId(), task.getRole().getTag());
 
         return new ClaimDto(
                 claim.getId(),
@@ -179,6 +289,7 @@ public class ClaimService {
                 });
         AccountEntity account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+        validateClaimSubject(account);
 
         String taskTag = task.getRole().getTag();
         boolean isCapable = "*".equals(account.getCapabilities()) ||
@@ -202,6 +313,9 @@ public class ClaimService {
         account.setLastHeartbeat(Instant.now());
         accountRepository.save(account);
 
+        pullClaimsCount.incrementAndGet();
+        log.info("ClaimService.claimSpecificTask: account {} claimed task {}", accountId, taskId);
+
         return new ClaimDto(
                 claim.getId(),
                 task.getId(),
@@ -219,6 +333,7 @@ public class ClaimService {
 
         AccountEntity account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+        validateClaimSubject(account);
         if (account.getProject() != null && !projectId.equals(account.getProject().getId())) {
             throw new IllegalArgumentException("Account is attached to another project: " + account.getProject().getId());
         }
@@ -240,6 +355,9 @@ public class ClaimService {
         account.setStatus(AccountStatus.busy);
         account.setLastHeartbeat(Instant.now());
         accountRepository.save(account);
+
+        pullClaimsCount.incrementAndGet();
+        log.info("ClaimService.claimForProject: account {} claimed task {} for project {}", accountId, task.getId(), projectId);
 
         return new ClaimDto(
                 claim.getId(),

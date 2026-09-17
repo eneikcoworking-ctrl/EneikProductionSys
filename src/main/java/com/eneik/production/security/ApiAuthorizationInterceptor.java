@@ -48,12 +48,22 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
 
     private final String configuredApiKey;
     private final ObjectMapper objectMapper;
+    private final com.eneik.production.repositories.AccountRepository accountRepository;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ApiAuthorizationInterceptor(
             @Value("${eneik.security.api-key:}") String configuredApiKey,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            @org.springframework.beans.factory.annotation.Autowired(required = false) com.eneik.production.repositories.AccountRepository accountRepository) {
         this.configuredApiKey = configuredApiKey != null ? configuredApiKey.trim() : "";
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
+        this.accountRepository = accountRepository;
+    }
+
+    public ApiAuthorizationInterceptor(
+            String configuredApiKey,
+            ObjectMapper objectMapper) {
+        this(configuredApiKey, objectMapper, null);
     }
 
     @Override
@@ -134,6 +144,11 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
     }
 
     private String extractToken(HttpServletRequest request) {
+        String accountKeyHeader = request.getHeader("X-Account-Key");
+        if (accountKeyHeader != null && !accountKeyHeader.isBlank()) {
+            return accountKeyHeader.trim();
+        }
+
         String apiKeyHeader = request.getHeader("X-API-Key");
         if (apiKeyHeader != null && !apiKeyHeader.isBlank()) {
             return apiKeyHeader.trim();
@@ -152,13 +167,19 @@ public class ApiAuthorizationInterceptor implements HandlerInterceptor {
     }
 
     private boolean isTokenValid(String providedToken) {
-        if (configuredApiKey.isBlank()) {
+        if (providedToken == null || providedToken.isBlank()) {
             return false;
         }
-        return MessageDigest.isEqual(
+        if (!configuredApiKey.isBlank() && MessageDigest.isEqual(
                 configuredApiKey.getBytes(StandardCharsets.UTF_8),
                 providedToken.getBytes(StandardCharsets.UTF_8)
-        );
+        )) {
+            return true;
+        }
+        if (accountRepository != null) {
+            return accountRepository.findByApiKeyAndEnabledTrue(providedToken).isPresent();
+        }
+        return false;
     }
 
     private void writeErrorResponse(HttpServletResponse response, int status, String code, String message) throws IOException {
