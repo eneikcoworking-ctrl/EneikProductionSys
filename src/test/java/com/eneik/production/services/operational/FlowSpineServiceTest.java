@@ -635,9 +635,9 @@ class FlowSpineServiceTest {
         // 5. Structural/Reflection fence (SENSE_REFERENCE_SPLIT): FlowCounts has strictly ONE constructor
         // with 14 parameters (no overloaded constructors that silently conflate failedTasksRecoveryCanResume with failedTasksTotal)
         assertEquals(1, FlowSpineDto.FlowCounts.class.getConstructors().length,
-                "FlowCounts must only have the canonical 14-arg constructor to eliminate category conflation");
-        assertEquals(14, FlowSpineDto.FlowCounts.class.getConstructors()[0].getParameterCount(),
-                "Canonical constructor must accept all 14 flow metrics");
+                "FlowCounts must only have the canonical constructor to eliminate category conflation");
+        assertEquals(17, FlowSpineDto.FlowCounts.class.getConstructors()[0].getParameterCount(),
+                "Canonical constructor must accept all 17 flow metrics (including Prescription 36 screen metrics)");
     }
 
     @Test
@@ -907,5 +907,48 @@ class FlowSpineServiceTest {
         serviceWithMocks(projects, tasks, mlClient, leverService).shadowCheckEmbeddingDuplicatesAcrossActiveProjects();
 
         org.mockito.Mockito.verifyNoInteractions(tasks, mlClient, leverService);
+    }
+
+    @Test
+    void screenAcceptanceMetricsAreExposedInFlowCounts() {
+        // Prescription 36 (TELEOSEMANTIC_FEEDBACK / D011 + Law 8):
+        // Flow summary counts must expose totalScreens, acceptedScreens, and acceptedScreensRatio
+        // adjacent to the deliverable numerator so that e.g. 0 out of 8 screens accepted is visible in summary.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlist = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var status = mock(SystemStatusService.class);
+        var mlClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        var designAssets = mock(com.eneik.production.services.design.DesignAssetService.class);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(wishlist.findByProjectId(projectId)).thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1.0));
+        when(status.getStatus(projectId)).thenReturn(
+                java.util.Map.of("status", "ok"));
+        when(designAssets.getScreenAcceptanceStats(project)).thenReturn(
+                new com.eneik.production.services.design.DesignAssetService.ScreenAcceptanceStats(8, 0, 0.0));
+
+        FlowSpineService service = new FlowSpineService(projects, tasks, wishlist, sessions, reviews, events,
+                readiness, status, mlClient, leverService);
+        service.setDesignAssetService(designAssets);
+
+        var dto = service.build(projectId);
+
+        org.assertj.core.api.Assertions.assertThat(dto.counts().totalScreens()).isEqualTo(8);
+        org.assertj.core.api.Assertions.assertThat(dto.counts().acceptedScreens()).isEqualTo(0);
+        org.assertj.core.api.Assertions.assertThat(dto.counts().acceptedScreensRatio()).isEqualTo(0.0);
     }
 }

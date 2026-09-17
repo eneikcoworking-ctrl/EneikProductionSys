@@ -4091,6 +4091,13 @@ producer of the block fires in seconds, the releaser once an hour**». Заме�
 
 *Опровержение:* найти в журнале хоть один экран с `traceRatio ≥ 0,9`. Есть — пункт смягчается.
 
+*Решение (17 сентября 2026):*
+1. В `FlowSpineDto.FlowCounts` добавлены метрики `totalScreens`, `acceptedScreens`, `acceptedScreensRatio` рядом с числителем доставки.
+2. В `DesignAssetService` реализован подсчёт статистики `getScreenAcceptanceStats(project)` и запись метаданных `.json` с полем `accepted: false` при отказе.
+3. В `DesignAssetService` внедрён заслон на серию отказов генератора: 2 отказа подряд на одной дизайн-системе генерируют дефект в `DefectJournalService` (`TELEOSEMANTIC_FEEDBACK` / `DESIGN_GENERATOR_INCAPACITY`). Счётчик сбрасывается при успехе.
+4. В `DesignShopOrchestrationService.startCycle` отказ `aesthetic_drift` отделен от сбоев транспорта и регистрирует рекламацию `recordUnusableDraftConcern` без холостых повторов.
+5. Заслоны: `DesignConsistencyAuditServiceTest.auditRejectsScreenWithTraceRatioHalfWayBelowRequiredThreshold`, `FlowSpineServiceTest.screenAcceptanceMetricsAreExposedInFlowCounts`, `DesignAssetServiceTest.screenAcceptanceStatsScansProjectMetadataCorrectly`, `DesignAssetServiceTest.consecutiveRejectionsEmitDefectAndResetOnSuccess`.
+
 ---
 
 ### 37. Числитель считает слияния и ни разу не спрашивает, зелен ли `main` · `CONSTRUCTIVE_PROOF_OBJECT` (D007)

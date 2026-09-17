@@ -1,13 +1,15 @@
-# Такт L2: Ведущий инженер (2026-09-17 19:05 UTC)
+# Такт L2: Ведущий инженер (2026-09-17 20:00 UTC)
 
-1. Предписание 35 закрыто (PERCEPTION_ACTION_LOOP / D011, Закон 8, LYUDVIG_VITGENSHTEYN_06):
-   - `ProjectFlowService`: внедрены счетчик повторных отказов на неизменной ревизии `recordReviewFallbackRepeatedRefusal`, сброс `clearReviewFallbackRepeatedRefusals` и регистрация происшествия `recordReviewFallbackDeadlockDefect` (`HIGH`, `PERCEPTION_ACTION_LOOP`, `REVIEW_FALLBACK_DEADLOCK`).
-   - `JulesDispatchService.admitReviewFallbackBatch`: при повторном тождественном отказе сторожа (refusalCount >= 2) отказ становится событием в дефект-журнале, а задача маркируется `TaskStatus.blocked` с записью статуса диспетчеризации.
-   - Это гарантирует немедленный выход состояния фабрики из затора `BLOCKED_BY_REVIEW` в `BLOCKED_BY_TASK` (с последующей плановой утилизацией в `failed` и регенерацией) и исключает вечный холостой опрос в `processPendingReviewBatch`.
+1. Предписание 36 закрыто (TELEOSEMANTIC_FEEDBACK / D011, Закон 8):
+   - `FlowSpineDto.FlowCounts`: добавлены метрики `totalScreens`, `acceptedScreens`, `acceptedScreensRatio` в свод потока рядом с числителем доставки (`totalDeliverables`/`mergedDeliverables`).
+   - `DesignAssetService`: реализован метод `getScreenAcceptanceStats(project)` (сканирование локальных метаданных экранов) и сохранение `.json` с полем `accepted: false` при отказе аудита.
+   - `DesignAssetService`: внедрен заслон на серию отказов генератора — 2 подряд отказа по одной дизайн-системе генерируют дефект в `DefectJournalService` (`TELEOSEMANTIC_FEEDBACK` / `DESIGN_GENERATOR_INCAPACITY`). Счётчик сбрасывается при первом принятом экране.
+   - `DesignShopOrchestrationService.startCycle`: отказ `aesthetic_drift` более не трактуется как сбой транспорта и не повторяется каждый такт; фиксируется рекламация `recordUnusableDraftConcern`.
 2. Заслон (100% green в Docker):
-   - `JulesDispatchServiceTest.consecutiveReviewFallbackRefusalsBreakDeadlockAndRecordDefect`: 2 тождественных отказа фиксируют дефект и переводят задачу в `blocked`.
-   - `FlowSpineServiceTest.consecutiveRefusalMarkingTaskBlockedExitsBlockedByReviewState`: маркировка задачи `blocked` немедленно выводит проект из `BLOCKED_BY_REVIEW` в `BLOCKED_BY_TASK`.
-   - `ProjectFlowServiceTest.reviewFallbackRepeatedRefusalTracking`, `reviewFallbackDeadlockDefectEmission`: поревизионный трекинг и эмиссия.
-   - `ProjectAdmissionLaw25aTest`: полная транзитивная изоляция транзакции допуска сохранена.
+   - `DesignConsistencyAuditServiceTest.auditRejectsScreenWithTraceRatioHalfWayBelowRequiredThreshold`: экран с `traceRatio=0.5` строго отвергается (`traceAccepted=false`, `verdict=REJECTED`).
+   - `FlowSpineServiceTest.screenAcceptanceMetricsAreExposedInFlowCounts`: метрики экранов (8 всего, 0 принято, ratio 0.0) присутствуют в `FlowSpineDto.counts()`.
+   - `DesignAssetServiceTest.screenAcceptanceStatsScansProjectMetadataCorrectly`: расчет статистики (0/8 -> 0.0, 2/10 -> 0.2).
+   - `DesignAssetServiceTest.consecutiveRejectionsEmitDefectAndResetOnSuccess`: 2 отказа генерируют дефект, успешная генерация обнуляет серию.
+   - `OperationalFlowCoreServiceTest`, `OperationalPolicyServiceTest`: канонический конструктор `FlowCounts` сохранен в единичном экземпляре (SENSE_REFERENCE_SPLIT).
 3. Следующий такт:
-   - Взять следующее предписание из Раздела XVI (`FACTORY_MECHANISMS.md` / `MANAGER_STATE.md`: Предписание 36: DesignExcellenceGate / отказ экранов).
+   - Предписание 37 (Числитель считает слияния и ни разу не спрашивает, зелен ли main, D007) / указание менеджера.

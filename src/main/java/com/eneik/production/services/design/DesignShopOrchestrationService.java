@@ -354,6 +354,19 @@ public class DesignShopOrchestrationService {
         //
         // So failures are split by modality, and the loop closes because no quantity of retries changes the
         // kind of a thing - not because a counter caps it.
+        boolean isAestheticDrift = "aesthetic_drift".equals(result.status());
+        if (isAestheticDrift) {
+            // Aesthetic drift: generator answered, but artifact failed consistency audit against declared baseline.
+            // Retrying immediately on the next tick does not fix generator incapacity / token misalignment.
+            // Recorded as a concern so degradation is visible instead of repeating endlessly.
+            self.releaseStartCycleClaim(project.getId());
+            recordUnusableDraftConcern(project, result);
+            log.warn("DesignShopOrchestrationService: design generation for project {} rejected due to aesthetic drift "
+                            + "(model={}, message={}); NOT blindly retrying transport. Recorded for review.",
+                    project.getId(), result.model(), result.message());
+            return;
+        }
+
         boolean generationReached = result.available();
         boolean implementableDraft = result.repoDraftPath() != null && !result.repoDraftPath().isBlank()
                 && hasImplementableHtml(project, result.repoDraftPath());

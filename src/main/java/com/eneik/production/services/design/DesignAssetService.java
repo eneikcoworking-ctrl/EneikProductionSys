@@ -39,6 +39,15 @@ public class DesignAssetService {
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final DesignConsistencyAuditService consistencyAuditService;
     private final Path assetRoot;
+    private com.eneik.production.kaizen.service.DefectJournalService defectJournalService;
+    private final java.util.concurrent.ConcurrentMap<String, java.util.concurrent.atomic.AtomicInteger> consecutiveRejectionsByDesignSystem =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    public record ScreenAcceptanceStats(
+            int totalScreens,
+            int acceptedScreens,
+            double acceptanceRatio
+    ) {}
 
     public DesignAssetService(GoogleAiResourceService googleAiResourceService,
                               StitchClient stitchClient,
@@ -47,15 +56,91 @@ public class DesignAssetService {
                               com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
                               DesignConsistencyAuditService consistencyAuditService,
                               @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
+        this(googleAiResourceService, stitchClient, settingsService, objectMapper,
+                gitHubPullRequestService, consistencyAuditService, null, assetRoot);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public DesignAssetService(GoogleAiResourceService googleAiResourceService,
+                              StitchClient stitchClient,
+                              SystemSettingsService settingsService,
+                              ObjectMapper objectMapper,
+                              com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                              DesignConsistencyAuditService consistencyAuditService,
+                              @org.springframework.beans.factory.annotation.Autowired(required = false)
+                              com.eneik.production.kaizen.service.DefectJournalService defectJournalService,
+                              @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
         this.googleAiResourceService = googleAiResourceService;
         this.stitchClient = stitchClient;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.consistencyAuditService = consistencyAuditService;
+        this.defectJournalService = defectJournalService;
         this.assetRoot = Paths.get(assetRoot == null || assetRoot.isBlank() ? "./data/design-assets" : assetRoot)
                 .toAbsolutePath()
                 .normalize();
+    }
+
+    public void setDefectJournalService(com.eneik.production.kaizen.service.DefectJournalService defectJournalService) {
+        this.defectJournalService = defectJournalService;
+    }
+
+    public int getConsecutiveRejections(String designSystemKey) {
+        var counter = consecutiveRejectionsByDesignSystem.get(designSystemKey);
+        return counter == null ? 0 : counter.get();
+    }
+
+    public void resetConsecutiveRejections(String designSystemKey) {
+        consecutiveRejectionsByDesignSystem.remove(designSystemKey);
+    }
+
+    public String designSystemKey(ProjectEntity project, String designSystemId) {
+        if (designSystemId != null && !designSystemId.isBlank()) {
+            return designSystemId.trim();
+        }
+        if (project != null && project.getId() != null) {
+            return project.getId().toString();
+        }
+        return "default";
+    }
+
+    public ScreenAcceptanceStats getScreenAcceptanceStats(ProjectEntity project) {
+        if (project == null) {
+            return new ScreenAcceptanceStats(0, 0, 0.0);
+        }
+        String projectSlug = slug(firstNonBlank(project.getSlug(), project.getName(), project.getId().toString()));
+        Path directory = assetRoot.resolve(projectSlug).normalize();
+        if (!Files.isDirectory(directory)) {
+            return new ScreenAcceptanceStats(0, 0, 0.0);
+        }
+        int total = 0;
+        int accepted = 0;
+        try (var stream = Files.list(directory)) {
+            List<Path> jsonFiles = stream.filter(p -> p.getFileName().toString().endsWith(".json")).toList();
+            for (Path jsonFile : jsonFiles) {
+                try {
+                    var node = objectMapper.readTree(Files.readString(jsonFile, StandardCharsets.UTF_8));
+                    total++;
+                    boolean isAccepted = true;
+                    if (node.has("accepted")) {
+                        isAccepted = node.get("accepted").asBoolean();
+                    } else if (node.has("auditVerdict")) {
+                        String verdict = node.get("auditVerdict").asText();
+                        isAccepted = !"REJECTED".equalsIgnoreCase(verdict);
+                    }
+                    if (isAccepted) {
+                        accepted++;
+                    }
+                } catch (Exception e) {
+                    log.debug("DesignAssetService: failed to parse metadata file {}: {}", jsonFile, e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("DesignAssetService: failed to list asset directory {}: {}", directory, e.getMessage());
+        }
+        double ratio = total > 0 ? (double) accepted / (double) total : 0.0;
+        return new ScreenAcceptanceStats(total, accepted, ratio);
     }
 
     /**
@@ -275,7 +360,7 @@ public class DesignAssetService {
         if (settingsService.effectiveBoolean("stitch_enabled") && stitchClient.hasStitchKey()) {
             DesignAssetResult stitchResult = generateViaStitch(project, brief, assetType, designSystemId,
                     designSystemColors, designSystemFonts);
-            if (stitchResult.available()) {
+            if (stitchResult.available() || "aesthetic_drift".equals(stitchResult.status())) {
                 return stitchResult;
             }
             if (requireImplementableHtml) {
@@ -370,6 +455,7 @@ public class DesignAssetService {
             metadata.put("createdAt", Instant.now().toString());
             metadata.put("brief", brief == null ? "" : brief);
             metadata.put("textOutput", interaction.outputText());
+            metadata.put("accepted", true);
             Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
 
             String repoDraftPath = commitDraftToGitHub(project, basename, null, imageBytes, extension);
@@ -496,7 +582,48 @@ public class DesignAssetService {
                     log.info("DesignAssetService: visual consistency cannot be judged (verdict={}: {}). Passing screen as un-audited without aesthetic rejection.",
                             consistencyReport.verdict(), consistencyReport.verdictReason());
                 } else if (!consistencyReport.traceAccepted()) {
-                    return new DesignAssetResult(false, "aesthetic_drift", "stitch", htmlPath, "", "text/html",
+                    Path metadataPath = directory.resolve(basename + ".json").normalize();
+                    ObjectNode metadata = objectMapper.createObjectNode();
+                    metadata.put("projectId", project == null ? "" : String.valueOf(project.getId()));
+                    metadata.put("projectName", project == null ? "" : project.getName());
+                    metadata.put("provider", "stitch");
+                    metadata.put("stitchProjectId", stitchProjectId);
+                    metadata.put("assetType", assetType == null ? "" : assetType);
+                    metadata.put("createdAt", Instant.now().toString());
+                    metadata.put("brief", brief == null ? "" : brief);
+                    metadata.put("htmlPath", htmlPath);
+                    metadata.put("designSystemId", designSystemId == null ? "" : designSystemId);
+                    metadata.put("accepted", false);
+                    metadata.put("auditVerdict", consistencyReport.verdict() == null ? "" : consistencyReport.verdict().name());
+                    metadata.put("auditVerdictDisplay", consistencyReport.displayVerdict());
+                    metadata.put("auditVerdictReason", consistencyReport.verdictReason());
+                    metadata.put("tokenTraceRatio", consistencyReport.traceRatio());
+                    metadata.put("crossScreenJaccard", consistencyReport.avgCrossScreenJaccard());
+                    var declaredArr = metadata.putArray("declaredTokens");
+                    consistencyReport.declaredTokens().forEach(declaredArr::add);
+                    var producerArr = metadata.putArray("producerTokens");
+                    consistencyReport.producerTokens().forEach(producerArr::add);
+                    Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
+
+                    String dsKey = designSystemKey(project, designSystemId);
+                    int consecutive = consecutiveRejectionsByDesignSystem
+                            .computeIfAbsent(dsKey, k -> new java.util.concurrent.atomic.AtomicInteger(0))
+                            .incrementAndGet();
+                    if (consecutive >= 2 && defectJournalService != null && project != null && project.getId() != null) {
+                        defectJournalService.recordDefect(
+                                project.getId(),
+                                "HIGH",
+                                "TELEOSEMANTIC_FEEDBACK",
+                                "DesignAssetService",
+                                "DESIGN_GENERATOR_INCAPACITY",
+                                String.format(Locale.ROOT,
+                                        "Screen generator incapacity: %d consecutive rejections on design system '%s' (last traceRatio=%.3f below required %.2f)",
+                                        consecutive, dsKey, consistencyReport.traceRatio(), DesignConsistencyAuditService.MIN_TRACE_RATIO),
+                                consistencyReport.traceRatio()
+                        );
+                    }
+
+                    return new DesignAssetResult(false, "aesthetic_drift", "stitch", htmlPath, metadataPath.toString(), "text/html",
                             String.format(Locale.ROOT,
                                     "Screen rejected: token_trace_ratio=%.3f below required %.2f. Off-token values: %s. Declared tokens: %s. Producer tokens: %s",
                                     consistencyReport.traceRatio(), DesignConsistencyAuditService.MIN_TRACE_RATIO,
@@ -506,6 +633,9 @@ public class DesignAssetService {
                             "", "", "");
                 }
             }
+
+            String dsKey = designSystemKey(project, designSystemId);
+            consecutiveRejectionsByDesignSystem.remove(dsKey);
 
             Path metadataPath = directory.resolve(basename + ".json").normalize();
             ObjectNode metadata = objectMapper.createObjectNode();
@@ -518,6 +648,7 @@ public class DesignAssetService {
             metadata.put("brief", brief == null ? "" : brief);
             metadata.put("htmlPath", htmlPath);
             metadata.put("designSystemId", designSystemId == null ? "" : designSystemId);
+            metadata.put("accepted", true);
             if (consistencyReport != null) {
                 metadata.put("auditVerdict", consistencyReport.verdict() == null ? "" : consistencyReport.verdict().name());
                 metadata.put("auditVerdictDisplay", consistencyReport.displayVerdict());

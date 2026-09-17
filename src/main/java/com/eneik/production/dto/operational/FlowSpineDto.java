@@ -103,8 +103,15 @@ public record FlowSpineDto(
             @JsonProperty("doneTasksTotal")
             long doneTasksTotal,
             @JsonProperty("spikeCompletedTasks")
-            long spikeCompletedTasks
+            long spikeCompletedTasks,
+            @JsonProperty("totalScreens")
+            int totalScreens,
+            @JsonProperty("acceptedScreens")
+            int acceptedScreens,
+            @JsonProperty("acceptedScreensRatio")
+            double acceptedScreensRatio
     ) {
+
         /**
          * @deprecated Use {@link #failedTasksRecoveryCanResume()} for resolver-actionable failed tasks,
          * or {@link #failedTasksTotal()} for the unpartitioned raw status count.

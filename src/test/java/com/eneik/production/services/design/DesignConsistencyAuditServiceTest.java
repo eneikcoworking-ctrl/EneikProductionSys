@@ -158,5 +158,19 @@ class DesignConsistencyAuditServiceTest {
         assertThat(report.verdictReason()).contains("viewport scalability prohibited");
         assertThat(report.traceAccepted()).isFalse();
     }
+
+    @Test
+    void auditRejectsScreenWithTraceRatioHalfWayBelowRequiredThreshold() {
+        // Prescription 36 (TELEOSEMANTIC_FEEDBACK / D011 + Law 8):
+        // Screen with traceRatio=0.5 must be rejected (traceAccepted=false, verdict=REJECTED)
+        // because 0.5 is strictly below MIN_TRACE_RATIO (0.90).
+        String html = "<style>body{background:#fbf9f1;} .off{color:#0053db;}</style>";
+        var report = service.audit(html, VERDANT_FLOW_TOKENS, List.of());
+
+        assertThat(report.traceRatio()).isEqualTo(0.5);
+        assertThat(report.traceAccepted()).isFalse();
+        assertThat(report.verdict()).isEqualTo(DesignConsistencyAuditService.AuditVerdict.REJECTED);
+        assertThat(report.offTokenValues()).contains("#0053db");
+    }
 }
 

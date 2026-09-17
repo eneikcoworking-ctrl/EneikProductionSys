@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -308,6 +309,101 @@ class DesignAssetServiceTest {
         var node = new ObjectMapper().readTree(metadataContent);
         assertThat(node.path("auditVerdict").asText()).isEqualTo("CANNOT_JUDGE");
         assertThat(node.path("auditVerdictDisplay").asText()).isEqualTo("не могу судить");
+    }
+
+    @Test
+    void screenAcceptanceStatsScansProjectMetadataCorrectly() throws Exception {
+        // Prescription 36: scanning project metadata must compute total, accepted, and ratio
+        java.nio.file.Path projectDir = tempDir.resolve("test-project");
+        java.nio.file.Files.createDirectories(projectDir);
+        ObjectMapper mapper = new ObjectMapper();
+
+        // 8 rejected screens (the exact live condition: 0/8 accepted)
+        for (int i = 1; i <= 8; i++) {
+            var meta = mapper.createObjectNode();
+            meta.put("projectId", project.getId().toString());
+            meta.put("accepted", false);
+            meta.put("auditVerdict", "REJECTED");
+            java.nio.file.Files.writeString(projectDir.resolve("screen-" + i + ".json"), mapper.writeValueAsString(meta));
+        }
+
+        var stats8 = designAssetService.getScreenAcceptanceStats(project);
+        assertThat(stats8.totalScreens()).isEqualTo(8);
+        assertThat(stats8.acceptedScreens()).isEqualTo(0);
+        assertThat(stats8.acceptanceRatio()).isEqualTo(0.0);
+
+        // Add 2 accepted screens
+        for (int i = 9; i <= 10; i++) {
+            var meta = mapper.createObjectNode();
+            meta.put("projectId", project.getId().toString());
+            meta.put("accepted", true);
+            meta.put("auditVerdict", "PASSED");
+            java.nio.file.Files.writeString(projectDir.resolve("screen-" + i + ".json"), mapper.writeValueAsString(meta));
+        }
+
+        var stats10 = designAssetService.getScreenAcceptanceStats(project);
+        assertThat(stats10.totalScreens()).isEqualTo(10);
+        assertThat(stats10.acceptedScreens()).isEqualTo(2);
+        assertThat(stats10.acceptanceRatio()).isEqualTo(0.2);
+    }
+
+    @Test
+    void consecutiveRejectionsEmitDefectAndResetOnSuccess() throws Exception {
+        // Prescription 36 (TELEOSEMANTIC_FEEDBACK / D011 + Law 8):
+        // 2 consecutive rejections on the same design system denote generator incapacity,
+        // which must emit a defect event to DefectJournalService.
+        var defectJournal = mock(com.eneik.production.kaizen.service.DefectJournalService.class);
+        designAssetService.setDefectJournalService(defectJournal);
+
+        when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
+        when(stitchClient.hasStitchKey()).thenReturn(true);
+        when(stitchClient.createProject(anyString())).thenReturn("123456");
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), eq("ds-circuit")))
+                .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
+        // Off-token HTML (will be rejected)
+        when(stitchClient.download("https://example.com/html"))
+                .thenReturn("<style>body{background:#090f13;color:#161c21;}</style>".getBytes());
+        when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
+
+        // First rejection: count = 1, no defect yet
+        var res1 = designAssetService.generateAsset(
+                project, null, "Screen 1", "mockup", "fast", false, "ds-circuit",
+                List.of("#fbf9f1", "#7d8570"), List.of("IBM Plex Sans"), true
+        );
+        assertThat(res1.available()).isFalse();
+        assertThat(res1.status()).isEqualTo("aesthetic_drift");
+        assertThat(res1.metadataPath()).isNotBlank();
+        assertThat(java.nio.file.Files.exists(java.nio.file.Paths.get(res1.metadataPath()))).isTrue();
+        assertThat(designAssetService.getConsecutiveRejections("ds-circuit")).isEqualTo(1);
+        verify(defectJournal, never()).recordDefect(any(), any(), any(), any(), any(), any(), any());
+
+        // Second rejection: count = 2 -> emits DESIGN_GENERATOR_INCAPACITY defect!
+        var res2 = designAssetService.generateAsset(
+                project, null, "Screen 2", "mockup", "fast", false, "ds-circuit",
+                List.of("#fbf9f1", "#7d8570"), List.of("IBM Plex Sans"), true
+        );
+        assertThat(res2.available()).isFalse();
+        assertThat(designAssetService.getConsecutiveRejections("ds-circuit")).isEqualTo(2);
+        verify(defectJournal, times(1)).recordDefect(
+                eq(project.getId()),
+                eq("HIGH"),
+                eq("TELEOSEMANTIC_FEEDBACK"),
+                eq("DesignAssetService"),
+                eq("DESIGN_GENERATOR_INCAPACITY"),
+                contains("Screen generator incapacity: 2 consecutive rejections"),
+                anyDouble()
+        );
+
+        // Third generation succeeds on token -> resets consecutive counter
+        when(stitchClient.download("https://example.com/html"))
+                .thenReturn("<style>body{background:#fbf9f1;color:#7d8570;}</style>".getBytes());
+        var res3 = designAssetService.generateAsset(
+                project, null, "Screen 3", "mockup", "fast", false, "ds-circuit",
+                List.of("#fbf9f1", "#7d8570"), List.of("IBM Plex Sans"), true
+        );
+        assertThat(res3.available()).isTrue();
+        assertThat(designAssetService.getConsecutiveRejections("ds-circuit")).isZero();
     }
 
     private String base64Png() {
