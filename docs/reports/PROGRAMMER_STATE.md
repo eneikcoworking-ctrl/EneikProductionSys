@@ -1,11 +1,11 @@
-# Такт L2: Ведущий инженер (2026-09-18 07:18 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 08:15 UTC)
 
-1. Предписания 49 и 50 закрыты (INSTITUTIONAL_FACT_REGISTER / D007 Evidence gap, Searle 1995):
-   - Предписание 49 зафиксировано закрытым в `docs/FACTORY_MECHANISMS.md` (коммит 61d3361, `FlywayMigrationValidationTest`).
-   - Предписание 50 реализовано: создан институциональный регистр `TaskTerminalOverwriteAudit`. При попытке перезаписи терминального статуса (`done`, `failed`, `spike_completed`) в `TaskEntity.setStatus` и `InternalTaskController` событие нарушения (`taskId`, `projectId`, `currentStatus`, `attemptedStatus`, `rule`) фиксируется до выброса `IllegalStateException` / 409 Conflict.
-   - Событие ставится в `ProjectLogFlushQueue` для проектного лога и через `TaskTerminalOverwriteAuditService` сохраняется в `DefectJournalService` с категорией `INSTITUTIONAL_AUDIT` (категориальная гигиена по Райлу / D002).
+1. Предписание 51 закрыто (BOUNDARY_TOPOLOGY / D006 Authorization ambiguity, Achille Varzi 1999):
+   - В `DesignShopCycleRepository` добавлена временная граница (TTL, 15 мин) для `claimStartCycle`: истёкшие притязания (`c.startCycleClaimedAt < :expiryCutoff`) могут быть перезаняты повторным тактом.
+   - Реализован выметающий сервис `StrandedDesignCycleSweepService` (по аналогии со `StrandedFinalizingSweepService`), находящий брошенные циклы через `findByStartCycleClaimedAtIsNotNullAndStartCycleClaimedAtBefore` и освобождающий их через CAS `compareAndReleaseStrandedClaim`.
+   - Освобождение брошенного притязания фиксируется в `DefectJournalService` (`recordInstitutionalAudit`) и в проектном логе через `ProjectLogFlushQueue`.
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `TaskTerminalOverwriteAuditTest` (4/4 green): попытка перезаписи оставляет проверяемый след в регистре, журнале дефектов и проектном логе; валидные переходы не создают ложных записей.
-   - `TaskEntityLaw20Test` (6/6 green), `InternalTaskControllerTest` (6/6 green).
+   - `StrandedDesignCycleSweepServiceTest` (4/4 green): автоматическое выметание брошенного цикла, защита живых притязаний в рамках lease-окна, безопасная обработка гонок CAS, дата-дривен расчёт срока аренды.
+   - `DesignShopOrchestrationServiceTest` (13/13 green), `DesignShopOrchestrationServiceLaw15Test` (7/7 green).
 3. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 51).
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 52).

@@ -14,15 +14,25 @@ import java.util.UUID;
 public interface DesignShopCycleRepository extends JpaRepository<DesignShopCycleEntity, UUID> {
     Optional<DesignShopCycleEntity> findByProjectId(UUID projectId);
 
+    java.time.Duration DEFAULT_CLAIM_TTL = java.time.Duration.ofMinutes(15);
+
     // 2026-08-14 (bug-hunt sweep, V98 migration): atomic compare-and-swap mutual-exclusion claim for
     // DesignShopOrchestrationService.startCycle - same primitive/reasoning as WishlistRepository.
     // compareAndSetStatus. The lastWasReady = false condition re-validates the readiness-edge decision
     // against the DB's current truth at claim time (defense in depth against a stale in-memory read),
     // not just against the claim flag alone.
+    //
+    // BOUNDARY_TOPOLOGY (Prescription 51, D006, Varzi 1999): every claim requires a temporal boundary.
+    // An expired claim (startCycleClaimedAt < expiryCutoff) can be reclaimed directly by a subsequent tick,
+    // preventing stranded claims from freezing the design shop indefinitely.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE DesignShopCycleEntity c SET c.startCycleClaimedAt = :now "
-            + "WHERE c.projectId = :projectId AND c.startCycleClaimedAt IS NULL AND c.lastWasReady = false")
-    int claimStartCycle(@Param("projectId") UUID projectId, @Param("now") Instant now);
+            + "WHERE c.projectId = :projectId AND (c.startCycleClaimedAt IS NULL OR c.startCycleClaimedAt < :expiryCutoff) AND c.lastWasReady = false")
+    int claimStartCycle(@Param("projectId") UUID projectId, @Param("now") Instant now, @Param("expiryCutoff") Instant expiryCutoff);
+
+    default int claimStartCycle(UUID projectId, Instant now) {
+        return claimStartCycle(projectId, now, now.minus(DEFAULT_CLAIM_TTL));
+    }
 
     // Releases a claim taken above - called when startCycle's Stitch generation doesn't succeed, so the
     // next tick can still retry while readiness remains true (same intent as the pre-existing "leave
@@ -31,4 +41,14 @@ public interface DesignShopCycleRepository extends JpaRepository<DesignShopCycle
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE DesignShopCycleEntity c SET c.startCycleClaimedAt = NULL WHERE c.projectId = :projectId")
     void releaseStartCycleClaim(@Param("projectId") UUID projectId);
+
+    // BOUNDARY_TOPOLOGY (Prescription 51, D006, Varzi 1999): Sweeping closure for stranded claims.
+    // Compare-and-swap release ensuring that a live holder that updated startCycleClaimedAt is not clobbered.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE DesignShopCycleEntity c SET c.startCycleClaimedAt = NULL "
+            + "WHERE c.projectId = :projectId AND c.startCycleClaimedAt = :strandedClaimedAt")
+    int compareAndReleaseStrandedClaim(@Param("projectId") UUID projectId, @Param("strandedClaimedAt") Instant strandedClaimedAt);
+
+    // Queries all cycles where a claim has been stranded past the cutoff timestamp.
+    java.util.List<DesignShopCycleEntity> findByStartCycleClaimedAtIsNotNullAndStartCycleClaimedAtBefore(Instant cutoff);
 }

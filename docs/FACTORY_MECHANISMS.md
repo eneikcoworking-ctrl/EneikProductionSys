@@ -4549,6 +4549,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** сработавший запрет, не оставивший следа.
 
 ### 51. Притязание на цикл дизайна не истекает и не выметается · `BOUNDARY_TOPOLOGY` (D006)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Устранено зависание брошенных притязаний цикла дизайна (BOUNDARY_TOPOLOGY / D006 Authorization ambiguity, Achille Varzi 1999). В `DesignShopCycleRepository` метод `claimStartCycle` дополнен временной границей (TTL, по умолчанию 15 минут): истёкшее притязание (`c.startCycleClaimedAt < :expiryCutoff`) разрешено перезанимать повторным тактом. Реализован выметающий сервис `StrandedDesignCycleSweepService` (по аналогии со `StrandedFinalizingSweepService`), периодически находящий брошенные циклы через `findByStartCycleClaimedAtIsNotNullAndStartCycleClaimedAtBefore` и освобождающий их через CAS `compareAndReleaseStrandedClaim`. Освобождение брошенного притязания фиксируется в `DefectJournalService` (`recordInstitutionalAudit`) и проектном логе `ProjectLogFlushQueue`. Заслоны: `StrandedDesignCycleSweepServiceTest` (4/4 green), `DesignShopOrchestrationServiceTest` (13/13 green), `DesignShopOrchestrationServiceLaw15Test` (7/7 green).
 **Механизм:** `DesignShopCycleRepository.claimStartCycle` (сравнение-с-обменом),
 `releaseStartCycleClaim` (безусловное).
 **Что не так:** ни срока, ни выметающего обхода. Контроль: у требований такой обход есть —
