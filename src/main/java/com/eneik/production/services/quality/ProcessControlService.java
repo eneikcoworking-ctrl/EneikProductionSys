@@ -8,11 +8,16 @@ import com.eneik.production.models.persistence.ProcessControlSnapshotEntity;
 import com.eneik.production.models.persistence.ReviewConcernEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.PrReviewEntity;
+import com.eneik.production.models.persistence.TaskConflictEntity;
 import com.eneik.production.repositories.FeatureRepository;
+import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.ProcessControlSnapshotRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.ReviewConcernRepository;
+import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.audit.SixSigmaAuditService;
 import com.eneik.production.services.audit.SixSigmaAuditService.DefectOpportunityCount;
@@ -106,8 +111,8 @@ public class ProcessControlService {
                                   SixSigmaAuditService sixSigmaAuditService,
                                   ReviewConcernRepository reviewConcernRepository,
                                   PrReviewRepository prReviewRepository,
-                                  com.eneik.production.repositories.TaskConflictRepository taskConflictRepository,
-                                  com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
+                                  TaskConflictRepository taskConflictRepository,
+                                  JulesSessionRepository julesSessionRepository,
                                   DefectJournalRepository defectJournalRepository,
                                   KaizenService kaizenService,
                                   ProjectRepository projectRepository,
@@ -126,7 +131,89 @@ public class ProcessControlService {
         this.self = self;
     }
 
-    private record EpicPoint(UUID featureId, Instant completedAt, String sixSigmaMetricLabel) {}
+    private record EpicPoint(UUID featureId, Instant completedAt, String sixSigmaMetricLabel, List<UUID> memberIds) {}
+
+    /**
+     * Project/epic-scoped evidence packet (Section VII, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010, Goldman;
+     * ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK / D010, Goldman).
+     * Enforces the boundary: u-chart evidence must cover only the target project's completed epics,
+     * eliminating factory-wide findAll() on pr_reviews and task_conflicts without cross-project data leakage.
+     */
+    private record ScopedEvidencePacket(
+            List<PrReviewEntity> reviews,
+            List<TaskConflictEntity> conflicts,
+            Map<UUID, UUID> taskBySessionId,
+            Map<UUID, UUID> featureByTaskId
+    ) {}
+
+    /**
+     * Gathers project-scoped review and conflict evidence covering completed epic IDs under this project.
+     * Preserves review→session→task lineage and lazy-reference safety without full table scans.
+     */
+    private ScopedEvidencePacket acquireEvidencePacket(List<EpicPoint> completedEpics) {
+        if (completedEpics == null || completedEpics.isEmpty()) {
+            return new ScopedEvidencePacket(List.of(), List.of(), Map.of(), Map.of());
+        }
+
+        List<UUID> allFeatureIds = completedEpics.stream()
+                .flatMap(ep -> ep.memberIds().stream())
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+
+        List<TaskEntity> scopedTasks = allFeatureIds.stream()
+                .flatMap(fId -> taskRepository.findByFeatureId(fId).stream())
+                .filter(java.util.Objects::nonNull)
+                .toList();
+
+        if (scopedTasks.isEmpty()) {
+            return new ScopedEvidencePacket(List.of(), List.of(), Map.of(), Map.of());
+        }
+
+        Map<UUID, UUID> canonicalByMemberFeatureId = new java.util.HashMap<>();
+        for (EpicPoint ep : completedEpics) {
+            for (UUID mId : ep.memberIds()) {
+                canonicalByMemberFeatureId.put(mId, ep.featureId());
+            }
+        }
+
+        Map<UUID, UUID> featureByTaskId = new java.util.HashMap<>();
+        List<UUID> taskIds = new ArrayList<>();
+        for (TaskEntity task : scopedTasks) {
+            if (task.getId() != null) {
+                taskIds.add(task.getId());
+                if (task.getFeatureId() != null) {
+                    UUID canonical = canonicalByMemberFeatureId.getOrDefault(task.getFeatureId(), task.getFeatureId());
+                    featureByTaskId.put(task.getId(), canonical);
+                }
+            }
+        }
+
+        List<JulesSessionEntity> sessions = taskIds.isEmpty()
+                ? List.of()
+                : julesSessionRepository.findByTaskIdIn(taskIds);
+
+        Map<UUID, UUID> taskBySessionId = new java.util.HashMap<>();
+        List<UUID> sessionIds = new ArrayList<>();
+        for (JulesSessionEntity session : sessions) {
+            if (session.getId() != null) {
+                sessionIds.add(session.getId());
+                if (session.getTaskId() != null) {
+                    taskBySessionId.put(session.getId(), session.getTaskId());
+                }
+            }
+        }
+
+        List<PrReviewEntity> reviews = sessionIds.isEmpty()
+                ? List.of()
+                : prReviewRepository.findByJulesSessionIdIn(sessionIds);
+
+        List<TaskConflictEntity> conflicts = taskIds.isEmpty()
+                ? List.of()
+                : taskConflictRepository.findByTaskIdIn(taskIds);
+
+        return new ScopedEvidencePacket(reviews, conflicts, taskBySessionId, featureByTaskId);
+    }
 
     /**
      * Periodic entry point (2026-08-01) - without this, ProcessControlService's u-chart math has no live
@@ -156,22 +243,23 @@ public class ProcessControlService {
     public List<ProcessControlSnapshotEntity> recomputeForProject(UUID projectId) {
         List<EpicPoint> completedEpics = completedEpicsInOrder(projectId);
         List<ProcessControlSnapshotEntity> all = new ArrayList<>();
-        // The conflict evidence is read once for the whole recompute, not once per epic (2026-08-29, plan
-        // §4.25). computePrConflictCounts used to read pr_reviews and task_conflicts whole on every call,
-        // and this method calls it once per completed epic: measured that day, 41 epics against 565
-        // pr_review rows, inside one transaction - which is why Hikari reported this recompute's connection
-        // held past its threshold. The per-epic filter stays exactly as it was; only the reading moved out.
-        List<com.eneik.production.models.persistence.PrReviewEntity> reviewEvidence = prReviewRepository.findAll();
-        List<com.eneik.production.models.persistence.TaskConflictEntity> conflictEvidence = taskConflictRepository.findAll();
+
+        // Project/epic-scoped evidence packet (Section VII, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010, Goldman;
+        // ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK / D010, Goldman).
+        // Eliminates factory-wide findAll() on pr_reviews and task_conflicts. The packet strictly scopes
+        // reviews and conflicts to task IDs under this project's completed epics, eliminating cross-project
+        // data lineage contamination while preserving batch efficiency.
+        ScopedEvidencePacket packet = acquireEvidencePacket(completedEpics);
+
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_QUALITY_GATE,
                 featureId -> sixSigmaAuditService.computeQualityGateCounts(null, featureId)));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_PR_CONFLICTS,
                 featureId -> sixSigmaAuditService.computePrConflictCounts(null, featureId,
-                        reviewEvidence, conflictEvidence)));
+                        packet.reviews(), packet.conflicts())));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_TASK_REVIVAL,
                 this::taskRevivalCounts));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_REVIEW_CONCERNS,
-                featureId -> reviewConcernCounts(featureId, reviewEvidence)));
+                featureId -> reviewConcernCounts(featureId, packet)));
         return all;
     }
 
@@ -207,7 +295,7 @@ public class ProcessControlService {
                     .filter(java.util.Objects::nonNull)
                     .max(Comparator.naturalOrder())
                     .orElse(epic.getCreatedAt());
-            points.add(new EpicPoint(epic.getId(), completedAt, epic.getSixSigmaMetric()));
+            points.add(new EpicPoint(epic.getId(), completedAt, epic.getSixSigmaMetric(), memberIds));
         }
         points.sort(Comparator.comparing(EpicPoint::completedAt));
         return points;
@@ -227,7 +315,8 @@ public class ProcessControlService {
 
         List<DefectOpportunityCount> counts = new ArrayList<>();
         for (EpicPoint ep : completedEpics) {
-            counts.add(countFn.apply(ep.featureId()));
+            DefectOpportunityCount c = countFn.apply(ep.featureId());
+            counts.add(c != null ? c : new DefectOpportunityCount(0, 0));
         }
 
         // Pooled baseline centerline from exactly the first `locked` epics, by completion order - a
@@ -401,16 +490,21 @@ public class ProcessControlService {
     }
 
     /**
-     * Takes the evidence already read for this recompute (2026-08-29, plan §4.25). It used to read
-     * pr_reviews whole itself, once per epic, so one recompute read the same table N+1 times - measured
-     * live at four reads for three epics, and 41 epics against 565 rows on the real project.
+     * Takes the evidence already read for this recompute (Section VII, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010).
+     * Leverages pre-indexed taskBySessionId and featureByTaskId from the scoped evidence packet to avoid
+     * N+1 findById lookups, falling back to repository queries if an entry is unindexed.
      */
     private DefectOpportunityCount reviewConcernCounts(UUID featureId,
-            List<com.eneik.production.models.persistence.PrReviewEntity> reviewEvidence) {
+            ScopedEvidencePacket evidencePacket) {
         long defects = reviewConcernRepository.findByFeatureId(featureId).size();
-        long reviewPasses = reviewEvidence.stream()
+        long reviewPasses = evidencePacket.reviews().stream()
                 .filter(r -> {
                     if (r.getJulesSessionId() == null) return false;
+                    UUID taskId = evidencePacket.taskBySessionId().get(r.getJulesSessionId());
+                    UUID taskFeatureId = taskId != null ? evidencePacket.featureByTaskId().get(taskId) : null;
+                    if (taskFeatureId != null) {
+                        return featureId.equals(taskFeatureId);
+                    }
                     var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());
                     if (sessionOpt.isEmpty()) return false;
                     var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
@@ -418,5 +512,10 @@ public class ProcessControlService {
                 })
                 .count();
         return new DefectOpportunityCount(defects, reviewPasses);
+    }
+
+    private DefectOpportunityCount reviewConcernCounts(UUID featureId,
+            List<PrReviewEntity> reviewEvidence) {
+        return reviewConcernCounts(featureId, new ScopedEvidencePacket(reviewEvidence, List.of(), Map.of(), Map.of()));
     }
 }

@@ -7,12 +7,16 @@ import com.eneik.production.models.persistence.ProcessControlSnapshotEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.PrReviewEntity;
+import com.eneik.production.models.persistence.TaskConflictEntity;
 import com.eneik.production.repositories.FeatureRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.ProcessControlSnapshotRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.ReviewConcernRepository;
+import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.audit.SixSigmaAuditService;
 import com.eneik.production.services.audit.SixSigmaAuditService.DefectOpportunityCount;
@@ -58,6 +62,8 @@ public class ProcessControlServiceTest {
     private UUID projectId;
 
     private PrReviewRepository prReviewRepository;
+    private TaskConflictRepository taskConflictRepository;
+    private JulesSessionRepository julesSessionRepository;
 
     @BeforeEach
     void setUp() {
@@ -67,7 +73,8 @@ public class ProcessControlServiceTest {
         sixSigmaAuditService = mock(SixSigmaAuditService.class);
         reviewConcernRepository = mock(ReviewConcernRepository.class);
         prReviewRepository = mock(PrReviewRepository.class);
-        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+        taskConflictRepository = mock(TaskConflictRepository.class);
+        julesSessionRepository = mock(JulesSessionRepository.class);
         defectJournalRepository = mock(DefectJournalRepository.class);
         kaizenService = mock(KaizenService.class);
         projectRepository = mock(ProjectRepository.class);
@@ -82,10 +89,14 @@ public class ProcessControlServiceTest {
         when(sixSigmaAuditService.computePrConflictCounts(any(), any())).thenReturn(new DefectOpportunityCount(0, 0));
         when(sixSigmaAuditService.computePrConflictCounts(any(), any(), any(), any()))
                 .thenReturn(new DefectOpportunityCount(0, 0));
+        when(sixSigmaAuditService.computeQualityGateCounts(any(), any())).thenReturn(new DefectOpportunityCount(0, 10));
+        when(julesSessionRepository.findByTaskIdIn(any())).thenReturn(Collections.emptyList());
+        when(prReviewRepository.findByJulesSessionIdIn(any())).thenReturn(Collections.emptyList());
+        when(taskConflictRepository.findByTaskIdIn(any())).thenReturn(Collections.emptyList());
 
         service = new ProcessControlService(featureRepository, taskRepository, snapshotRepository,
                 sixSigmaAuditService, reviewConcernRepository, prReviewRepository,
-                mock(com.eneik.production.repositories.TaskConflictRepository.class), julesSessionRepository,
+                taskConflictRepository, julesSessionRepository,
                 defectJournalRepository, kaizenService, projectRepository, null);
         ReflectionTestUtils.setField(service, "baselineEpicCount", 2);
     }
@@ -106,7 +117,9 @@ public class ProcessControlServiceTest {
 
     private void stubCompletedEpic(UUID featureId, ProjectEntity project, Instant completedAt) {
         TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
         task.setProject(project);
+        task.setFeatureId(featureId);
         task.setStatus(TaskStatus.done);
         task.setCreatedAt(completedAt.minusSeconds(60));
         task.setUpdatedAt(completedAt);
@@ -114,7 +127,7 @@ public class ProcessControlServiceTest {
     }
 
     @Test
-    void theConflictEvidenceIsReadOncePerRecomputeNotOncePerEpic() {
+    void evidencePacketScopedToProjectCompletedEpicsAndNeverUsesFindAll() {
         ProjectEntity project = new ProjectEntity();
         project.setId(projectId);
         UUID f1 = UUID.randomUUID();
@@ -131,10 +144,170 @@ public class ProcessControlServiceTest {
 
         service.recomputeForProject(projectId);
 
-        // Three completed epics, one reading of the evidence. Measured before this held: 41 epics against
-        // 565 pr_review rows, read whole on every call, inside one transaction - which is why this
-        // recompute's connection was reported held past its threshold.
-        verify(prReviewRepository, org.mockito.Mockito.times(1)).findAll();
+        // Section VII (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010, Goldman; ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK / D010):
+        // Evidence packet is scoped to tasks under completed epics; findAll() is eliminated.
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
+        verify(julesSessionRepository, times(1)).findByTaskIdIn(any());
+        verify(taskConflictRepository, times(1)).findByTaskIdIn(any());
+    }
+
+    @Test
+    void projectScopedEvidencePacketPreventsCrossProjectReviewAndConflictLeakage() {
+        // Project A
+        ProjectEntity projectA = new ProjectEntity();
+        projectA.setId(projectId);
+        UUID epicAId = UUID.randomUUID();
+        UUID taskAId = UUID.randomUUID();
+        UUID sessionAId = UUID.randomUUID();
+
+        TaskEntity taskA = new TaskEntity();
+        taskA.setId(taskAId);
+        taskA.setProject(projectA);
+        taskA.setFeatureId(epicAId);
+        taskA.setStatus(TaskStatus.done);
+        taskA.setCreatedAt(Instant.now().minus(2, ChronoUnit.DAYS));
+        taskA.setUpdatedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+
+        JulesSessionEntity sessionA = new JulesSessionEntity();
+        sessionA.setId(sessionAId);
+        sessionA.setTaskId(taskAId);
+
+        PrReviewEntity reviewA = new PrReviewEntity();
+        reviewA.setJulesSessionId(sessionAId);
+        reviewA.setMerged(true);
+
+        TaskConflictEntity conflictA = new TaskConflictEntity();
+        conflictA.setTask(taskA);
+
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId))
+                .thenReturn(List.of(epic(epicAId, projectA)));
+        when(taskRepository.findByFeatureId(epicAId)).thenReturn(List.of(taskA));
+        when(julesSessionRepository.findByTaskIdIn(List.of(taskAId))).thenReturn(List.of(sessionA));
+        when(prReviewRepository.findByJulesSessionIdIn(List.of(sessionAId))).thenReturn(List.of(reviewA));
+        when(taskConflictRepository.findByTaskIdIn(List.of(taskAId))).thenReturn(List.of(conflictA));
+
+        // Project B artifacts (must NEVER leak into Project A recompute)
+        UUID projectBId = UUID.randomUUID();
+        UUID epicBId = UUID.randomUUID();
+        UUID taskBId = UUID.randomUUID();
+        UUID sessionBId = UUID.randomUUID();
+        JulesSessionEntity sessionB = new JulesSessionEntity();
+        sessionB.setId(sessionBId);
+        sessionB.setTaskId(taskBId);
+        PrReviewEntity reviewB = new PrReviewEntity();
+        reviewB.setJulesSessionId(sessionBId);
+        reviewB.setMerged(true);
+        TaskConflictEntity conflictB = new TaskConflictEntity();
+        TaskEntity taskB = new TaskEntity();
+        taskB.setId(taskBId);
+        conflictB.setTask(taskB);
+
+        // Execute Project A recompute
+        service.recomputeForProject(projectId);
+
+        // Falsification check (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010, Goldman; ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK):
+        // 1. Scoped queries were called strictly with Project A IDs
+        verify(julesSessionRepository).findByTaskIdIn(List.of(taskAId));
+        verify(prReviewRepository).findByJulesSessionIdIn(List.of(sessionAId));
+        verify(taskConflictRepository).findByTaskIdIn(List.of(taskAId));
+
+        // 2. Global full-table reads are NEVER invoked
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
+
+        // 3. Evidence passed to Six Sigma audit contains only Project A reviews/conflicts
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<List<PrReviewEntity>> reviewsCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        @SuppressWarnings("unchecked")
+        org.mockito.ArgumentCaptor<List<TaskConflictEntity>> conflictsCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(sixSigmaAuditService).computePrConflictCounts(isNull(), eq(epicAId), reviewsCaptor.capture(), conflictsCaptor.capture());
+
+        assertThat(reviewsCaptor.getValue()).containsExactly(reviewA);
+        assertThat(reviewsCaptor.getValue()).doesNotContain(reviewB);
+        assertThat(conflictsCaptor.getValue()).containsExactly(conflictA);
+        assertThat(conflictsCaptor.getValue()).doesNotContain(conflictB);
+    }
+
+    @Test
+    void emptyCompletedEpicsPerformsNoEvidenceQueriesAndReturnsEmpty() {
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(Collections.emptyList());
+
+        List<ProcessControlSnapshotEntity> snapshots = service.recomputeForProject(projectId);
+
+        assertThat(snapshots).isEmpty();
+        verify(julesSessionRepository, never()).findByTaskIdIn(any());
+        verify(prReviewRepository, never()).findByJulesSessionIdIn(any());
+        verify(taskConflictRepository, never()).findByTaskIdIn(any());
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
+    }
+
+    @Test
+    void duplicateEpicRolledIntoCanonicalResolvesTasksAndPreservesLineage() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        UUID canonicalEpicId = UUID.randomUUID();
+        UUID duplicateEpicId = UUID.randomUUID();
+
+        FeatureEntity canonicalEpic = epic(canonicalEpicId, project);
+        FeatureEntity duplicateEpic = epic(duplicateEpicId, project);
+        duplicateEpic.setCanonicalFeatureId(canonicalEpicId);
+
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId))
+                .thenReturn(List.of(canonicalEpic, duplicateEpic));
+
+        UUID task1Id = UUID.randomUUID();
+        UUID task2Id = UUID.randomUUID();
+
+        TaskEntity task1 = new TaskEntity();
+        task1.setId(task1Id);
+        task1.setProject(project);
+        task1.setFeatureId(canonicalEpicId);
+        task1.setStatus(TaskStatus.done);
+        task1.setCreatedAt(Instant.now().minus(2, ChronoUnit.DAYS));
+        task1.setUpdatedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+
+        TaskEntity task2 = new TaskEntity();
+        task2.setId(task2Id);
+        task2.setProject(project);
+        task2.setFeatureId(duplicateEpicId);
+        task2.setStatus(TaskStatus.done);
+        task2.setCreatedAt(Instant.now().minus(2, ChronoUnit.DAYS));
+        task2.setUpdatedAt(Instant.now().minus(1, ChronoUnit.DAYS));
+
+        when(taskRepository.findByFeatureId(canonicalEpicId)).thenReturn(List.of(task1));
+        when(taskRepository.findByFeatureId(duplicateEpicId)).thenReturn(List.of(task2));
+
+        UUID session1Id = UUID.randomUUID();
+        JulesSessionEntity session1 = new JulesSessionEntity();
+        session1.setId(session1Id);
+        session1.setTaskId(task1Id);
+
+        UUID session2Id = UUID.randomUUID();
+        JulesSessionEntity session2 = new JulesSessionEntity();
+        session2.setId(session2Id);
+        session2.setTaskId(task2Id);
+
+        when(julesSessionRepository.findByTaskIdIn(any())).thenReturn(List.of(session1, session2));
+
+        PrReviewEntity review1 = new PrReviewEntity();
+        review1.setJulesSessionId(session1Id);
+        review1.setMerged(true);
+
+        PrReviewEntity review2 = new PrReviewEntity();
+        review2.setJulesSessionId(session2Id);
+        review2.setMerged(true);
+
+        when(prReviewRepository.findByJulesSessionIdIn(any())).thenReturn(List.of(review1, review2));
+
+        service.recomputeForProject(projectId);
+
+        verify(prReviewRepository, never()).findAll();
+        verify(taskConflictRepository, never()).findAll();
+        // One canonical epic point produced, rolling in duplicate epic's tasks
+        verify(sixSigmaAuditService, times(1)).computePrConflictCounts(isNull(), eq(canonicalEpicId), any(), any());
     }
 
     @Test
