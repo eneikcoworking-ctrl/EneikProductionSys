@@ -135,4 +135,35 @@ public class AccountEntity {
 
     public Integer getEstimatedDailyCapacity() { return estimatedDailyCapacity; }
     public void setEstimatedDailyCapacity(Integer estimatedDailyCapacity) { this.estimatedDailyCapacity = estimatedDailyCapacity; }
+
+    /**
+     * Evaluates whether the account satisfies all conjuncts of the availability predicate
+     * (LUDWIG_WITTGENSTEIN_01_FACT_STATE_TABLE / D002, NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012):
+     * status == idle AND enabled == true AND apiKey != null.
+     */
+    public boolean isAvailable() {
+        return status != null && status.isAvailable(enabled, apiKey);
+    }
+
+    /**
+     * Checks whether the account is operational (not decommissioned).
+     */
+    public boolean isOperational() {
+        return status != null && status.isOperational();
+    }
+
+    /**
+     * Returns an explicit explanation naming all failed conjuncts of the availability predicate,
+     * or null if the account is available.
+     */
+    public String getUnavailabilityReason() {
+        return AccountStatus.evaluateAvailabilityReason(status, enabled, apiKey);
+    }
+
+    /**
+     * Returns "available" if available, or the exact unavailability reason.
+     */
+    public String getAvailabilitySummary() {
+        return isAvailable() ? "available" : getUnavailabilityReason();
+    }
 }

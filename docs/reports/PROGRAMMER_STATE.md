@@ -1,12 +1,14 @@
-# Такт L2: Ведущий инженер (2026-09-18 01:40 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 02:40 UTC)
 
-1. Предписание 42 закрыто (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012, GILBERT_RAYL_03_CATEGORY_ERROR_SCAN / D002):
-   - `LeanValue`: закреплена 4-значная логика Белнапа (`essential`, `valuable`, `waste`, `undetermined`). Внедрен канонический парсер `LeanValue.parse(raw)`, сводящий null/пустоту/мусор строго к `undetermined`, и предикаты `isActionable()`, `isWaste()`, `isUndetermined()`.
-   - `TaskEntity`: добавлены типизированные аккаунтеры `getLeanValue()` и `setLeanValue(LeanValue)`, исключающие категориальные ошибки строкового представления.
-   - `BaseQualityGate.BusinessValueGate`: устранены строковые проверки `.name().equalsIgnoreCase()`; внедрена проверка по строго типизированному `task.getLeanValue()`. Неопределённое (`undetermined`) и муда (`waste`) гарантированно отвергаются.
-   - `JulesDispatchService.parseLeanValue` и `ProjectFlowService`: переведены на канонический `LeanValue.parse`.
+1. Предписания 43 и 44 закрыты (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012, LUDWIG_WITTGENSTEIN_01_FACT_STATE_TABLE / D002):
+   - Предписание 43: первоклассное состояние `TargetContext.UNDETERMINED`, задачи без установленной цели блокируются от раздачи в репозитории (Закон 2: Carrier isolation). Фиксация в `FACTORY_MECHANISMS.md`.
+   - Предписание 44: формализована конъюнкция доступности в `AccountStatus` и `AccountEntity` (`status == idle && enabled == true && apiKey != null`). Добавлены `isAvailable()`, `isOperational()`, `getUnavailabilityReason()`.
+   - `SystemStatusService`: свод (`accounts`, `operationalBlockers`) явно именует отключенные аккаунты (`disabledReason`, `account_disabled` warning, полный breakdown причин недоступности пула).
+   - `AccountHealthService`: sweep инспектирует отключенные аккаунты, логирует причины и нормализует кулдауны (`api_blocked`/`daily_limited` -> `idle` при `enabled=false`).
+   - `GithubWebhookController`: предупреждение при отказе захвата idle & enabled аккаунта для ревьюера.
 2. Заслон (100% green в Docker Maven 3.9.9 JDK 21, -m 2g):
-   - `LeanValueTest` (9/9): парсинг 4-значной логики, предикаты, `TaskEntity` аккаунтеры, отклонение undetermined/waste в гейтах и компиляторе.
-   - `BaseQualityGateTest` (10/10), `GateOrchestratorIntegrationTest` (9/9), `BackendContractGateTest` (8/8), `VerificationEvidenceGateTest` (8/8).
+   - `AccountStatusConjunctionTest` (7/7): строгая конъюнкция, именование отказа по каждому конъюнкту, нормализация кулдауна.
+   - `SystemStatusServiceTest` (22/22): отключение аккаунта и смешанная недоступность с именованием условий.
+   - `TargetContextTest` (4/4), `AccountHealthServiceTest` (31/31), регрессионный сьют admission (39/39).
 3. Следующий такт:
-   - Взять Предписание 43 (`TargetContext` / `TRUTH_STATUS_TABLE` D012: цель задачи без значения «не установлено») по очереди и наряду `MANAGER_STATE.md`.
+   - Взять Предписание 45 (`DefectJournalEntity.rootCausePatternId` / `INUS_FACTOR_CHECK` D007: поле корневой причины дефекта) по очереди и наряду `MANAGER_STATE.md`.

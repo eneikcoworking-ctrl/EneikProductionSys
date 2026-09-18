@@ -497,9 +497,9 @@ public class AccountHealthService {
             }
         }
 
-        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012):
+        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012) / LUDWIG_WITTGENSTEIN_01_FACT_STATE_TABLE (D002):
         // Absorbing state visibility: disabled accounts must not be invisible to the recovery sweep.
-        // When recovery candidates are zero, report disabled operational accounts.
+        // When recovery candidates are zero, report disabled operational accounts with explicit conjunction reason.
         List<AccountEntity> disabledOperational = accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
         if (!disabledOperational.isEmpty()) {
             if (blocked.isEmpty() && dailyLimited.isEmpty() && offline.isEmpty()) {
@@ -507,12 +507,26 @@ public class AccountHealthService {
                         disabledOperational.size());
             }
             for (AccountEntity account : disabledOperational) {
+                // If a disabled account was api_blocked or daily_limited, evaluate cooldown to normalize status to idle
+                if (account.getStatus() == AccountStatus.api_blocked || account.getStatus() == AccountStatus.daily_limited) {
+                    Instant nextProbe = computeNextProbeInstant(account, current);
+                    if (!current.isBefore(nextProbe)) {
+                        if (account.getStatus() == AccountStatus.api_blocked) {
+                            accountRepository.resetSingleAccountFromApiBlocked(account.getId());
+                        } else {
+                            accountRepository.resetSingleAccountFromDailyLimited(account.getId(), current);
+                        }
+                        log.info("AccountHealthService: normalized resting disabled account '{}' from {} to idle after cooldown elapsed",
+                                account.getName(), account.getStatus());
+                    }
+                }
+
                 Instant disabledSince = account.getStatusChangedAt() != null
                         ? account.getStatusChangedAt()
                         : account.getLastHeartbeat();
                 if (disabledSince != null && Duration.between(disabledSince, current).toHours() >= disabledReviewThresholdHours) {
-                    log.warn("AccountHealthService: account '{}' has been disabled for {}h (since {}); предлагается к возврату в пул оператором",
-                            account.getName(), Duration.between(disabledSince, current).toHours(), disabledSince);
+                    log.warn("AccountHealthService: account '{}' has been disabled for {}h (since {}, reason: {}); предлагается к возврату в пул оператором",
+                            account.getName(), Duration.between(disabledSince, current).toHours(), disabledSince, account.getUnavailabilityReason());
                 }
             }
         }

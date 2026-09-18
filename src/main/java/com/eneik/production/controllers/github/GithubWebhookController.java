@@ -148,8 +148,11 @@ public class GithubWebhookController {
                         }
 
                         accountRepository.lockNextIdleAccountForProject(task.getProject().getId())
-                                .ifPresent(account -> {
+                                .ifPresentOrElse(account -> {
                                     julesDispatchService.dispatch(task, account.getId(), "REVIEWER");
+                                }, () -> {
+                                    log.warn("GithubWebhookController: no idle and enabled account available for project {} (review dispatch deferred)",
+                                            task.getProject().getId());
                                 });
                         return ResponseEntity.ok("Review Dispatched for task " + task.getId());
                     } else {

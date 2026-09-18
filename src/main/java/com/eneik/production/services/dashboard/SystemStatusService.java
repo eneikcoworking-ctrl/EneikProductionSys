@@ -191,7 +191,12 @@ public class SystemStatusService {
             } else if (offline == operational) {
                 unavailabilityReason = "all operational accounts are offline (status == offline)";
             } else {
-                unavailabilityReason = "no operational accounts are available (enabled or status constraints unsatisfied)";
+                List<String> failedConjuncts = new ArrayList<>();
+                if (disabled > 0) failedConjuncts.add(disabled + " disabled (enabled == false)");
+                if (dailyLimited > 0) failedConjuncts.add(dailyLimited + " daily_limited (status == daily_limited)");
+                if (apiBlocked > 0) failedConjuncts.add(apiBlocked + " api_blocked (status == api_blocked)");
+                if (offline > 0) failedConjuncts.add(offline + " offline (status == offline)");
+                unavailabilityReason = "no operational accounts are available: " + String.join(", ", failedConjuncts);
             }
         }
 
@@ -199,6 +204,9 @@ public class SystemStatusService {
         section.put("status", sectionStatus);
         if (unavailabilityReason != null) {
             section.put("unavailabilityReason", unavailabilityReason);
+        }
+        if (disabled > 0) {
+            section.put("disabledReason", disabled + " operational account(s) are disabled (enabled == false)");
         }
         section.put("total", accounts.size());
         section.put("operational", operational);
@@ -222,17 +230,8 @@ public class SystemStatusService {
             String raw = account.getApiKey();
             masked = raw.length() > 8 ? raw.substring(0, 4) + "..." + raw.substring(raw.length() - 4) : "****";
         }
-        boolean isAvailable = account.isEnabled() && account.getStatus() == AccountStatus.idle;
-        String unavailabilityReason = null;
-        if (account.getStatus() == AccountStatus.decommissioned) {
-            unavailabilityReason = "status == decommissioned";
-        } else if (!account.isEnabled() && account.getStatus() != AccountStatus.idle) {
-            unavailabilityReason = "enabled == false; status == " + account.getStatus().name();
-        } else if (!account.isEnabled()) {
-            unavailabilityReason = "enabled == false";
-        } else if (account.getStatus() != AccountStatus.idle) {
-            unavailabilityReason = "status == " + account.getStatus().name();
-        }
+        boolean isAvailable = account.isAvailable();
+        String unavailabilityReason = account.getUnavailabilityReason();
 
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", account.getId());
@@ -490,8 +489,23 @@ public class SystemStatusService {
                                 && a.getStatus() != AccountStatus.offline)
                         .count();
                 if (effectiveCount == 0) {
+                    List<String> failed = new ArrayList<>();
+                    long dis = operationalAccounts.size() - enabledCount;
+                    if (dis > 0) failed.add(dis + " disabled (enabled == false)");
+                    long dl = operationalAccounts.stream().filter(a -> a.getStatus() == AccountStatus.daily_limited).count();
+                    if (dl > 0) failed.add(dl + " daily_limited");
+                    long ab = operationalAccounts.stream().filter(a -> a.getStatus() == AccountStatus.api_blocked).count();
+                    if (ab > 0) failed.add(ab + " api_blocked");
+                    long off = operationalAccounts.stream().filter(a -> a.getStatus() == AccountStatus.offline).count();
+                    if (off > 0) failed.add(off + " offline");
                     blockers.add(blocker("account_capacity", "blocked", "high",
-                            "no effective operational accounts available; accounts are daily_limited, api_blocked, or offline"));
+                            failed.isEmpty()
+                                    ? "no effective operational accounts available; accounts are daily_limited, api_blocked, or offline"
+                                    : "no effective operational accounts available: " + String.join(", ", failed)));
+                } else if (operationalAccounts.size() - enabledCount > 0) {
+                    long disabledCount = operationalAccounts.size() - enabledCount;
+                    blockers.add(blocker("account_disabled", "degraded", "warning",
+                            disabledCount + " operational account(s) are disabled (enabled == false)"));
                 }
             }
         }
