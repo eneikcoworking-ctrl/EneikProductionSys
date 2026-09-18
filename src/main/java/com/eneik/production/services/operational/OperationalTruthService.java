@@ -170,7 +170,7 @@ public class OperationalTruthService {
         );
     }
 
-    static String deliveryStatus(ClientDeliverableReadinessService.Readiness readiness) {
+    public static String deliveryStatus(ClientDeliverableReadinessService.Readiness readiness) {
         if (readiness.totalFeatures() == 0) {
             return "no_scope";
         }
@@ -178,6 +178,9 @@ public class OperationalTruthService {
             return "decomposing";
         }
         if (readiness.completeFeatures() >= readiness.totalFeatures()) {
+            if (!readiness.coherent()) {
+                return "incoherent";
+            }
             return "delivered";
         }
         return "building";
@@ -265,6 +268,8 @@ public class OperationalTruthService {
             case "building" -> readiness.completeFeatures() + " of " + readiness.totalFeatures()
                     + " features have delivery evidence.";
             case "decomposing" -> "The client brief is still being decomposed into verifiable work.";
+            case "incoherent" -> "Delivery withheld: evidence graph shows unresolved contradictions or negative coherence ("
+                    + String.format(java.util.Locale.US, "%.2f", readiness.coherenceScore()) + ").";
             default -> "No measurable delivery scope is available yet.";
         };
         return new OperationalTruthDto.Delivery(

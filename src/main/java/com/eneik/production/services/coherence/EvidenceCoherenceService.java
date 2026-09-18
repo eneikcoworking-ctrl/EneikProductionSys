@@ -22,6 +22,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -98,6 +99,12 @@ public class EvidenceCoherenceService {
     private boolean scheduledCycleEnabled;
     @Value("${coherence.max-runs-per-project:30}")
     private int maxRunsPerProject;
+    @Value("${coherence.min-score:0.0}")
+    private double minCoherenceScore;
+
+    void setMinCoherenceScoreForTest(double minCoherenceScore) {
+        this.minCoherenceScore = minCoherenceScore;
+    }
 
     private final EvidenceNodeRepository evidenceNodeRepository;
     private final CoherenceRunRepository coherenceRunRepository;
@@ -180,6 +187,82 @@ public class EvidenceCoherenceService {
                 latestRun == null ? 0.0 : latestRun.getCoherenceScore(),
                 latestRun == null ? 0 : latestRun.getTotalNodes(),
                 latestRun == null ? 0 : latestRun.getAcceptedNodes());
+    }
+
+    /**
+     * Millikan teleosemantic feedback (BARCAN-TAG-11_CLIENT-PERCEPTION:05:rut-milliken, D011):
+     * "A signal without a reader is not an observation; a signal must alter action."
+     *
+     * Evaluates whether the project's evidence network currently possesses sufficient explanatory
+     * coherence (coherenceScore >= minCoherenceScore). Absence of any recorded coherence run
+     * defaults to true (absence of evidence is not evidence of failure).
+     */
+    public boolean isCoherent(UUID projectId) {
+        List<CoherenceRunEntity> runs = projectId != null
+                ? coherenceRunRepository.findByProjectIdOrderByRanAtDesc(projectId)
+                : coherenceRunRepository.findByProjectIdIsNullOrderByRanAtDesc();
+        if (runs.isEmpty()) {
+            return true;
+        }
+        CoherenceRunEntity latest = runs.get(0);
+        if (latest.getTotalNodes() == 0) {
+            return true;
+        }
+        return latest.getCoherenceScore() >= minCoherenceScore;
+    }
+
+    public Optional<CoherenceRunEntity> getLatestRun(UUID projectId) {
+        List<CoherenceRunEntity> runs = projectId != null
+                ? coherenceRunRepository.findByProjectIdOrderByRanAtDesc(projectId)
+                : coherenceRunRepository.findByProjectIdIsNullOrderByRanAtDesc();
+        return runs.isEmpty() ? Optional.empty() : Optional.of(runs.get(0));
+    }
+
+    public double getLatestCoherenceScore(UUID projectId) {
+        return getLatestRun(projectId).map(CoherenceRunEntity::getCoherenceScore).orElse(0.0);
+    }
+
+    /**
+     * Feature-level teleosemantic readiness check:
+     * A feature cannot be closed out to main if its evidence cluster has accepted uncorroborated
+     * negative defect findings or if the project evidence graph is fundamentally incoherent.
+     */
+    public boolean isFeatureCoherent(UUID projectId, UUID featureId) {
+        if (!isCoherent(projectId)) {
+            return false;
+        }
+        if (projectId == null || featureId == null) {
+            return true;
+        }
+        List<CoherenceRunEntity> runs = coherenceRunRepository.findByProjectIdOrderByRanAtDesc(projectId);
+        if (runs.isEmpty()) {
+            return true;
+        }
+        CoherenceRunEntity latest = runs.get(0);
+        List<EvidenceNodeEntity> featureNodes = evidenceNodeRepository.findByProjectIdAndFeatureId(projectId, featureId);
+        if (featureNodes.isEmpty()) {
+            return true;
+        }
+        List<CoherenceRunNodeResultEntity> results = coherenceRunNodeResultRepository.findByCoherenceRunId(latest.getId());
+        Map<UUID, Boolean> acceptedByNodeId = results.stream()
+                .collect(java.util.stream.Collectors.toMap(CoherenceRunNodeResultEntity::getEvidenceNodeId, CoherenceRunNodeResultEntity::isAccepted, (a, b) -> a));
+
+        boolean hasAcceptedNegative = false;
+        boolean hasAcceptedPositive = false;
+        for (EvidenceNodeEntity node : featureNodes) {
+            Boolean accepted = acceptedByNodeId.get(node.getId());
+            if (Boolean.TRUE.equals(accepted)) {
+                if (node.getPolarity() == EvidenceNodeEntity.Polarity.NEGATIVE_FINDING) {
+                    hasAcceptedNegative = true;
+                } else if (node.getPolarity() == EvidenceNodeEntity.Polarity.POSITIVE_CONFIRMATION) {
+                    hasAcceptedPositive = true;
+                }
+            }
+        }
+        if (hasAcceptedNegative && !hasAcceptedPositive) {
+            return false;
+        }
+        return true;
     }
 
     /** Same 2h cadence as KaizenService's own periodic cycle - not a coincidence, both reconcile the same

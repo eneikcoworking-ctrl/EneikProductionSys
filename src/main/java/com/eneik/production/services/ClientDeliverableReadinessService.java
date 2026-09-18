@@ -60,6 +60,7 @@ public class ClientDeliverableReadinessService {
     // a lazy proxy defers resolution past both beans' construction, same as this codebase's established
     // @Lazy self-injection pattern elsewhere.
     private final com.eneik.production.services.operational.OperationalPolicyService operationalPolicyService;
+    private com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService;
 
     public ClientDeliverableReadinessService(WishlistRepository wishlistRepository,
                                              FeatureRepository featureRepository,
@@ -70,6 +71,21 @@ public class ClientDeliverableReadinessService {
                                              com.eneik.production.repositories.ProjectRepository projectRepository,
                                              @org.springframework.context.annotation.Lazy
                                              com.eneik.production.services.operational.OperationalPolicyService operationalPolicyService) {
+        this(wishlistRepository, featureRepository, taskRepository, julesSessionRepository, prReviewRepository,
+                featureThreadRepository, projectRepository, operationalPolicyService, null);
+    }
+
+    public ClientDeliverableReadinessService(WishlistRepository wishlistRepository,
+                                             FeatureRepository featureRepository,
+                                             TaskRepository taskRepository,
+                                             JulesSessionRepository julesSessionRepository,
+                                             PrReviewRepository prReviewRepository,
+                                             com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
+                                             com.eneik.production.repositories.ProjectRepository projectRepository,
+                                             @org.springframework.context.annotation.Lazy
+                                             com.eneik.production.services.operational.OperationalPolicyService operationalPolicyService,
+                                             @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                             com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService) {
         this.wishlistRepository = wishlistRepository;
         this.featureRepository = featureRepository;
         this.taskRepository = taskRepository;
@@ -78,6 +94,11 @@ public class ClientDeliverableReadinessService {
         this.featureThreadRepository = featureThreadRepository;
         this.projectRepository = projectRepository;
         this.operationalPolicyService = operationalPolicyService;
+        this.evidenceCoherenceService = evidenceCoherenceService;
+    }
+
+    public void setEvidenceCoherenceService(com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService) {
+        this.evidenceCoherenceService = evidenceCoherenceService;
     }
 
     // Deliberately scoped to CLIENT-sourced work only, not computeForProject's full
@@ -128,11 +149,15 @@ public class ClientDeliverableReadinessService {
             // FALSIFICATION READINESS ONLY (never toward ratio/DELIVERED) when it is fulfilled OR its task
             // chain terminates in a real `failed` task - i.e. self_falsification has real, stable, terminal
             // material to examine, not "some of this project is still legitimately in flight".
-            double selfFalsificationReadyRatio
+            double selfFalsificationReadyRatio,
+            // Millikan teleosemantic feedback (BARCAN-TAG-11_CLIENT-PERCEPTION:05:rut-milliken, D011):
+            // Readiness must not ignore explanatory coherence runs - non-self-reported anchor against ungrounded claims.
+            boolean coherent,
+            double coherenceScore
     ) {
         // Compatibility for focused tests and callers that only need a ready/not-ready stub.
         public Readiness(int totalDeliverables, int mergedDeliverables, double ratio) {
-            this(0, 0, totalDeliverables, mergedDeliverables, ratio, true, ratio);
+            this(0, 0, totalDeliverables, mergedDeliverables, ratio, true, ratio, true, 0.0);
         }
 
         // Compatibility for existing 6-arg call sites (production and tests) that don't yet know about
@@ -142,11 +167,17 @@ public class ClientDeliverableReadinessService {
         public Readiness(int totalFeatures, int completeFeatures, int totalDeliverables, int mergedDeliverables,
                 double ratio, boolean decompositionComplete) {
             this(totalFeatures, completeFeatures, totalDeliverables, mergedDeliverables, ratio,
-                    decompositionComplete, ratio);
+                    decompositionComplete, ratio, true, 0.0);
+        }
+
+        public Readiness(int totalFeatures, int completeFeatures, int totalDeliverables, int mergedDeliverables,
+                double ratio, boolean decompositionComplete, double selfFalsificationReadyRatio) {
+            this(totalFeatures, completeFeatures, totalDeliverables, mergedDeliverables, ratio,
+                    decompositionComplete, selfFalsificationReadyRatio, true, 0.0);
         }
 
         public static Readiness none() {
-            return new Readiness(0, 0, 0, 0, 0.0, false, 0.0);
+            return new Readiness(0, 0, 0, 0, 0.0, false, 0.0, true, 0.0);
         }
     }
 
@@ -468,14 +499,21 @@ public class ClientDeliverableReadinessService {
         // features and 1 fully complete now genuinely reads 20%, not "5 of 19 individual work items merged"
         // - a client brief is delivered feature by feature, not item by item.
         double ratio = totalFeatures == 0 ? 1.0 : (double) completeFeatures / totalFeatures;
+        boolean coherent = true;
+        double coherenceScore = 0.0;
+        if (evidenceCoherenceService != null) {
+            coherent = evidenceCoherenceService.isCoherent(projectId);
+            coherenceScore = evidenceCoherenceService.getLatestCoherenceScore(projectId);
+        }
         if (total == 0) {
             // Every planned item for this scope is auxiliary (decision/spike/review work only) - there is
             // nothing this metric can measure, not "0% done". Report via decompositionComplete alone rather
             // than a misleading 0/0 ratio.
-            return new Readiness(totalFeatures, completeFeatures, 0, 0, 1.0, decompositionComplete, 1.0);
+            return new Readiness(totalFeatures, completeFeatures, 0, 0, 1.0, decompositionComplete, 1.0,
+                    coherent, coherenceScore);
         }
         return new Readiness(totalFeatures, completeFeatures, total, mergedCount, ratio, decompositionComplete,
-                selfFalsificationReadyRatio);
+                selfFalsificationReadyRatio, coherent, coherenceScore);
     }
 
     /**
@@ -1616,10 +1654,40 @@ public class ClientDeliverableReadinessService {
         if (!anyTerminalTaskHasRealMergedWork) {
             return false;
         }
+        // Millikan teleosemantic feedback gate (BARCAN-TAG-11_CLIENT-PERCEPTION:05:rut-milliken, D011):
+        // Closeout PR is blocked if evidence indicates unresolved defect contradictions or incoherence.
+        if (evidenceCoherenceService != null && !evidenceCoherenceService.isFeatureCoherent(projectId, featureId)) {
+            log.info("ClientDeliverableReadinessService: feature {} for project {} blocked from closeout - evidence coherence check failed",
+                    featureId, projectId);
+            return false;
+        }
         return wishlistRepository.findByFeatureId(featureId).stream()
                 // movable(), not a raw status check (2026-08-28): a brief the compiler answered nothing
                 // for can never become converted_to_task, so counting it here pins the feature at
                 // incomplete forever and DELIVERED becomes unreachable - Charter invariant 8.
                 .noneMatch(WishlistEntity::movable);
+    }
+
+    /**
+     * Millikan teleosemantic readiness check (BARCAN-TAG-11_CLIENT-PERCEPTION:05:rut-milliken, D011):
+     * "A signal without a reader is not an observation; a signal must alter action."
+     *
+     * A project is only deliverable when all planned features are complete, decomposition is complete,
+     * and the objective evidence coherence score passes the non-self-reported coherence gate.
+     */
+    public boolean isProjectDeliverable(UUID projectId) {
+        Readiness readiness = computeForProject(projectId);
+        if (readiness.totalFeatures() == 0 || !readiness.decompositionComplete()) {
+            return false;
+        }
+        if (readiness.completeFeatures() < readiness.totalFeatures()) {
+            return false;
+        }
+        if (!readiness.coherent()) {
+            log.info("ClientDeliverableReadinessService: project {} delivery gate blocked by negative evidence coherence score ({})",
+                    projectId, readiness.coherenceScore());
+            return false;
+        }
+        return true;
     }
 }
