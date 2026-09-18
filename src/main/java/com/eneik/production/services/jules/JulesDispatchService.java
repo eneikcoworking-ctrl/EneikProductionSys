@@ -499,6 +499,13 @@ public class JulesDispatchService {
         this.self = self;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
+
+    public void setTocSentinelService(com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
+        this.tocSentinelService = tocSentinelService;
+    }
+
     // 2026-08-14 (bug-hunt sweep): these 4 dispatch(...) overloads all previously carried their own
     // @Transactional, but all 4 ultimately self-invoke down to the real implementation (dispatch(TaskEntity,
     // UUID, String)) via plain `this.`-style calls within this same class - which bypasses the Spring AOP
@@ -535,6 +542,25 @@ public class JulesDispatchService {
     }
 
     public JulesDispatchResult dispatch(TaskEntity task, UUID accountId, String mode) {
+        if (tocSentinelService != null) {
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("JULES_DISPATCH_CYCLE", 50);
+            if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
+                log.info("[JULES_DISPATCH] Dispatch throttled by TOC Sentinel DBR Rope for task {}", task.getId());
+                return new JulesDispatchResult(false, null, "Throttled by TOC Sentinel DBR Rope");
+            }
+            try {
+                tocSentinelService.enterStep(token, com.eneik.production.toc.model.TocStages.JULES_DISPATCH_PROCESSING);
+                return executeDispatch(task, accountId, mode);
+            } finally {
+                tocSentinelService.exitStep(token, com.eneik.production.toc.model.TocStages.JULES_DISPATCH_PROCESSING, true);
+                tocSentinelService.endExecution(token, true);
+            }
+        } else {
+            return executeDispatch(task, accountId, mode);
+        }
+    }
+
+    private JulesDispatchResult executeDispatch(TaskEntity task, UUID accountId, String mode) {
         List<JulesSessionEntity> existing = julesSessionRepository.findByTaskId(task.getId());
         for (JulesSessionEntity s : existing) {
             if ("skipped".equals(s.getExternalSessionId())) {

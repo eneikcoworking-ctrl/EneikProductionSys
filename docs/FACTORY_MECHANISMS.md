@@ -4491,6 +4491,8 @@ associated with this repo»: это заготовка, а не боевая п�
 
 
 ### 46. Узкое место фабрики определяется по единственному размеченному шагу · `INUS_FACTOR_CHECK` (D007)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Все основные фазы конвейера фабрики размещены и заведены в `TocExecutionGraph` через константы `TocStages`: `ORCHESTRATION_PROCESSING` (`ContinuousOrchestrationService`), `ORCHESTRATE_PROCESSING` (`ProjectFlowService.orchestrate`), `DISPATCH_PROCESSING` (`ProjectFlowService.dispatchQueuedTasks`), `REVIEW_DISPATCH_PROCESSING` (`ProjectFlowService.dispatchReviewTasks`), `JULES_DISPATCH_PROCESSING` (`JulesDispatchService.dispatch`), `AUTOMERGE_PROCESSING` (`AutoMergeService`). Устранено предопределение ограничения одиночным датчиком: в графе стабильно $\ge 5$ узлов с ненулевой историей, выбор главного ограничения происходит на основе сравнительного замера латентности и очереди по Маки (INUS-условие), снято предостережение «Flow unmeasured». Заслон: `TocPipelinePhasesInstrumentationTest`.
 **Механизм:** `TocNode`, `TocExecutionGraph:27`, `TocOptimizer:44-58`; разметка — только
 `AutoMergeService:164,170,173,174` (сценарий `AUTOMERGE_CYCLE`).
 **Что не так:** узлы заводятся лениво при первом входе, а входят из одного места. Множество кандидатов равно

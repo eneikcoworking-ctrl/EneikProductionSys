@@ -789,6 +789,30 @@ public class ProjectFlowService {
     // transaction it needs regardless of this method's own state, while the GitHub/Jules network calls
     // below run with no transaction held open.
     public OrchestrationResultDto orchestrate(UUID projectId) {
+        if (tocSentinelService != null) {
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("ORCHESTRATE_CYCLE", 45);
+            if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
+                log.info("[ORCHESTRATE] Cycle throttled by TOC Sentinel DBR Rope due to constraint buffer overflow for project {}", projectId);
+                return new OrchestrationResultDto(
+                        projectId,
+                        0,
+                        java.util.Collections.emptyList(),
+                        "Orchestration throttled by TOC Sentinel DBR Rope"
+                );
+            }
+            try {
+                tocSentinelService.enterStep(token, com.eneik.production.toc.model.TocStages.ORCHESTRATE_PROCESSING);
+                return executeOrchestrate(projectId);
+            } finally {
+                tocSentinelService.exitStep(token, com.eneik.production.toc.model.TocStages.ORCHESTRATE_PROCESSING, true);
+                tocSentinelService.endExecution(token, true);
+            }
+        } else {
+            return executeOrchestrate(projectId);
+        }
+    }
+
+    private OrchestrationResultDto executeOrchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.ORCHESTRATE);
         recordOrchestrationStartOrThrow(projectId);
@@ -6461,10 +6485,10 @@ public class ProjectFlowService {
                 return;
             }
             try {
-                tocSentinelService.enterStep(token, "DISPATCH_PROCESSING");
+                tocSentinelService.enterStep(token, com.eneik.production.toc.model.TocStages.DISPATCH_PROCESSING);
                 executeDispatchQueuedTasks(projectId);
             } finally {
-                tocSentinelService.exitStep(token, "DISPATCH_PROCESSING", true);
+                tocSentinelService.exitStep(token, com.eneik.production.toc.model.TocStages.DISPATCH_PROCESSING, true);
                 tocSentinelService.endExecution(token, true);
             }
         } else {
@@ -6790,6 +6814,25 @@ public class ProjectFlowService {
     // its own short, auto-committing unit via the repository proxy, with no claim step to keep atomic
     // alongside it.
     public void dispatchReviewTasks(UUID projectId) {
+        if (tocSentinelService != null) {
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("DISPATCH_REVIEW_TASKS", 50);
+            if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
+                log.info("[REVIEW_DISPATCH] Cycle throttled by TOC Sentinel DBR Rope due to constraint buffer overflow for project {}", projectId);
+                return;
+            }
+            try {
+                tocSentinelService.enterStep(token, com.eneik.production.toc.model.TocStages.REVIEW_DISPATCH_PROCESSING);
+                executeDispatchReviewTasks(projectId);
+            } finally {
+                tocSentinelService.exitStep(token, com.eneik.production.toc.model.TocStages.REVIEW_DISPATCH_PROCESSING, true);
+                tocSentinelService.endExecution(token, true);
+            }
+        } else {
+            executeDispatchReviewTasks(projectId);
+        }
+    }
+
+    private void executeDispatchReviewTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_REVIEW_TASKS);
         List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);

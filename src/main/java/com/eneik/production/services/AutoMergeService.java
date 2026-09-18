@@ -84,6 +84,10 @@ public class AutoMergeService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
 
+    public void setTocSentinelService(com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
+        this.tocSentinelService = tocSentinelService;
+    }
+
     // Optional on purpose: the constructor already takes 25 arguments and every unit test builds this
     // service by hand, so the poka-yoke's defect record must not become a 26th required parameter. A null
     // here degrades the record, never the rejection.
@@ -177,10 +181,10 @@ public class AutoMergeService {
                 return;
             }
             try {
-                tocSentinelService.enterStep(token, "AUTOMERGE_PROCESSING");
+                tocSentinelService.enterStep(token, com.eneik.production.toc.model.TocStages.AUTOMERGE_PROCESSING);
                 executeAutoMergeCycle();
             } finally {
-                tocSentinelService.exitStep(token, "AUTOMERGE_PROCESSING", true);
+                tocSentinelService.exitStep(token, com.eneik.production.toc.model.TocStages.AUTOMERGE_PROCESSING, true);
                 tocSentinelService.endExecution(token, true);
             }
         } else {

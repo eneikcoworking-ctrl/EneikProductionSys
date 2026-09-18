@@ -176,8 +176,34 @@ public class ContinuousOrchestrationService {
         this.defectJournalRepository = defectJournalRepository;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
+
+    public void setTocSentinelService(com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
+        this.tocSentinelService = tocSentinelService;
+    }
+
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
     public void continuousOrchestrate() {
+        if (tocSentinelService != null) {
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("ORCHESTRATION_CYCLE", 30);
+            if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
+                log.info("[ORCHESTRATION] Cycle throttled by TOC Sentinel DBR Rope due to constraint buffer overflow.");
+                return;
+            }
+            try {
+                tocSentinelService.enterStep(token, com.eneik.production.toc.model.TocStages.ORCHESTRATION_PROCESSING);
+                executeContinuousOrchestrate();
+            } finally {
+                tocSentinelService.exitStep(token, com.eneik.production.toc.model.TocStages.ORCHESTRATION_PROCESSING, true);
+                tocSentinelService.endExecution(token, true);
+            }
+        } else {
+            executeContinuousOrchestrate();
+        }
+    }
+
+    public void executeContinuousOrchestrate() {
         LogScope.system();
         try {
             repairMisclassifiedJulesAccountLimits();
