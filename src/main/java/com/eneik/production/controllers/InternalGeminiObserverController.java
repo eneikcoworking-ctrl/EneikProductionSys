@@ -161,9 +161,12 @@ public class InternalGeminiObserverController {
     @PostMapping("/retire-stuck-worker-now")
     public String retireStuckWorkerNow(@RequestParam UUID projectId, @RequestParam UUID carrierTaskId,
                                         @RequestParam(defaultValue = "manual operator trigger") String reason) {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
         var project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
-        return geminiObserverActionService.retireStuckWorker(project, carrierTaskId.toString(), reason);
+        log.info("[BOUNDARY_TOPOLOGY][AUDIT] retireStuckWorkerNow invoked by caller '{}' for project '{}', carrierTaskId '{}', reason '{}'",
+                caller, projectId, carrierTaskId, reason);
+        return geminiObserverActionService.retireStuckWorker(project, carrierTaskId.toString(), reason + " [caller: " + caller + "]");
     }
 
     // Pure diagnostic (2026-08-13, live dispute continued): retireStuckWorkerNow against the carrier task
@@ -220,11 +223,14 @@ public class InternalGeminiObserverController {
     @org.springframework.transaction.annotation.Transactional
     @PostMapping("/release-finalizing-wishlist")
     public String releaseFinalizingWishlist(@RequestParam UUID wishlistId) {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
         int released = wishlistRepository.compareAndSetStatus(wishlistId,
                 com.eneik.production.models.persistence.WishlistStatus.finalizing,
                 com.eneik.production.models.persistence.WishlistStatus.pending);
-        return released == 1 ? "released " + wishlistId + " back to pending"
-                : "no-op: " + wishlistId + " was not in finalizing status";
+        log.info("[BOUNDARY_TOPOLOGY][AUDIT] releaseFinalizingWishlist invoked by caller '{}' for wishlist '{}', result: {}",
+                caller, wishlistId, released);
+        return released == 1 ? "released " + wishlistId + " back to pending [caller: " + caller + "]"
+                : "no-op: " + wishlistId + " was not in finalizing status [caller: " + caller + "]";
     }
 
     @GetMapping("/persistent-workers")
@@ -283,8 +289,10 @@ public class InternalGeminiObserverController {
     // budget counter resets, same as the natural midnight rollover would do).
     @PostMapping("/reset-daily-session-counts-now")
     public String resetDailySessionCountsNow() {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
+        log.info("[BOUNDARY_TOPOLOGY][AUDIT] resetDailySessionCountsNow invoked by caller '{}'", caller);
         continuousOrchestrationService.resetDailyLimitedAccounts();
-        return "Reset sessionsDispatchedToday and daily_limited accounts - same job as the 00:05 UTC cron, run manually.";
+        return "Reset sessionsDispatchedToday and daily_limited accounts - same job as the 00:05 UTC cron, run manually by " + caller + ".";
     }
 
     // Pure diagnostic (2026-08-08, live dispute continued): the account-capacity view below showed 0
@@ -372,9 +380,8 @@ public class InternalGeminiObserverController {
     @GetMapping("/account-capacity")
     public java.util.List<java.util.Map<String, Object>> accountCapacity() {
         java.util.Map<UUID, java.util.List<JulesSessionEntity>> sessionsByAccount = new java.util.HashMap<>();
-        for (JulesSessionEntity session : julesSessionRepository.findAll()) {
+        for (JulesSessionEntity session : julesSessionRepository.findByStatusIn(java.util.List.of("queued", "running", "revising", "stuck"))) {
             if (session.getAccountId() == null) continue;
-            if (!java.util.Set.of("queued", "running", "revising", "stuck").contains(session.getStatus())) continue;
             sessionsByAccount.computeIfAbsent(session.getAccountId(), k -> new java.util.ArrayList<>()).add(session);
         }
         java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
@@ -449,14 +456,17 @@ public class InternalGeminiObserverController {
     // trusting the fixed mechanism to find the truth, not a manually-asserted conclusion.
     @org.springframework.web.bind.annotation.PostMapping("/clear-corrupted-session-pr-url")
     public java.util.Map<String, Object> clearCorruptedSessionPrUrl(@RequestParam UUID sessionId) {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
         JulesSessionEntity session = julesSessionRepository.findById(sessionId).orElse(null);
         if (session == null) {
-            return java.util.Map.of("error", "session not found");
+            return java.util.Map.of("error", "session not found", "caller", caller);
         }
         String before = session.getPrUrl();
         session.setPrUrl(null);
         julesSessionRepository.save(session);
-        return java.util.Map.of("sessionId", sessionId, "prUrlBefore", String.valueOf(before), "prUrlAfter", "null");
+        log.info("[BOUNDARY_TOPOLOGY][AUDIT] clearCorruptedSessionPrUrl invoked by caller '{}' for session '{}', before '{}'",
+                caller, sessionId, before);
+        return java.util.Map.of("sessionId", sessionId, "prUrlBefore", String.valueOf(before), "prUrlAfter", "null", "caller", caller);
     }
 
     @GetMapping("/journal")

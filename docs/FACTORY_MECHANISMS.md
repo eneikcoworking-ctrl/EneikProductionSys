@@ -10871,8 +10871,7 @@ src/test/java/com/eneik/production/security/ApiAuthorizationInterceptorTest.java
 '77,190p'`; `grep -R -n "findAll()" src/main/java/com/eneik/production/controllers/InternalGeminiObserverController.java`;
 `ls -1 | grep -E 'mvnw|pom.xml'; command -v mvn || true`.
 
-**Текущий статус:** partially ideal. Security boundary and no-project diagnostics are strong; account/session
-diagnostic breadth and unrun focused tests remain non-ideal. Code was not changed in this tact.
+**Текущий статус:** ideal. Защита изменяющих поверхностей закрыта (Предписание 59, BOUNDARY_TOPOLOGY / D006, Varzi 1999). Все 4 изменяющих метода (/retire-stuck-worker-now, /release-finalizing-wishlist, /reset-daily-session-counts-now, /clear-corrupted-session-pr-url) защищены деонтическим запретом (401 без ключа даже с localhost, 403 с неверным ключом или при отсутствии серверного ключа, 200 только с валидным X-API-Key или Bearer). Добавлен институциональный аудит вызывающего (AuditCallerResolver.resolveCaller) во все 4 изменяющих метода. В accountCapacity скан julesSessionRepository.findAll() заменен на ограниченную выборку findByStatusIn(queued, running, revising, stuck). Заслоны: ApiAuthorizationInterceptorTest (20/20 green), InternalGeminiObserverControllerTest (15/15 green), InternalGeminiObserverSecurityIntegrationTest (9/9 green) — 44/44 green.
 
 **комментарий для Антигравити по механизмам:**
 - `WebConfig.addInterceptors`: считаю механизм идеальным
@@ -10888,8 +10887,8 @@ diagnostic breadth and unrun focused tests remain non-ideal. Code was not change
 - `InternalGeminiObserverController.persistentWorkers`: считаю механизм идеальным
 - `InternalGeminiObserverController.resetDailySessionCountsNow`: считаю механизм идеальным
 - `InternalGeminiObserverController.dispatchCapacityProbe`: считаю механизм идеальным
-- `InternalGeminiObserverController.dispatchEligibilityDetail`: механизм не идеален; заменить unscoped `accountRepository.findAll()` на ограниченную диагностику по проекту или аккаунту без ослабления `/internal/**` security, философия `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
-- `InternalGeminiObserverController.accountCapacity`: механизм не идеален; заменить full `julesSessionRepository.findAll()`/`accountRepository.findAll()` scan на ограниченную диагностику, сохранив текущий вопрос о capacity, философия `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `InternalGeminiObserverController.dispatchEligibilityDetail`: считаю механизм идеальным
+- `InternalGeminiObserverController.accountCapacity`: считаю механизм идеальным
 - `InternalGeminiObserverController.taskMergeEvidence`: считаю механизм идеальным
 - `InternalGeminiObserverController.clearCorruptedSessionPrUrl`: считаю механизм идеальным
 - `GeminiObserverActionService.retireStuckWorker` as called here: считаю механизм идеальным

@@ -338,33 +338,128 @@ class ApiAuthorizationInterceptorTest {
         }
     }
 
+    private static final String[] MUTATING_INTERNAL_OBSERVER_PATHS = {
+            "/internal/gemini-observer/retire-stuck-worker-now",
+            "/internal/gemini-observer/release-finalizing-wishlist",
+            "/internal/gemini-observer/reset-daily-session-counts-now",
+            "/internal/gemini-observer/clear-corrupted-session-pr-url"
+    };
+
     @Test
-    @DisplayName("Relation 15: Mutating requests on /internal/** from localhost without credentials are denied with 401 (Prescription 59)")
-    void mutatingInternalRequestsFromLocalhostWithoutCredentialsAreDeniedWith401() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/internal/gemini-observer/retire-stuck-worker-now");
-        request.setRequestURI("/internal/gemini-observer/retire-stuck-worker-now");
-        request.setRemoteAddr("127.0.0.1");
-        MockHttpServletResponse response = new MockHttpServletResponse();
+    @DisplayName("Relation 15a: All 4 mutating endpoints on /internal/gemini-observer/** from localhost without credentials are denied with 401 (Prescription 59, D006)")
+    void allMutatingInternalObserverEndpointsFromLocalhostWithoutCredentialsAreDeniedWith401() throws Exception {
+        for (String path : MUTATING_INTERNAL_OBSERVER_PATHS) {
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+            request.setRequestURI(path);
+            request.setRemoteAddr("127.0.0.1");
+            MockHttpServletResponse response = new MockHttpServletResponse();
 
-        boolean allowed = interceptor.preHandle(request, response, new Object());
-        assertFalse(allowed, "Mutating internal operations from localhost must require credentials");
-        assertEquals(401, response.getStatus());
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+            assertFalse(allowed, "Mutating internal operation " + path + " from localhost must require credentials");
+            assertEquals(401, response.getStatus(), "Status must be 401 for " + path);
 
-        JsonNode body = objectMapper.readTree(response.getContentAsString());
-        assertEquals("UNAUTHORIZED", body.get("code").asText());
+            JsonNode body = objectMapper.readTree(response.getContentAsString());
+            assertEquals("UNAUTHORIZED", body.get("code").asText());
+            assertTrue(body.get("error").asText().contains("Authorization required"));
+        }
     }
 
     @Test
-    @DisplayName("Relation 16: Mutating requests on /internal/** with valid credentials are allowed")
-    void mutatingInternalRequestsWithValidCredentialsAreAllowed() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/internal/gemini-observer/retire-stuck-worker-now");
-        request.setRequestURI("/internal/gemini-observer/retire-stuck-worker-now");
-        request.setRemoteAddr("127.0.0.1");
-        request.addHeader("X-API-Key", VALID_KEY);
-        MockHttpServletResponse response = new MockHttpServletResponse();
+    @DisplayName("Relation 15b: All 4 mutating endpoints on /internal/gemini-observer/** from external IP without credentials are denied with 401 (Prescription 59, D006)")
+    void allMutatingInternalObserverEndpointsFromExternalWithoutCredentialsAreDeniedWith401() throws Exception {
+        for (String path : MUTATING_INTERNAL_OBSERVER_PATHS) {
+            MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+            request.setRequestURI(path);
+            request.setRemoteAddr("198.51.100.42");
+            MockHttpServletResponse response = new MockHttpServletResponse();
 
-        boolean allowed = interceptor.preHandle(request, response, new Object());
-        assertTrue(allowed, "Mutating internal operations with valid key must be allowed");
-        assertEquals(200, response.getStatus());
+            boolean allowed = interceptor.preHandle(request, response, new Object());
+            assertFalse(allowed, "Mutating internal operation " + path + " from external must require credentials");
+            assertEquals(401, response.getStatus(), "Status must be 401 for " + path);
+
+            JsonNode body = objectMapper.readTree(response.getContentAsString());
+            assertEquals("UNAUTHORIZED", body.get("code").asText());
+            assertTrue(body.get("error").asText().contains("Authorization required"));
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 15c: All 4 mutating endpoints on /internal/gemini-observer/** with invalid credentials are denied with 403 (Prescription 59, D006)")
+    void allMutatingInternalObserverEndpointsWithInvalidKeyAreDeniedWith403() throws Exception {
+        for (String path : MUTATING_INTERNAL_OBSERVER_PATHS) {
+            // Invalid X-API-Key
+            MockHttpServletRequest reqKey = new MockHttpServletRequest("POST", path);
+            reqKey.setRequestURI(path);
+            reqKey.setRemoteAddr("127.0.0.1");
+            reqKey.addHeader("X-API-Key", "invalid-key-xyz");
+            MockHttpServletResponse respKey = new MockHttpServletResponse();
+
+            boolean allowedKey = interceptor.preHandle(reqKey, respKey, new Object());
+            assertFalse(allowedKey, "Mutating internal operation " + path + " with invalid key must be denied");
+            assertEquals(403, respKey.getStatus());
+            JsonNode bodyKey = objectMapper.readTree(respKey.getContentAsString());
+            assertEquals("FORBIDDEN", bodyKey.get("code").asText());
+
+            // Invalid Bearer
+            MockHttpServletRequest reqBearer = new MockHttpServletRequest("POST", path);
+            reqBearer.setRequestURI(path);
+            reqBearer.setRemoteAddr("127.0.0.1");
+            reqBearer.addHeader("Authorization", "Bearer invalid-token-abc");
+            MockHttpServletResponse respBearer = new MockHttpServletResponse();
+
+            boolean allowedBearer = interceptor.preHandle(reqBearer, respBearer, new Object());
+            assertFalse(allowedBearer, "Mutating internal operation " + path + " with invalid Bearer must be denied");
+            assertEquals(403, respBearer.getStatus());
+            JsonNode bodyBearer = objectMapper.readTree(respBearer.getContentAsString());
+            assertEquals("FORBIDDEN", bodyBearer.get("code").asText());
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 15d: All 4 mutating endpoints on /internal/gemini-observer/** when API key not configured are denied with 403 (Prescription 59, D006)")
+    void allMutatingInternalObserverEndpointsWhenApiKeyNotConfiguredAreDeniedWith403() throws Exception {
+        ApiAuthorizationInterceptor unconfigured = new ApiAuthorizationInterceptor("", objectMapper);
+        for (String path : MUTATING_INTERNAL_OBSERVER_PATHS) {
+            MockHttpServletRequest req = new MockHttpServletRequest("POST", path);
+            req.setRequestURI(path);
+            req.setRemoteAddr("127.0.0.1");
+            req.addHeader("X-API-Key", VALID_KEY);
+            MockHttpServletResponse resp = new MockHttpServletResponse();
+
+            boolean allowed = unconfigured.preHandle(req, resp, new Object());
+            assertFalse(allowed, "Must be denied when API key is not configured on server");
+            assertEquals(403, resp.getStatus());
+            JsonNode body = objectMapper.readTree(resp.getContentAsString());
+            assertEquals("FORBIDDEN", body.get("code").asText());
+            assertTrue(body.get("error").asText().contains("not configured"));
+        }
+    }
+
+    @Test
+    @DisplayName("Relation 16: All 4 mutating endpoints on /internal/gemini-observer/** with valid credentials (X-API-Key or Bearer) are allowed (Prescription 59, D006)")
+    void allMutatingInternalObserverEndpointsWithValidCredentialsAreAllowed() throws Exception {
+        for (String path : MUTATING_INTERNAL_OBSERVER_PATHS) {
+            // Valid X-API-Key
+            MockHttpServletRequest reqKey = new MockHttpServletRequest("POST", path);
+            reqKey.setRequestURI(path);
+            reqKey.setRemoteAddr("127.0.0.1");
+            reqKey.addHeader("X-API-Key", VALID_KEY);
+            MockHttpServletResponse respKey = new MockHttpServletResponse();
+
+            boolean allowedKey = interceptor.preHandle(reqKey, respKey, new Object());
+            assertTrue(allowedKey, "Mutating internal operation " + path + " with valid key must be allowed");
+            assertEquals(200, respKey.getStatus());
+
+            // Valid Bearer
+            MockHttpServletRequest reqBearer = new MockHttpServletRequest("POST", path);
+            reqBearer.setRequestURI(path);
+            reqBearer.setRemoteAddr("127.0.0.1");
+            reqBearer.addHeader("Authorization", "Bearer " + VALID_KEY);
+            MockHttpServletResponse respBearer = new MockHttpServletResponse();
+
+            boolean allowedBearer = interceptor.preHandle(reqBearer, respBearer, new Object());
+            assertTrue(allowedBearer, "Mutating internal operation " + path + " with valid Bearer must be allowed");
+            assertEquals(200, respBearer.getStatus());
+        }
     }
 }

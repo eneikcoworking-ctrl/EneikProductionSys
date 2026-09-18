@@ -48,6 +48,11 @@ class InternalGeminiObserverControllerTest {
     private ProjectRepository projectRepository;
     private PersistentWorkerSessionRepository persistentWorkerSessionRepository;
     private AccountRepository accountRepository;
+    private JulesSessionRepository julesSessionRepository;
+    private WishlistRepository wishlistRepository;
+    private ContinuousOrchestrationService continuousOrchestrationService;
+    private GeminiObserverActionService geminiObserverActionService;
+    private TaskRepository taskRepository;
     private InternalGeminiObserverController controller;
 
     @BeforeEach
@@ -55,6 +60,11 @@ class InternalGeminiObserverControllerTest {
         projectRepository = mock(ProjectRepository.class);
         persistentWorkerSessionRepository = mock(PersistentWorkerSessionRepository.class);
         accountRepository = mock(AccountRepository.class);
+        julesSessionRepository = mock(JulesSessionRepository.class);
+        wishlistRepository = mock(WishlistRepository.class);
+        continuousOrchestrationService = mock(ContinuousOrchestrationService.class);
+        geminiObserverActionService = mock(GeminiObserverActionService.class);
+        taskRepository = mock(TaskRepository.class);
 
         controller = new InternalGeminiObserverController(
                 mock(GeminiObserverJournalRepository.class),
@@ -62,16 +72,16 @@ class InternalGeminiObserverControllerTest {
                 mock(EvidenceNodeRepository.class),
                 mock(CoherenceRunRepository.class),
                 mock(OperationalRealityFindingRepository.class),
-                mock(JulesSessionRepository.class),
+                julesSessionRepository,
                 mock(PrReviewRepository.class),
                 accountRepository,
-                mock(TaskRepository.class),
-                mock(ContinuousOrchestrationService.class),
-                mock(GeminiObserverActionService.class),
+                taskRepository,
+                continuousOrchestrationService,
+                geminiObserverActionService,
                 projectRepository,
                 persistentWorkerSessionRepository,
                 mock(JdbcTemplate.class),
-                mock(WishlistRepository.class)
+                wishlistRepository
         );
     }
 
@@ -255,5 +265,111 @@ class InternalGeminiObserverControllerTest {
         Map<String, Object> probeResult = controller.dispatchCapacityProbe(null, null);
         assertThat(probeResult.get("status")).isEqualTo("UNDETERMINED_PROJECT");
         assertThat(probeResult).containsKey("activeProjects");
+    }
+
+    @Test
+    @DisplayName("accountCapacity queries open sessions using bounded findByStatusIn and computes blocked metrics accurately")
+    void accountCapacityUsesBoundedFindByStatusInQuery() {
+        UUID accountId = UUID.randomUUID();
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setName("test-account");
+        account.setMaxConcurrentSessions(3);
+
+        when(accountRepository.findAll()).thenReturn(List.of(account));
+
+        UUID taskId1 = UUID.randomUUID();
+        com.eneik.production.models.persistence.JulesSessionEntity openSession =
+                new com.eneik.production.models.persistence.JulesSessionEntity();
+        openSession.setId(UUID.randomUUID());
+        openSession.setAccountId(accountId);
+        openSession.setTaskId(taskId1);
+        openSession.setStatus("running");
+
+        when(julesSessionRepository.findByStatusIn(List.of("queued", "running", "revising", "stuck")))
+                .thenReturn(List.of(openSession));
+
+        com.eneik.production.models.persistence.TaskEntity task1 =
+                new com.eneik.production.models.persistence.TaskEntity();
+        task1.setId(taskId1);
+        task1.setStatus(com.eneik.production.models.persistence.TaskStatus.in_progress);
+
+        when(taskRepository.findById(taskId1)).thenReturn(Optional.of(task1));
+
+        List<Map<String, Object>> result = controller.accountCapacity();
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).get("accountName")).isEqualTo("test-account");
+        assertThat(result.get(0).get("countIncludingBlocked_currentLiveBehavior")).isEqualTo(1);
+        assertThat(result.get(0).get("countExcludingBlocked_afterMyFix")).isEqualTo(1);
+        verify(julesSessionRepository).findByStatusIn(List.of("queued", "running", "revising", "stuck"));
+        verify(julesSessionRepository, never()).findAll();
+    }
+
+    @Test
+    @DisplayName("releaseFinalizingWishlist invokes compareAndSetStatus and includes caller context")
+    void releaseFinalizingWishlistIncludesCallerContext() {
+        UUID wishlistId = UUID.randomUUID();
+        when(wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.pending)).thenReturn(1);
+
+        String result = controller.releaseFinalizingWishlist(wishlistId);
+
+        assertThat(result).contains("released " + wishlistId + " back to pending");
+        assertThat(result).contains("[caller:");
+        verify(wishlistRepository).compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.pending);
+    }
+
+    @Test
+    @DisplayName("resetDailySessionCountsNow triggers daily reset and includes caller context")
+    void resetDailySessionCountsNowIncludesCallerContext() {
+        String result = controller.resetDailySessionCountsNow();
+
+        assertThat(result).contains("Reset sessionsDispatchedToday and daily_limited accounts");
+        assertThat(result).contains("run manually by");
+        verify(continuousOrchestrationService).resetDailyLimitedAccounts();
+    }
+
+    @Test
+    @DisplayName("clearCorruptedSessionPrUrl clears URL, persists entity and returns caller in result")
+    void clearCorruptedSessionPrUrlClearsAndReturnsCaller() {
+        UUID sessionId = UUID.randomUUID();
+        com.eneik.production.models.persistence.JulesSessionEntity session =
+                new com.eneik.production.models.persistence.JulesSessionEntity();
+        session.setId(sessionId);
+        session.setPrUrl("https://github.com/org/repo/pull/42");
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+
+        Map<String, Object> result = controller.clearCorruptedSessionPrUrl(sessionId);
+
+        assertThat(result.get("sessionId")).isEqualTo(sessionId);
+        assertThat(result.get("prUrlBefore")).isEqualTo("https://github.com/org/repo/pull/42");
+        assertThat(result.get("prUrlAfter")).isEqualTo("null");
+        assertThat(result).containsKey("caller");
+        assertThat(session.getPrUrl()).isNull();
+        verify(julesSessionRepository).save(session);
+    }
+
+    @Test
+    @DisplayName("retireStuckWorkerNow passes caller attribution into action service reason")
+    void retireStuckWorkerNowIncludesCallerInReason() {
+        UUID projectId = UUID.randomUUID();
+        UUID carrierTaskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(geminiObserverActionService.retireStuckWorker(eq(project), eq(carrierTaskId.toString()), any()))
+                .thenReturn("retired worker ok");
+
+        String result = controller.retireStuckWorkerNow(projectId, carrierTaskId, "manual fix");
+
+        assertThat(result).isEqualTo("retired worker ok");
+        verify(geminiObserverActionService).retireStuckWorker(eq(project), eq(carrierTaskId.toString()),
+                org.mockito.ArgumentMatchers.contains("[caller:"));
     }
 }
