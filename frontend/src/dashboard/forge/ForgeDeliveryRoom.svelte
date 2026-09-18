@@ -3,7 +3,13 @@
   // data, never a finished-product-only view (that's the other two rooms).
   import { onMount, onDestroy } from 'svelte';
   import { API_BASE } from '../../lib/api';
-  import type { SixSigmaAuditReport, KaizenProposalDto, CoherenceGraphSnapshot, GeminiObserverJournalEntry } from '../../lib/types';
+  import type {
+    SixSigmaAuditReport,
+    KaizenProposalDto,
+    CoherenceGraphSnapshot,
+    GeminiObserverJournalEntry,
+    CommandDashboardDto
+  } from '../../lib/types';
   import GaugeDial from './GaugeDial.svelte';
 
   export let projectId: string;
@@ -12,6 +18,7 @@
   let kaizenEntries: KaizenProposalDto[] = [];
   let coherence: CoherenceGraphSnapshot | null = null;
   let journal: GeminiObserverJournalEntry[] = [];
+  let commandDashboard: CommandDashboardDto | null = null;
   let loading = true;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
 
@@ -19,11 +26,12 @@
 
   async function load() {
     try {
-      const [sigmaRes, kaizenRes, coherenceRes, journalRes] = await Promise.all([
+      const [sigmaRes, kaizenRes, coherenceRes, journalRes, dashboardRes] = await Promise.all([
         fetch(`${API_BASE}/api/audit/six-sigma?projectId=${projectId}&layer=delivery`),
         fetch(`${API_BASE}/api/kaizen/history?projectId=${projectId}`),
         fetch(`${API_BASE}/api/projects/${projectId}/coherence-graph`),
         fetch(`${API_BASE}/api/projects/${projectId}/observer-journal`),
+        fetch(`${API_BASE}/api/projects/${projectId}/command-dashboard`),
       ]);
       if (sigmaRes.ok) sixSigma = await sigmaRes.json();
       if (kaizenRes.ok) {
@@ -32,6 +40,7 @@
       }
       if (coherenceRes.ok) coherence = await coherenceRes.json();
       if (journalRes.ok) journal = await journalRes.json();
+      if (dashboardRes.ok) commandDashboard = await dashboardRes.json();
     } finally {
       loading = false;
     }
@@ -154,6 +163,88 @@
     </div>
 
     <div class="forge-panel span-2">
+      <div class="readiness-header">
+        <div>
+          <span class="forge-eyebrow">Belnap tri-state (D012) · Client acceptance readiness</span>
+          <h3>Delivery readiness</h3>
+        </div>
+        {#if commandDashboard?.acceptanceReadiness}
+          {@const readiness = commandDashboard.acceptanceReadiness}
+          <div class="readiness-status-badge {readiness.readiness === 'ready' ? 'ready' : readiness.readiness === 'not ready' ? 'not-ready' : 'unknown'}">
+            {readiness.statusLabel}
+          </div>
+        {/if}
+      </div>
+
+      {#if !commandDashboard}
+        <p class="forge-empty">No command dashboard data available yet.</p>
+      {:else}
+        {@const ar = commandDashboard.acceptanceReadiness}
+        <div class="readiness-grid">
+          <div class="condition-card" class:valid={ar.allTasksDone === true} class:invalid={ar.allTasksDone === false} class:unknown={ar.allTasksDone == null}>
+            <div class="condition-marker">{ar.allTasksDone === true ? '✓' : ar.allTasksDone === false ? '✗' : '?'}</div>
+            <div class="condition-body">
+              <div class="condition-title">Tasks completed</div>
+              <div class="condition-desc">{ar.allTasksDone === true ? 'All real-work tasks done/review' : ar.allTasksDone === false ? 'Tasks in progress or incomplete' : 'Task status unknown'}</div>
+            </div>
+          </div>
+
+          <div class="condition-card" class:valid={ar.allQualityGatesPassed === true} class:invalid={ar.allQualityGatesPassed === false} class:unknown={ar.allQualityGatesPassed == null}>
+            <div class="condition-marker">{ar.allQualityGatesPassed === true ? '✓' : ar.allQualityGatesPassed === false ? '✗' : '?'}</div>
+            <div class="condition-body">
+              <div class="condition-title">Quality gates</div>
+              <div class="condition-desc">{ar.allQualityGatesPassed === true ? 'All quality gates passed' : ar.allQualityGatesPassed === false ? 'Failing quality gates' : 'Gates status unknown'}</div>
+            </div>
+          </div>
+
+          <div class="condition-card" class:valid={ar.allPrsMerged === true} class:invalid={ar.allPrsMerged === false} class:unknown={ar.allPrsMerged == null}>
+            <div class="condition-marker">{ar.allPrsMerged === true ? '✓' : ar.allPrsMerged === false ? '✗' : '?'}</div>
+            <div class="condition-body">
+              <div class="condition-title">PR reviews & merges</div>
+              <div class="condition-desc">{ar.allPrsMerged === true ? 'All PRs merged and CI clean' : ar.allPrsMerged === false ? 'Pending or unmerged PRs' : 'PR status unknown'}</div>
+            </div>
+          </div>
+
+          <div class="condition-card" class:valid={ar.githubAccessHealthy === true} class:invalid={ar.githubAccessHealthy === false} class:unknown={ar.githubAccessHealthy == null}>
+            <div class="condition-marker">{ar.githubAccessHealthy === true ? '✓' : ar.githubAccessHealthy === false ? '✗' : '?'}</div>
+            <div class="condition-body">
+              <div class="condition-title">GitHub & CI access</div>
+              <div class="condition-desc">{ar.githubAccessHealthy === true ? 'GitHub repository & CI healthy' : ar.githubAccessHealthy === false ? 'GitHub access or CI degraded' : 'Access status unknown'}</div>
+            </div>
+          </div>
+
+          <!-- 5th Condition: Client Acceptance Traversal (Goldman Lock / Belnap Tri-state) -->
+          <div class="condition-card highlight-witness" class:valid={ar.clientAcceptanceWitnessed === true} class:invalid={ar.clientAcceptanceWitnessed === false} class:unknown={ar.clientAcceptanceWitnessed == null}>
+            <div class="condition-marker">{ar.clientAcceptanceWitnessed === true ? '✓' : ar.clientAcceptanceWitnessed === false ? '✗' : '?'}</div>
+            <div class="condition-body">
+              <div class="condition-title">Client acceptance witness</div>
+              <div class="condition-desc">
+                {#if ar.clientAcceptanceWitnessed === true}
+                  Customer acceptance traversal recorded (walked by client)
+                {:else if ar.clientAcceptanceWitnessed === false}
+                  No customer traversal recorded (scope built, awaiting client acceptance)
+                {:else}
+                  Unknown (traversal measurement unverified / error — not assumed false)
+                {/if}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {#if ar.unmetConditions && ar.unmetConditions.length > 0}
+          <div class="unmet-ledger">
+            <span class="unmet-heading">Unmet conditions preventing acceptance:</span>
+            <ul>
+              {#each ar.unmetConditions as unmet}
+                <li>{unmet}</li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      {/if}
+    </div>
+
+    <div class="forge-panel span-2">
       <span class="forge-eyebrow">Notes about how this project was built</span>
       <h3>Kaizen — this project's own findings</h3>
       {#if kaizenEntries.length === 0}
@@ -220,6 +311,128 @@
   }
 
   .coherence-score strong {
+    color: var(--forge-ink);
+  }
+
+  .readiness-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: var(--space-4);
+  }
+
+  .readiness-status-badge {
+    font-family: var(--font-body);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    text-transform: uppercase;
+  }
+
+  .readiness-status-badge.ready {
+    background: #e9f5e6;
+    color: var(--forge-healthy);
+    border: 1px solid var(--forge-healthy);
+  }
+
+  .readiness-status-badge.not-ready {
+    background: #fdeeee;
+    color: var(--forge-critical);
+    border: 1px solid var(--forge-critical);
+  }
+
+  .readiness-status-badge.unknown {
+    background: #fdf6e7;
+    color: var(--forge-attention);
+    border: 1px solid var(--forge-attention);
+  }
+
+  .readiness-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+
+  .condition-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: var(--forge-bg);
+    border: 1px solid var(--forge-line-soft);
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+
+  .condition-card.valid {
+    border-left: 3px solid var(--forge-healthy);
+  }
+
+  .condition-card.invalid {
+    border-left: 3px solid var(--forge-critical);
+  }
+
+  .condition-card.unknown {
+    border-left: 3px solid var(--forge-attention);
+  }
+
+  .condition-marker {
+    font-size: 14px;
+    font-weight: bold;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+  }
+
+  .condition-card.valid .condition-marker {
+    color: var(--forge-healthy);
+  }
+
+  .condition-card.invalid .condition-marker {
+    color: var(--forge-critical);
+  }
+
+  .condition-card.unknown .condition-marker {
+    color: var(--forge-attention);
+  }
+
+  .condition-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--forge-ink);
+  }
+
+  .condition-desc {
+    font-size: 11px;
+    color: var(--forge-ink-muted);
+    margin-top: 2px;
+    line-height: 1.35;
+  }
+
+  .highlight-witness {
+    background: var(--forge-surface);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+
+  .unmet-ledger {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: #fdf5f5;
+    border: 1px solid #f8d7d7;
+    border-radius: 6px;
+  }
+
+  .unmet-heading {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--forge-critical);
+  }
+
+  .unmet-ledger ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 12px;
     color: var(--forge-ink);
   }
 

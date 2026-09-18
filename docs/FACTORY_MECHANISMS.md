@@ -10770,7 +10770,7 @@ not ideal until test execution and frontend display are closed. Code was not cha
 - `ClientAcceptanceTraversalEntity`: считаю механизм идеальным
 - `ClientAcceptanceTraversalRepository`: считаю механизм идеальным
 - `VerdictGate.constrain`: считаю механизм идеальным
-- frontend/operator rendering for `command-dashboard`: механизм не идеален; добавить видимое отображение `acceptanceReadiness.clientAcceptanceWitnessed` и сохранить `unknown` отдельно от `not ready`, философия `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` и `NUEL_BELNAP_03_TRUTH_STATUS_TABLE`.
+- frontend/operator rendering for `command-dashboard`: считаю механизм идеальным (видимое отображение `acceptanceReadiness.clientAcceptanceWitnessed` и сохранение три-статуса Белнапа `unknown` отдельно от `not ready` в Кузнице/ForgeDeliveryRoom, покрыт сквозными Spring MVC тестами в CommandDashboardControllerTest и svelte-check).
 
 # XXXIV. Внутренний вход наблюдателя: запрет является исполнимой границей
 

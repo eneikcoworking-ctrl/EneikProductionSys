@@ -461,3 +461,29 @@ export type CoherenceGraphSnapshot = {
   acceptedNodes: number;
 };
 
+// GET /api/projects/{projectId}/command-dashboard (Section XXXIII / XXXIV, Belnap tri-state D012)
+export type AcceptanceReadinessDto = {
+  readiness: 'ready' | 'not ready' | 'unknown';
+  allTasksDone: boolean | null;
+  allQualityGatesPassed: boolean | null;
+  allPrsMerged: boolean | null;
+  githubAccessHealthy: boolean | null;
+  clientAcceptanceWitnessed: boolean | null;
+  unmetConditions: string[];
+  statusLabel: string;
+  uiColorToken: string;
+  kanoRecommendation?: string | null;
+};
+
+export type CommandDashboardDto = {
+  wishlist: Record<string, any>[];
+  tasks: Record<string, any>[];
+  julesSessions: Record<string, any>[];
+  prReviews: Record<string, any>[];
+  githubAccessStatus: Record<string, any>[];
+  linearIssueMetadata: Record<string, any>[];
+  acceptanceReadiness: AcceptanceReadinessDto;
+  dataSourcesStatus: Record<string, string>;
+};
+
+
