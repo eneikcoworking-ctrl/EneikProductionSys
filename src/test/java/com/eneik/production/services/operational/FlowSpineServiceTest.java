@@ -40,6 +40,17 @@ class FlowSpineServiceTest {
     }
 
     @Test
+    void stalledProjectStatusMapsDirectlyToSystemStalled() {
+        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (Prescription 57, D012):
+        // ProjectStatus.stalled is a first-class state producing SYSTEM_STALLED even if ambient systemStatus is "ok"
+        FlowSpineService.StateInputs input = input(ProjectStatus.stalled, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, true, "ok", false);
+
+        assertEquals("SYSTEM_STALLED", FlowSpineService.decideState(input));
+        assertTrue(FlowSpineService.isBlockingState("SYSTEM_STALLED"));
+    }
+
+    @Test
     void localDuplicateContentBlocksBeforeDispatch() {
         FlowSpineService.StateInputs input = input(ProjectStatus.active, 3, 0, 0, 0, 0, 0,
                 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 3, 0, true, "ok", true);

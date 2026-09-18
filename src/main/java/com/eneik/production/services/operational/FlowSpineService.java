@@ -259,6 +259,9 @@ public class FlowSpineService {
         if (input.projectStatus() == ProjectStatus.analyzing || input.projectStatus() == ProjectStatus.waiting) {
             return "PROJECT_NOT_ACTIVE";
         }
+        if (input.projectStatus() == ProjectStatus.stalled) {
+            return "SYSTEM_STALLED";
+        }
         if (input.duplicateContentDetected()) {
             return "BLOCKED_BY_DUPLICATE_CONTENT";
         }

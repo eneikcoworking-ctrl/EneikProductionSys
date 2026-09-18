@@ -4611,7 +4611,7 @@ associated with this repo»: это заготовка, а не боевая п�
 **Проверка:** по любому утверждению видно, что и когда его изменило.
 **Опровергнет:** вердикт, изменившийся без записи о причине.
 
-### 57. У проекта нет состояния «поток встал сам» · `TRUTH_STATUS_TABLE` (D012)
+### 57. У проекта нет состояния «поток встал сам» · `TRUTH_STATUS_TABLE` (D012) · **ЗАКРЫТО**
 **Механизм:** `ProjectStatus`, `ProjectEntity:97` (умолчание `active`).
 **Что не так:** `SYSTEM_STALLED` встречается во всём `main` **только в комментариях**; ближайшее значение
 `frozen` есть решение, а не обнаруженный затор. Проект, стоящий сорок часов, читается как `active`
@@ -4619,6 +4619,18 @@ associated with this repo»: это заготовка, а не боевая п�
 **Чинить:** представить обнаруженный затор состоянием, а не только телеметрией.
 **Проверка:** стоящий проект отличим от идущего одним чтением состояния.
 **Опровергнет:** читающий, для которого стоящий проект неотличим от идущего.
+
+*Что сделано точно:*
+1. **Первоклассный статус (`ProjectStatus.stalled`):** введён в перечисление `ProjectStatus`, дополнен предикатами `isActive()`, `isStalled()`, `isTerminal()`. В `ProjectEntity` добавлены предикаты `isStalled()`, `isActive()`.
+2. **Прямое отображение в `FlowSpineService`:** статус `ProjectStatus.stalled` транслируется в `"SYSTEM_STALLED"`, что делает затор свойством самого проекта, а не только внешней телеметрии.
+3. **Автономное обнаружение и восстановление (`ContinuousOrchestrationService`):**
+   - В `checkForSystemStall()` стоящие проекты (при превышении порога тишины или отключении всех аккаунтов) переводятся в `stalled` с персистенцией в БД.
+   - При появлении продвижения (сброс таймера затора) статус автоматически восстанавливается в `active`.
+   - В `systemWorkSnapshot()` и `branchGarbageCollectorService` выборка включает проекты `active` и `stalled`, предотвращая слепые зоны оркестрации.
+4. **Заслон фальсификации:**
+   - `ContinuousOrchestrationServiceTest`: `stalledProjectIsDistinguishableFromActiveBySingleStateRead`, `stalledProjectRecoversToActiveWhenProgressRecordedWithinWindow`, `windowElapsedWithoutDeliverableReportsStalledEvenIfAuditsRan`.
+   - `FlowSpineServiceTest`: `stalledProjectStatusMapsDirectlyToSystemStalled`. Все 79/79 тестов контура green.
+
 
 ### 58. Живое значение флага наблюдателя расходится с миграцией · `ANTI_MIRROR_TELEMETRY` (D013)
 **Механизм:** `gemini_project_observer_enabled`; `V111` вставляет `'false'` и является последней из двух

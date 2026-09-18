@@ -633,6 +633,73 @@ class ContinuousOrchestrationServiceTest {
 
         verify(settingsService, times(1)).save("system_stall_status", "stalled");
         verify(settingsService, never()).save("system_stall_status", "ok");
+        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (Prescription 57, D012):
+        // Project transitions to first-class ProjectStatus.stalled, distinguished from active by 1 read
+        verify(projectRepository, times(1)).save(activeProject);
+        assertEquals(ProjectStatus.stalled, activeProject.getStatus());
+        assertTrue(activeProject.isStalled());
+    }
+
+    @Test
+    void stalledProjectRecoversToActiveWhenProgressRecordedWithinWindow() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectEntity stalledProject = project(UUID.randomUUID(), "stalled-test", ProjectStatus.stalled);
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled))
+                .thenReturn(List.of(stalledProject));
+
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+        SystemProgressTracker tracker = new SystemProgressTracker();
+        tracker.recordProgress(java.time.Instant.now().minus(java.time.Duration.ofMinutes(5)));
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository,
+                mock(ProjectFlowService.class),
+                mock(AccountRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class),
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                mock(TaskRepository.class),
+                tracker,
+                settingsService,
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class),
+                mock(com.eneik.production.services.verdict.AutonomousVerdictObservationService.class)
+        );
+
+        ReflectionTestUtils.invokeMethod(service, "checkForSystemStall");
+
+        verify(settingsService, times(1)).save("system_stall_status", "ok");
+        verify(projectRepository, times(1)).save(stalledProject);
+        assertEquals(ProjectStatus.active, stalledProject.getStatus());
+        assertTrue(stalledProject.isActive());
+    }
+
+    @Test
+    void stalledProjectIsDistinguishableFromActiveBySingleStateRead() {
+        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE: verification & refutation test (Prescription 57)
+        ProjectEntity running = project(UUID.randomUUID(), "running", ProjectStatus.active);
+        ProjectEntity stalled = project(UUID.randomUUID(), "wedged", ProjectStatus.stalled);
+
+        // Verification: standing project is distinguished from progressing project by a single read
+        assertTrue(running.isActive());
+        org.junit.jupiter.api.Assertions.assertFalse(running.isStalled());
+        assertEquals(ProjectStatus.active, running.getStatus());
+
+        assertTrue(stalled.isStalled());
+        org.junit.jupiter.api.Assertions.assertFalse(stalled.isActive());
+        assertEquals(ProjectStatus.stalled, stalled.getStatus());
+
+        // Refutation: a reader checking status cannot conflate a stalled project with an active project
+        org.junit.jupiter.api.Assertions.assertNotEquals(running.getStatus(), stalled.getStatus());
     }
 
     @Test

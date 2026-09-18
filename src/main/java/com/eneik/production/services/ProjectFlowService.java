@@ -616,6 +616,26 @@ public class ProjectFlowService {
         return toProjectDto(project);
     }
 
+    @Transactional
+    public ProjectDto markProjectStalled(UUID projectId) {
+        ProjectEntity project = requireProject(projectId);
+        if (project.getStatus() == ProjectStatus.active) {
+            project.setStatus(ProjectStatus.stalled);
+            return toProjectDto(projectRepository.save(project));
+        }
+        return toProjectDto(project);
+    }
+
+    @Transactional
+    public ProjectDto resumeStalledProject(UUID projectId) {
+        ProjectEntity project = requireProject(projectId);
+        if (project.getStatus() == ProjectStatus.stalled) {
+            project.setStatus(ProjectStatus.active);
+            return toProjectDto(projectRepository.save(project));
+        }
+        return toProjectDto(project);
+    }
+
     // 2026-08-07 (operator directive: "the results of the first decomposition must be deleted there and a
     // completely new one run from scratch"): deletes every task/wishlist/feature produced by a project's first
     // decomposition attempt and re-submits the same brief as a fresh client wishlist, so the SAME
@@ -7328,6 +7348,7 @@ public class ProjectFlowService {
         String statusLabel = project.getStatus().name().toUpperCase();
         String uiColorToken = switch (project.getStatus()) {
             case active -> "text-success";
+            case stalled -> "text-danger";
             case frozen -> "text-warning";
             case accepted -> "text-primary";
             case archived -> "text-secondary";

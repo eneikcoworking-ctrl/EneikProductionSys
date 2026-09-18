@@ -7,6 +7,8 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.logging.LogScope;
+import java.util.ArrayList;
+import java.util.List;
 import com.eneik.production.services.operational.OperationalAction;
 import com.eneik.production.services.operational.OperationalPolicyService;
 import org.slf4j.Logger;
@@ -619,6 +621,13 @@ public class ContinuousOrchestrationService {
                         lastProgress, java.time.Instant.now()).toMinutes();
                 if (minutesSinceProgress < stallThresholdMinutes) {
                     setSystemStatus("ok");
+                    List<ProjectEntity> stalledProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled);
+                    for (ProjectEntity stalled : stalledProjects) {
+                        stalled.setStatus(ProjectStatus.active);
+                        projectRepository.save(stalled);
+                        log.info("Continuous Orchestration: Project {} status recovered from STALLED back to ACTIVE (forward progress made {}m ago)",
+                                stalled.getSlug(), minutesSinceProgress);
+                    }
                     return;
                 }
             }
@@ -642,9 +651,20 @@ public class ContinuousOrchestrationService {
                     log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes with actionable work present: {}.", minutesSinceProgress, work.describe());
                     setSystemStatus("stalled");
 
+                    // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012 / Belnap 1977):
+                    // Transition active projects to first-class ProjectStatus.stalled so readers distinguish a stall with 1 read
+                    List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+                    for (ProjectEntity project : activeProjects) {
+                        project.setStatus(ProjectStatus.stalled);
+                        projectRepository.save(project);
+                        log.warn("Continuous Orchestration: Project {} marked as STALLED due to lack of forward progress (idle capacity + no progress for {}m)",
+                                project.getSlug(), minutesSinceProgress);
+                    }
+
                     if (branchGarbageCollectorService != null && work.reviewTasksWithPr() > 0) {
-                        List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
-                        for (ProjectEntity project : activeProjects) {
+                        List<ProjectEntity> candidateProjects = new ArrayList<>(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active));
+                        candidateProjects.addAll(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled));
+                        for (ProjectEntity project : candidateProjects) {
                             List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
                             for (TaskEntity t : reviewTasks) {
                                 var prOpt = julesSessionRepository.findByTaskId(t.getId()).stream()
@@ -680,6 +700,13 @@ public class ContinuousOrchestrationService {
                     log.error("SYSTEM STALLED: all {} operational accounts are disabled (enabled=false); actionable work cannot be dispatched: {}.",
                             disabledCount, work.describe());
                     setSystemStatus("stalled");
+                    List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+                    for (ProjectEntity project : activeProjects) {
+                        project.setStatus(ProjectStatus.stalled);
+                        projectRepository.save(project);
+                        log.warn("Continuous Orchestration: Project {} marked as STALLED due to disabled operational accounts",
+                                project.getSlug());
+                    }
                 } else {
                     setSystemStatus(lastProgress == null ? "undetermined" : "busy_with_actionable_work");
                 }
@@ -690,14 +717,15 @@ public class ContinuousOrchestrationService {
     }
 
     SystemWorkSnapshot systemWorkSnapshot() {
-        List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
-        List<TaskEntity> activeProjectTasks = activeProjects.stream()
+        List<ProjectEntity> targetProjects = new ArrayList<>(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active));
+        targetProjects.addAll(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled));
+        List<TaskEntity> activeProjectTasks = targetProjects.stream()
                 .flatMap(project -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream())
                 .toList();
         long queuedTasks = activeProjectTasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.queued)
                 .count();
-        long pendingWishlists = activeProjects.stream()
+        long pendingWishlists = targetProjects.stream()
                 .flatMap(project -> wishlistRepository.findByProjectId(project.getId()).stream())
                 .filter(com.eneik.production.models.persistence.WishlistEntity::movable)
                 .count();

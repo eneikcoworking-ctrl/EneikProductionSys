@@ -1,11 +1,11 @@
-# Такт L2: Ведущий инженер (2026-09-18 12:55 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 13:55 UTC)
 
-1. Предписание 56 закрыто (BELIEF_UPDATE_LEDGER / D007 Evidence gap, Isaac Levi 1980):
-   - В `Judgement` добавлены компоненты доксастической истории: `previousVerdict`, `previousReason`, `previousEvidence`, `decidedAt`, предикаты `hasTransition()`, `hasBeliefUpdate()`.
-   - В `VerdictReconciliation` реализован реестр `beliefLedger`, связывающий текущие вердикты с предшествующим состоянием по ключу `(projectId, layer, proposition)`.
-   - Реализован заслон опровержения: вердикт, изменившийся без записи причины или свидетельства, бракуется в `ABSTAIN` (`UNGROUNDED_TRANSITION`) и блокирует продвижение (`mayAdvance=false`).
-   - Добавлены методы аудита переходов `reconciliation.transitions()`, `getPriorJudgement`, `getBeliefTransitions`.
+1. Предписание 57 закрыто (TRUTH_STATUS_TABLE / D012 Semantic drift, Nuel Belnap 1977):
+   - В `ProjectStatus` введено первоклассное состояние `stalled`, добавлены предикаты `isActive()`, `isStalled()`, `isTerminal()`.
+   - В `ContinuousOrchestrationService` реализован переход `active -> stalled` при выявлении затора и авто-восстановление `stalled -> active` при фиксации продвижения.
+   - В `FlowSpineService` статус `stalled` транслируется в `"SYSTEM_STALLED"`; `systemWorkSnapshot` и очистка веток видят stalled-проекты.
+   - Устранена слепая зона: стоящий проект неотличим от активного был у 28 читателей, теперь отличим одним чтением `status`.
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `VerdictReconciliationTest`, `AutonomousVerdictObservationServiceTest`, `VerdictGateTest` (31/31 green).
+   - `ContinuousOrchestrationServiceTest`, `FlowSpineServiceTest`, `VerdictReconciliationTest`, `AutonomousVerdictObservationServiceTest`, `VerdictGateTest` (79/79 green).
 3. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 57).
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 58).

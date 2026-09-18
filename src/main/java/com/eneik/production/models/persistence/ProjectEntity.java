@@ -188,6 +188,8 @@ public class ProjectEntity {
 
     public ProjectStatus getStatus() { return status; }
     public void setStatus(ProjectStatus status) { this.status = status; }
+    public boolean isStalled() { return status == ProjectStatus.stalled; }
+    public boolean isActive() { return status == ProjectStatus.active; }
     public String getOnboardingMode() { return onboardingMode; }
     public void setOnboardingMode(String onboardingMode) { this.onboardingMode = onboardingMode; }
     public String getDefaultBranch() { return defaultBranch; }
