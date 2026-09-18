@@ -4504,6 +4504,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** прогон, в котором ограничением назван шаг, отличный от размеченного.
 
 ### 47. Память барабана-буфера-верёвки живёт только в оперативной · `PERSISTENCE_SNAPSHOT` (D010)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Созданы Flyway миграция `V142__create_toc_snapshots.sql`, сущности `@Entity` `TocNodeSnapshotEntity` и `TocEdgeSnapshotEntity` в пакете `com.eneik.production.toc.model.persistence`, репозитории `TocNodeSnapshotRepository` и `TocEdgeSnapshotRepository`, и сервис `TocPersistenceService`. Замер `grep -rln "@Entity" toc/` теперь находит обе сущности. Ряд Уэлфорда (`meanDurationMs`, `m2Ms`, `stdDevMs`, `completedCount`) и топология переходов сохраняются при `enterStep`/`exitStep` и восстанавливаются при старте `TocSentinelService` до первого запуска `optimizer.evaluateConstraintsAndDbr()`. При перезапуске границы таймаутов и решения об ограничении вычисляются из накопленной истории, а наблюдение после перезапуска обновляет ряд $N+1$, а не обнуляет до выборки из одного элемента. Заслон: `TocPersistenceSnapshotTest` (4/4 green).
 **Механизм:** `TocNode`, `TocEdge`; замер `grep -rln "@Entity" toc/` даёт ноль (контроль: тот же греп
 находит `TaskEntity` в 55 файлах).
 **Что не так:** среднее и разброс по Уэлфорду обнуляются при каждом перезапуске, и первое решение после

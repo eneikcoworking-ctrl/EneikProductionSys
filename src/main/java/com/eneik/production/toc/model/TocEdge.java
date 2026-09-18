@@ -30,4 +30,8 @@ public class TocEdge {
     public void incrementTransition() {
         transitionCount.incrementAndGet();
     }
+
+    public void restoreTransitionCount(long count) {
+        transitionCount.set(count);
+    }
 }

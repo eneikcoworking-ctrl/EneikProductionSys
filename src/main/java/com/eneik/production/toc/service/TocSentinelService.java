@@ -60,6 +60,7 @@ public class TocSentinelService implements SchedulingConfigurer {
     private final TocExecutionGraph graph;
     private final TocAnomalyDetector anomalyDetector;
     private final TocOptimizer optimizer;
+    private TocPersistenceService persistenceService;
 
     private long minCadenceMs = DEFAULT_MIN_CADENCE_MS;
     private long maxCadenceMs = DEFAULT_MAX_CADENCE_MS;
@@ -67,12 +68,33 @@ public class TocSentinelService implements SchedulingConfigurer {
     public TocSentinelService(TocExecutionGraph graph,
                               TocAnomalyDetector anomalyDetector,
                               TocOptimizer optimizer) {
+        this(graph, anomalyDetector, optimizer, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public TocSentinelService(TocExecutionGraph graph,
+                              TocAnomalyDetector anomalyDetector,
+                              TocOptimizer optimizer,
+                              @org.springframework.beans.factory.annotation.Autowired(required = false)
+                              TocPersistenceService persistenceService) {
         this.graph = graph;
         this.anomalyDetector = anomalyDetector;
         this.optimizer = optimizer;
+        this.persistenceService = persistenceService;
+        if (this.persistenceService != null) {
+            this.persistenceService.restoreHistoricalState(this.graph);
+        }
         // Initial evaluation establishes baseline DbrStatus snapshot without waiting for first scheduled tick
         this.optimizer.evaluateConstraintsAndDbr();
         log.info("[TOC-SENTINEL][INIT] TOC Sentinel Service initialized successfully.");
+    }
+
+    public TocPersistenceService getPersistenceService() {
+        return persistenceService;
+    }
+
+    public void setPersistenceService(TocPersistenceService persistenceService) {
+        this.persistenceService = persistenceService;
     }
 
     @Value("${eneik.toc.sentinel.min-cadence-ms:250}")
@@ -131,10 +153,17 @@ public class TocSentinelService implements SchedulingConfigurer {
             return false;
         }
 
+        String previousNode = token.getActiveNode();
         boolean allowed = anomalyDetector.checkAndRegisterStepEnter(token, stepName);
         if (allowed) {
             TocNode node = graph.getOrCreateNode(stepName);
             node.incrementInFlight();
+            if (previousNode != null && persistenceService != null) {
+                TocEdge edge = graph.getOrCreateEdge(previousNode, stepName);
+                if (edge != null) {
+                    persistenceService.saveEdgeSnapshot(previousNode, stepName, edge.getTransitionCount());
+                }
+            }
             log.info("[TOC-SENTINEL][STEP_ENTER] Token '{}' entered step '{}'. Active path: {}",
                     token.getTokenId(), stepName, token.getCallStack());
         }
@@ -160,6 +189,9 @@ public class TocSentinelService implements SchedulingConfigurer {
         if (node != null) {
             node.decrementInFlight();
             node.recordExecution(durationNanos, success);
+            if (persistenceService != null) {
+                persistenceService.saveNodeSnapshot(node);
+            }
             log.info("[TOC-SENTINEL][STEP_EXIT] Token '{}' exited step '{}' (Duration: {} ms, Success: {}). In-Flight: {}.",
                     token.getTokenId(), stepName, String.format("%.2f", durationNanos / 1_000_000.0), success, node.getInFlightCount());
         }

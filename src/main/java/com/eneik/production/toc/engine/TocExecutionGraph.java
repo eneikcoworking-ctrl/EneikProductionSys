@@ -60,6 +60,14 @@ public class TocExecutionGraph {
         edges.computeIfAbsent(key, k -> new TocEdge(sourceNode, targetNode)).incrementTransition();
     }
 
+    public TocEdge getOrCreateEdge(String sourceNode, String targetNode) {
+        if (sourceNode == null || targetNode == null || sourceNode.equals(targetNode)) {
+            return null;
+        }
+        String key = sourceNode + "->" + targetNode;
+        return edges.computeIfAbsent(key, k -> new TocEdge(sourceNode, targetNode));
+    }
+
     public Collection<TocEdge> getEdges() {
         return Collections.unmodifiableCollection(edges.values());
     }

@@ -51,6 +51,31 @@ public class TocNode {
         }
     }
 
+    /**
+     * Restores node statistics from durable persistence snapshot (DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT / D010).
+     */
+    public synchronized void restoreSnapshot(long completedCount,
+                                            long errorCount,
+                                            long totalDurationNanos,
+                                            double meanDurationMs,
+                                            double m2Ms,
+                                            double stdDevMs) {
+        this.completedCount.set(completedCount);
+        this.errorCount.set(errorCount);
+        this.totalDurationNanos.set(totalDurationNanos);
+        this.meanDurationMs = meanDurationMs;
+        this.m2Ms = m2Ms;
+        this.stdDevMs = stdDevMs;
+    }
+
+    public double getM2Ms() {
+        return m2Ms;
+    }
+
+    public long getTotalDurationNanos() {
+        return totalDurationNanos.get();
+    }
+
     public String getName() {
         return name;
     }
