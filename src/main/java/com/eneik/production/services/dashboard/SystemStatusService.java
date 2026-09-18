@@ -611,8 +611,25 @@ public class SystemStatusService {
             for (TaskStatus status : TaskStatus.values()) {
                 counts.put(status, realWorkTasks.stream().filter(t -> t.getStatus() == status).count());
             }
+            long workInProgress = counts.entrySet().stream()
+                    .filter(e -> !e.getKey().isTerminal())
+                    .mapToLong(Map.Entry::getValue)
+                    .sum();
+            long activeWip = counts.entrySet().stream()
+                    .filter(e -> e.getKey() == TaskStatus.claimed
+                            || e.getKey() == TaskStatus.in_progress
+                            || e.getKey() == TaskStatus.pending_review
+                            || e.getKey() == TaskStatus.review)
+                    .mapToLong(Map.Entry::getValue)
+                    .sum();
+            long totalWorkTasks = counts.values().stream().mapToLong(Long::longValue).sum();
+
             Map<String, Object> section = new LinkedHashMap<>();
             counts.forEach((status, count) -> section.put(status.name(), count));
+            section.put("workInProgress", workInProgress);
+            section.put("wip", workInProgress);
+            section.put("activeWip", activeWip);
+            section.put("totalWorkTasks", totalWorkTasks);
             section.put("carrierDeaths", carrierDeaths);
             section.put("namespaceRefusals", namespaceRefusals);
             section.put("takenClaimsPast24Hours", takenClaimsPast24Hours);
@@ -633,8 +650,25 @@ public class SystemStatusService {
                 counts.put(status, count.longValue());
             }
         }
+        long workInProgress = counts.entrySet().stream()
+                .filter(e -> !e.getKey().isTerminal())
+                .mapToLong(Map.Entry::getValue)
+                .sum();
+        long activeWip = counts.entrySet().stream()
+                .filter(e -> e.getKey() == TaskStatus.claimed
+                        || e.getKey() == TaskStatus.in_progress
+                        || e.getKey() == TaskStatus.pending_review
+                        || e.getKey() == TaskStatus.review)
+                .mapToLong(Map.Entry::getValue)
+                .sum();
+        long totalWorkTasks = counts.values().stream().mapToLong(Long::longValue).sum();
+
         Map<String, Object> section = new LinkedHashMap<>();
         counts.forEach((status, count) -> section.put(status.name(), count));
+        section.put("workInProgress", workInProgress);
+        section.put("wip", workInProgress);
+        section.put("activeWip", activeWip);
+        section.put("totalWorkTasks", totalWorkTasks);
         section.put("carrierDeaths", carrierDeaths);
         section.put("namespaceRefusals", namespaceRefusals);
         section.put("takenClaimsPast24Hours", takenClaimsPast24Hours);

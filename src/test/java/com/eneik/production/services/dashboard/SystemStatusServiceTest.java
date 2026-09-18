@@ -799,7 +799,11 @@ class SystemStatusServiceTest {
         assertThat(section).containsEntry("queued", 10L)
                 .containsEntry("in_progress", 4L)
                 .containsEntry("done", 25L)
-                .containsEntry("failed", 0L);
+                .containsEntry("failed", 0L)
+                .containsEntry("workInProgress", 14L)
+                .containsEntry("wip", 14L)
+                .containsEntry("activeWip", 4L)
+                .containsEntry("totalWorkTasks", 39L);
         verify(tasks, never()).findAll();
         verify(tasks).countNonCarrierTasksByStatus();
     }

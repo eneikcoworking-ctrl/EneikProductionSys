@@ -16,6 +16,7 @@ public interface ProjectRepository extends JpaRepository<ProjectEntity, UUID> {
     boolean existsBySlug(String slug);
     Optional<ProjectEntity> findFirstByStatusOrderByCreatedAtDesc(ProjectStatus status);
     List<ProjectEntity> findByStatusOrderByCreatedAtDesc(ProjectStatus status);
+    Optional<ProjectEntity> findFirstByRepositoryNameIgnoreCase(String repositoryName);
 
     // Admission mutex for "at most one active singleton-task-of-type-X per project" decisions
     // (dispatchFalsificationAudit and its siblings) - a different defect class than a terminal-state

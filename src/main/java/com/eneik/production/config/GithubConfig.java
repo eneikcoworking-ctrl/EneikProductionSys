@@ -20,6 +20,9 @@ public class GithubConfig {
     @Value("${github.webhook-url:}")
     private String webhookUrl;
 
+    @Value("${github.webhook-secret:}")
+    private String webhookSecret;
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -38,5 +41,9 @@ public class GithubConfig {
 
     public String getWebhookUrl() {
         return webhookUrl;
+    }
+
+    public String getWebhookSecret() {
+        return webhookSecret;
     }
 }

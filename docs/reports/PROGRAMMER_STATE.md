@@ -1,12 +1,12 @@
-# Такт L2: Ведущий инженер (2026-09-17 23:55 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 00:50 UTC)
 
-1. Предписание 40 закрыто (RONALD_DVORKIN_02_RIGHTS_DUTIES_MATRIX / D006, PATRITSIYA_CHERCHLAND_05_TELEOSEMANTIC_FEEDBACK / D011):
-   - `ClaimController` и `ProjectController`: эндпоинты `claim` закрыты деонтической авторизацией (`validateClaimantAuthorization`). Право вытягивания закреплено за аутентичным субъектом (`AccountEntity`), подтверждающим владение через `X-Account-Key`, `X-API-Key`, Bearer-токен или мастер-ключ.
-   - `ClaimService`: встроен инвариант субъекта (`validateClaimSubject`): декоммиссионированные, отключённые (`enabled = false`) и заблокированные аккаунты лишены права брать задачи. Внедрён атомарный счётчик взятых притязаний `pullClaimsCount` и логирование в журнал.
-   - `ApiAuthorizationInterceptor`: добавлена проверка API-ключей активных аккаунтов через `AccountRepository.findByApiKeyAndEnabledTrue`.
-   - `SystemStatusService`: в блок `tasks` свода фабрики добавлены `takenClaimsPast24Hours` и `pullClaimsCount`, делая нулевые притязания за сутки измеримыми.
-2. Заслон (100% green в Docker):
-   - `ClaimRightsDutiesMatrixTest` (7 тестов): взятие задачи авторизованным субъектом и рост счётчика; отказ 401 без ключа; отказ 403 при неверном ключе; допуск по мастер-ключу; запрет вытягивания отключённым/декоммиссионированным/заблокированным; видимость 0 в своде и обновление после взятия; соответствие HTTP-статусов в ClaimController.
-   - Регрессия: `ApiAuthorizationInterceptorTest` (21/21), `TocPriorityClaimTest` (1/1), `ClaimServiceRaceGuardTest` (1/1).
+1. Предписание 41 закрыто (DEREK_PARFIT_02_CAUSAL_PROCESS_TRACE / D013, ALVA_NOE_01_PERCEPTION_ACTION_LOOP / D011):
+   - `GithubWebhookController`: вход вебхука защищён валидацией `X-GitHub-Event`, тела и криптографической HMAC-SHA256 подписи (`X-Hub-Signature-256`, `github.webhook-secret`). Обработка PR извлекает истинные метрики (linesChanged, filesChanged), связывает задачу через 3-уровневую цепочку происхождения (`jules_sessions.pr_url` -> branch UUID -> scoped проектный поиск claimed задач без глобального `findAll()`), закрывает клейм исполнителя и заказывает AI-ревьюера.
+   - `SystemStatusService`: в секцию `tasks` добавлен строгий расчёт WIP по незавершённым рабочим задачам (`workInProgress`, `wip`, `activeWip`, `totalWorkTasks`) рядом с числителем слияний (`done`), замыкая контур восприятия-действия (Perception-Action Loop).
+   - `ProjectRepository`: добавлен метод `findFirstByRepositoryNameIgnoreCase` для строго локализованного поиска проекта.
+2. Заслон (100% green в Docker Maven 3.9.9 JDK 21, -m 2g):
+   - `GithubWebhookControllerTest` (8/8): отказ 400 без заголовка/тела; отказ 401 при неверной подписи; допуск валидной HMAC-SHA256 подписи; pong на ping; разрешение задачи по сессии PR; разрешение по UUID ветки; валидация обязательного PR URL.
+   - `SystemStatusServiceTest` (20/20): проверка `workInProgress` (14), `wip` (14), `activeWip` (4), `totalWorkTasks` (39) в своде.
+   - `LeanPullReleaseTest` (6/6) и `ApiAuthorizationInterceptorTest` (17/17) - без регрессий.
 3. Следующий такт:
-   - Взять Предписание 41 / следующее по очереди и наряду `MANAGER_STATE.md`.
+   - Взять Предписание 42 (`LeanValue` / `TRUTH_STATUS_TABLE` D012: неразобранный ответ модели) по очереди и наряду `MANAGER_STATE.md`.
