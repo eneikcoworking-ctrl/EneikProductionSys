@@ -8,6 +8,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.time.Instant;
 import java.util.UUID;
+import com.eneik.production.services.audit.TaskTerminalOverwriteAudit;
 
 @Entity
 @Table(name = "tasks")
@@ -206,6 +207,8 @@ public class TaskEntity {
      */
     public void setStatus(TaskStatus status) {
         if (this.status != null && this.status.isTerminal() && this.status != status) {
+            UUID projectId = this.project != null ? this.project.getId() : null;
+            TaskTerminalOverwriteAudit.recordAttempt(this.id, projectId, this.status, status);
             throw new IllegalStateException(
                     "Terminal status " + this.status + " of task " + id + " cannot be overwritten with " + status);
         }

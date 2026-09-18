@@ -22,7 +22,7 @@ public final class ProjectLogFlushQueue {
     public record PendingEntry(UUID projectId, Instant createdAt, String level, String logger, String message) {
     }
 
-    static void offer(PendingEntry entry) {
+    public static void offer(PendingEntry entry) {
         if (QUEUE.size() >= MAX_QUEUE_SIZE) {
             return;
         }

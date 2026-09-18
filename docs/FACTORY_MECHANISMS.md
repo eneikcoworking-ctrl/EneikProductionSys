@@ -4528,6 +4528,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** сигнал без читателя.
 
 ### 49. Сверка применённых миграций отключена дважды · `FALSIFICATION_HARNESS` (D008)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт в коммите `61d3361cda107a8045b7ceaa81431d7b2e78326d`. Включена сверка миграций `spring.flyway.validate-on-migrate=true` в `application.properties` и тестовых конфигурациях, восстанавливая фальсификационный заслон против искажения применённых миграций на старте приложения. В `EneikProductionApplication.flywayMigrationStrategy` безусловный вызов `flyway.repair()` устранён и переведён под явный аварийный флаг `spring.flyway.repair-on-startup=true`. Заслон: `FlywayMigrationValidationTest`.
 **Механизм:** `EneikProductionApplication.flywayMigrationStrategy` (`repair()` перед каждым `migrate()`) и
 `src/main/resources/application.properties:55` (`spring.flyway.validate-on-migrate=false`).
 **Что не так:** изменение уже применённого файла миграции не может остановить запуск. Это не значит, что
@@ -4537,6 +4539,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** запуск, прошедший при несовпадении контрольной суммы.
 
 ### 50. Запрет на перезапись конечного состояния не оставляет следа · `INSTITUTIONAL_FACT_REGISTER` (D007)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Реализован институциональный регистр фактов `TaskTerminalOverwriteAudit` (D007, Searle 1995 / `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, `DZHON_SERL_20_PROHIBITION_AS_CODE`). При попытке перезаписи терминального статуса (`done`, `failed`, `spike_completed`) в `TaskEntity.setStatus` и `InternalTaskController` событие нарушения фиксируется до выброса `IllegalStateException` / возврата 409 Conflict. Запись аудита содержит `taskId`, `projectId`, `currentStatus`, `attemptedStatus`, временную метку и имя правила `TERMINAL_STATUS_OVERWRITE_PROHIBITION`. Событие ставится в очередь `ProjectLogFlushQueue` для долговечного журнала проекта и через мост `TaskTerminalOverwriteAuditService` сохраняется в `DefectJournalService` с категорией `INSTITUTIONAL_AUDIT` (категориальная гигиена по Райлу / D002 исключает его из операционного подсчёта дефектов Кайзен). Запрет оставляет строгий проверяемый след. Заслоны: `TaskTerminalOverwriteAuditTest` (4/4 green), `TaskEntityLaw20Test` (6/6 green), `InternalTaskControllerTest` (6/6 green).
 **Механизм:** `TaskStatus.isTerminal`, `TaskEntity.setStatus:175-181`.
 **Что не так:** правило исполнимо и объяснимо — исключение называет задачу и оба состояния, — но записи о
 применении правила нет ни в журнале дефектов, ни в событиях проекта. Правило есть, регистра нет.

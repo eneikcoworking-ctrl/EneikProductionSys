@@ -1,11 +1,11 @@
-# Такт L2: Ведущий инженер (2026-09-18 06:25 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 07:18 UTC)
 
-1. Предписание 48 закрыто (TELEOSEMANTIC_FEEDBACK / D011 Perception failure, Millikan 1984):
-   - В `EvidenceCoherenceService` добавлены методы телеосемантической верификации `isCoherent`, `isFeatureCoherent`, `getLatestRun`, `getLatestCoherenceScore` с порогом `coherence.min-score:0.0`.
-   - `ClientDeliverableReadinessService` привязан к счёту связности: `Readiness` расширен полями `coherent` и `coherenceScore`, `isProjectDeliverable` блокирует сдачу при отрицательном счёте или противоречиях, `isFeatureReadyForCloseout` запрещает слияние ветки фичи в main через `AutoMergeService.progressCloseout`, если у фичи есть принятая негативная находка дефекта без положительного подтверждения.
-   - `OperationalTruthService.deliveryStatus` переводит статус в `"incoherent"` с удержанием сдачи при нарушении связности свидетельств. Ликвидирован сигнал без потребителя — счёт напрямую меняет действие фабрики.
+1. Предписания 49 и 50 закрыты (INSTITUTIONAL_FACT_REGISTER / D007 Evidence gap, Searle 1995):
+   - Предписание 49 зафиксировано закрытым в `docs/FACTORY_MECHANISMS.md` (коммит 61d3361, `FlywayMigrationValidationTest`).
+   - Предписание 50 реализовано: создан институциональный регистр `TaskTerminalOverwriteAudit`. При попытке перезаписи терминального статуса (`done`, `failed`, `spike_completed`) в `TaskEntity.setStatus` и `InternalTaskController` событие нарушения (`taskId`, `projectId`, `currentStatus`, `attemptedStatus`, `rule`) фиксируется до выброса `IllegalStateException` / 409 Conflict.
+   - Событие ставится в `ProjectLogFlushQueue` для проектного лога и через `TaskTerminalOverwriteAuditService` сохраняется в `DefectJournalService` с категорией `INSTITUTIONAL_AUDIT` (категориальная гигиена по Райлу / D002).
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `TeleosemanticFeedbackCoherenceTest` (4/4): отрицательный счёт блокирует сдачу проекта, положительный счёт разрешает, принятый дефект блокирует closeout фичи, подтверждённый дефект разрешает closeout.
-   - `EvidenceCoherenceServiceTest` (21/21), `ClientDeliverableReadinessServiceTest` (49/49), `OperationalTruthServiceTest` (17/17) — 91/91 green.
+   - `TaskTerminalOverwriteAuditTest` (4/4 green): попытка перезаписи оставляет проверяемый след в регистре, журнале дефектов и проектном логе; валидные переходы не создают ложных записей.
+   - `TaskEntityLaw20Test` (6/6 green), `InternalTaskControllerTest` (6/6 green).
 3. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 49).
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 51).

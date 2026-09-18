@@ -80,13 +80,22 @@ public class DefectJournalService {
 
     public DefectJournalEntity recordInstitutionalAudit(String sourceComponent, String ruleName,
                                                         String description, Double metricValue) {
+        return recordInstitutionalAudit(null, sourceComponent, ruleName, description, metricValue);
+    }
+
+    public DefectJournalEntity recordInstitutionalAudit(UUID projectId, String sourceComponent, String ruleName,
+                                                        String description, Double metricValue) {
         DefectJournalEntity audit = new DefectJournalEntity(
-                null, null, null, "INFO", "INSTITUTIONAL_AUDIT", sourceComponent,
+                projectId, "INFO", "INSTITUTIONAL_AUDIT", sourceComponent,
                 ruleName, description, metricValue
         );
         DefectJournalEntity saved = defectJournalRepository.save(audit);
-        log.info("[INSTITUTIONAL-AUDIT] Rule '{}' recorded for '{}': {}", ruleName, sourceComponent, description);
+        log.info("[INSTITUTIONAL-AUDIT] Rule '{}' recorded for '{}' (project: {}): {}", ruleName, sourceComponent, projectId, description);
         return saved;
+    }
+
+    public List<DefectJournalEntity> getInstitutionalAudits(String ruleName) {
+        return defectJournalRepository.findByDefectTypeOrderByCreatedAtDesc(ruleName);
     }
 
     public List<DefectJournalEntity> getDefectsInWindow(UUID projectId, int windowHours) {

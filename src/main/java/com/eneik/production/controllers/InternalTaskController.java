@@ -7,6 +7,7 @@ import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.audit.TaskTerminalOverwriteAudit;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.data.domain.PageRequest;
@@ -129,6 +130,8 @@ public class InternalTaskController {
         if (updates.containsKey("status")) {
             TaskStatus newStatus = TaskStatus.valueOf((String) updates.get("status"));
             if (task.isTerminal() && task.getStatus() != newStatus) {
+                UUID projectId = task.getProject() != null ? task.getProject().getId() : null;
+                TaskTerminalOverwriteAudit.recordAttempt(task.getId(), projectId, task.getStatus(), newStatus);
                 return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
                         .body(java.util.Map.of("error", "Cannot overwrite terminal task status " + task.getStatus() + " with " + newStatus));
             }
