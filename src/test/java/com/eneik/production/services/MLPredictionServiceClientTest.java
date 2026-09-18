@@ -22,16 +22,19 @@ public class MLPredictionServiceClientTest {
 
     private MLPredictionServiceClient client;
     private MockRestServiceServer mockServer;
+    private com.eneik.production.services.settings.SystemSettingsService settingsService;
+    private com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
 
     @BeforeEach
     void setUp() {
-        com.eneik.production.services.settings.SystemSettingsService settingsService =
+        settingsService =
                 mock(com.eneik.production.services.settings.SystemSettingsService.class);
         when(settingsService.effectiveBoolean("gemini_enabled")).thenReturn(true);
         when(settingsService.effectiveValue("gemini_api_key")).thenReturn("test-key");
+        aiHealthTracker = new com.eneik.production.services.monitor.AiHealthTracker();
 
         client = new MLPredictionServiceClient(new RestTemplateBuilder(), "http://localhost:8000",
-                settingsService, new com.eneik.production.services.monitor.AiHealthTracker(), null);
+                settingsService, aiHealthTracker, null);
         RestTemplate restTemplate = (RestTemplate) ReflectionTestUtils.getField(client, "restTemplate");
         mockServer = MockRestServiceServer.bindTo(restTemplate).build();
     }
@@ -145,5 +148,68 @@ public class MLPredictionServiceClientTest {
         assertEquals(0, result.roundsUsed());
         assertFalse(result.hitRoundCap());
         assertTrue(result.finalText().contains("disabled"));
+    }
+
+    // --- chatCritical (Section XXX, D009 Floridi / D010 Goldman fail-closed boundary) -----------------------
+
+    @Test
+    void chatCriticalFailsClosedWhenJudgmentAgentClientIsNull() {
+        // Even with gemini_enabled=true and gemini_api_key configured, chatCritical must NOT fall back to Gemini.
+        String response = client.chatCritical("Evaluate session", "Reviewer system instruction");
+
+        assertEquals(MLPredictionServiceClient.UNAVAILABLE_NO_JUDGMENT_AGENT, response);
+        mockServer.verify(); // No requests made to Gemini HTTP endpoint
+
+        com.eneik.production.services.monitor.AiHealthTracker.CallSiteHealth health =
+                aiHealthTracker.snapshot().get("chat");
+        assertNotNull(health);
+        assertEquals(1, health.failureCount());
+        assertEquals(0, health.successCount());
+        assertEquals("judgment agent client not configured", health.lastFailureReason());
+    }
+
+    @Test
+    void chatCriticalDelegatesToJudgmentAgentClientWhenPresent() {
+        com.eneik.production.services.judgment.JudgmentAgentClient judgmentAgent =
+                mock(com.eneik.production.services.judgment.JudgmentAgentClient.class);
+        when(judgmentAgent.judgeAsText("Evaluate session", "Reviewer system instruction"))
+                .thenReturn("VERDICT: PROCEED\nREASON: All clear");
+
+        MLPredictionServiceClient clientWithJudgment = new MLPredictionServiceClient(
+                new RestTemplateBuilder(), "http://localhost:8000", settingsService, aiHealthTracker, judgmentAgent);
+
+        String response = clientWithJudgment.chatCritical("Evaluate session", "Reviewer system instruction");
+
+        assertEquals("VERDICT: PROCEED\nREASON: All clear", response);
+        mockServer.verify(); // No requests made to Gemini HTTP endpoint
+
+        com.eneik.production.services.monitor.AiHealthTracker.CallSiteHealth health =
+                aiHealthTracker.snapshot().get("chat");
+        assertNotNull(health);
+        assertEquals(1, health.successCount());
+        assertEquals(0, health.failureCount());
+    }
+
+    @Test
+    void chatCriticalReturnsSentinelWhenJudgmentAgentReturnsBlankOrNull() {
+        com.eneik.production.services.judgment.JudgmentAgentClient judgmentAgent =
+                mock(com.eneik.production.services.judgment.JudgmentAgentClient.class);
+        when(judgmentAgent.judgeAsText("Evaluate session", "Reviewer system instruction"))
+                .thenReturn("   ");
+
+        MLPredictionServiceClient clientWithJudgment = new MLPredictionServiceClient(
+                new RestTemplateBuilder(), "http://localhost:8000", settingsService, aiHealthTracker, judgmentAgent);
+
+        String response = clientWithJudgment.chatCritical("Evaluate session", "Reviewer system instruction");
+
+        assertEquals(MLPredictionServiceClient.UNAVAILABLE_JUDGMENT_NO_ANSWER, response);
+        mockServer.verify(); // No requests made to Gemini HTTP endpoint
+
+        com.eneik.production.services.monitor.AiHealthTracker.CallSiteHealth health =
+                aiHealthTracker.snapshot().get("chat");
+        assertNotNull(health);
+        assertEquals(1, health.failureCount());
+        assertEquals(0, health.successCount());
+        assertEquals("judgment sidecar returned no answer", health.lastFailureReason());
     }
 }

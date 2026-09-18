@@ -211,16 +211,23 @@ public class MLPredictionServiceClient {
      * single choke point (PredictionService.py's gemini_candidate_models), not here, so it holds even for
      * any other caller of the ML service's chat endpoint, present or future.
      */
+    public static final String UNAVAILABLE_NO_JUDGMENT_AGENT =
+            "The assistant is temporarily unavailable. Judgment agent client not configured.";
+    public static final String UNAVAILABLE_JUDGMENT_NO_ANSWER =
+            "The assistant is temporarily unavailable. Judgment sidecar returned no answer.";
+
     /**
      * The factory's one point for "read this and judge it" - and since 2026-08-21 it runs on the
      * operator's Claude subscription, not on Gemini.
      *
      * Both callers are the two rows §11.2 of the plan listed as moving off Gemini: OpsAuditorService's
      * evidence-only auditor, and JulesDispatchService's classifier for a session that has gone quiet.
-     * The Gemini observer was switched off on 2026-08-20 and its account is out of credit; this method
-     * kept routing there and answering 502, measured 39 times in 600 log lines, which left the loop
-     * classifier permanently UNAVAILABLE and the factory stalled behind one claimed task for hours.
-     * Switching a provider off without connecting its replacement is not a replacement.
+     *
+     * Critical review path (OpsAuditorService and the Jules loop classifier deep-read): MUST route
+     * to the judgment sidecar (JudgmentAgentClient). Silent fallback to Gemini when no sidecar bean is
+     * present is strictly forbidden (D009 Floridi substitution failure, D010 Goldman abstraction lock).
+     * When judgmentAgentClient is null or unconfigured, it fails closed with a sentinel and records
+     * failure in AiHealthTracker rather than routing to Gemini.
      *
      * Routed here rather than at the two call sites on purpose: this is the single place the question is
      * asked, and Charter invariant 10 is one point of application. Neither caller changes.
@@ -235,9 +242,10 @@ public class MLPredictionServiceClient {
             aiHealthTracker.recordFailure("chat", "judgment sidecar returned no answer");
             // The same sentinel this class has always returned when the reviewer is unreachable, so
             // isUsableAiAnswer keeps classifying it as "no information" rather than as a verdict.
-            return "The assistant is temporarily unavailable. Judgment sidecar returned no answer.";
+            return UNAVAILABLE_JUDGMENT_NO_ANSWER;
         }
-        return chatWithTier(prompt, systemInstruction, "pro", "");
+        aiHealthTracker.recordFailure("chat", "judgment agent client not configured");
+        return UNAVAILABLE_NO_JUDGMENT_AGENT;
     }
 
     private String chatWithTier(String prompt, String systemInstruction, String modelTier, String cacheKey) {
