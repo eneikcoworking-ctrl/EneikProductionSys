@@ -86,6 +86,43 @@ class GithubAccessServiceTest {
     }
 
     @Test
+    void checkAccessWithNullProjectIdThrowsIllegalArgumentException() {
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> githubAccessService.checkAccess(null)
+        );
+    }
+
+    @Test
+    void getLatestResultWithNullProjectIdThrowsIllegalArgumentException() {
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalArgumentException.class,
+                () -> githubAccessService.getLatestResult(null)
+        );
+    }
+
+    @Test
+    void getLatestResultReturnsCachedStatusWithoutHttpCalls() {
+        UUID projectId = UUID.randomUUID();
+        Instant now = Instant.now();
+        GithubAccessService.GithubAccessResult cached = new GithubAccessService.GithubAccessResult(
+                UUID.randomUUID(), projectId, true, true, true, true, "passing", now, null
+        );
+
+        when(jdbcTemplate.queryForObject(
+                eq("SELECT * FROM github_access_status WHERE project_id = ? ORDER BY checked_at DESC LIMIT 1"),
+                any(RowMapper.class),
+                eq(projectId)
+        )).thenReturn(cached);
+
+        GithubAccessService.GithubAccessResult result = githubAccessService.getLatestResult(projectId);
+
+        assertEquals(cached.id(), result.id());
+        assertEquals(true, result.hasRepoAccess());
+        assertEquals("passing", result.ciStatus());
+    }
+
+    @Test
     void checkAccessUsesRepositoryPermissionsForPrAccessAndActionsRunsForCi() throws Exception {
         UUID projectId = UUID.randomUUID();
         String repoName = "factory-probe";

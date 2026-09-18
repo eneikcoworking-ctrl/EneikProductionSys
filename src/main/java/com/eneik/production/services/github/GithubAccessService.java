@@ -19,6 +19,23 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * GitHub Access and Authority Probing Service.
+ * <p>
+ * Epistemological grounding: DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX / D006 Authorization ambiguity.
+ * Explicit rights/duties relations:
+ * 1. Probe Trigger (Operator / Automerge / Recheck controller):
+ *    - Right: Triggers live GitHub API calls to probe repository access, permissions, webhooks, and CI.
+ *    - Duty: Must provide a non-null valid projectId; requires active github_token and github_enabled=true.
+ *    - Denial: Null projectId rejected with IllegalArgumentException; disabled integration short-circuits
+ *      to a persisted 'skipped' status with zero network spend.
+ * 2. Status Reader (Dashboard / Monitoring / Controller):
+ *    - Right: Reads cached latest access status without consuming GitHub API budget.
+ *    - Duty: Must provide non-null projectId.
+ *    - Denial: Null projectId rejected with IllegalArgumentException.
+ * 3. Quality Auditor (Six Sigma calculation):
+ *    - Right: Calculates DPMO and defect rates across 5 access opportunities per check.
+ */
 @Service
 public class GithubAccessService {
 
@@ -62,6 +79,9 @@ public class GithubAccessService {
     ) {}
 
     public GithubAccessResult checkAccess(UUID projectId) {
+        if (projectId == null) {
+            throw new IllegalArgumentException("projectId must not be null");
+        }
         String token = settingsService.effectiveValue("github_token");
         if (!settingsService.effectiveBoolean("github_enabled") || token.isBlank()) {
             GithubAccessResult result = new GithubAccessResult(
@@ -125,6 +145,9 @@ public class GithubAccessService {
     }
 
     public GithubAccessResult getLatestResult(UUID projectId) {
+        if (projectId == null) {
+            throw new IllegalArgumentException("projectId must not be null");
+        }
         try {
             return jdbcTemplate.queryForObject(
                     "SELECT * FROM github_access_status WHERE project_id = ? ORDER BY checked_at DESC LIMIT 1",

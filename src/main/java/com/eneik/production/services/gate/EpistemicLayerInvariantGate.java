@@ -57,10 +57,24 @@ public class EpistemicLayerInvariantGate implements GateCheck {
 
     @Override
     public boolean supports(TaskEntity task) {
-        if (task == null || task.getRole() == null) {
+        if (task == null) {
             return false;
         }
-        return PERIPHERY_ROLES.contains(task.getRole().getTag());
+        if (task.getRole() != null && task.getRole().getTag() != null
+                && PERIPHERY_ROLES.contains(task.getRole().getTag().trim())) {
+            return true;
+        }
+        if (task.getPayload() != null && task.getPayload().hasNonNull("role")
+                && PERIPHERY_ROLES.contains(task.getPayload().get("role").asText().trim())) {
+            return true;
+        }
+        if (task.getFeatureId() != null) {
+            FeatureEntity feature = featureRepository.findById(task.getFeatureId()).orElse(null);
+            if (feature != null && "PERIPHERY".equalsIgnoreCase(feature.getEpistemicLayer())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -70,43 +84,47 @@ public class EpistemicLayerInvariantGate implements GateCheck {
 
     @Override
     public GateResult check(TaskEntity task) {
-        if (task == null || task.getProject() == null || task.getFeatureId() == null) {
+        if (task == null || task.getProject() == null) {
             return new GateResult(true, CHECK_NAME, List.of());
         }
 
-        FeatureEntity feature = featureRepository.findById(task.getFeatureId()).orElse(null);
-        if (feature == null || !"PERIPHERY".equalsIgnoreCase(feature.getEpistemicLayer())) {
-            return new GateResult(true, CHECK_NAME, List.of());
-        }
+        FeatureEntity feature = task.getFeatureId() != null
+                ? featureRepository.findById(task.getFeatureId()).orElse(null)
+                : null;
 
-        // Validate PR files if session exists
-        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
-        if (sessions == null || sessions.isEmpty()) {
+        boolean isPeripheryRole = (task.getRole() != null && task.getRole().getTag() != null
+                && PERIPHERY_ROLES.contains(task.getRole().getTag().trim()))
+                || (task.getPayload() != null && task.getPayload().hasNonNull("role")
+                && PERIPHERY_ROLES.contains(task.getPayload().get("role").asText().trim()));
+        boolean isPeripheryFeature = feature != null && "PERIPHERY".equalsIgnoreCase(feature.getEpistemicLayer());
+
+        if (!isPeripheryRole && !isPeripheryFeature) {
             return new GateResult(true, CHECK_NAME, List.of());
         }
 
         List<String> violations = new ArrayList<>();
-        if (task.getFileScope() != null) {
+        List<String> changedFiles = realChangedFiles(task);
+
+        if (!changedFiles.isEmpty()) {
+            // Primary ground truth: Real unified PR diff from GitHub (KARL_POPPER_01_FALSIFICATION_HARNESS / D008)
+            for (String file : changedFiles) {
+                if (file == null || file.isBlank() || file.startsWith(".eneik/") || file.contains("/.eneik/")) {
+                    continue;
+                }
+                String lower = file.toLowerCase(java.util.Locale.ROOT);
+                if (lower.contains("migration") || lower.contains("securityconfig") || lower.contains("security_config")) {
+                    violations.add("PERIPHERY task attempted to modify CORE file: " + file);
+                } else if (lower.contains("automerge") || lower.contains("sixsigma") || lower.contains("orchestrator") || lower.contains("jules")) {
+                    violations.add("ONTOLOGICAL_CONTAMINATION: Task attempted to create factory orchestrator entities in client codebase: " + file);
+                }
+            }
+        } else if (task.getFileScope() != null && !task.getFileScope().isBlank()) {
+            // Advisory context: only consulted when PR diff is not yet available
             String scope = task.getFileScope().toLowerCase(java.util.Locale.ROOT);
             if (scope.contains("migration") || scope.contains("securityconfig") || scope.contains("security_config")) {
-                violations.add("PERIPHERY task attempted to modify CORE scope: " + task.getFileScope());
-            }
-            if (scope.contains("automerge") || scope.contains("sixsigma") || scope.contains("orchestrator") || scope.contains("jules")) {
-                violations.add("ONTOLOGICAL_CONTAMINATION: Task attempted to create factory orchestrator entities in client codebase: " + task.getFileScope());
-            }
-        }
-
-        List<String> changedFiles = realChangedFiles(task);
-        for (String file : changedFiles) {
-            if (file == null || file.isBlank() || file.startsWith(".eneik/") || file.contains("/.eneik/")) {
-                continue;
-            }
-            String lower = file.toLowerCase(java.util.Locale.ROOT);
-            if (lower.contains("migration") || lower.contains("securityconfig") || lower.contains("security_config")) {
-                violations.add("PERIPHERY task attempted to modify CORE file: " + file);
-            }
-            if (lower.contains("automerge") || lower.contains("sixsigma") || lower.contains("orchestrator") || lower.contains("jules")) {
-                violations.add("ONTOLOGICAL_CONTAMINATION: Task attempted to create factory orchestrator entities in client codebase: " + file);
+                violations.add("PERIPHERY task attempted to modify CORE scope (advisory): " + task.getFileScope());
+            } else if (scope.contains("automerge") || scope.contains("sixsigma") || scope.contains("orchestrator") || scope.contains("jules")) {
+                violations.add("ONTOLOGICAL_CONTAMINATION: Task attempted to create factory orchestrator entities in client codebase (advisory): " + task.getFileScope());
             }
         }
 
@@ -118,15 +136,8 @@ public class EpistemicLayerInvariantGate implements GateCheck {
         if (gitHubPullRequestService == null || task == null || task.getId() == null || task.getProject() == null) {
             return List.of();
         }
-        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
-        if (sessions == null || sessions.isEmpty()) {
-            return List.of();
-        }
-        JulesSessionEntity session = sessions.stream()
-                .filter(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank())
-                .findFirst()
-                .orElse(null);
-        if (session == null) {
+        JulesSessionEntity session = resolveSessionWithPr(task);
+        if (session == null || session.getPrUrl() == null || session.getPrUrl().isBlank()) {
             return List.of();
         }
         Integer pullNumber = gitHubPullRequestService.parsePullNumber(session.getPrUrl());
@@ -136,5 +147,21 @@ public class EpistemicLayerInvariantGate implements GateCheck {
         return gitHubPullRequestService.fetchDiffText(task.getProject(), pullNumber)
                 .map(GitHubPullRequestService::changedFilePathsFromDiff)
                 .orElse(List.of());
+    }
+
+    // Same implementer-session lookup used across BackendContractGate, DesignExcellenceGate,
+    // VerificationEvidenceGate, and JulesDispatchService: prefer "pr_opened", fall back to any session with prUrl.
+    private JulesSessionEntity resolveSessionWithPr(TaskEntity task) {
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
+        if (sessions == null || sessions.isEmpty()) {
+            return null;
+        }
+        return sessions.stream()
+                .filter(s -> "pr_opened".equals(s.getStatus()))
+                .findFirst()
+                .orElseGet(() -> sessions.stream()
+                        .filter(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank())
+                        .findFirst()
+                        .orElse(null));
     }
 }

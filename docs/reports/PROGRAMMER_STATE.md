@@ -1,13 +1,14 @@
-# Такт L2: Ведущий инженер (2026-09-18 20:57 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 21:52 UTC)
 
-1. Раздел XI закрыт (FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK / D011 Perception failure, Dretske):
-   - `IdleProjectAdviceService` и `RoleAdviceLoopService` формализованы как покэ-йокэ наблюдающие предохранители против спекулятивной работы: снята ложная претензия на генеративный совет ("claim advice"), строгий запрет на создание wishlist-задач при простое или завершении таски, соблюден инвариант суверенитета (продуктовые итерации — только через фальсификацию).
-   - Введены типизированные вердикты `IdleGuardVerdict` (`ACTIVE_WORK_PRESENT`, `IDLE_SPECULATIVE_WORK_PREVENTED`) и `RoleAdviceGuardVerdict` (`TASK_NULL_OR_SKIPPED`, `SPECULATIVE_WORK_SUPPRESSED`).
+1. Раздел IV закрыт (KARL_POPPER_01_FALSIFICATION_HARNESS / D008, DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX / D006):
+   - `EpistemicLayerInvariantGate`: переведён с декларативного `task.fileScope` на модель получения реального PR diff через `resolveSessionWithPr` и `GitHubPullRequestService` (по аналогии с `BackendContractGate`). `fileScope` оставлен исключительно как advisory fallback. Фальсификация: попытка периферийной роли модифицировать core-файлы (миграции, `SecurityConfig`, оркестраторы) в diff гарантированно валит гейт.
+   - `GithubAccessService` & `GithubAccessController`: формализована матрица прав/обязанностей (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`). Мутирующий `POST .../recheck` защищен (401 без ключа, 403 с невалидным, 200 с валидным). Безопасные чтения кэшированного статуса и метрик дефектов открыты (200 OK). Валидация `projectId` fail-closed (`IllegalArgumentException`).
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `IdleProjectAdviceServiceTest` (6/6 green): верификация подавления спекулятивного wishlist при простое и детекция активных задач.
-   - `RoleAdviceLoopServiceTest` (2/2 green), `RoleAdviceLoopServiceIntegrationTest` (1/1 green).
-   - `AutoMergeServiceTest` (24/24 green): подтверждена полная совместимость контрактов вызывающих сервисов.
+   - `EpistemicLayerInvariantGateTest` (8/8 green): реальный PR diff, онтологическое заражение, advisory fallback, инварианты.
+   - `GithubAccessServiceTest` (6/6 green): DPMO, кэшированное чтение, null-denials, disabled integration.
+   - `GithubAccessControllerTest` (5/5 green): allowed/denied HTTP матрица на MockMvc.
+   - `GateOrchestratorIntegrationTest` (9/9 green). Итого 28/28 green.
 3. Документация:
-   - Раздел XI в `docs/FACTORY_MECHANISMS.md` актуализирован, механизмы признаны идеальными.
+   - Раздел IV в `docs/FACTORY_MECHANISMS.md` актуализирован, механизмы признаны идеальными.
 4. Следующий такт:
    - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди.
