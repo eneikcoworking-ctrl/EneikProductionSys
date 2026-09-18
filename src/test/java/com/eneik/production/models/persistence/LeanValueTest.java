@@ -92,6 +92,55 @@ class LeanValueTest {
     }
 
     @Test
+    @DisplayName("LeanValue.parse: canonical parser resolves to 4-valued Belnap logic")
+    void leanValueParseMethod() {
+        assertThat(LeanValue.parse("essential")).isEqualTo(LeanValue.essential);
+        assertThat(LeanValue.parse("ESSENTIAL ")).isEqualTo(LeanValue.essential);
+        assertThat(LeanValue.parse("valuable")).isEqualTo(LeanValue.valuable);
+        assertThat(LeanValue.parse("VALUABLE")).isEqualTo(LeanValue.valuable);
+        assertThat(LeanValue.parse("waste")).isEqualTo(LeanValue.waste);
+        assertThat(LeanValue.parse("WASTE")).isEqualTo(LeanValue.waste);
+
+        // Unknown / null / blank resolve strictly to undetermined
+        assertThat(LeanValue.parse(null)).isEqualTo(LeanValue.undetermined);
+        assertThat(LeanValue.parse("")).isEqualTo(LeanValue.undetermined);
+        assertThat(LeanValue.parse("   ")).isEqualTo(LeanValue.undetermined);
+        assertThat(LeanValue.parse("bogus")).isEqualTo(LeanValue.undetermined);
+
+        // Boolean predicates
+        assertThat(LeanValue.essential.isActionable()).isTrue();
+        assertThat(LeanValue.valuable.isActionable()).isTrue();
+        assertThat(LeanValue.waste.isActionable()).isFalse();
+        assertThat(LeanValue.undetermined.isActionable()).isFalse();
+
+        assertThat(LeanValue.waste.isWaste()).isTrue();
+        assertThat(LeanValue.essential.isWaste()).isFalse();
+
+        assertThat(LeanValue.undetermined.isUndetermined()).isTrue();
+        assertThat(LeanValue.valuable.isUndetermined()).isFalse();
+    }
+
+    @Test
+    @DisplayName("TaskEntity: typed getLeanValue / setLeanValue accessors prevent category error (D002)")
+    void taskEntityTypedLeanValueAccessors() {
+        TaskEntity task = new TaskEntity();
+        // Absent payload defaults to undetermined
+        assertThat(task.getLeanValue()).isEqualTo(LeanValue.undetermined);
+
+        // Setting typed enum value
+        task.setLeanValue(LeanValue.valuable);
+        assertThat(task.getLeanValue()).isEqualTo(LeanValue.valuable);
+        assertThat(task.getPayload().path("lean_value").asText()).isEqualTo("valuable");
+
+        task.setLeanValue(LeanValue.waste);
+        assertThat(task.getLeanValue()).isEqualTo(LeanValue.waste);
+
+        // Null safely defaults to undetermined
+        task.setLeanValue(null);
+        assertThat(task.getLeanValue()).isEqualTo(LeanValue.undetermined);
+    }
+
+    @Test
     @DisplayName("TechnicalLeadCompiler.validateDefinitionOfReady: rejects undetermined and waste at Step 2")
     void compilerValidateDoDRejectsUndeterminedAndWaste() {
         WishlistEntity wishlistUndetermined = new WishlistEntity();

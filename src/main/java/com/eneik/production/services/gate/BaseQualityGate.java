@@ -21,13 +21,18 @@ public class BaseQualityGate {
             if (payload == null || !payload.has("lean_value")) {
                 failures.add("Missing lean_value in payload");
             } else {
-                String leanValue = payload.get("lean_value").asText();
-                if (LeanValue.waste.name().equalsIgnoreCase(leanValue)) {
+                String raw = payload.get("lean_value").asText("");
+                LeanValue leanValue = task.getLeanValue();
+                if (leanValue == LeanValue.waste) {
                     failures.add("Business value cannot be 'waste'");
-                } else if (LeanValue.undetermined.name().equalsIgnoreCase(leanValue)) {
-                    failures.add("Business value is undetermined; cannot verify lean value");
-                } else if (!LeanValue.essential.name().equalsIgnoreCase(leanValue) && !LeanValue.valuable.name().equalsIgnoreCase(leanValue)) {
-                    failures.add("Unrecognized business value '" + leanValue + "'; must be essential or valuable");
+                } else if (leanValue == LeanValue.undetermined) {
+                    if ("undetermined".equalsIgnoreCase(raw.trim())) {
+                        failures.add("Business value is undetermined; cannot verify lean value");
+                    } else {
+                        failures.add("Unrecognized business value '" + raw + "'; must be essential or valuable");
+                    }
+                } else if (!leanValue.isActionable()) {
+                    failures.add("Unrecognized business value '" + raw + "'; must be essential or valuable");
                 }
             }
             return new GateResult(failures.isEmpty(), "Business Value Check", failures);

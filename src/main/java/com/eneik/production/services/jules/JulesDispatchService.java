@@ -4600,14 +4600,7 @@ public class JulesDispatchService {
     }
 
     static LeanValue parseLeanValue(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return LeanValue.undetermined;
-        }
-        try {
-            return LeanValue.valueOf(raw.trim().toLowerCase(java.util.Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            return LeanValue.undetermined;
-        }
+        return LeanValue.parse(raw);
     }
 
     private static String defaultText(String value, String fallback) {

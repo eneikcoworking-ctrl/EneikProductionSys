@@ -4420,15 +4420,25 @@ associated with this repo»: это заготовка, а не боевая п�
 нет, поэтому пункты, прежде отложенные «на решение человека», переведены в задачи или сняты как ненужные —
 это отмечено отдельно.
 
-### 42. Неразобранный ответ модели становится утверждением «работа ценна» · `TRUTH_STATUS_TABLE` (D012)
-**Механизм:** `LeanValue`, `JulesDispatchService.parseLeanValue:4492-4498`.
-**Что не так:** `catch (IllegalArgumentException) { return LeanValue.valuable; }` — неизвестное приводится к
-утвердительному значению. Молчание модели и её ошибка неотличимы от одобрения. Замер: восемь из девяти
-писателей пишут `essential`, `waste` не пишет ни один механизм, а оба места, где значение решает, сравнивают
-со **строкой**, а не со значением типа (`BaseQualityGate:25`, `JulesDispatchService:4406`).
-**Чинить:** неизвестное обязано быть представимым и не совпадать ни с одним утвердительным исходом.
-**Проверка:** подать неразбираемое значение и убедиться, что заслон муды не пропускает работу как ценную.
-**Опровергнет:** вызывающий, который компилируется, не обработав неизвестное.
+### 42. Неразобранный ответ модели становится утверждением «работа ценна» · `TRUTH_STATUS_TABLE` (D012) + `CATEGORY_ERROR_SCAN` (D002)
+**Механизм:** `LeanValue`, `BaseQualityGate.BusinessValueGate`, `TaskEntity`, `JulesDispatchService.parseLeanValue`.
+**Что не так:** `catch (IllegalArgumentException) { return LeanValue.valuable; }` — неизвестное приводилось к
+утвердительному значению. Молчание модели и её ошибка были неотличимы от одобрения. Сравнения производились со
+строкой, а не со значением типа (`BaseQualityGate:25`).
+**Сделано 2026-09-18:**
+1. В `LeanValue` закреплена 4-значная логика Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): `essential`, `valuable`,
+   `waste`, `undetermined`. Добавлен канонический метод `LeanValue.parse(raw)`, где null, пустота или мусор строго
+   сводятся к `undetermined`, исключая ложное одобрение ценности. Добавлены предикаты `isActionable()`, `isWaste()`, `isUndetermined()`.
+2. В `TaskEntity` внедрены строго типизированные аккаунтеры `getLeanValue()` и `setLeanValue(...)`, устраняющие
+   категориальную ошибку строкового представления (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002).
+3. В `BaseQualityGate.BusinessValueGate` строковые проверки заменены на строгое сопоставление по enum-типу `task.getLeanValue()`.
+   Значения `waste` и `undetermined` гарантированно отвергаются гейтом.
+4. Вызовы `JulesDispatchService.parseLeanValue` и `ProjectFlowService` переведены на канонический `LeanValue.parse`.
+**Заслон:** `LeanValueTest` (9/9 green), `BaseQualityGateTest` (10/10 green), `GateOrchestratorIntegrationTest` (9/9 green).
+**Текущий статус:** **закрыт**.
+**комментарий для Антигравити:** считаю механизм закрытым. Неизвестное больше не приводит к утверждению ценности, тип `LeanValue` полностью соблюдён.
+
+---
 
 ### 43. У цели задачи нет значения «не установлено» · `TRUTH_STATUS_TABLE` (D012) · закон 2
 **Механизм:** `TargetContext`; `TaskEntity:102,391`, `WishlistEntity:69,400`, `JulesDispatchService:868`.

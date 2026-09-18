@@ -163,6 +163,28 @@ public class TaskEntity {
         node.put("acceptance_criteria", acceptanceCriteria);
         this.payload = node;
     }
+
+    /**
+     * Typed Lean value accessor (GILBERT_RAYL_03_CATEGORY_ERROR_SCAN / D002).
+     * If absent or unparseable, resolves to {@link LeanValue#undetermined}, never null.
+     */
+    public LeanValue getLeanValue() {
+        if (payload == null || !payload.has("lean_value")) {
+            return LeanValue.undetermined;
+        }
+        return LeanValue.parse(payload.path("lean_value").asText(null));
+    }
+
+    public void setLeanValue(LeanValue leanValue) {
+        LeanValue effective = (leanValue != null) ? leanValue : LeanValue.undetermined;
+        ObjectNode node = (payload instanceof ObjectNode existing)
+                ? existing
+                : JsonNodeFactory.instance.objectNode();
+        node.put("lean_value", effective.name());
+        this.payload = node;
+        this.carrier = computeIsCarrier();
+    }
+
     public TaskStatus getStatus() { return status; }
 
     /**

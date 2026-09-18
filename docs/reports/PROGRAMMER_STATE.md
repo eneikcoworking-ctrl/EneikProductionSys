@@ -1,12 +1,12 @@
-# Такт L2: Ведущий инженер (2026-09-18 00:50 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 01:40 UTC)
 
-1. Предписание 41 закрыто (DEREK_PARFIT_02_CAUSAL_PROCESS_TRACE / D013, ALVA_NOE_01_PERCEPTION_ACTION_LOOP / D011):
-   - `GithubWebhookController`: вход вебхука защищён валидацией `X-GitHub-Event`, тела и криптографической HMAC-SHA256 подписи (`X-Hub-Signature-256`, `github.webhook-secret`). Обработка PR извлекает истинные метрики (linesChanged, filesChanged), связывает задачу через 3-уровневую цепочку происхождения (`jules_sessions.pr_url` -> branch UUID -> scoped проектный поиск claimed задач без глобального `findAll()`), закрывает клейм исполнителя и заказывает AI-ревьюера.
-   - `SystemStatusService`: в секцию `tasks` добавлен строгий расчёт WIP по незавершённым рабочим задачам (`workInProgress`, `wip`, `activeWip`, `totalWorkTasks`) рядом с числителем слияний (`done`), замыкая контур восприятия-действия (Perception-Action Loop).
-   - `ProjectRepository`: добавлен метод `findFirstByRepositoryNameIgnoreCase` для строго локализованного поиска проекта.
+1. Предписание 42 закрыто (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012, GILBERT_RAYL_03_CATEGORY_ERROR_SCAN / D002):
+   - `LeanValue`: закреплена 4-значная логика Белнапа (`essential`, `valuable`, `waste`, `undetermined`). Внедрен канонический парсер `LeanValue.parse(raw)`, сводящий null/пустоту/мусор строго к `undetermined`, и предикаты `isActionable()`, `isWaste()`, `isUndetermined()`.
+   - `TaskEntity`: добавлены типизированные аккаунтеры `getLeanValue()` и `setLeanValue(LeanValue)`, исключающие категориальные ошибки строкового представления.
+   - `BaseQualityGate.BusinessValueGate`: устранены строковые проверки `.name().equalsIgnoreCase()`; внедрена проверка по строго типизированному `task.getLeanValue()`. Неопределённое (`undetermined`) и муда (`waste`) гарантированно отвергаются.
+   - `JulesDispatchService.parseLeanValue` и `ProjectFlowService`: переведены на канонический `LeanValue.parse`.
 2. Заслон (100% green в Docker Maven 3.9.9 JDK 21, -m 2g):
-   - `GithubWebhookControllerTest` (8/8): отказ 400 без заголовка/тела; отказ 401 при неверной подписи; допуск валидной HMAC-SHA256 подписи; pong на ping; разрешение задачи по сессии PR; разрешение по UUID ветки; валидация обязательного PR URL.
-   - `SystemStatusServiceTest` (20/20): проверка `workInProgress` (14), `wip` (14), `activeWip` (4), `totalWorkTasks` (39) в своде.
-   - `LeanPullReleaseTest` (6/6) и `ApiAuthorizationInterceptorTest` (17/17) - без регрессий.
+   - `LeanValueTest` (9/9): парсинг 4-значной логики, предикаты, `TaskEntity` аккаунтеры, отклонение undetermined/waste в гейтах и компиляторе.
+   - `BaseQualityGateTest` (10/10), `GateOrchestratorIntegrationTest` (9/9), `BackendContractGateTest` (8/8), `VerificationEvidenceGateTest` (8/8).
 3. Следующий такт:
-   - Взять Предписание 42 (`LeanValue` / `TRUTH_STATUS_TABLE` D012: неразобранный ответ модели) по очереди и наряду `MANAGER_STATE.md`.
+   - Взять Предписание 43 (`TargetContext` / `TRUTH_STATUS_TABLE` D012: цель задачи без значения «не установлено») по очереди и наряду `MANAGER_STATE.md`.

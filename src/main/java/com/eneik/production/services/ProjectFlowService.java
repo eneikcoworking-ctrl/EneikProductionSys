@@ -2084,16 +2084,7 @@ public class ProjectFlowService {
                 if (rawSlices.isArray()) {
                     for (com.fasterxml.jackson.databind.JsonNode slice : rawSlices) {
                         String leanValueRaw = slice.hasNonNull("leanValue") ? slice.path("leanValue").asText() : null;
-                        com.eneik.production.models.persistence.LeanValue leanValue;
-                        if (leanValueRaw != null && !leanValueRaw.isBlank()) {
-                            try {
-                                leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw.trim().toLowerCase(java.util.Locale.ROOT));
-                            } catch (Exception e) {
-                                leanValue = com.eneik.production.models.persistence.LeanValue.undetermined;
-                            }
-                        } else {
-                            leanValue = com.eneik.production.models.persistence.LeanValue.undetermined;
-                        }
+                        com.eneik.production.models.persistence.LeanValue leanValue = com.eneik.production.models.persistence.LeanValue.parse(leanValueRaw);
                         slices.add(new MLPredictionServiceClient.TaskSliceMetadata(
                                 slice.path("title").asText(""),
                                 slice.path("jtbd").asText(""),
