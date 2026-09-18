@@ -1,10 +1,13 @@
-# Такт L2: Ведущий инженер (2026-09-18 09:22 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 10:19 UTC)
 
-1. Предписание 52 закрыто (FALSIFICATION_HARNESS / D008, Karl Popper 1934):
-   - Диагностические эндпоинты `InternalGeminiObserverController` (`/dispatch-capacity-probe` и `/persistent-workers`) защищены от деградации в HTTP 500.
-   - Реализована безопасная резолюция `projectId` (через `ContinuousOrchestrationService.getActiveProjects()` или явный параметр) с возвратом структурированного диагностического ответа `UNDETERMINED_PROJECT` при отсутствии проектов.
-   - Любые сбои базы данных или запроса перехвачены и возвращают структурированный статус `PROBE_FAILED` / `QUERY_FAILED` с кодом HTTP 200, предотвращая сокрытие контекста ошибки за непрозрачной 500.
+1. Предписание 53 закрыто (CONVERSATION_MAXIM / D007 Evidence gap, Paul Grice 1975):
+   - Устранено расхождение между описанием механизма и фактической топологией читателей.
+   - Javadoc `LogScopeBuffer` синхронизирован с замером: указан единственный внешний читатель `ProjectController#recentActivity` (отладочная выдача для человека). Устаревшее утверждение о чтении циклом фальсификации устранено с явной фиксацией даты изъятия (09.08.2026).
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `InternalGeminiObserverControllerTest` (10/10 green): проверка защитного возврата при ошибках БД, валидация дефолтных тегов, обработка неопределённого проекта, штатная работа обоих входов.
+   - `LogScopeBufferTest` (6/6 green):
+     * Падающий/зеленеющий тест на соответствие javadoc фактическому читателю `ProjectController` и отсутствие устаревших утверждений о falsification pass.
+     * Заслон против повторного вызова `LogScopeBuffer.recent` из `FalsificationCycleService`.
+     * Интеграционная проверка `ProjectController.recentActivity` на чтение строк из `LogScopeBuffer`.
+     * Тесты изоляции scope `PROJECT:{id}` и ограничения емкости буфера.
 3. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 53).
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 54).

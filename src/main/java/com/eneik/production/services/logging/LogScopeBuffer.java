@@ -8,13 +8,18 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 
 /**
  * In-memory, per-project ring buffer of recent log lines, populated by {@link ScopedBufferAppender}.
- * Deliberately only ever stores PROJECT:{id} scoped events (never SYSTEM-scoped ones) - so the factory's
- * own operational noise (dispatch internals, circuit breakers, AI-resource plumbing) can never leak into
- * project-facing context such as the falsification cycle, which reads this to give roles more current
- * operational context about their own project's recent activity, not about Eneik itself.
+ * Deliberately only ever stores {@code PROJECT:{id}} scoped events (never {@code SYSTEM}-scoped ones)
+ * to keep the factory's own background operational noise (dispatch internals, circuit breakers,
+ * AI-resource plumbing) isolated.
  *
- * Bounded and in-memory only: it resets on restart and is not meant as a durable log store - just a
- * cheap "what just happened for this project" window for the next falsification pass.
+ * Bounded (up to 200 lines per project) and in-memory only: it resets on backend restart and is not
+ * meant as a durable log store.
+ *
+ * The sole external reader of this buffer is {@link com.eneik.production.controllers.projects.ProjectController#recentActivity}
+ * (endpoint {@code GET /api/projects/{projectId}/recent-activity}) for human operator observation
+ * and debug inspection. It is NOT read by {@code FalsificationCycleService} or any agent coding prompt:
+ * consumption by the falsification cycle was excised on 2026-08-09 to prevent internal factory orchestration
+ * events from leaking into client repository prompts (Gricean conversational maxim / D007).
  */
 public final class LogScopeBuffer {
     private static final int MAX_LINES_PER_PROJECT = 200;
