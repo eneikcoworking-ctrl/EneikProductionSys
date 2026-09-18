@@ -1,11 +1,10 @@
-# Такт L2: Ведущий инженер (2026-09-18 18:30 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 19:18 UTC)
 
-1. Разделы XXXIII / XXXIV закрыты (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012, Belnap; ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK / D010, Goldman):
-   - `CommandDashboardController`: реализован сквозной Spring MVC MockMvc заслон для `GET /api/projects/{projectId}/command-dashboard`. Доказана передача три-статуса Белнапа (`ready`, `not ready`, `unknown`), строгое сохранение `clientAcceptanceWitnessed` (true, false, null при ошибке замера) без коллапса неизвестности в отказ.
-   - Frontend/операторский пульт: добавлены типы `AcceptanceReadinessDto` и `CommandDashboardDto` в `lib/types.ts`. В Кузнице (`ForgeDeliveryRoom.svelte`) внедрена панель Delivery readiness с отображением клиентского свидетельства, три-статусного бейджа и списка незакрытых условий.
-2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g и svelte-check):
-   - `CommandDashboardControllerTest` (4/4 green): Spring MockMvc тесты ready/not-ready/unknown состояний, null-свидетельства и 400 Bad Request на невалидный UUID.
-   - `CommandDashboardServiceTest` (4/4 green): фальсификационные и конструктивные тесты сервиса. Всего 8/8 green.
-   - `npm run check` (svelte-check): 0 ошибок, строгая типизация DTO в UI.
+1. Раздел XXIV закрыт (GARET_EVANS_19_BOUNDARY_TOPOLOGY / D006, Gareth Evans):
+   - `scripts/append_role_logic.py`: в словарь `ROLE_LOGIC` включены все 13 ролевых хартий (`BARCAN-TAG-00` .. `12`). Реализован обязательный передаточный заслон верификации корпуса (handoff barrier): любая мутация хартий сопровождается автоматическим вызовом `generate_philosopher_patterns.py --verify`.
+   - Внедрен fail-closed барьер: при сбое генератора/корпуса скрипт немедленно падает с ошибкой, исключая тихий дрейф хартий и RAG-корпуса философов. Поддержаны флаги `--verify`, `--dry-run`, `--target-dir`.
+2. Заслон (100% green в Python unittest и Docker Maven 3.9.9 Temurin-21, -m 2g):
+   - `tests/test_append_role_logic.py` (10/10 green): проверка полноты 13 ролей, идемпотентности, dry-run, мутации, успешного handoff и fail-closed при падении верификации.
+   - `CommandDashboardControllerTest`, `CommandDashboardServiceTest` (8/8 green): полная регрессионная безопасность фабрики.
 3. Следующий такт:
    - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди.

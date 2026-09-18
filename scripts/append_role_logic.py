@@ -422,39 +422,190 @@ ROLE_LOGIC = {
    * $w_4$ (Сложность $C$) = 0.10 — минимизация размера бандла, избыточного JS-кода и перегруженных компонентов DOM.
 
 4. **Ключевая проектная метрика (KPI роли):**
-   *Индекс перцептивного качества фронтенда (Frontend Perceptual Performance Index / FPPI)* — интегральный показатель, вычисляемый на основе соответствия Core Web Vitals (CLS, LCP, FID) и 100% прохождения автоматических тестов доступности Axe Core в CI.
+    *Индекс перцептивного качества фронтенда (Frontend Perceptual Performance Index / FPPI)* — интегральный показатель, вычисляемый на основе соответствия Core Web Vitals (CLS, LCP, FID) и 100% прохождения автоматических тестов доступности Axe Core в CI.
+""",
+    "BARCAN-TAG-12_SOCIAL-CONTRACT.md": r"""
+
+### Математический и логический аппарат роли
+
+1. **Базовый модально-логический базис:**
+   Деонтическая логика обязательств в духе теории конвенции Льюиса (координация через общее знание) поверх плановой теории права Шапиро (shared plan как обязывающее правило): контракт порождает симметричные обязательства для двух сторон одновременно через общее знание конвенции, а не разрешение для одной и требование для другой.
+
+2. **Предикаты принятия решений (Формулы согласия и атаки):**
+   Пусть $c$ — контракт фичи, $m$ — доменная/данные модель (от TAG-01/TAG-08).
+   Определим предикаты:
+   * $M(c)$ — контракт $c$ построен на основании существующей модели $m$, не выдуман без опоры.
+   * $S(c)$ — контракт $c$ симметрично специфицирует потребности backend и frontend.
+   * $P(c)$ — контракт $c$ опубликован в машиночитаемой форме (OpenAPI/JSON Schema), доступной обеим сторонам статически.
+   * $N(c)$ — контракт $c$ необходим (существует реальное параллельное разделение TAG-02/TAG-11 для этой фичи).
+
+   * **Формула Согласия (Acceptance Criteria):**
+     $$Accept(c) \iff \Box (M(c) \land S(c) \land P(c) \land N(c))$$
+     Роль одобряет контракт только когда он строго опирается на модель, симметричен, машиночитаемо опубликован и действительно нужен для параллельного разделения.
+
+   * **Формула Атаки (Critique Trigger):**
+     $$Attack(c) \iff \lozenge (\neg M(c) \lor \neg S(c) \lor \neg P(c))$$
+     Роль обязана заблокировать контракт при малейшей возможности отсутствия опоры на модель, асимметрии в пользу одной стороны или непубликации в машиночитаемой форме.
+
+3. **Функция Ценности (Value Function) и веса метрик:**
+   Роль балансирует между скоростью разблокировки параллельной работы и надёжностью самого контракта.
+   $$Evaluation = 0.30 \cdot T + 0.40 \cdot Q + 0.10 \cdot V - 0.20 \cdot C$$
+   Весовые коэффициенты:
+   * $w_1$ (Скорость / Time to Market $T$) = 0.30 — контракт существует именно для того, чтобы ускорить параллельный старт, задержка публикации напрямую блокирует обе стороны.
+   * $w_2$ (Качество $Q$) = 0.40 — ошибка в контракте размножается в обе стороны (backend и frontend) одновременно, стоимость дефекта здесь выше обычного.
+   * $w_3$ (Ценность $V$) = 0.10 — ценность контракта производна от ценности самой фичи, не самостоятельна.
+   * $w_4$ (Сложность $C$) = 0.20 — штраф за избыточно сложный или избыточно детализированный контракт, замедляющий обе стороны без необходимости.
+
+4. **Ключевая проектная метрика (KPI роли):**
+   *Параллельная разблокировка без дрейфа (Parallel Unblock Fidelity)* — доля фич с параллельным разделением TAG-02/TAG-11, где ни одна из сторон не столкнулась с расхождением между опубликованным контрактом и ожиданием другой стороны (целевое значение: 100%).
 """
 }
 
-def main():
-    print("Starting append operations...")
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+GENERATOR_PATH = ROOT_DIR / "scripts" / "generate_philosopher_patterns.py"
+TARGET_SECTION_MARKER = "### Математический и логический аппарат роли"
+
+
+def append_logic_to_file(filepath: Path, text: str, dry_run: bool = False) -> bool:
+    """Appends role logic to a single charter file if not already present."""
+    if not filepath.exists():
+        print(f"Warning: File {filepath} does not exist. Skipping.")
+        return False
+
+    content = filepath.read_text(encoding="utf-8")
+    if TARGET_SECTION_MARKER in content:
+        return False
+
+    if not content.endswith("\n"):
+        content += "\n"
+
+    new_content = content + text
+    if not dry_run:
+        filepath.write_text(new_content, encoding="utf-8")
+    return True
+
+
+def apply_role_logic(target_dir: Path = ROOT_DIR, dry_run: bool = False) -> dict:
+    """Applies role logic to all 13 BARCAN role charters."""
+    updated = []
+    skipped = []
+    missing = []
+
     for filename, text in ROLE_LOGIC.items():
-        filepath = os.path.join(".", filename)
-        if not os.path.exists(filepath):
-            print(f"Error: File {filepath} does not exist.")
+        filepath = target_dir / filename
+        if not filepath.exists():
+            missing.append(filename)
             continue
 
-        # Read the file
-        with open(filepath, "r", encoding="utf-8") as f:
-            content = f.read()
+        was_appended = append_logic_to_file(filepath, text, dry_run=dry_run)
+        if was_appended:
+            updated.append(filename)
+        else:
+            skipped.append(filename)
 
-        # Check if already appended to ensure idempotence
-        if "### Математический и логический аппарат роли" in content:
-            print(f"File {filename} already contains the target section. Skipping.")
-            continue
+    return {
+        "updated": updated,
+        "skipped": skipped,
+        "missing": missing,
+        "dry_run": dry_run,
+    }
 
-        # Ensure it ends with a newline
-        if not content.endswith("\n"):
-            content += "\n"
 
-        # Append the new text block
-        new_content = content + text
+def run_corpus_verification(generator_path: Path = GENERATOR_PATH) -> dict:
+    """Explicit verification handoff barrier per GARET_EVANS_19_BOUNDARY_TOPOLOGY (D006).
 
-        # Write back
-        with open(filepath, "w", encoding="utf-8") as f:
-            f.write(new_content)
+    Guarantees that any modification of role charters is immediately verified against
+    the philosopher-pattern corpus before success is declared.
+    """
+    if not generator_path.exists():
+        raise FileNotFoundError(f"Corpus generator script not found at {generator_path}")
 
-        print(f"Successfully appended logic block to {filename}")
+    cmd = [sys.executable, str(generator_path), "--verify"]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"Philosopher corpus verification failed (exit code {result.returncode}):\n"
+            f"STDERR: {result.stderr}\nSTDOUT: {result.stdout}"
+        )
+
+    try:
+        verification_data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        verification_data = {"raw_output": result.stdout.strip()}
+
+    return verification_data
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(
+        description="Append mathematical/logical apparatus to BARCAN role charters with corpus verification handoff."
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Run corpus verification check only without mutating files.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Simulate appending logic to files without writing changes.",
+    )
+    parser.add_argument(
+        "--target-dir",
+        type=Path,
+        default=ROOT_DIR,
+        help="Target directory containing BARCAN-TAG-*.md files (default: repo root).",
+    )
+    parser.add_argument(
+        "--generator-path",
+        type=Path,
+        default=GENERATOR_PATH,
+        help="Path to generate_philosopher_patterns.py script.",
+    )
+    parser.add_argument(
+        "--skip-verify",
+        action="store_true",
+        help="Skip verification handoff (strictly discouraged; violates boundary topology invariant).",
+    )
+
+    args = parser.parse_args(argv)
+
+    if args.verify:
+        print("[VERIFY-ONLY] Running philosopher-pattern corpus verification handoff...")
+        try:
+            v_result = run_corpus_verification(args.generator_path)
+            print(json.dumps({"status": "SUCCESS", "corpus_verification": v_result}, indent=2, ensure_ascii=False))
+            sys.exit(0)
+        except Exception as e:
+            print(f"[ERROR] Corpus verification failed: {e}", file=sys.stderr)
+            sys.exit(1)
+
+    print(f"Starting append operations in {args.target_dir} (dry_run={args.dry_run})...")
+    mutation_result = apply_role_logic(target_dir=args.target_dir, dry_run=args.dry_run)
+    print(f"Append operations completed: {len(mutation_result['updated'])} updated, "
+          f"{len(mutation_result['skipped'])} already present, {len(mutation_result['missing'])} missing.")
+
+    if not args.skip_verify:
+        print("Executing explicit corpus verification handoff (GARET_EVANS_19_BOUNDARY_TOPOLOGY)...")
+        try:
+            v_result = run_corpus_verification(args.generator_path)
+            print(json.dumps({
+                "status": "SUCCESS",
+                "mutation": mutation_result,
+                "corpus_verification": v_result
+            }, indent=2, ensure_ascii=False))
+        except Exception as e:
+            print(f"[FATAL] Boundary handoff failed: role charter changes violated corpus verification: {e}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print(json.dumps({"status": "MUTATION_COMPLETE_VERIFY_SKIPPED", "mutation": mutation_result}, indent=2))
+
 
 if __name__ == "__main__":
     main()

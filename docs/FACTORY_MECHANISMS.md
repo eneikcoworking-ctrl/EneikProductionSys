@@ -8901,9 +8901,7 @@ helper/manual tools, not autonomous factory mechanisms.
 ## XXIV.1. Комментарии для Антигравити по механизмам
 
 * `generate_philosopher_patterns.py` — **комментарий для Антигравити:** считаю механизм идеальным
-* `append_role_logic.py` — **комментарий для Антигравити:** механизм не идеален: применить
-  `GARET_EVANS_19_BOUNDARY_TOPOLOGY`; preserve charter mutation, but require an explicit regenerate/validate
-  handoff to the philosopher-pattern corpus.
+* `append_role_logic.py` — **комментарий для Антигравити:** считаю механизм идеальным (применен `GARET_EVANS_19_BOUNDARY_TOPOLOGY` / D006: включены все 13 ролевых хартий BARCAN-TAG-00..12, внедрен обязательный передаточный заслон верификации корпуса через `generate_philosopher_patterns.py --verify` с fail-closed гарантией, покрыт тестами в `tests/test_append_role_logic.py`).
 * `audit_pr.py` — **комментарий для Антигравити:** считаю механизм идеальным
 * `deploy.sh` — **комментарий для Антигравити:** считаю механизм идеальным
 * `linear_sync.py` — **комментарий для Антигравити:** считаю механизм идеальным
