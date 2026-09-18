@@ -1350,13 +1350,18 @@ class ProjectFlowServiceTest {
         service.setDefectJournalService(defectJournalService);
 
         UUID projectId = UUID.randomUUID();
+        UUID featureId = UUID.randomUUID();
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());
+        task.setFeatureId(featureId);
 
         service.recordReviewFallbackDeadlockDefect(projectId, task, "https://github.com/org/repo/pull/42", "hash999", 2);
 
+        // Prescription 45 (D007): rootCausePatternId = 7 (Monotonic watermarks against infinite loops)
         verify(defectJournalService).recordDefect(
                 eq(projectId),
+                eq(featureId),
+                eq(7),
                 eq("HIGH"),
                 eq("PERCEPTION_ACTION_LOOP"),
                 eq("JulesDispatchService"),

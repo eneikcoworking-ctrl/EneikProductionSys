@@ -1508,7 +1508,8 @@ class AutoMergeServiceTest {
         verify(sessions).save(session);
         verify(prReviews).save(review);
         verify(gitHubPullRequestService).closeSinglePullRequest(eq(project), eq(pr), any());
-        verify(defectJournal).recordDefect(eq(project.getId()), any(), any(), eq("high"),
+        // Prescription 45 (D007): rootCausePatternId = 6 (Category errors at serialization boundaries)
+        verify(defectJournal).recordDefect(eq(project.getId()), any(), eq(6), eq("high"),
                 eq("epistemic_layer_invariant"), eq("AutoMergeService"), eq("core_violation"), any(), any());
     }
 

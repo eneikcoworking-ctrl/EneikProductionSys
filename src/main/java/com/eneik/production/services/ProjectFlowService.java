@@ -435,8 +435,11 @@ public class ProjectFlowService {
         if (project.getRetireAttempts() >= MAX_RETIRE_ATTEMPTS) {
             project.setRetireExhausted(true);
             if (defectJournalService != null) {
+                // Charter Pattern #9: Correlated entity consistency (Prescription 45, D007)
                 defectJournalService.recordDefect(
                         project.getId(),
+                        null,
+                        9,
                         "CRITICAL",
                         "LIFECYCLE",
                         "ProjectFlowService",
@@ -526,8 +529,11 @@ public class ProjectFlowService {
             if (newAttempts >= MAX_RETIRE_ATTEMPTS && !project.isRetireExhausted()) {
                 project.setRetireExhausted(true);
                 if (defectJournalService != null) {
+                    // Charter Pattern #9: Correlated entity consistency (Prescription 45, D007)
                     defectJournalService.recordDefect(
                             project.getId(),
+                            null,
+                            9,
                             "CRITICAL",
                             "LIFECYCLE",
                             "ProjectFlowService",
@@ -5927,8 +5933,11 @@ public class ProjectFlowService {
     /** Records a deadlock defect in defect journal when review fallback repeatedly refuses identical revision. */
     public void recordReviewFallbackDeadlockDefect(UUID projectId, TaskEntity task, String prUrl, String diffHash, int refusalCount) {
         if (defectJournalService != null) {
+            // Charter Pattern #7: Monotonic watermarks against infinite loops (Prescription 45, D007)
             defectJournalService.recordDefect(
                     projectId,
+                    task != null ? task.getFeatureId() : null,
+                    7,
                     "HIGH",
                     "PERCEPTION_ACTION_LOOP",
                     "JulesDispatchService",

@@ -300,9 +300,11 @@ class ProjectRetirementLaw8Test {
         assertTrue(project.isRetireExhausted(), "Project must be marked retireExhausted = true");
         assertNull(project.getRetiredAt(), "retiredAt must remain null due to ongoing failures");
 
-        // Exactly ONE defect recorded
+        // Exactly ONE defect recorded with Charter Pattern #9 (Correlated entity consistency)
         verify(defectJournalService, times(1)).recordDefect(
                 eq(project.getId()),
+                org.mockito.ArgumentMatchers.isNull(),
+                eq(9),
                 eq("CRITICAL"),
                 eq("LIFECYCLE"),
                 eq("ProjectFlowService"),
@@ -317,7 +319,7 @@ class ProjectRetirementLaw8Test {
         // Attempts remain 3, still exactly 1 defect recorded, no new external calls
         assertEquals(3, project.getRetireAttempts());
         verify(julesDispatchService, times(3)).cancelSession(eq(session.getId()), anyString());
-        verify(defectJournalService, times(1)).recordDefect(any(), any(), any(), any(), any(), any(), any());
+        verify(defectJournalService, times(1)).recordDefect(any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test

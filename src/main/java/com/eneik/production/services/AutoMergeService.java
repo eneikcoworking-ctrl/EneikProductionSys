@@ -2740,8 +2740,13 @@ public class AutoMergeService {
                 String defectCategory = "core_violation".equals(ciStatus)
                         ? "epistemic_layer_invariant"
                         : "ontological_stratification";
+                // Charter Pattern #6: Category errors at serialization boundaries (Prescription 45, D007)
+                Integer rootCausePatternId = switch (ciStatus) {
+                    case "core_violation", "contaminated", "blocker_pr" -> 6;
+                    default -> null;
+                };
                 defectJournalService.recordDefect(
-                        task.getProject().getId(), task.getFeatureId(), null,
+                        task.getProject().getId(), task.getFeatureId(), rootCausePatternId,
                         "high", defectCategory, "AutoMergeService",
                         ciStatus, reason + " [PR " + target.url() + ", task " + task.getId() + "]", null);
             } catch (Exception e) {

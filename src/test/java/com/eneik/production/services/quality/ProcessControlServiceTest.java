@@ -33,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -177,6 +178,58 @@ public class ProcessControlServiceTest {
 
         // Loop-closing: no rootCausePatternId on record for f3 -> systemic defect, not a known pattern
         verify(kaizenService, times(1)).recordSystemicDefectProposal(eq(projectId), any(), any(), any());
+    }
+
+    @Test
+    void knownPatternViolationProposalRecordedWhenDefectEventsCarryRootCausePatternId() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setName("TestProject");
+        when(projectRepository.findById(projectId)).thenReturn(java.util.Optional.of(project));
+
+        UUID f1 = UUID.randomUUID();
+        UUID f2 = UUID.randomUUID();
+        UUID f3 = UUID.randomUUID();
+        Instant t0 = Instant.now().minus(3, ChronoUnit.DAYS);
+
+        List<FeatureEntity> epics = List.of(epic(f1, project), epic(f2, project), epic(f3, project));
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(epics);
+
+        stubCompletedEpic(f1, project, t0);
+        stubCompletedEpic(f2, project, t0.plus(1, ChronoUnit.DAYS));
+        stubCompletedEpic(f3, project, t0.plus(2, ChronoUnit.DAYS));
+
+        when(sixSigmaAuditService.computeQualityGateCounts(eq(null), eq(f1))).thenReturn(new DefectOpportunityCount(1, 10));
+        when(sixSigmaAuditService.computeQualityGateCounts(eq(null), eq(f2))).thenReturn(new DefectOpportunityCount(1, 10));
+        when(sixSigmaAuditService.computeQualityGateCounts(eq(null), eq(f3))).thenReturn(new DefectOpportunityCount(8, 10));
+
+        // Stub defects for f3 carrying rootCausePatternId = 6 (Category errors at serialization boundaries)
+        com.eneik.production.kaizen.model.DefectJournalEntity defect1 =
+                new com.eneik.production.kaizen.model.DefectJournalEntity(projectId, f3, 6, "high",
+                        "ontological_stratification", "AutoMergeService", "contaminated", "PR has factory file", 1.0);
+        com.eneik.production.kaizen.model.DefectJournalEntity defect2 =
+                new com.eneik.production.kaizen.model.DefectJournalEntity(projectId, f3, 6, "high",
+                        "ontological_stratification", "AutoMergeService", "blocker_pr", "PR announces refusal", 1.0);
+        when(defectJournalRepository.findByFeatureId(f3)).thenReturn(List.of(defect1, defect2));
+
+        List<ProcessControlSnapshotEntity> saved = service.recomputeForProject(projectId).stream()
+                .filter(s -> ProcessControlService.STREAM_QUALITY_GATE.equals(s.getStream()))
+                .sorted((a, b) -> Integer.compare(a.getSequenceIndex(), b.getSequenceIndex()))
+                .toList();
+
+        assertThat(saved).hasSize(3);
+        assertThat(saved.get(2).isOutOfControl()).isTrue();
+
+        // Loop-closing with known pattern: dominant is 6 -> KNOWN_PATTERN_VIOLATION with Charter name
+        verify(kaizenService, times(1)).recordKnownPatternViolationProposal(
+                eq(projectId),
+                eq("TestProject"),
+                eq(6),
+                eq("Category errors at serialization boundaries"),
+                any(),
+                any()
+        );
+        verify(kaizenService, never()).recordSystemicDefectProposal(eq(projectId), any(), any(), any());
     }
 
     // --- sixSigmaMetric closes the loop onto a real measured stream (2026-08-07, Kaizen audit follow-on) --

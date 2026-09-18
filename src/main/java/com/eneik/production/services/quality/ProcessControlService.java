@@ -56,9 +56,9 @@ public class ProcessControlService {
     private static final Set<TaskStatus> TERMINAL_STATUSES =
             EnumSet.of(TaskStatus.done, TaskStatus.spike_completed, TaskStatus.failed);
 
-    // Layer 0 taxonomy names (docs/ENGINEERING_INVARIANTS_CHARTER.md #1-12) - used to make a
+    // Layer 0 taxonomy names (docs/ENGINEERING_INVARIANTS_CHARTER.md #1-16) - used to make a
     // KNOWN_PATTERN_VIOLATION Kaizen proposal cite the exact charter rule, not a bare number.
-    private static final Map<Integer, String> CHARTER_PATTERN_NAMES = Map.ofEntries(
+    public static final Map<Integer, String> CHARTER_PATTERN_NAMES = Map.ofEntries(
             Map.entry(1, "CAS vs read-then-write"),
             Map.entry(2, "Critical sections"),
             Map.entry(3, "Absorbing automaton states"),
@@ -70,7 +70,11 @@ public class ProcessControlService {
             Map.entry(9, "Correlated entity consistency"),
             Map.entry(10, "Single choke point for a shared invariant"),
             Map.entry(11, "Gate granularity must match causal dependency"),
-            Map.entry(12, "Independent verification, not self-attestation")
+            Map.entry(12, "Independent verification, not self-attestation"),
+            Map.entry(13, "Rigid designation on duplicate entities"),
+            Map.entry(14, "Unified belief revision for external reality"),
+            Map.entry(15, "External capacity is revisable belief not constant"),
+            Map.entry(16, "Local extraction vs subscribed judgment")
     );
 
     private final FeatureRepository featureRepository;

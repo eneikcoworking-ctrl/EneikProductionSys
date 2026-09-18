@@ -4473,13 +4473,22 @@ associated with this repo»: это заготовка, а не боевая п�
 **комментарий для Антигравити:** считаю механизм закрытым. Конъюнкция доступности полностью формализована, отказ и отсутствие в пуле явно называют сработавшие условия.
 
 ### 45. Поле корневой причины дефекта не заполняется никогда · `INUS_FACTOR_CHECK` (D007)
-**Механизм:** `DefectJournalEntity.rootCausePatternId`; `AutoMergeService:2650` передаёт `null` явно,
-`ProjectFlowService:424,515` пользуются коротким конструктором без этого поля.
+**Механизм:** `DefectJournalEntity.rootCausePatternId`; `AutoMergeService:2740` передавал `null` явно,
+`ProjectFlowService:438,529,5930` пользовались перегрузками без этого поля.
 **Что не так:** поле заведено, чтобы Парето считался **по причине**, а не по тому, какая подсистема заметила
-симптом. Оно пусто всегда, и `ProcessControlService:357` сам это записывает в свою же выдачу.
+симптом. Оно пусто всегда, и `ProcessControlService:357` сам это записывал в свою же выдачу.
 **Чинить:** заполнять причину там, где она известна на месте записи.
 **Проверка:** доля дефектов с непустой причиной перестаёт быть нулевой.
 **Опровергнет:** разбор по Парето, который по-прежнему называет самую громкую подсистему, а не частую причину.
+**Что сделано:**
+1. В `AutoMergeService.rejectByFactoryPokaYoke` заполняется `rootCausePatternId`: отказы `core_violation`, `contaminated` и `blocker_pr` классифицированы по Хартии как паттерн #6 (`Category errors at serialization boundaries` / категоризация онтологических слоёв и артефактов).
+2. В `ProjectFlowService.cancelExternalWorkForProject` при исчерпании бюджета попыток выключения внешних работ записывается паттерн #9 (`Correlated entity consistency` / каскадное удаление родительского проекта и дочерних сессий/PR).
+3. В `ProjectFlowService.recordReviewFallbackDeadlockDefect` при дедлоке ревью-фолбэка записывается паттерн #7 (`Monotonic watermarks` / зацикливание без продвижения водяного знака) и передаётся `task.getFeatureId()` для u-карты.
+4. В `ProcessControlService` реестр `CHARTER_PATTERN_NAMES` расширен паттернами 13–16 из Хартии инвариантов (`docs/ENGINEERING_INVARIANTS_CHARTER.md`), что обеспечивает генерацию предложений Kaizen `KNOWN_PATTERN_VIOLATION` с точной ссылкой на инвариант вместо заглушки «No underlying defect event carries a rootCausePatternId yet».
+**Заслон:** `DefectJournalRootCauseAttributionTest` (6/6 green), `ProcessControlServiceTest` (5/5 green), `ProjectRetirementLaw8Test` (5/5 green), `ProjectFlowServiceTest` (1/1 green), `AutoMergeServiceTest` (24/24 green), `AutoMergePokaYokeTest` (14/14 green), `ContinuousOrchestrationServiceTest` (14/14 green).
+**Текущий статус:** **закрыт**.
+**комментарий для Антигравити:** считаю механизм закрытым. Корневая причина теперь атрибутируется по Хартии на всех ключевых точках детекции, u-карта и Парето замыкают цикл на `KNOWN_PATTERN_VIOLATION`.
+
 
 ### 46. Узкое место фабрики определяется по единственному размеченному шагу · `INUS_FACTOR_CHECK` (D007)
 **Механизм:** `TocNode`, `TocExecutionGraph:27`, `TocOptimizer:44-58`; разметка — только

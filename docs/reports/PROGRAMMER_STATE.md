@@ -1,14 +1,13 @@
-# Такт L2: Ведущий инженер (2026-09-18 02:40 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 03:40 UTC)
 
-1. Предписания 43 и 44 закрыты (NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012, LUDWIG_WITTGENSTEIN_01_FACT_STATE_TABLE / D002):
-   - Предписание 43: первоклассное состояние `TargetContext.UNDETERMINED`, задачи без установленной цели блокируются от раздачи в репозитории (Закон 2: Carrier isolation). Фиксация в `FACTORY_MECHANISMS.md`.
-   - Предписание 44: формализована конъюнкция доступности в `AccountStatus` и `AccountEntity` (`status == idle && enabled == true && apiKey != null`). Добавлены `isAvailable()`, `isOperational()`, `getUnavailabilityReason()`.
-   - `SystemStatusService`: свод (`accounts`, `operationalBlockers`) явно именует отключенные аккаунты (`disabledReason`, `account_disabled` warning, полный breakdown причин недоступности пула).
-   - `AccountHealthService`: sweep инспектирует отключенные аккаунты, логирует причины и нормализует кулдауны (`api_blocked`/`daily_limited` -> `idle` при `enabled=false`).
-   - `GithubWebhookController`: предупреждение при отказе захвата idle & enabled аккаунта для ревьюера.
+1. Предписание 45 закрыто (BARCAN-TAG-05_NECESSARY-IDENTITY:02:dzh-l-makki / INUS_FACTOR_CHECK D007):
+   - `AutoMergeService.rejectByFactoryPokaYoke`: отказы `core_violation`, `contaminated`, `blocker_pr` атрибутированы к Charter Pattern #6 (`Category errors at serialization boundaries`).
+   - `ProjectFlowService.cancelExternalWorkForProject`: исчерпание попыток выключения внешних работ связывается с Charter Pattern #9 (`Correlated entity consistency`).
+   - `ProjectFlowService.recordReviewFallbackDeadlockDefect`: дедлок повторных отказов ревью атрибутируется к Charter Pattern #7 (`Monotonic watermarks`) с сохранением `task.featureId` для u-карты.
+   - `ProcessControlService`: Layer 0 taxonomy `CHARTER_PATTERN_NAMES` расширен паттернами 13–16, замыкая цикл на `KaizenProposal.KNOWN_PATTERN_VIOLATION` с именованием инварианта вместо нулевой атрибуции Парето.
 2. Заслон (100% green в Docker Maven 3.9.9 JDK 21, -m 2g):
-   - `AccountStatusConjunctionTest` (7/7): строгая конъюнкция, именование отказа по каждому конъюнкту, нормализация кулдауна.
-   - `SystemStatusServiceTest` (22/22): отключение аккаунта и смешанная недоступность с именованием условий.
-   - `TargetContextTest` (4/4), `AccountHealthServiceTest` (31/31), регрессионный сьют admission (39/39).
+   - `DefectJournalRootCauseAttributionTest` (6/6): атрибуция паттернов 6, 7, 9, сохранение `featureId`, полнота Хартии.
+   - `ProcessControlServiceTest` (5/5): генерация `KNOWN_PATTERN_VIOLATION` предложения при непустом `rootCausePatternId`.
+   - `ProjectRetirementLaw8Test` (5/5), `ProjectFlowServiceTest` (1/1), `AutoMergeServiceTest` (24/24), `AutoMergePokaYokeTest` (14/14).
 3. Следующий такт:
-   - Взять Предписание 45 (`DefectJournalEntity.rootCausePatternId` / `INUS_FACTOR_CHECK` D007: поле корневой причины дефекта) по очереди и наряду `MANAGER_STATE.md`.
+   - Взять Предписание 46 (`TocNode`, `TocExecutionGraph:27` / разметка шагов узкого места TOC) по очереди и наряду `MANAGER_STATE.md`.
