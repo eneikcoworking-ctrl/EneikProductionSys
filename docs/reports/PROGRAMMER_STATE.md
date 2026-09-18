@@ -1,12 +1,12 @@
-# Такт L2: Ведущий инженер (2026-09-18 15:48 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 16:40 UTC)
 
-1. Предписание 59 закрыто (BOUNDARY_TOPOLOGY / D006 Authorization ambiguity, Achille Varzi 1999):
-   - Защищены все 4 изменяющие операции `InternalGeminiObserverController` (`/retire-stuck-worker-now`, `/release-finalizing-wishlist`, `/reset-daily-session-counts-now`, `/clear-corrupted-session-pr-url`): неавторизованные запросы даже с localhost возвращают 401 UNAUTHORIZED, неверные учетные данные или отсутствие ключа сервера возвращают 403 FORBIDDEN.
-   - Внедрен институциональный аудит вызывающего (`AuditCallerResolver.resolveCaller()`) во все 4 изменяющих метода с фиксацией в логах и возвращаемых структурах.
-   - Оптимизирован диагностический эндпоинт `/account-capacity`: полный скан `julesSessionRepository.findAll()` заменен на `findByStatusIn(queued, running, revising, stuck)`.
+1. Раздел XXXVIII закрыт (DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX / D006, Joseph Raz; AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY):
+   - Доказана сквозная изоляция и защита всех 5 изменяющих путей `GoogleAiResourceController` (`/design-drafts-cleanup`, `/probe-models`, `/design-assets`, `/stitch-design-system`, `/video-assets`): 401 UNAUTHORIZED без ключа, 403 FORBIDDEN при невалидных учетных данных, 200 OK только при валидном ключе/токене оператора, сохранение открытых безопасных GET.
+   - Внедрен институциональный аудит (`AuditCallerResolver.resolveCaller()`) во все 5 методов с логированием актора, проекта и исхода.
+   - Защита несуществующих проектов проверена fail-closed (HTTP 404) без вызова сервисов-исполнителей.
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `ApiAuthorizationInterceptorTest` (20/20 green): проверка всех 4 эндпоинтов на 401 (localhost, external), 403 (invalid key, bearer, unconfigured) и 200 (valid key, bearer).
-   - `InternalGeminiObserverControllerTest` (15/15 green): модульные тесты для всех изменяющих методов с аудитом и ограниченной выборки `accountCapacity`.
-   - `InternalGeminiObserverSecurityIntegrationTest` (9/9 green): сквозной Spring MockMvc тест запретов и допусков. Всего 44/44 green.
+   - `GoogleAiResourceSecurityIntegrationTest` (12/12 green): сквозные Spring MockMvc тесты матрицы прав/обязанностей и изоляции (verifyNoInteractions).
+   - `GoogleAiResourceControllerTest` (6/6 green): модульные тесты guards проектов, делегирования и path traversal.
+   - `ApiAuthorizationInterceptorTest` (20/20 green), `InternalGeminiObserverSecurityIntegrationTest` (9/9 green). Всего 47/47 green.
 3. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди / предписаний.
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди.

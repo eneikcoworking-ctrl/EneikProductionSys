@@ -50,4 +50,67 @@ class GoogleAiResourceControllerTest {
         assertNotNull(resultNonExistent);
         assertTrue(resultNonExistent.isEmpty());
     }
+
+    @Test
+    @DisplayName("designDraftsCleanup returns 404 NOT_FOUND when projectId does not exist")
+    void designDraftsCleanupReturnsNotFoundForMissingProject() {
+        java.util.UUID missingId = java.util.UUID.randomUUID();
+        org.mockito.Mockito.when(projectRepository.findById(missingId)).thenReturn(java.util.Optional.empty());
+
+        org.springframework.http.ResponseEntity<?> response = controller.designDraftsCleanup(missingId, List.of("draft1"));
+        org.junit.jupiter.api.Assertions.assertEquals(404, response.getStatusCode().value());
+        org.mockito.Mockito.verifyNoInteractions(designAssetService);
+    }
+
+    @Test
+    @DisplayName("generateDesignAsset returns 404 NOT_FOUND when projectId does not exist")
+    void generateDesignAssetReturnsNotFoundForMissingProject() {
+        java.util.UUID missingId = java.util.UUID.randomUUID();
+        org.mockito.Mockito.when(projectRepository.findById(missingId)).thenReturn(java.util.Optional.empty());
+
+        org.springframework.http.ResponseEntity<?> response = controller.generateDesignAsset(missingId,
+                new GoogleAiResourceController.DesignAssetRequest("brief", "asset", "fast", false, null, null, null));
+        org.junit.jupiter.api.Assertions.assertEquals(404, response.getStatusCode().value());
+        org.mockito.Mockito.verifyNoInteractions(designAssetService);
+    }
+
+    @Test
+    @DisplayName("generateVideoAsset returns 404 NOT_FOUND when projectId does not exist")
+    void generateVideoAssetReturnsNotFoundForMissingProject() {
+        java.util.UUID missingId = java.util.UUID.randomUUID();
+        org.mockito.Mockito.when(projectRepository.findById(missingId)).thenReturn(java.util.Optional.empty());
+
+        org.springframework.http.ResponseEntity<?> response = controller.generateVideoAsset(missingId,
+                new GoogleAiResourceController.VideoAssetRequest("brief", "video", "standard", false));
+        org.junit.jupiter.api.Assertions.assertEquals(404, response.getStatusCode().value());
+        org.mockito.Mockito.verifyNoInteractions(videoAssetService);
+    }
+
+    @Test
+    @DisplayName("probeModels delegates to GoogleAiResourceService")
+    void probeModelsDelegatesToService() {
+        org.mockito.Mockito.when(googleAiResourceService.probeModels()).thenReturn(Map.of("status", "ok"));
+
+        Map<String, Object> result = controller.probeModels();
+        org.junit.jupiter.api.Assertions.assertEquals("ok", result.get("status"));
+        org.mockito.Mockito.verify(googleAiResourceService).probeModels();
+    }
+
+    @Test
+    @DisplayName("createStitchDesignSystem delegates to StitchClient")
+    void createStitchDesignSystemDelegatesToClient() {
+        GoogleAiResourceController.CreateDesignSystemRequest req =
+                new GoogleAiResourceController.CreateDesignSystemRequest("My System", "Inter", "Roboto", "#000", "#fff");
+        org.mockito.Mockito.when(stitchClient.createDesignSystem(org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq("My System"),
+                org.mockito.ArgumentMatchers.eq("Inter"),
+                org.mockito.ArgumentMatchers.eq("Roboto"),
+                org.mockito.ArgumentMatchers.eq("#000"),
+                org.mockito.ArgumentMatchers.eq("#fff")))
+                .thenReturn(new StitchClient.DesignSystemResult(true, "ok", "sys-123", "Created"));
+
+        org.springframework.http.ResponseEntity<?> response = controller.createStitchDesignSystem(req);
+        org.junit.jupiter.api.Assertions.assertEquals(200, response.getStatusCode().value());
+        org.mockito.Mockito.verify(stitchClient).createDesignSystem(null, "My System", "Inter", "Roboto", "#000", "#fff");
+    }
 }

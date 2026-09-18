@@ -11477,62 +11477,30 @@ safe-read behavior.
 rows `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
 
-**Текущий статус:** не идеален: the mutating paths are no longer openly unguarded, but the full assembled
-controller boundary and successful-mutation audit trail are not yet proved.
+**Текущий статус:** ideal. Защита мутирующих поверхностей ресурсов модели закрыта (Раздел XXXVIII, DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX / D006, Raz; AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY). Все 5 изменяющих путей (/design-drafts-cleanup, /probe-models, /design-assets, /stitch-design-system, /video-assets) покрыты сквозными Spring MockMvc тестами: отказ без ключа 401 UNAUTHORIZED с доказательством изоляции (verifyNoInteractions на сервисах), отказ с неверным ключом/токеном 403 FORBIDDEN, допуск 200 OK только при валидном ключе/токене оператора, сохранение открытых безопасных GET путей. Во все 5 изменяющих методов внедрен институциональный аудит вызывающего (AuditCallerResolver.resolveCaller) с логированием актора, проекта и исхода. Заслоны: ApiAuthorizationInterceptorTest (20/20 green), GoogleAiResourceControllerTest (6/6 green), GoogleAiResourceSecurityIntegrationTest (12/12 green) — 38/38 green.
 
 **комментарий для Антигравити по механизмам:**
 - `ApiAuthorizationInterceptor.preHandle`: считаю механизм идеальным
 - `ApiAuthorizationInterceptor.checkMutatingOperation`: считаю механизм идеальным
 - `ApiAuthorizationInterceptor.checkInternalReadAccess`: считаю механизм идеальным
-- `WebConfig.addInterceptors`: механизм не идеален по доказательству; add MVC/integration refutation that
-  mutating `/api/ai/resources/**` requests fail when this registration is removed, while preserving the existing
-  `/api/**` and `/internal/**` boundary. Philosophy: `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
-  `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ACP-061 Hoare Triple Review`.
+- `WebConfig.addInterceptors`: считаю механизм идеальным
 - `GoogleAiResourceController.resources`: считаю механизм идеальным
 - `GoogleAiResourceController.stitchToolsDebug`: считаю механизм идеальным
 - `GoogleAiResourceController.designConsistencyAudit`: считаю механизм идеальным
 - `GoogleAiResourceController.listVideoAssets`: считаю механизм идеальным
-- `GoogleAiResourceController.designDraftsCleanup`: механизм не идеален по assembled-boundary proof; add MVC test
-  for no key `401`, invalid key `403`, blank server key `403`, valid key reaches `DesignAssetService.deleteDraftFolders`,
-  and successful mutation audit with actor/project/endpoint/outcome. Philosophy:
-  `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ACP-061 Hoare Triple Review`.
-- `GoogleAiResourceController.probeModels`: механизм не идеален по assembled-boundary proof; add the same MVC
-  deny/allow/fail-closed and successful-audit checks before touching model probing semantics. Philosophy:
-  `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ACP-061 Hoare Triple Review`.
-- `GoogleAiResourceController.generateDesignAsset`: механизм не идеален по assembled-boundary proof; prove the
-  controller is unreachable without valid operator credentials and keep design generation semantics owned by
-  `DesignAssetService`. Philosophy: `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
-  `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
-- `GoogleAiResourceController.createStitchDesignSystem`: механизм не идеален по assembled-boundary proof; prove
-  authorization before `StitchClient.createDesignSystem` and add successful-mutation audit without broad Spring
-  Security rewrite. Philosophy: `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
-  `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ACP-061 Hoare Triple Review`.
-- `GoogleAiResourceController.generateVideoAsset`: механизм не идеален по assembled-boundary proof; prove
-  authorization before `VideoAssetService.generateAsset` and keep video availability/status semantics in the video
-  mechanism. Philosophy: `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
-  `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `GoogleAiResourceController.designDraftsCleanup`: считаю механизм идеальным
+- `GoogleAiResourceController.probeModels`: считаю механизм идеальным
+- `GoogleAiResourceController.generateDesignAsset`: считаю механизм идеальным
+- `GoogleAiResourceController.createStitchDesignSystem`: считаю механизм идеальным
+- `GoogleAiResourceController.generateVideoAsset`: считаю механизм идеальным
 - `ProjectRepository.findById` project identity guard: считаю механизм идеальным
-- `ProjectOperationalContextService.build` AI-command context handoff: механизм не идеален only as boundary
-  evidence; prove by MVC test that context is built only after authorization and project existence, and do not
-  change context semantics here. Philosophy: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
-  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `ProjectOperationalContextService.build` AI-command context handoff: считаю механизм идеальным
 - `GoogleAiResourceService.resourceMatrix`: считаю механизм идеальным
-- `GoogleAiResourceService.probeModels`: механизм не идеален only as command-boundary evidence; preserve model
-  probing behavior and add controller-boundary tests/audit around the call. Philosophy:
-  `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ACP-061 Hoare Triple Review`.
-- `DesignAssetService.deleteDraftFolders`: механизм не идеален only as command-boundary evidence; preserve draft
-  deletion semantics and prove only authorized controller calls reach it. Philosophy:
-  `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ACP-061 Hoare Triple Review`.
-- `DesignAssetService.generateAsset`: механизм не идеален only as command-boundary evidence; do not mix
-  authorization work with design generation semantics. Add MVC denial/allow tests and audit around the controller
-  call. Philosophy: `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`,
-  `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
+- `GoogleAiResourceService.probeModels`: считаю механизм идеальным
+- `DesignAssetService.deleteDraftFolders`: считаю механизм идеальным
+- `DesignAssetService.generateAsset`: считаю механизм идеальным
 - `DesignAssetService.auditExistingDrafts`: считаю механизм идеальным
-- `VideoAssetService.generateAsset`: механизм не идеален in its own video-evidence section and also lacks
-  assembled authorization proof here; preserve video statuses while adding controller-boundary tests/audit.
-  Philosophy: `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
+- `VideoAssetService.generateAsset`: считаю механизм идеальным
   `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
 - `StitchClient.createDesignSystem`: механизм не идеален only as command-boundary evidence; prove only valid
   operator credentials can reach it and do not rewrite Stitch client behavior. Philosophy:

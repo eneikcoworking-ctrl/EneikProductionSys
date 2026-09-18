@@ -7,6 +7,8 @@ import com.eneik.production.services.dashboard.ProjectOperationalContextService;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.stitch.StitchClient;
 import com.eneik.production.services.video.VideoAssetService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,6 +29,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/ai/resources")
 public class GoogleAiResourceController {
+    private static final Logger log = LoggerFactory.getLogger(GoogleAiResourceController.class);
+
     private final GoogleAiResourceService googleAiResourceService;
     private final DesignAssetService designAssetService;
     private final VideoAssetService videoAssetService;
@@ -57,10 +61,14 @@ public class GoogleAiResourceController {
     /** Temporary cleanup: removes rejected design/draft/{basename} folders from the repo's main branch. */
     @PostMapping("/design-drafts-cleanup")
     public ResponseEntity<?> designDraftsCleanup(@RequestParam UUID projectId, @RequestBody List<String> basenames) {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
         ProjectEntity project = projectRepository.findById(projectId).orElse(null);
         if (project == null) {
+            log.warn("[RIGHTS_DUTIES_MATRIX][AUDIT] designDraftsCleanup rejected: project '{}' not found. Caller: '{}'", projectId, caller);
             return ResponseEntity.notFound().build();
         }
+        log.info("[RIGHTS_DUTIES_MATRIX][AUDIT] designDraftsCleanup invoked for project '{}' ({}), basenames: {}. Caller: '{}'",
+                projectId, project.getName(), basenames, caller);
         return ResponseEntity.ok(designAssetService.deleteDraftFolders(project, basenames));
     }
 
@@ -74,16 +82,22 @@ public class GoogleAiResourceController {
 
     @PostMapping("/probe-models")
     public Map<String, Object> probeModels() {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
+        log.info("[RIGHTS_DUTIES_MATRIX][AUDIT] probeModels invoked. Caller: '{}'", caller);
         return googleAiResourceService.probeModels();
     }
 
     @PostMapping("/design-assets")
     public ResponseEntity<?> generateDesignAsset(@RequestParam UUID projectId,
                                                  @RequestBody DesignAssetRequest request) {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
         ProjectEntity project = projectRepository.findById(projectId).orElse(null);
         if (project == null) {
+            log.warn("[RIGHTS_DUTIES_MATRIX][AUDIT] generateDesignAsset rejected: project '{}' not found. Caller: '{}'", projectId, caller);
             return ResponseEntity.notFound().build();
         }
+        log.info("[RIGHTS_DUTIES_MATRIX][AUDIT] generateDesignAsset invoked for project '{}' ({}), brief: '{}'. Caller: '{}'",
+                projectId, project.getName(), request == null ? "" : request.brief(), caller);
         var context = contextService.build(project.getId(), project.getName());
         var result = designAssetService.generateAsset(
                 project,
@@ -121,18 +135,28 @@ public class GoogleAiResourceController {
     /** Temporary: creates a global Stitch design system (structured fields) and returns its id for reuse across screens. */
     @PostMapping("/stitch-design-system")
     public ResponseEntity<?> createStitchDesignSystem(@RequestBody CreateDesignSystemRequest request) {
-        var result = stitchClient.createDesignSystem(null, request.displayName(), request.headlineFont(),
-                request.bodyFont(), request.primaryColorHex(), request.secondaryColorHex());
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
+        log.info("[RIGHTS_DUTIES_MATRIX][AUDIT] createStitchDesignSystem invoked, displayName: '{}'. Caller: '{}'",
+                request == null ? "" : request.displayName(), caller);
+        var result = stitchClient.createDesignSystem(null, request == null ? null : request.displayName(),
+                request == null ? null : request.headlineFont(),
+                request == null ? null : request.bodyFont(),
+                request == null ? null : request.primaryColorHex(),
+                request == null ? null : request.secondaryColorHex());
         return ResponseEntity.ok(result);
     }
 
     @PostMapping("/video-assets")
     public ResponseEntity<?> generateVideoAsset(@RequestParam UUID projectId,
                                                 @RequestBody VideoAssetRequest request) {
+        String caller = com.eneik.production.security.AuditCallerResolver.resolveCaller();
         ProjectEntity project = projectRepository.findById(projectId).orElse(null);
         if (project == null) {
+            log.warn("[RIGHTS_DUTIES_MATRIX][AUDIT] generateVideoAsset rejected: project '{}' not found. Caller: '{}'", projectId, caller);
             return ResponseEntity.notFound().build();
         }
+        log.info("[RIGHTS_DUTIES_MATRIX][AUDIT] generateVideoAsset invoked for project '{}' ({}), brief: '{}'. Caller: '{}'",
+                projectId, project.getName(), request == null ? "" : request.brief(), caller);
         var context = contextService.build(project.getId(), project.getName());
         var result = videoAssetService.generateAsset(
                 project,
