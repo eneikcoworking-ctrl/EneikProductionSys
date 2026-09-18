@@ -4601,6 +4601,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** различие в выдаче при совпавших хешах.
 
 ### 56. Прежнее суждение не хранится · `BELIEF_UPDATE_LEDGER` (D007)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Введена фиксация доксастического состояния и истории пересмотра убеждений (AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER / D007 Evidence gap, Isaac Levi 1980). В `Judgement` добавлены компоненты истории: `previousVerdict`, `previousReason`, `previousEvidence`, `decidedAt`, а также предикаты `hasTransition()`, `hasBeliefUpdate()` и метод `withPriorBelief`. В `VerdictReconciliation` реализован потокобезопасный реестр убеждений `beliefLedger` по ключу `(projectId, layer, proposition)`. При каждом такте сверки `reconcile` новое суждение связывается с предшествующим состоянием, фиксируя свидетельство (`evidence`), причину (`reason`) и метку времени (`decidedAt`). Реализован заслон опровержения: вердикт, изменившийся без указания свидетельства или причины, бракуется и преобразуется в `ABSTAIN` (`UNGROUNDED_TRANSITION`), не позволяя проекту продвигаться на необоснованной смене убеждения. Предоставлены методы аудита `getPriorJudgement`, `getBeliefTransitions` и метод `transitions()` в `Reconciliation`. Заслоны: `VerdictReconciliationTest` (11/11 green), `AutonomousVerdictObservationServiceTest` (6/6 green), `VerdictGateTest` (14/14 green).
 **Механизм:** `Judgement`, `VerdictReconciliation.reconcile`.
 **Что не так:** поле `evidence` несёт, на чём суждение стоит, но суждения строятся заново на каждый запрос,
 и сравнить «во что верили час назад» не с чем. Оставшаяся неопределённость при этом считается —

@@ -1,12 +1,18 @@
 package com.eneik.production.services.verdict;
 
+import java.time.Clock;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The one place where the flow's layers are reconciled - which did not exist before 2026-08-15.
@@ -31,9 +37,26 @@ import java.util.UUID;
  * verdicts on declared propositions. Unification is achieved not by normalising `82%` and `954545` onto a
  * common scale - which is impossible, they are different modalities - but by mapping every layer onto a
  * common type.
+ *
+ * <p><b>Belief Update Ledger (AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER / D007):</b>
+ * Prior rulings per {@code (projectId, layer, proposition)} are maintained across reconciliation cycles.
+ * A verdict transition must record what changed it (evidence / reason), when it changed (timestamp),
+ * and what it previously stood on. An ungrounded verdict change (verdict changed without reason or evidence)
+ * is refuted and converted to {@link Verdict#ABSTAIN}, contributing to epistemic debt {@code D(P)}.
  */
 @org.springframework.stereotype.Service
 public class VerdictReconciliation {
+
+    /**
+     * Identity key for proposition tracking in the belief update ledger.
+     */
+    public record PropositionKey(UUID projectId, String layer, String proposition) {
+        public PropositionKey {
+            Objects.requireNonNull(projectId, "projectId must not be null");
+            Objects.requireNonNull(layer, "layer must not be null");
+            Objects.requireNonNull(proposition, "proposition must not be null");
+        }
+    }
 
     /**
      * @param advance     the Kleene conjunction over every judgement
@@ -56,9 +79,17 @@ public class VerdictReconciliation {
         public boolean mayAdvance() {
             return advance == Verdict.PERMIT;
         }
+
+        public List<Judgement> transitions() {
+            return judgements.stream().filter(Judgement::hasTransition).toList();
+        }
     }
 
     private final List<VerdictLayer> layers;
+    private final Clock clock;
+
+    // In-memory belief update ledger: (projectId, layer, proposition) -> latest known Judgement
+    private final Map<PropositionKey, Judgement> beliefLedger = new ConcurrentHashMap<>();
 
     /**
      * Spring injects every {@link VerdictLayer} bean. Adding one is therefore the whole act of extending
@@ -66,12 +97,18 @@ public class VerdictReconciliation {
      * never easier, so a new layer cannot accidentally unblock anything.
      */
     public VerdictReconciliation(List<VerdictLayer> layers) {
+        this(layers, Clock.systemUTC());
+    }
+
+    public VerdictReconciliation(List<VerdictLayer> layers, Clock clock) {
         this.layers = layers == null ? List.of() : List.copyOf(layers);
+        this.clock = clock == null ? Clock.systemUTC() : clock;
     }
 
     public Reconciliation reconcile(UUID projectId) {
         List<Judgement> judgements = new ArrayList<>();
         Map<String, Integer> outstandingByLayer = new LinkedHashMap<>();
+        Instant now = clock.instant();
 
         for (VerdictLayer layer : layers) {
             List<String> declared;
@@ -83,8 +120,13 @@ public class VerdictReconciliation {
                 // A layer that throws has established nothing, which is precisely an abstention - and
                 // recording it as one keeps a broken layer visible instead of letting it vanish from the
                 // reckoning. The observer must never become the outage it exists to prevent.
-                judgements.add(Judgement.abstain(layer.layerName(), "(layer failed)",
-                        "layer threw while judging: " + e.getMessage()));
+                String propName = "(layer failed)";
+                PropositionKey key = new PropositionKey(projectId, layer.layerName(), propName);
+                Judgement prior = beliefLedger.get(key);
+                Judgement failed = Judgement.abstain(layer.layerName(), propName,
+                        "layer threw while judging: " + e.getMessage()).withPriorBelief(prior, now);
+                beliefLedger.put(key, failed);
+                judgements.add(failed);
                 outstandingByLayer.merge(layer.layerName(), 1, Integer::sum);
                 continue;
             }
@@ -96,19 +138,43 @@ public class VerdictReconciliation {
                 if (j == null) {
                     continue;
                 }
-                answered.add(j.proposition());
-                judgements.add(j);
-                if (j.verdict() != Verdict.PERMIT) {
+                String prop = j.proposition() == null ? "(unnamed)" : j.proposition();
+                answered.add(prop);
+
+                PropositionKey key = new PropositionKey(projectId, layer.layerName(), prop);
+                Judgement prior = beliefLedger.get(key);
+
+                // D007 / Levi 1980 refutation check:
+                // A verdict cannot change without a recorded reason or evidence explaining the revision.
+                if (prior != null && prior.verdict() != j.verdict()) {
+                    boolean hasReason = j.reason() != null && !j.reason().isBlank();
+                    boolean hasEvidence = j.evidence() != null && !j.evidence().isBlank();
+                    if (!hasReason && !hasEvidence) {
+                        j = Judgement.abstain(j.layer(), prop, "UNGROUNDED_TRANSITION",
+                                "verdict changed from " + prior.verdict() + " to " + j.verdict()
+                                        + " without recording reason or evidence");
+                    }
+                }
+
+                Judgement recorded = j.withPriorBelief(prior, now);
+                beliefLedger.put(key, recorded);
+                judgements.add(recorded);
+                if (recorded.verdict() != Verdict.PERMIT) {
                     outstandingByLayer.merge(layer.layerName(), 1, Integer::sum);
                 }
             }
+
             // A declared proposition with no ruling is unestablished by definition. Filling it in here
             // rather than ignoring it is what makes the declared domain worth declaring: silence about
             // something a layer promised to rule on must count against advancing, not for it.
             for (String proposition : declared) {
                 if (!answered.contains(proposition)) {
-                    judgements.add(Judgement.abstain(layer.layerName(), proposition,
-                            "declared but not ruled on this cycle"));
+                    PropositionKey key = new PropositionKey(projectId, layer.layerName(), proposition);
+                    Judgement prior = beliefLedger.get(key);
+                    Judgement unruled = Judgement.abstain(layer.layerName(), proposition,
+                            "declared but not ruled on this cycle").withPriorBelief(prior, now);
+                    beliefLedger.put(key, unruled);
+                    judgements.add(unruled);
                     outstandingByLayer.merge(layer.layerName(), 1, Integer::sum);
                 }
             }
@@ -132,5 +198,42 @@ public class VerdictReconciliation {
                 .orElse("");
 
         return new Reconciliation(advance, debt, refusals, constraint, List.copyOf(judgements));
+    }
+
+    /**
+     * Look up the prior recorded judgment for a given project, layer, and proposition.
+     */
+    public Optional<Judgement> getPriorJudgement(UUID projectId, String layer, String proposition) {
+        if (projectId == null || layer == null || proposition == null) {
+            return Optional.empty();
+        }
+        return Optional.ofNullable(beliefLedger.get(new PropositionKey(projectId, layer, proposition)));
+    }
+
+    /**
+     * Read-only view of the current in-memory belief update ledger.
+     */
+    public Map<PropositionKey, Judgement> getBeliefLedger() {
+        return Collections.unmodifiableMap(beliefLedger);
+    }
+
+    /**
+     * Returns all judgements for the given project that recorded a verdict transition.
+     */
+    public List<Judgement> getBeliefTransitions(UUID projectId) {
+        if (projectId == null) {
+            return List.of();
+        }
+        return beliefLedger.entrySet().stream()
+                .filter(e -> e.getKey().projectId().equals(projectId) && e.getValue().hasTransition())
+                .map(Map.Entry::getValue)
+                .toList();
+    }
+
+    /**
+     * Clears the in-memory belief ledger (primarily for test isolation).
+     */
+    public void clearBeliefLedger() {
+        beliefLedger.clear();
     }
 }

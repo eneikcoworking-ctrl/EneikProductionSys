@@ -151,4 +151,101 @@ class VerdictReconciliationTest {
         assertThat(r.advance()).isEqualTo(Verdict.PERMIT);
         assertThat(r.judgements()).isEmpty();
     }
+
+    @Test
+    void initialReconciliationEstablishesBeliefWithoutPriorHistory() {
+        var reconciliation = new VerdictReconciliation(List.of(
+                layer("runtime", Judgement.withhold("runtime", "r1", "container crashed", "exit code 137"))
+        ));
+
+        var r = reconciliation.reconcile(PROJECT);
+
+        assertThat(r.judgements()).hasSize(1);
+        Judgement j = r.judgements().get(0);
+        assertThat(j.previousVerdict()).isNull();
+        assertThat(j.previousEvidence()).isEmpty();
+        assertThat(j.previousReason()).isEmpty();
+        assertThat(j.hasTransition()).isFalse();
+        assertThat(j.hasBeliefUpdate()).isFalse();
+        assertThat(j.decidedAt()).isNotNull();
+        assertThat(r.transitions()).isEmpty();
+    }
+
+    @Test
+    void beliefUpdatePreservesPriorVerdictAndEvidence() {
+        class MutableRuntimeLayer implements VerdictLayer {
+            private Judgement current = Judgement.withhold("runtime", "r1", "container crashed", "exit code 137");
+            @Override public String layerName() { return "runtime"; }
+            @Override public List<String> declaredPropositions(UUID p) { return List.of("r1"); }
+            @Override public List<Judgement> judge(UUID p) { return List.of(current); }
+            public void fix(Judgement repaired) { this.current = repaired; }
+        }
+
+        var layer = new MutableRuntimeLayer();
+        var reconciliation = new VerdictReconciliation(List.of(layer));
+
+        // Cycle 1: initial failure
+        var r1 = reconciliation.reconcile(PROJECT);
+        assertThat(r1.advance()).isEqualTo(Verdict.WITHHOLD);
+        assertThat(r1.judgements().get(0).previousVerdict()).isNull();
+
+        // Cycle 2: repaired with fresh evidence
+        layer.fix(Judgement.permit("runtime", "r1", "healthcheck 200 OK after restart"));
+        var r2 = reconciliation.reconcile(PROJECT);
+
+        assertThat(r2.advance()).isEqualTo(Verdict.PERMIT);
+        assertThat(r2.mayAdvance()).isTrue();
+        assertThat(r2.transitions()).hasSize(1);
+
+        Judgement j = r2.judgements().get(0);
+        assertThat(j.verdict()).isEqualTo(Verdict.PERMIT);
+        assertThat(j.evidence()).isEqualTo("healthcheck 200 OK after restart");
+        assertThat(j.previousVerdict()).isEqualTo(Verdict.WITHHOLD);
+        assertThat(j.previousReason()).isEqualTo("container crashed");
+        assertThat(j.previousEvidence()).isEqualTo("exit code 137");
+        assertThat(j.hasTransition()).isTrue();
+        assertThat(j.hasBeliefUpdate()).isTrue();
+
+        // The belief ledger remembers the state across cycles
+        var prior = reconciliation.getPriorJudgement(PROJECT, "runtime", "r1");
+        assertThat(prior).isPresent();
+        assertThat(prior.get().verdict()).isEqualTo(Verdict.PERMIT);
+        assertThat(prior.get().previousVerdict()).isEqualTo(Verdict.WITHHOLD);
+    }
+
+    @Test
+    void verdictChangeWithoutReasonOrEvidenceIsRefuted() {
+        class MutableRuntimeLayer implements VerdictLayer {
+            private Judgement current = Judgement.withhold("runtime", "r1", "container crashed", "exit code 137");
+            @Override public String layerName() { return "runtime"; }
+            @Override public List<String> declaredPropositions(UUID p) { return List.of("r1"); }
+            @Override public List<Judgement> judge(UUID p) { return List.of(current); }
+            public void changeUngrounded(Verdict verdict) {
+                this.current = new Judgement("runtime", "r1", verdict, "", "");
+            }
+        }
+
+        var layer = new MutableRuntimeLayer();
+        var reconciliation = new VerdictReconciliation(List.of(layer));
+
+        // Cycle 1: established belief: WITHHOLD
+        reconciliation.reconcile(PROJECT);
+
+        // Cycle 2: ungrounded transition: verdict changed to PERMIT with empty reason and evidence
+        layer.changeUngrounded(Verdict.PERMIT);
+        var r2 = reconciliation.reconcile(PROJECT);
+
+        // Refutation: ungrounded change is rejected and becomes ABSTAIN (epistemic debt)
+        assertThat(r2.advance())
+                .as("AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER: changing belief without stating reason or evidence must be refuted")
+                .isEqualTo(Verdict.ABSTAIN);
+        assertThat(r2.mayAdvance()).isFalse();
+        assertThat(r2.debt()).isEqualTo(1);
+
+        Judgement refuted = r2.judgements().get(0);
+        assertThat(refuted.verdict()).isEqualTo(Verdict.ABSTAIN);
+        assertThat(refuted.reasonCode()).isEqualTo("UNGROUNDED_TRANSITION");
+        assertThat(refuted.reason()).contains("without recording reason or evidence");
+        assertThat(refuted.previousVerdict()).isEqualTo(Verdict.WITHHOLD);
+    }
 }
