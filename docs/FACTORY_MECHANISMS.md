@@ -4591,6 +4591,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** дубль, созданный по работе, у которой ключ выводим.
 
 ### 55. Заявление о сохранении поведения не подкреплено проверкой · `SUBSTITUTION_ORACLE` (D009)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Подкреплено доказательством утверждение о сохранении поведения при пропуске реиндексации по хешу (SUBSTITUTION_ORACLE / D009 Substitution failure, Gottlob Frege 1892 salva veritate). Реализован тест-оракул тождества выдачи `GeminiContextServiceTest.retrievalOutputIsIdenticalBeforeAndAfterContentHashSkip`. Тест доказывает, что пропуск повторного эмбеддинга при совпадении `content_hash` (V62) оставляет выборку фрагментов и форматированный контекстный блок строго идентичными (`assertEquals` по составу, содержанию и косинусной близости salva veritate), обеспечивая нулевой расход токенов без искажения RAG-контекста. Контрольный контрпример `contentModificationInvalidatesHashAndUpdatesRetrieval` подтверждает, что любая модификация текста инвалидирует хеш, выполняет перезапись чанков и отражается в выдаче. Заслоны: `GeminiContextServiceTest` (25/25 green).
 **Механизм:** `V62__add_context_chunk_content_hash.sql`, `GeminiContextService.reindexStandingKnowledge`.
 **Что не так:** объявлено «real cost, zero behavior change for anything that reads the chunks» — наблюдение
 названо верно, доказательства сохранения под ним нет.

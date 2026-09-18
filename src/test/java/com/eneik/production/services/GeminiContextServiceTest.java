@@ -330,6 +330,161 @@ class GeminiContextServiceTest {
         }));
     }
 
+    @Test
+    @org.junit.jupiter.api.DisplayName("Substitution Oracle (Frege 1892 / D009): retrieval output before and after content_hash skip is identical salva veritate")
+    void retrievalOutputIsIdenticalBeforeAndAfterContentHashSkip() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+
+        java.util.List<ContextChunkEntity> store = new java.util.ArrayList<>();
+        when(repository.count()).thenAnswer(inv -> (long) store.size());
+        when(repository.findAllVectorRows()).thenAnswer(inv -> store.stream().map(GeminiContextServiceTest::vectorRow).toList());
+        when(repository.findVectorRowsBySourceTypeIn(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            java.util.List<String> types = (java.util.List<String>) inv.getArgument(0);
+            return store.stream().filter(c -> types.contains(c.getSourceType())).map(GeminiContextServiceTest::vectorRow).toList();
+        });
+        when(repository.findAllById(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.UUID> ids = (java.util.List<java.util.UUID>) inv.getArgument(0);
+            return store.stream().filter(c -> ids.contains(c.getId())).toList();
+        });
+        when(repository.findBySourceRef(anyString())).thenAnswer(inv -> {
+            String ref = inv.getArgument(0);
+            return store.stream().filter(c -> ref.equals(c.getSourceRef())).toList();
+        });
+        when(repository.existsBySourceRefAndContentHash(anyString(), anyString())).thenAnswer(inv -> {
+            String ref = inv.getArgument(0);
+            String hash = inv.getArgument(1);
+            return store.stream().anyMatch(c -> ref.equals(c.getSourceRef()) && hash.equals(c.getContentHash()));
+        });
+        doAnswer(inv -> {
+            String ref = inv.getArgument(0);
+            store.removeIf(c -> ref.equals(c.getSourceRef()));
+            return null;
+        }).when(repository).deleteBySourceRef(anyString());
+        when(repository.saveAll(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Iterable<ContextChunkEntity> iterable = (Iterable<ContextChunkEntity>) inv.getArgument(0);
+            for (ContextChunkEntity c : iterable) {
+                if (c.getId() == null) {
+                    c.setId(java.util.UUID.randomUUID());
+                }
+                store.add(c);
+            }
+            return store;
+        });
+
+        float[] sampleVector = new float[]{1.0f, 0.0f};
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(sampleVector);
+
+        String docSource = "00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md";
+        String docType = "philosopher_pattern_common";
+        String content = "Gottlob Frege: Substitution Oracle (Salva Veritate).\n\nTwo expressions with identical reference can be replaced without changing the truth value.";
+
+        // Pass 1: Fresh index of document
+        service.indexDocument(docType, docSource, content);
+        assertFalse(store.isEmpty(), "Initial indexing must persist chunks into repository");
+
+        List<GeminiContextService.RetrievedChunk> baselineRetrieval = service.retrieveRelevantContext("substitution oracle", 5);
+        String baselineBlock = service.buildContextBlock("substitution oracle");
+
+        assertFalse(baselineRetrieval.isEmpty(), "Baseline retrieval must return indexed content");
+        assertEquals(docSource, baselineRetrieval.get(0).sourceRef());
+        assertTrue(baselineRetrieval.get(0).content().contains("Substitution Oracle"));
+        assertTrue(baselineBlock.contains("Substitution Oracle"));
+
+        // Reset invocation counters on mlPredictionServiceClient to monitor re-embedding cost
+        clearInvocations(mlPredictionServiceClient);
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(sampleVector);
+
+        // Pass 2: Reindex exact same content (content_hash matches)
+        service.indexDocument(docType, docSource, content);
+
+        // Prove zero cost: ml client must NOT have embedded document chunks (only dimension probe is permitted)
+        verify(repository, times(1)).deleteBySourceRef(docSource); // Only once from Pass 1, NOT Pass 2
+        verify(repository, atLeastOnce()).existsBySourceRefAndContentHash(eq(docSource), anyString());
+
+        // Pass 3: Retrieval after skip
+        List<GeminiContextService.RetrievedChunk> afterSkipRetrieval = service.retrieveRelevantContext("substitution oracle", 5);
+        String afterSkipBlock = service.buildContextBlock("substitution oracle");
+
+        // Salva Veritate Oracle assertions:
+        assertEquals(baselineRetrieval.size(), afterSkipRetrieval.size(), "Retrieval size must be identical before and after skip");
+        for (int i = 0; i < baselineRetrieval.size(); i++) {
+            GeminiContextService.RetrievedChunk b = baselineRetrieval.get(i);
+            GeminiContextService.RetrievedChunk a = afterSkipRetrieval.get(i);
+            assertEquals(b.sourceRef(), a.sourceRef(), "Chunk sourceRef must be identical");
+            assertEquals(b.content(), a.content(), "Chunk content must be identical");
+            assertEquals(b.similarity(), a.similarity(), 1e-9, "Cosine similarity score must be identical");
+        }
+        assertEquals(baselineBlock, afterSkipBlock, "Context block rendering must be identical salva veritate");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("Substitution Oracle (Frege 1892 / D009): content modification invalidates hash and updates retrieval")
+    void contentModificationInvalidatesHashAndUpdatesRetrieval() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+
+        java.util.List<ContextChunkEntity> store = new java.util.ArrayList<>();
+        when(repository.count()).thenAnswer(inv -> (long) store.size());
+        when(repository.findAllVectorRows()).thenAnswer(inv -> store.stream().map(GeminiContextServiceTest::vectorRow).toList());
+        when(repository.findAllById(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            java.util.List<java.util.UUID> ids = (java.util.List<java.util.UUID>) inv.getArgument(0);
+            return store.stream().filter(c -> ids.contains(c.getId())).toList();
+        });
+        when(repository.findBySourceRef(anyString())).thenAnswer(inv -> {
+            String ref = inv.getArgument(0);
+            return store.stream().filter(c -> ref.equals(c.getSourceRef())).toList();
+        });
+        when(repository.existsBySourceRefAndContentHash(anyString(), anyString())).thenAnswer(inv -> {
+            String ref = inv.getArgument(0);
+            String hash = inv.getArgument(1);
+            return store.stream().anyMatch(c -> ref.equals(c.getSourceRef()) && hash.equals(c.getContentHash()));
+        });
+        doAnswer(inv -> {
+            String ref = inv.getArgument(0);
+            store.removeIf(c -> ref.equals(c.getSourceRef()));
+            return null;
+        }).when(repository).deleteBySourceRef(anyString());
+        when(repository.saveAll(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Iterable<ContextChunkEntity> iterable = (Iterable<ContextChunkEntity>) inv.getArgument(0);
+            for (ContextChunkEntity c : iterable) {
+                if (c.getId() == null) {
+                    c.setId(java.util.UUID.randomUUID());
+                }
+                store.add(c);
+            }
+            return store;
+        });
+
+        float[] vector1 = new float[]{1.0f, 0.0f};
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(vector1);
+
+        String docSource = "00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md";
+        String docType = "philosopher_pattern_common";
+        String initialContent = "Original content before modification.";
+
+        service.indexDocument(docType, docSource, initialContent);
+        List<GeminiContextService.RetrievedChunk> initial = service.retrieveRelevantContext("original", 5);
+        assertFalse(initial.isEmpty());
+        assertTrue(initial.get(0).content().contains("Original content"));
+
+        // Modify content
+        String modifiedContent = "Modified content replacing previous version.";
+        service.indexDocument(docType, docSource, modifiedContent);
+
+        // Verification: repository delete was called twice, new content is in store
+        verify(repository, times(2)).deleteBySourceRef(docSource);
+        List<GeminiContextService.RetrievedChunk> modified = service.retrieveRelevantContext("modified", 5);
+        assertFalse(modified.isEmpty());
+        assertTrue(modified.get(0).content().contains("Modified content"));
+        assertFalse(modified.get(0).content().contains("Original content"));
+    }
+
     private static ContextChunkRepository.VectorRow vectorRow(ContextChunkEntity chunk) {
         ContextChunkRepository.VectorRow row = mock(ContextChunkRepository.VectorRow.class);
         when(row.getId()).thenReturn(chunk.getId());
