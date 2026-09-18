@@ -4560,6 +4560,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** цикл, застрявший в притязании дольше названного срока.
 
 ### 52. Два внутренних входа отвечают отказом · `FALSIFICATION_HARNESS` (D008)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Устранена деградация диагностических эндпоинтов `InternalGeminiObserverController` (`/dispatch-capacity-probe` и `/persistent-workers`) до HTTP 500 (FALSIFICATION_HARNESS / D008, Popper 1934). Оба метода защищены обработкой исключений и безопасным fallback-определением проекта (через `ContinuousOrchestrationService.getActiveProjects()` или явный параметр `projectId`). При отсутствии активных проектов или сбоях базы данных возвращается структурированный диагностический JSON со статусом `UNDETERMINED_PROJECT` / `PROBE_FAILED` / `QUERY_FAILED` с кодом HTTP 200, сохраняя прозрачность диагностической поверхности фабрики без выброса 500. Заслоны: `InternalGeminiObserverControllerTest` (10/10 green).
 **Механизм:** `InternalGeminiObserverController` — `/dispatch-capacity-probe` и `/persistent-workers`.
 **Что не так:** живое 7 сентября — `HTTP 500`, «An unexpected error occurred», при том что `/db-table-sizes`
 на том же контроллере отвечает исправно. Поверхность разбора у выключенного механизма сломана, и этого никто

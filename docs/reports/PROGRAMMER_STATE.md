@@ -1,11 +1,10 @@
-# Такт L2: Ведущий инженер (2026-09-18 08:15 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 09:22 UTC)
 
-1. Предписание 51 закрыто (BOUNDARY_TOPOLOGY / D006 Authorization ambiguity, Achille Varzi 1999):
-   - В `DesignShopCycleRepository` добавлена временная граница (TTL, 15 мин) для `claimStartCycle`: истёкшие притязания (`c.startCycleClaimedAt < :expiryCutoff`) могут быть перезаняты повторным тактом.
-   - Реализован выметающий сервис `StrandedDesignCycleSweepService` (по аналогии со `StrandedFinalizingSweepService`), находящий брошенные циклы через `findByStartCycleClaimedAtIsNotNullAndStartCycleClaimedAtBefore` и освобождающий их через CAS `compareAndReleaseStrandedClaim`.
-   - Освобождение брошенного притязания фиксируется в `DefectJournalService` (`recordInstitutionalAudit`) и в проектном логе через `ProjectLogFlushQueue`.
+1. Предписание 52 закрыто (FALSIFICATION_HARNESS / D008, Karl Popper 1934):
+   - Диагностические эндпоинты `InternalGeminiObserverController` (`/dispatch-capacity-probe` и `/persistent-workers`) защищены от деградации в HTTP 500.
+   - Реализована безопасная резолюция `projectId` (через `ContinuousOrchestrationService.getActiveProjects()` или явный параметр) с возвратом структурированного диагностического ответа `UNDETERMINED_PROJECT` при отсутствии проектов.
+   - Любые сбои базы данных или запроса перехвачены и возвращают структурированный статус `PROBE_FAILED` / `QUERY_FAILED` с кодом HTTP 200, предотвращая сокрытие контекста ошибки за непрозрачной 500.
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `StrandedDesignCycleSweepServiceTest` (4/4 green): автоматическое выметание брошенного цикла, защита живых притязаний в рамках lease-окна, безопасная обработка гонок CAS, дата-дривен расчёт срока аренды.
-   - `DesignShopOrchestrationServiceTest` (13/13 green), `DesignShopOrchestrationServiceLaw15Test` (7/7 green).
+   - `InternalGeminiObserverControllerTest` (10/10 green): проверка защитного возврата при ошибках БД, валидация дефолтных тегов, обработка неопределённого проекта, штатная работа обоих входов.
 3. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 52).
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди (Предписание 53).

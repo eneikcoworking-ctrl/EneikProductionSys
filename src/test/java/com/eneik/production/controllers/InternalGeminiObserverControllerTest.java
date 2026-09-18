@@ -32,6 +32,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -186,5 +187,73 @@ class InternalGeminiObserverControllerTest {
         assertThat(result.get("status")).isEqualTo("UNDETERMINED_PROJECT");
         assertThat(result.get("tag")).isEqualTo("BARCAN-TAG-11");
         assertThat(result).containsKey("message");
+    }
+
+    @Test
+    @DisplayName("Falsification harness (Popper 1934 / D008): dispatchCapacityProbe catches database exceptions and avoids 500")
+    void dispatchCapacityProbeCatchesDatabaseException() {
+        UUID projectId = UUID.randomUUID();
+        when(accountRepository.lockNextJulesAccountWithCapacity(any(), any(), anyInt(), any(), anyInt(), any()))
+                .thenThrow(new RuntimeException("Database connection timeout during capacity lock"));
+
+        Map<String, Object> result = controller.dispatchCapacityProbe(projectId, "BARCAN-TAG-11");
+
+        assertThat(result.get("found")).isEqualTo(false);
+        assertThat(result.get("status")).isEqualTo("PROBE_FAILED");
+        assertThat(result.get("tag")).isEqualTo("BARCAN-TAG-11");
+        assertThat(result.get("error")).isEqualTo("Database connection timeout during capacity lock");
+    }
+
+    @Test
+    @DisplayName("Falsification harness (Popper 1934 / D008): persistentWorkers catches database exceptions and avoids 500")
+    void persistentWorkersCatchesDatabaseException() {
+        UUID projectId = UUID.randomUUID();
+        when(persistentWorkerSessionRepository.findByProjectId(projectId))
+                .thenThrow(new RuntimeException("Deadlock or table access error"));
+
+        List<Map<String, Object>> result = controller.persistentWorkers(projectId);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).get("status")).isEqualTo("QUERY_FAILED");
+        assertThat(result.get(0).get("error")).isEqualTo("Deadlock or table access error");
+    }
+
+    @Test
+    @DisplayName("dispatchCapacityProbe with blank or null tag defaults to BARCAN-TAG-11")
+    void dispatchCapacityProbeDefaultsBlankTag() {
+        UUID projectId = UUID.randomUUID();
+        when(accountRepository.lockNextJulesAccountWithCapacity(eq(projectId), eq("BARCAN-TAG-11"), anyInt(), any(), anyInt(), any()))
+                .thenReturn(Optional.empty());
+
+        Map<String, Object> result = controller.dispatchCapacityProbe(projectId, "   ");
+
+        assertThat(result.get("tag")).isEqualTo("BARCAN-TAG-11");
+        assertThat(result.get("found")).isEqualTo(false);
+    }
+
+    @Test
+    @DisplayName("Multiple active projects return UNDETERMINED_PROJECT with candidate project list")
+    void multipleActiveProjectsListCandidateProjects() {
+        ProjectEntity p1 = new ProjectEntity();
+        p1.setId(UUID.randomUUID());
+        p1.setName("Project One");
+        p1.setStatus(ProjectStatus.active);
+
+        ProjectEntity p2 = new ProjectEntity();
+        p2.setId(UUID.randomUUID());
+        p2.setName("Project Two");
+        p2.setStatus(ProjectStatus.active);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active))
+                .thenReturn(List.of(p1, p2));
+
+        List<Map<String, Object>> workerResult = controller.persistentWorkers(null);
+        assertThat(workerResult).hasSize(1);
+        assertThat(workerResult.get(0).get("status")).isEqualTo("UNDETERMINED_PROJECT");
+        assertThat(workerResult.get(0)).containsKey("activeProjects");
+
+        Map<String, Object> probeResult = controller.dispatchCapacityProbe(null, null);
+        assertThat(probeResult.get("status")).isEqualTo("UNDETERMINED_PROJECT");
+        assertThat(probeResult).containsKey("activeProjects");
     }
 }

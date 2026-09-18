@@ -19,6 +19,8 @@ import com.eneik.production.repositories.OperationalRealityFindingRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.ContinuousOrchestrationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -42,6 +44,8 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/internal/gemini-observer")
 public class InternalGeminiObserverController {
+
+    private static final Logger log = LoggerFactory.getLogger(InternalGeminiObserverController.class);
 
     private final GeminiObserverJournalRepository journalRepository;
     private final GeminiObserverActionRepository actionRepository;
@@ -225,31 +229,50 @@ public class InternalGeminiObserverController {
 
     @GetMapping("/persistent-workers")
     public List<java.util.Map<String, Object>> persistentWorkers(@RequestParam(required = false) UUID projectId) {
-        UUID effectiveProjectId = projectId != null ? projectId : resolveSingleActiveProjectId();
-        if (effectiveProjectId == null) {
-            java.util.Map<String, Object> undetermined = new java.util.LinkedHashMap<>();
-            undetermined.put("status", "UNDETERMINED_PROJECT");
-            undetermined.put("message", "No single active project found. Provide 'projectId' parameter explicitly.");
-            return List.of(undetermined);
+        try {
+            UUID effectiveProjectId = projectId != null ? projectId : resolveSingleActiveProjectId();
+            if (effectiveProjectId == null) {
+                java.util.Map<String, Object> undetermined = new java.util.LinkedHashMap<>();
+                undetermined.put("status", "UNDETERMINED_PROJECT");
+                undetermined.put("message", "No single active project found. Provide 'projectId' parameter explicitly.");
+                List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                        projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+                if (activeProjects != null && !activeProjects.isEmpty()) {
+                    undetermined.put("activeProjects", activeProjects.stream()
+                            .map(p -> java.util.Map.of("id", p.getId(), "name", p.getName() != null ? p.getName() : ""))
+                            .toList());
+                }
+                return List.of(undetermined);
+            }
+
+            List<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> sessions =
+                    persistentWorkerSessionRepository.findByProjectId(effectiveProjectId);
+
+            if (sessions == null || sessions.isEmpty()) {
+                return List.of();
+            }
+
+            return sessions.stream()
+                    .map(w -> {
+                        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                        m.put("id", w.getId());
+                        m.put("projectId", w.getProjectId());
+                        m.put("purpose", w.getPurpose());
+                        m.put("carrierTaskId", w.getCarrierTaskId());
+                        m.put("retiredAt", w.getRetiredAt());
+                        m.put("createdAt", w.getCreatedAt());
+                        m.put("cycleCount", w.getCycleCount());
+                        m.put("currentBatchIds", w.getCurrentBatchIds());
+                        return m;
+                    })
+                    .toList();
+        } catch (Exception e) {
+            log.warn("InternalGeminiObserverController: persistent workers lookup failed: {}", e.getMessage());
+            java.util.Map<String, Object> err = new java.util.LinkedHashMap<>();
+            err.put("status", "QUERY_FAILED");
+            err.put("error", e.getMessage() != null ? e.getMessage() : "Unknown query error");
+            return List.of(err);
         }
-
-        List<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> sessions =
-                persistentWorkerSessionRepository.findByProjectId(effectiveProjectId);
-
-        return sessions.stream()
-                .map(w -> {
-                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
-                    m.put("id", w.getId());
-                    m.put("projectId", w.getProjectId());
-                    m.put("purpose", w.getPurpose());
-                    m.put("carrierTaskId", w.getCarrierTaskId());
-                    m.put("retiredAt", w.getRetiredAt());
-                    m.put("createdAt", w.getCreatedAt());
-                    m.put("cycleCount", w.getCycleCount());
-                    m.put("currentBatchIds", w.getCurrentBatchIds());
-                    return m;
-                })
-                .toList();
     }
 
     // Manual trigger (2026-08-08, operator directive) for the exact same job the daily cron
@@ -273,22 +296,39 @@ public class InternalGeminiObserverController {
     public java.util.Map<String, Object> dispatchCapacityProbe(
             @RequestParam(required = false) UUID projectId,
             @RequestParam(required = false, defaultValue = "BARCAN-TAG-11") String tag) {
-        UUID effectiveProjectId = projectId != null ? projectId : resolveSingleActiveProjectId();
+        String effectiveTag = (tag != null && !tag.isBlank()) ? tag.trim() : "BARCAN-TAG-11";
         java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
-        result.put("tag", tag);
+        result.put("tag", effectiveTag);
 
-        if (effectiveProjectId == null) {
-            result.put("status", "UNDETERMINED_PROJECT");
+        try {
+            UUID effectiveProjectId = projectId != null ? projectId : resolveSingleActiveProjectId();
+
+            if (effectiveProjectId == null) {
+                result.put("status", "UNDETERMINED_PROJECT");
+                result.put("found", false);
+                result.put("message", "No single active project found. Provide 'projectId' parameter explicitly.");
+                List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                        projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+                if (activeProjects != null && !activeProjects.isEmpty()) {
+                    result.put("activeProjects", activeProjects.stream()
+                            .map(p -> java.util.Map.of("id", p.getId(), "name", p.getName() != null ? p.getName() : ""))
+                            .toList());
+                }
+                return result;
+            }
+
+            result.put("projectId", effectiveProjectId);
+            var found = accountRepository.lockNextJulesAccountWithCapacity(effectiveProjectId, effectiveTag, 3, null, 15, null);
+            result.put("found", found.isPresent());
+            found.ifPresent(a -> result.put("accountName", a.getName()));
+            return result;
+        } catch (Exception e) {
+            log.warn("InternalGeminiObserverController: dispatch capacity probe failed: {}", e.getMessage());
+            result.put("status", "PROBE_FAILED");
             result.put("found", false);
-            result.put("message", "No single active project found. Provide 'projectId' parameter explicitly.");
+            result.put("error", e.getMessage() != null ? e.getMessage() : "Unknown capacity probe error");
             return result;
         }
-
-        result.put("projectId", effectiveProjectId);
-        var found = accountRepository.lockNextJulesAccountWithCapacity(effectiveProjectId, tag, 3, null, 15, null);
-        result.put("found", found.isPresent());
-        found.ifPresent(a -> result.put("accountName", a.getName()));
-        return result;
     }
 
     private UUID resolveSingleActiveProjectId() {
