@@ -8908,9 +8908,7 @@ helper/manual tools, not autonomous factory mechanisms.
 * `linear_webhook.py` — **комментарий для Антигравити:** считаю механизм идеальным
 * `check_system_drift.ps1` — **комментарий для Антигравити:** считаю механизм идеальным
 * `generate_report.py` — **комментарий для Антигравити:** считаю механизм идеальным
-* `mock_test_runner.py` — **комментарий для Антигравити:** механизм не идеален: применить
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`; do not use printed PASS output as evidence unless the script runs real
-  assertions against the current system.
+* `mock_test_runner.py` — **комментарий для Антигравити:** считаю механизм идеальным (применен `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010: фиктивный PASS и симуляция тестов полностью ликвидированы; внедрены проверяемые утверждения инвариантов доменной модели Greeting и политик PrivacyFilter, поддержан реальный запуск JUnit тестов через Docker Maven, покрыт тестами в `tests/test_mock_test_runner.py`).
 * `reset_project_data.sql` — **комментарий для Антигравити:** считаю механизм идеальным
 * `scripts/modules/*` — **комментарий для Антигравити:** считаю механизм идеальным
 
