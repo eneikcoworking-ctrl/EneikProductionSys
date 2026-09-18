@@ -221,4 +221,44 @@ class SystemSettingsServiceTest {
         when(environment.getProperty("DEBUG_SQL_ENDPOINT_ENABLED")).thenReturn("true");
         assertThat(settings.effectiveBoolean("debug_sql_endpoint_enabled")).isTrue();
     }
+
+    @Test
+    void geminiProjectObserverCannotBeModifiedViaApiSettings() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        Environment environment = mock(Environment.class);
+        SystemSettingsService settings = new SystemSettingsService(jdbcTemplate, environment);
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () ->
+                settings.save("gemini_project_observer_enabled", "true"));
+
+        assertThat(ex.getMessage()).contains("Setting 'gemini_project_observer_enabled' cannot be modified via API");
+        assertThat(ex.getMessage()).contains("GeminiProjectObserverService has been permanently decommissioned as Muda (V111)");
+    }
+
+    @Test
+    void storedValueAndInputEndpointMatchExactlyWithoutDrift() {
+        JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
+        Environment environment = mock(Environment.class);
+        SystemSettingsService settings = new SystemSettingsService(jdbcTemplate, environment);
+
+        // Case A: DB stores "false" -> effectiveValue is "false", effectiveBoolean is false, DTO is false, source is "database"
+        when(jdbcTemplate.query(anyString(), any(ResultSetExtractor.class), eq("gemini_project_observer_enabled")))
+                .thenReturn(Optional.of("false"));
+
+        assertThat(settings.effectiveValue("gemini_project_observer_enabled")).isEqualTo("false");
+        assertThat(settings.effectiveBoolean("gemini_project_observer_enabled")).isFalse();
+        var dto = settings.toDto("gemini_project_observer_enabled");
+        assertThat(dto.enabled()).isFalse();
+        assertThat(dto.source()).isEqualTo("database");
+
+        // Case B: DB stores "true" -> must strictly mirror stored value without hallucination
+        when(jdbcTemplate.query(anyString(), any(ResultSetExtractor.class), eq("gemini_project_observer_enabled")))
+                .thenReturn(Optional.of("true"));
+
+        assertThat(settings.effectiveValue("gemini_project_observer_enabled")).isEqualTo("true");
+        assertThat(settings.effectiveBoolean("gemini_project_observer_enabled")).isTrue();
+        var dtoTrue = settings.toDto("gemini_project_observer_enabled");
+        assertThat(dtoTrue.enabled()).isTrue();
+        assertThat(dtoTrue.source()).isEqualTo("database");
+    }
 }

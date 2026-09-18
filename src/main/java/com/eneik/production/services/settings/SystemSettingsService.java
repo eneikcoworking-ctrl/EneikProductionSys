@@ -270,6 +270,15 @@ public class SystemSettingsService {
                     + "It can only be configured via environment variable (DEBUG_SQL_ENDPOINT_ENABLED) or system property.");
         }
 
+        // Prescription 58 (ANTI_MIRROR_TELEMETRY / D013 & FON_VRIGT_01_PROHIBITION_AS_CODE):
+        // GeminiProjectObserverService was permanently decommissioned as Muda in V111.
+        // It cannot be re-enabled or toggled via API/settings.
+        if ("gemini_project_observer_enabled".equals(key)) {
+            throw new IllegalArgumentException(
+                    "Setting 'gemini_project_observer_enabled' cannot be modified via API. "
+                    + "GeminiProjectObserverService has been permanently decommissioned as Muda (V111).");
+        }
+
         if (definition != null && definition.enabledFlag()) {
             String normalized = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
             if (!"true".equals(normalized) && !"false".equals(normalized)) {

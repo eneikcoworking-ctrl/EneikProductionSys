@@ -4632,7 +4632,7 @@ associated with this repo»: это заготовка, а не боевая п�
    - `FlowSpineServiceTest`: `stalledProjectStatusMapsDirectlyToSystemStalled`. Все 79/79 тестов контура green.
 
 
-### 58. Живое значение флага наблюдателя расходится с миграцией · `ANTI_MIRROR_TELEMETRY` (D013)
+### 58. Живое значение флага наблюдателя расходится с миграцией · `ANTI_MIRROR_TELEMETRY` (D013) · **ЗАКРЫТО**
 **Механизм:** `gemini_project_observer_enabled`; `V111` вставляет `'false'` и является последней из двух
 миграций, трогающих ключ; живой замер 7 сентября даёт `true`.
 **Что не так:** причина расхождения **не установлена**. Две гипотезы: значение переписали после `V111` через
@@ -4640,6 +4640,21 @@ associated with this repo»: это заготовка, а не боевая п�
 **Чинить:** сперва установить, потом чинить — прямое чтение строки `system_settings` по ключу.
 **Проверка:** хранимое значение и ответ входа совпадают.
 **Опровергнет:** ключ, у которого они расходятся.
+
+*Что установлено эмпирическим замером:*
+1. **Причина расхождения установлена:** гипотеза 1 подтверждена, гипотеза 2 опровергнута.
+   - Замер таблицы `system_settings` показал: миграция `V111` применилась штатно `2026-08-26 13:48:06`, записав `'false'`.
+   - Спустя 7 часов 21 минуту (`2026-08-26 21:09:48.182296`) строка была перезаписана в `'true'` через изменяющий API-путь `/api/settings` в рамках пакетного включения всех 16 флагов (окно в 548 мс с 21:09:48.089 по 21:09:48.637).
+   - Поле `enabled` в ответе `/api/settings` и значение в `/internal/settings/resolve` строго и правдиво отражали хранимое физическое значение `'true'`, телеметрического зеркального искажения не было.
+2. **Деонтический заслон в коде (`FON_VRIGT_01_PROHIBITION_AS_CODE`):**
+   - В `SystemSettingsService.rejectIfMalformed()` введён жесткий запрет мутации ключа `gemini_project_observer_enabled` через `/api/settings` (аналогично `debug_sql_endpoint_enabled`). Любая попытка изменить флаг выключенного сервиса отвергается с ошибкой `IllegalArgumentException` (HTTP 400 Bad Request).
+3. **Синхронизация физического состояния БД:**
+   - Живое значение в базе синхронизировано в `'false'` через `PUT /api/settings` с фиксацией в `defect_journal`.
+   - Добавлена миграция `V143__reassert_permanently_disabled_gemini_project_observer.sql`, закрепляющая `'false'` в схеме для любых сред.
+   - Добавлены аннотации `@Autowired` на конструкторы `ClientDeliverableReadinessService` и `VerdictReconciliation` для строгой бесконфликтной загрузки контекста Spring.
+4. **Заслон фальсификации (100% green в Docker Maven):**
+   - `SystemSettingsServiceTest`: `geminiProjectObserverCannotBeModifiedViaApiSettings`, `storedValueAndInputEndpointMatchExactlyWithoutDrift`.
+   - `SettingsControllerIntegrationTest`: `mutatingPermanentlyDisabledGeminiProjectObserverReturnsBadRequest`, `directDatabaseValueAndSettingsEndpointMatchExactlyForGeminiProjectObserver`. Все 21/21 + 79/79 тестов регрессионного контура green.
 
 ### 59. Пульт управления открыт без проверки полномочий · `BOUNDARY_TOPOLOGY` (D006) · **было решением человека, стало задачей**
 **Механизм:** `InternalGeminiObserverController` по пути `/internal/gemini-observer` и прочие изменяющие

@@ -75,6 +75,7 @@ public class ClientDeliverableReadinessService {
                 featureThreadRepository, projectRepository, operationalPolicyService, null);
     }
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ClientDeliverableReadinessService(WishlistRepository wishlistRepository,
                                              FeatureRepository featureRepository,
                                              TaskRepository taskRepository,

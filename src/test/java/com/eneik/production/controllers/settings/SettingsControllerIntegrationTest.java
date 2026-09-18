@@ -172,4 +172,51 @@ class SettingsControllerIntegrationTest {
         assertThat(updateDescription).contains("Switching compiler account");
         assertThat(updateDescription).contains("носитель ключа оператора");
     }
+
+    @Test
+    void mutatingPermanentlyDisabledGeminiProjectObserverReturnsBadRequest() {
+        ResponseEntity<Map> response = restTemplate.exchange(
+                "/api/settings",
+                HttpMethod.PUT,
+                new HttpEntity<>(new SettingUpdateRequest("gemini_project_observer_enabled", "true")),
+                Map.class
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody()).isNotNull();
+        assertThat(response.getBody().get("message").toString())
+                .contains("Setting 'gemini_project_observer_enabled' cannot be modified via API");
+    }
+
+    @Test
+    void directDatabaseValueAndSettingsEndpointMatchExactlyForGeminiProjectObserver() {
+        // Direct DB insertion of 'false' (simulating V111 / V143)
+        jdbcTemplate.update("INSERT INTO system_settings (\"key\", \"value\", updated_at) VALUES ('gemini_project_observer_enabled', 'false', CURRENT_TIMESTAMP)");
+
+        // 1. Verify direct DB read
+        String storedDbValue = jdbcTemplate.queryForObject(
+                "SELECT \"value\" FROM system_settings WHERE \"key\" = 'gemini_project_observer_enabled'",
+                String.class
+        );
+        assertThat(storedDbValue).isEqualTo("false");
+
+        // 2. Verify GET /api/settings list DTO agrees
+        ResponseEntity<SettingDto[]> listResponse = restTemplate.getForEntity("/api/settings", SettingDto[].class);
+        SettingDto observerSetting = Arrays.stream(listResponse.getBody())
+                .filter(s -> "gemini_project_observer_enabled".equals(s.key()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(observerSetting.enabled()).isFalse();
+        assertThat(observerSetting.source()).isEqualTo("database");
+
+        // 3. Verify internal resolve endpoint agrees
+        ResponseEntity<Map> resolveResponse = restTemplate.postForEntity(
+                "/internal/settings/resolve",
+                Map.of("key", "gemini_project_observer_enabled"),
+                Map.class
+        );
+        assertThat(resolveResponse.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(resolveResponse.getBody()).containsEntry("value", "false");
+        assertThat(resolveResponse.getBody()).containsEntry("source", "database");
+    }
 }

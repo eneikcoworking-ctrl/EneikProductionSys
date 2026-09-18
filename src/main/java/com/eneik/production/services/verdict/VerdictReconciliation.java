@@ -96,6 +96,7 @@ public class VerdictReconciliation {
      * the system's verification - and by {@link Verdict#and} that can only ever make advancing harder,
      * never easier, so a new layer cannot accidentally unblock anything.
      */
+    @org.springframework.beans.factory.annotation.Autowired
     public VerdictReconciliation(List<VerdictLayer> layers) {
         this(layers, Clock.systemUTC());
     }
