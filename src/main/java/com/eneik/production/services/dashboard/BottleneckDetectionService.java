@@ -45,23 +45,28 @@ public class BottleneckDetectionService {
                 ? taskRepository.queuedGroupedByTag()
                 : taskRepository.queuedGroupedByProjectAndTag(projectId);
 
+        // Bounded operator bottleneck capacity summary acquired once per detect cycle
+        // (Section VII / 10-такт 2/10, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010, Goldman;
+        // AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP / D004).
+        // Eliminates repeating full account read inside each queued-tag row.
+        var accounts = accountRepository.findAllByOrderByNameAsc();
+        long dailyLimited = accounts.stream().filter(account -> account.getStatus() == AccountStatus.daily_limited).count();
+        long apiBlocked = accounts.stream().filter(account -> account.getStatus() == AccountStatus.api_blocked).count();
+        long disabled = accounts.stream()
+                .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .filter(account -> !account.isEnabled())
+                .count();
+        long workingAccounts = accounts.stream()
+                .filter(com.eneik.production.models.persistence.AccountEntity::isEnabled)
+                .filter(account -> account.getStatus() == AccountStatus.idle || account.getStatus() == AccountStatus.busy)
+                .count();
+        boolean poolStructurallyDepleted = !accounts.isEmpty() && workingAccounts == 0;
+
         queuedByTag.forEach(row -> {
             boolean hasCapacity = accountRepository.existsJulesAccountWithCapacity(
                     row.tag(),
                     maxConcurrentJulesSessionsPerAccount
             );
-            var accounts = accountRepository.findAll();
-            long dailyLimited = accounts.stream().filter(account -> account.getStatus() == AccountStatus.daily_limited).count();
-            long apiBlocked = accounts.stream().filter(account -> account.getStatus() == AccountStatus.api_blocked).count();
-            long disabled = accounts.stream()
-                    .filter(account -> account.getStatus() != AccountStatus.decommissioned)
-                    .filter(account -> !account.isEnabled())
-                    .count();
-            long workingAccounts = accounts.stream()
-                    .filter(com.eneik.production.models.persistence.AccountEntity::isEnabled)
-                    .filter(account -> account.getStatus() == AccountStatus.idle || account.getStatus() == AccountStatus.busy)
-                    .count();
-            boolean poolStructurallyDepleted = !accounts.isEmpty() && workingAccounts == 0;
             // Law 8 (Fact vs Arbitrary Window):
             // If the account pool is structurally depleted (no active accounts remain, all are daily_limited, api_blocked, or disabled),
             // capacity is zero as an established fact - report bottleneck immediately.

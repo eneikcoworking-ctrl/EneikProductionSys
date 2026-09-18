@@ -1,6 +1,7 @@
 package com.eneik.production.services.toc;
 
 import com.eneik.production.models.persistence.AccountEntity;
+import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
@@ -14,7 +15,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Layer 2 (TOC) of the unified Lean-TOC-Six-Sigma system - see docs/ENGINEERING_INVARIANTS_CHARTER.md
@@ -65,26 +68,33 @@ public class ConstraintIdentificationService {
     private static final List<String> ACTIVE_SESSION_STATUSES = List.of("queued", "running", "revising", "stuck");
 
     public DrumAssessment identifyDrum(UUID projectId) {
-        List<TaskEntity> tasks = taskRepository.findAll().stream()
-                .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
-                .toList();
+        List<TaskEntity> tasks = projectId != null
+                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+                : taskRepository.findAll();
 
         long queuedTasks = tasks.stream().filter(t -> t.getStatus() == TaskStatus.queued).count();
         long reviewTasks = tasks.stream()
                 .filter(t -> t.getStatus() == TaskStatus.pending_review || t.getStatus() == TaskStatus.review)
                 .count();
 
-        List<AccountEntity> enabledAccounts = accountRepository.findAll().stream()
+        // Operational capacity denominator aligned with dispatch eligibility
+        // (Section VII / 10-такт 2/10, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010, Goldman;
+        // NUEL_BELNAP_03_TRUTH_STATUS_TABLE / D012).
+        // Uses bounded factory-wide reference data (findAllByOrderByNameAsc) and excludes
+        // non-operational accounts (disabled, daily_limited, api_blocked, offline, decommissioned)
+        // so that the drum does not fabricate phantom capacity for accounts the dispatcher would reject.
+        List<AccountEntity> operationalAccounts = accountRepository.findAllByOrderByNameAsc().stream()
                 .filter(AccountEntity::isEnabled)
+                .filter(a -> a.getStatus() == AccountStatus.idle || a.getStatus() == AccountStatus.busy)
                 .toList();
-        double totalSlots = enabledAccounts.stream()
+        double totalSlots = operationalAccounts.stream()
                 .mapToInt(a -> a.getMaxConcurrentSessions() != null ? a.getMaxConcurrentSessions() : defaultAccountSessionSlots)
                 .sum();
 
+        Set<UUID> projectTaskIds = tasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
+
         long activeSessions = julesSessionRepository.findByStatusIn(ACTIVE_SESSION_STATUSES).stream()
-                .filter(s -> taskRepository.findById(s.getTaskId())
-                        .map(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
-                        .orElse(false))
+                .filter(s -> s.getTaskId() != null && projectTaskIds.contains(s.getTaskId()))
                 .count();
 
         double dispatchPressure = queuedTasks == 0 ? 0.0
@@ -129,9 +139,10 @@ public class ConstraintIdentificationService {
      * Replaces a hardcoded increment with a number tied to this project's own measured variance.
      */
     public BufferRecommendation recommendedBufferCapacity(UUID projectId, double zFactor) {
-        List<TaskEntity> doneTasks = taskRepository.findAll().stream()
-                .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
-                .filter(t -> t.getStatus() == TaskStatus.done)
+        List<TaskEntity> doneTasks = (projectId != null
+                ? taskRepository.findByProjectIdAndStatus(projectId, TaskStatus.done)
+                : taskRepository.findAll().stream().filter(t -> t.getStatus() == TaskStatus.done).toList())
+                .stream()
                 .filter(t -> t.getCreatedAt() != null && t.getUpdatedAt() != null)
                 .toList();
 

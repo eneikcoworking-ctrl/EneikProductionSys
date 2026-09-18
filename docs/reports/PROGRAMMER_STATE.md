@@ -1,15 +1,15 @@
-# Такт L2: Ведущий инженер (2026-09-18 22:45 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 23:35 UTC)
 
-1. Раздел VII закрыт (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010, ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK / D010):
-   - `ProcessControlService`: ликвидированы все `findAll()` по `prReviewRepository` и `taskConflictRepository`.
-   - Внедрен `ScopedEvidencePacket`: свидетельства (PR reviews, conflicts, sessions) собираются строго по завершенным эпикам пересчитываемого проекта, исключая кросс-проектное загрязнение данных и висячие конфликты.
-   - В `reviewConcernCounts` внедрена O(1) маршрутизация по предзагруженным индексам сессий и задач, исключающая N+1 запросы.
-   - `QualityGateController`: делегирован единому владельцу `SixSigmaAuditService` с 3-значной логикой Белнапа (`undetermined`).
+1. ТОС-кластер закрыт (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_06_CAUSAL_PROCESS_TRACE` / D013):
+   - `ConstraintIdentificationService`: барабан (`identifyDrum`) и буфер (`recommendedBufferCapacity`) изолированы проектной выборкой (`findByProjectIdOrderByCreatedAtDesc`, `findByProjectIdAndStatus`), устранены все глобальные `findAll()`.
+   - Исключены N+1 вызовы `findById` для активных сессий через O(1) множество проектных task ID.
+   - Емкость аккаунтов выровнена с инвариантами диспетчера (`isEnabled() && (idle || busy)`); исключены неактивные и заблокированные статусы.
+   - `BottleneckDetectionService`: чтение емкости аккаунтов вынесено из цикла по тегам — один компактный проход за такт.
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `ProcessControlServiceTest` (8/8 green): проверка изоляции проекта, заслон `never().findAll()`, исключение чужих артефактов, учет дубликатов эпиков.
-   - `SixSigmaAuditServiceTest` (26/26 green): разделение слоев абстракции, строгий active-проект, отсутствие findAll.
-   - `QualityGateControllerTest` (2/2 green). Итого 36/36 green.
+   - `ConstraintIdentificationServiceTest` (6/6 green): проверка проектного скоупа барабана, буфера и отсутствия `findAll()`.
+   - `BottleneckDetectionServiceTest` (4/4 green): проверка однократного чтения аккаунтов вне цикла.
+   - `EvidenceCoherenceServiceTest` (21/21 green). Итого 31/31 green.
 3. Документация:
-   - Раздел VII в `docs/FACTORY_MECHANISMS.md` актуализирован до статуса `ideal`.
+   - Кластер ТОС в `docs/FACTORY_MECHANISMS.md` переведен в статус `ideal`.
 4. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди по директиве менеджера.
+   - Такт 3/10: project flow/orchestration cluster (`ProjectFlowService`, `ContinuousOrchestrationService`, `AutoMergeService`).

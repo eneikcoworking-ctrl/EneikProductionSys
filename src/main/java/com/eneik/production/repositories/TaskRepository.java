@@ -34,6 +34,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     // one that belonged to it.
     java.util.Optional<TaskEntity> findFirstByProjectId(UUID projectId);
     long countByProjectIdAndStatus(UUID projectId, TaskStatus status);
+    List<TaskEntity> findByProjectIdAndStatus(UUID projectId, TaskStatus status);
     List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
     List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId, Pageable pageable);
     List<TaskEntity> findByProjectIdAndCreatedAtAfter(UUID projectId, java.time.Instant createdAfter);

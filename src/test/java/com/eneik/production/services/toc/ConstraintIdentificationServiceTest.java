@@ -21,6 +21,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -50,7 +51,9 @@ public class ConstraintIdentificationServiceTest {
         project = new ProjectEntity();
         project.setId(projectId);
 
-        when(accountRepository.findAll()).thenReturn(Collections.emptyList());
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(Collections.emptyList());
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(any())).thenReturn(Collections.emptyList());
+        when(taskRepository.findByProjectIdAndStatus(any(), any())).thenReturn(Collections.emptyList());
         when(julesSessionRepository.findByStatusIn(any())).thenReturn(Collections.emptyList());
         when(gitHubApiBudgetService.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
                 "available", true, 5000, 5000, 0, null, null, null, null, "fresh", Instant.now(), java.util.Map.of()));
@@ -62,6 +65,7 @@ public class ConstraintIdentificationServiceTest {
 
     private TaskEntity task(TaskStatus status) {
         TaskEntity t = new TaskEntity();
+        t.setId(UUID.randomUUID());
         t.setProject(project);
         t.setStatus(status);
         return t;
@@ -71,23 +75,26 @@ public class ConstraintIdentificationServiceTest {
     void dispatchBacklogFarExceedingSlotsIsIdentifiedAsDrum() {
         List<TaskEntity> tasks = new java.util.ArrayList<>();
         for (int i = 0; i < 20; i++) tasks.add(task(TaskStatus.queued));
-        when(taskRepository.findAll()).thenReturn(tasks);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(tasks);
 
         AccountEntity account = new AccountEntity();
         account.setEnabled(true);
+        account.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
         account.setMaxConcurrentSessions(2);
-        when(accountRepository.findAll()).thenReturn(List.of(account));
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(List.of(account));
 
         var drum = service.identifyDrum(projectId);
 
         assertThat(drum.resource()).isEqualTo(ConstraintIdentificationService.ConstraintResource.DISPATCH_CAPACITY);
         assertThat(drum.pressure()).isEqualTo(10.0, org.assertj.core.data.Offset.offset(1e-9));
         assertThat(drum.queueLength()).isEqualTo(20L);
+        verify(taskRepository, org.mockito.Mockito.never()).findAll();
+        verify(accountRepository, org.mockito.Mockito.never()).findAll();
     }
 
     @Test
     void nearExhaustedGithubBudgetIsIdentifiedAsDrumWhenOtherQueuesAreCalm() {
-        when(taskRepository.findAll()).thenReturn(Collections.emptyList());
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(Collections.emptyList());
         when(gitHubApiBudgetService.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
                 "exhausted", false, 5000, 10, 4990, null, null, null, null, "near limit", Instant.now(), java.util.Map.of()));
 
@@ -95,16 +102,18 @@ public class ConstraintIdentificationServiceTest {
 
         assertThat(drum.resource()).isEqualTo(ConstraintIdentificationService.ConstraintResource.GITHUB_API_BUDGET);
         assertThat(drum.pressure()).isEqualTo(1.0 - (10.0 / 5000.0), org.assertj.core.data.Offset.offset(1e-9));
+        verify(taskRepository, org.mockito.Mockito.never()).findAll();
     }
 
     @Test
     void bufferRecommendationFloorsAtOneWithFewerThanTwoSamples() {
-        when(taskRepository.findAll()).thenReturn(Collections.emptyList());
+        when(taskRepository.findByProjectIdAndStatus(projectId, TaskStatus.done)).thenReturn(Collections.emptyList());
 
         var rec = service.recommendedBufferCapacity(projectId, 3.0);
 
         assertThat(rec.bufferCapacity()).isEqualTo(1);
         assertThat(rec.stdDevCycleTimeSeconds()).isEqualTo(0.0);
+        verify(taskRepository, org.mockito.Mockito.never()).findAll();
     }
 
     @Test
@@ -121,7 +130,7 @@ public class ConstraintIdentificationServiceTest {
             done.add(t);
             cursor = cursor.plus(2, ChronoUnit.DAYS);
         }
-        when(taskRepository.findAll()).thenReturn(done);
+        when(taskRepository.findByProjectIdAndStatus(projectId, TaskStatus.done)).thenReturn(done);
 
         var rec = service.recommendedBufferCapacity(projectId, 3.0);
 
@@ -130,5 +139,69 @@ public class ConstraintIdentificationServiceTest {
         assertThat(rec.stdDevCycleTimeSeconds()).isGreaterThan(0.0);
         assertThat(rec.bufferCapacity()).isGreaterThanOrEqualTo(1);
         assertThat(rec.sampleSize()).isEqualTo(4);
+        verify(taskRepository, org.mockito.Mockito.never()).findAll();
+    }
+
+    @Test
+    void identifyDrumIsScopedToProjectAndNeverUsesFindAll() {
+        TaskEntity taskProjectA = task(TaskStatus.queued);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(taskProjectA));
+
+        com.eneik.production.models.persistence.JulesSessionEntity sessionA = new com.eneik.production.models.persistence.JulesSessionEntity();
+        sessionA.setId(UUID.randomUUID());
+        sessionA.setTaskId(taskProjectA.getId());
+        sessionA.setStatus("running");
+
+        com.eneik.production.models.persistence.JulesSessionEntity sessionOtherProject = new com.eneik.production.models.persistence.JulesSessionEntity();
+        sessionOtherProject.setId(UUID.randomUUID());
+        sessionOtherProject.setTaskId(UUID.randomUUID()); // unrelated task
+        sessionOtherProject.setStatus("running");
+
+        when(julesSessionRepository.findByStatusIn(any())).thenReturn(List.of(sessionA, sessionOtherProject));
+
+        AccountEntity account = new AccountEntity();
+        account.setEnabled(true);
+        account.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
+        account.setMaxConcurrentSessions(5);
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(List.of(account));
+
+        var drum = service.identifyDrum(projectId);
+
+        // Only sessionA belongs to Project A -> activeSessions = 1, sessionSlotPressure = 1 / 5 = 0.2
+        assertThat(drum.capacity()).isGreaterThan(0.0);
+        verify(taskRepository, org.mockito.Mockito.never()).findAll();
+        verify(taskRepository, org.mockito.Mockito.never()).findById(any());
+        verify(accountRepository, org.mockito.Mockito.never()).findAll();
+    }
+
+    @Test
+    void drumCapacityExcludesNonOperationalAccounts() {
+        TaskEntity taskA = task(TaskStatus.queued);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(taskA));
+
+        AccountEntity dailyLimited = new AccountEntity();
+        dailyLimited.setEnabled(true);
+        dailyLimited.setStatus(com.eneik.production.models.persistence.AccountStatus.daily_limited);
+        dailyLimited.setMaxConcurrentSessions(10);
+
+        AccountEntity disabled = new AccountEntity();
+        disabled.setEnabled(false);
+        disabled.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
+        disabled.setMaxConcurrentSessions(10);
+
+        AccountEntity apiBlocked = new AccountEntity();
+        apiBlocked.setEnabled(true);
+        apiBlocked.setStatus(com.eneik.production.models.persistence.AccountStatus.api_blocked);
+        apiBlocked.setMaxConcurrentSessions(10);
+
+        // All accounts are non-operational -> totalSlots must be 0
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(List.of(dailyLimited, disabled, apiBlocked));
+
+        var drum = service.identifyDrum(projectId);
+
+        // With queued tasks and 0 operational capacity, dispatch pressure is infinite
+        assertThat(drum.resource()).isEqualTo(ConstraintIdentificationService.ConstraintResource.DISPATCH_CAPACITY);
+        assertThat(drum.capacity()).isEqualTo(0.0);
+        assertThat(drum.pressure()).isEqualTo(Double.MAX_VALUE);
     }
 }

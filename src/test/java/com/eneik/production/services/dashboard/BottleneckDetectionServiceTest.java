@@ -82,7 +82,7 @@ class BottleneckDetectionServiceTest {
         disabledAccount.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
         disabledAccount.setEnabled(false);
 
-        when(accountRepository.findAll()).thenReturn(List.of(disabledAccount));
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(List.of(disabledAccount));
 
         List<BottleneckDto> bottlenecks = service.detect();
 
@@ -90,5 +90,22 @@ class BottleneckDetectionServiceTest {
         assertEquals("no_free_jules_slot", bottlenecks.get(0).type());
         assertTrue(bottlenecks.get(0).reason().contains("disabled=1"));
         assertTrue(bottlenecks.get(0).reason().contains("operational account(s) are disabled"));
+        org.mockito.Mockito.verify(accountRepository, org.mockito.Mockito.never()).findAll();
+    }
+
+    @Test
+    void detectReadsAccountsOnceRegardlessOfNumberOfQueuedTags() {
+        QueueDashboardDto.TagCountDto row1 = new QueueDashboardDto.TagCountDto("tag-1", 2L, 5L);
+        QueueDashboardDto.TagCountDto row2 = new QueueDashboardDto.TagCountDto("tag-2", 3L, 8L);
+        QueueDashboardDto.TagCountDto row3 = new QueueDashboardDto.TagCountDto("tag-3", 1L, 2L);
+        when(taskRepository.queuedGroupedByTag()).thenReturn(List.of(row1, row2, row3));
+        when(accountRepository.existsJulesAccountWithCapacity(any(), anyInt())).thenReturn(true);
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(List.of());
+
+        List<BottleneckDto> bottlenecks = service.detect();
+
+        // 3 queued tags must NOT trigger 3 account repository queries; exactly 1 read for the entire detect cycle
+        org.mockito.Mockito.verify(accountRepository, org.mockito.Mockito.times(1)).findAllByOrderByNameAsc();
+        org.mockito.Mockito.verify(accountRepository, org.mockito.Mockito.never()).findAll();
     }
 }
