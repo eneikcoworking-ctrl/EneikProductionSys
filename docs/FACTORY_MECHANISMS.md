@@ -4581,6 +4581,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Опровергнет:** ещё одно описание, называющее несуществующего читателя.
 
 ### 54. Тождество задачи компилятора введено только вперёд · `PERSISTENCE_SNAPSHOT` (D010)
+**статус:** закрыт.
+**комментарий для Антигравити:** механизм закрыт. Восстановлена непрерывность тождества сущности задачи во времени (PERSISTENCE_SNAPSHOT / D010 Data lineage loss, Derek Parfit 1984). Реализован сервис стартап-дозаполнения `TaskContentKeyBackfillService` (по архитектурному образцу `TaskCarrierBackfillService`). Сервис на старте (`ApplicationReadyEvent`) находит исторические строки задач (`findContentKeyBackfillCandidates`), у которых `content_key IS NULL`, парсит JSON payload через Jackson и детерминированно восстанавливает ключ работы: `"compile:<projectId>:<sha256Hex(sortedWishlistIds)>"` для пакетных компиляций пожеланий (через общий метод `ProjectFlowService.compilerContentKeyFromIds`) и `"compile-worker:<projectId>"` для долговременных воркеров. Идемпотентность гарантируется маркером `content_key_backfill_completed` в `system_settings`. Повторные запросы той же работы теперь находят исторические строки и реанимируют их вместо невидимого размножения дубликатов. Заслоны: `TaskContentKeyBackfillServiceTest` (3/3 green), `CompilerTaskIdentityTest` (3/3 green), `TaskCarrierBackfillServiceTest` (3/3 green).
 **Механизм:** `V137__compiler_task_identity_from_work.sql`, столбец `tasks.content_key`.
 **Что не так:** строки до миграции ключа не несут, поэтому задача, заведённая до неё, и та же работа после
 не опознаются как одна. Сама миграция это признаёт.

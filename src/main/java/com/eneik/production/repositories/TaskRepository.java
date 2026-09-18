@@ -287,4 +287,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
 
     @Query("SELECT t FROM TaskEntity t WHERE t.carrier = false AND t.payload IS NOT NULL")
     List<TaskEntity> findCarrierBackfillCandidates();
+
+    @Query("SELECT t FROM TaskEntity t WHERE t.contentKey IS NULL AND t.payload IS NOT NULL")
+    List<TaskEntity> findContentKeyBackfillCandidates();
 }

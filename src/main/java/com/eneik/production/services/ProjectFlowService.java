@@ -3740,17 +3740,24 @@ public class ProjectFlowService {
      * to 109 characters ("compile:<projectId>:<sha256Hex>"), strictly satisfying the tasks.content_key VARCHAR(255)
      * constraint regardless of how many wishlists are batched together.
      */
-    static String compilerContentKey(ProjectEntity project, java.util.List<WishlistEntity> wishlists) {
-        String ids = wishlists == null ? "" : wishlists.stream()
-                .filter(java.util.Objects::nonNull)
-                .map(WishlistEntity::getId)
+    public static String compilerContentKeyFromIds(UUID projectId, java.util.List<UUID> wishlistIds) {
+        String ids = wishlistIds == null ? "" : wishlistIds.stream()
                 .filter(java.util.Objects::nonNull)
                 .map(UUID::toString)
                 .sorted()
                 .collect(java.util.stream.Collectors.joining(","));
         String hash = sha256Hex(ids);
-        UUID projectId = project != null ? project.getId() : null;
         return "compile:" + projectId + ":" + hash;
+    }
+
+    static String compilerContentKey(ProjectEntity project, java.util.List<WishlistEntity> wishlists) {
+        java.util.List<UUID> ids = wishlists == null ? java.util.List.of() : wishlists.stream()
+                .filter(java.util.Objects::nonNull)
+                .map(WishlistEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        UUID projectId = project != null ? project.getId() : null;
+        return compilerContentKeyFromIds(projectId, ids);
     }
 
     private static String sha256Hex(String value) {
