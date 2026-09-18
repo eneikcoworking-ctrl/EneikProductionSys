@@ -54,7 +54,8 @@ public class RoleAdviceLoopServiceIntegrationTest {
         task.setStatus(TaskStatus.done);
         task = taskRepository.save(task);
 
-        adviceService.afterTaskComplete(task.getId());
+        RoleAdviceLoopService.RoleAdviceGuardVerdict verdict = adviceService.afterTaskComplete(task.getId());
+        assertEquals(RoleAdviceLoopService.RoleAdviceGuardVerdict.SPECULATIVE_WORK_SUPPRESSED, verdict);
 
         var wishlists = wishlistRepository.findAll();
         boolean found = wishlists.stream().anyMatch(w ->

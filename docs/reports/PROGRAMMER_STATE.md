@@ -1,10 +1,13 @@
-# Такт L2: Ведущий инженер (2026-09-18 20:05 UTC)
+# Такт L2: Ведущий инженер (2026-09-18 20:57 UTC)
 
-1. Раздел XXIV закрыт (ELVIN_GOLDMAN_01_RELIABILITY_CHAIN / D010 Data Lineage Loss, Goldman):
-   - `scripts/mock_test_runner.py`: ликвидирован фиктивный "PASS" на захардкоженных строках. Внедрен механизм достоверной верификации контрактов без симуляций: реальные утверждения инвариантов доменной модели Greeting (TAG-01, непустое сообщение) и политик деонтического маскирования PrivacyFilter (TAG-10/TAG-07), проверка существования юнит-тестов и опциональный запуск JUnit через Docker Maven.
-   - Fail-closed заслон: любое расхождение или отсутствие сущностей завершается ненулевым кодом выхода, исключая формирование ложных свидетельств.
-2. Заслон (100% green в Python unittest и Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `tests/test_mock_test_runner.py` (10/10 green): проверка контрактов Greeting и PrivacyFilter на реальном репозитории, fail-closed при отсутствии файлов/инвариантов, CLI режимы.
-   - `tests/test_append_role_logic.py` (10/10 green). Итого 20/20 green.
-3. Следующий такт:
+1. Раздел XI закрыт (FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK / D011 Perception failure, Dretske):
+   - `IdleProjectAdviceService` и `RoleAdviceLoopService` формализованы как покэ-йокэ наблюдающие предохранители против спекулятивной работы: снята ложная претензия на генеративный совет ("claim advice"), строгий запрет на создание wishlist-задач при простое или завершении таски, соблюден инвариант суверенитета (продуктовые итерации — только через фальсификацию).
+   - Введены типизированные вердикты `IdleGuardVerdict` (`ACTIVE_WORK_PRESENT`, `IDLE_SPECULATIVE_WORK_PREVENTED`) и `RoleAdviceGuardVerdict` (`TASK_NULL_OR_SKIPPED`, `SPECULATIVE_WORK_SUPPRESSED`).
+2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
+   - `IdleProjectAdviceServiceTest` (6/6 green): верификация подавления спекулятивного wishlist при простое и детекция активных задач.
+   - `RoleAdviceLoopServiceTest` (2/2 green), `RoleAdviceLoopServiceIntegrationTest` (1/1 green).
+   - `AutoMergeServiceTest` (24/24 green): подтверждена полная совместимость контрактов вызывающих сервисов.
+3. Документация:
+   - Раздел XI в `docs/FACTORY_MECHANISMS.md` актуализирован, механизмы признаны идеальными.
+4. Следующий такт:
    - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди.

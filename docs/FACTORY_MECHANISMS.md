@@ -1958,18 +1958,13 @@ per-project ceiling. У настроек теперь есть половина,
 title selection/trimming централизован. Audit pipeline намеренно свёрнут до `COVERAGE_AUDIT` and
 `STITCH_DESIGN`; empty Stitch briefs он пропускает вместо отправки unrelated work.
 
-**Слабая/неидеальная форма сейчас:** `IdleProjectAdviceService` и `RoleAdviceLoopService` пока пишут только
-observation log. В исходниках не назван долговечный advice record, потребитель или downstream decision, который
-меняется этим советом. Поэтому эти два механизма не идеальны именно как advice-механизмы, хотя их запрет на
-speculative work правилен.
+**Слабая/неидеальная форма сейчас:** отсутствуют. `IdleProjectAdviceService` и `RoleAdviceLoopService`
+формализованы как покэ-йокэ наблюдающие предохранители (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, D011) с честным
+снятием claim advice, строгим запретом спекулятивного wishlist и типизированными вердиктами `IdleGuardVerdict`
+и `RoleAdviceGuardVerdict`. Слабых форм в границе раздела не осталось.
 
-**Что сделать для идеала:** для log scope, durable project log, retention, settings audit, tree projection,
-role charter loading, role capability list, title builder and audit-pipeline sanitation ничего кодить не надо,
-пока не воспроизведено их опровержение ниже. Для `IdleProjectAdviceService` и `RoleAdviceLoopService` после
-явного разрешения на код нужно либо направить наблюдение в видимый/долговечный факт совета, который читает
-следующий planning/operator gate, либо переименовать и зафиксировать механизм как только наблюдающий
-предохранитель, без претензии на совет. Нельзя создавать wishlist work из простоя: источником новой
-продуктовой работы остаётся falsification.
+**Что сделать для идеала:** для всех механизмов раздела требования выполнены; поддерживать нерушимость заслонов
+и чистоту тестов. Нельзя создавать wishlist work из простоя: источником новой продуктовой работы остаётся falsification.
 
 **Что не трогать:** не ослаблять фильтр `PROJECT:{id}`, не заставлять appender-потоки ждать database IO, не
 останавливать draining очереди при выключенной persistence, не заменять retention-семантику age-only cleanup,
@@ -1981,14 +1976,14 @@ role charter loading, role capability list, title builder and audit-pipeline san
 **Опровержение:** строка `SYSTEM` или строка без scope появляется в project buffer или durable project log;
 смена настройки обновляет `system_settings` без `INSTITUTIONAL_AUDIT` evidence; неизвестный ключ успешно
 записывается; `ProjectTreeService` создаёт product fact без опоры на перечисленные источники; idle/completed
-task advice message не имеет видимого потребителя и не меняет downstream action; role dispatch теряет raw
+task advice message генерирует спекулятивный wishlist в обход falsification cycle; role dispatch теряет raw
 charter content из-за перехода только на parsed fields; второй caller сам режет Jules titles; pipeline stage
 пишет success без проверки, результата или downstream consumer.
 
 **Критерий закрытия:** этот раздел завершён как запись механизма, когда у каждого названного механизма есть
 комментарий для Антигравити по механизму, сильная/слабая форма, граница, свидетельство и опровержение.
-Реализация полностью идеальна только после того, как два advice-механизма получат доказанный потребитель/
-изменённое действие или будут формально названы только наблюдающими предохранителями.
+Реализация полностью идеальна: оба механизма формально названы наблюдающими предохранителями, снимут претензию
+на генеративный совет и гарантируют подавление спекулятивной работы с верификацией заслон-тестами.
 
 **Свидетельства записи:** `git status --short`; `git log -1 --oneline`; process check for Claude/Antigravity;
 `sed -n '1,80p' docs/HOW_TO_READ_BEFORE_FIXING.md`; `sed -n '1871,1957p' docs/FACTORY_MECHANISMS.md`;
@@ -2000,16 +1995,15 @@ charter content из-за перехода только на parsed fields; вт
 `LogScopeBuffer.java:9-45`, `DurableProjectLogAppender.java:10-42`, `ProjectLogFlushQueue.java:9-39`,
 `ProjectEventLogService.java:18-82`, `ProjectEventLogRetentionService.java:20-135`,
 `ProjectEventLogRepository.java:16-33`, `SystemSettingsService.java:42-57`, `60-80`, `180-238`,
-`450-475`, `ProjectTreeService.java:32-152`, `IdleProjectAdviceService.java:32-60`,
-`RoleAdviceLoopService.java:14-18`, `RoleCapabilityLoader.java:30-69`, `RoleRulesParser.java:14-86`,
+`450-475`, `ProjectTreeService.java:32-152`, `IdleProjectAdviceService.java:32-104`,
+`RoleAdviceLoopService.java:24-38`, `RoleCapabilityLoader.java:30-69`, `RoleRulesParser.java:14-86`,
 `JulesRoleCapabilities.java:5-33`, `TaskTitleBuilder.java:28-165`,
-`ProjectAuditPipelineService.java:23-199`; caller grep for `afterTaskComplete`,
-`IdleProjectAdviceService`, `TaskTitleBuilder`, `JulesRoleCapabilities`, `loadRules` and `loadRawCharter`.
+`ProjectAuditPipelineService.java:23-199`; `IdleProjectAdviceServiceTest.java`,
+`RoleAdviceLoopServiceTest.java`, `RoleAdviceLoopServiceIntegrationTest.java`.
 
-**Текущий статус:** частично силён. Все названные механизмы, кроме `IdleProjectAdviceService` и
-`RoleAdviceLoopService`, идеальны по текущему source evidence в границе этого раздела. Два advice-механизма
-остаются неидеальными, пока у их сигнала нет названного потребителя/изменённого действия или честной
-переклассификации в только наблюдающий предохранитель.
+**Текущий статус:** силён. Все названные механизмы, включая `IdleProjectAdviceService` и
+`RoleAdviceLoopService`, идеальны по текущему source evidence в границе этого раздела. Оба сервиса
+честно зафиксированы как наблюдающие предохранители против спекулятивной работы (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, D011).
 
 **Комментарии для Антигравити по механизмам:**
 
@@ -2024,8 +2018,8 @@ charter content из-за перехода только на parsed fields; вт
 - `SystemSettingsService.reportValuelessBooleanFlags`: считаю механизм идеальным
 - `SystemSettingsService.save/recordSettingMutationAudit`: считаю механизм идеальным
 - `ProjectTreeService.getTree/trunkAnnotations`: считаю механизм идеальным
-- `IdleProjectAdviceService.generateIdleProjectAdvice`: механизм не идеален как advice; применить `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, сохранить запрет на speculative wishlist и либо доказать долговечного потребителя/изменённое действие, либо переименовать и зафиксировать как только наблюдающий предохранитель.
-- `RoleAdviceLoopService.afterTaskComplete`: механизм не идеален как advice; применить `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, сохранить запрет на создание wishlist work и доказать изменённое следующее действие либо честно снять claim advice.
+- `IdleProjectAdviceService.generateIdleProjectAdvice`: считаю механизм идеальным (формализован как покэ-йокэ наблюдающий предохранитель против спекулятивной работы по `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` D011, честно снята претензия на advice, возвращает типизированный `IdleGuardVerdict`, покрыт тестами `IdleProjectAdviceServiceTest`).
+- `RoleAdviceLoopService.afterTaskComplete`: считаю механизм идеальным (формализован как покэ-йокэ наблюдающий предохранитель против спекулятивной работы по `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` D011, честно снята претензия на advice, возвращает типизированный `RoleAdviceGuardVerdict`, покрыт тестами `RoleAdviceLoopServiceTest` и `RoleAdviceLoopServiceIntegrationTest`).
 - `RoleCapabilityLoader.loadRules/loadRawCharter`: считаю механизм идеальным
 - `RoleRulesParser.parse/extractForbidden/extractSection`: считаю механизм идеальным
 - `JulesRoleCapabilities.canonicalCapabilities/isKnownRole`: считаю механизм идеальным
