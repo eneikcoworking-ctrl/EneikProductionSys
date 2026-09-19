@@ -101,9 +101,21 @@ public class GeminiContextService {
                     + "answers - this is the condition that hid for three days once already.");
             return;
         }
-        long stale = repository.findAll().stream()
-                .filter(chunk -> parseEmbedding(chunk.getEmbedding()).length != probe.length)
-                .count();
+        long stale = -1;
+        try {
+            stale = repository.countByEmbeddingDimsNot(probe.length);
+        } catch (Exception ignored) {
+        }
+        if (stale < 0) {
+            List<ContextChunkEntity> all = repository.findAll();
+            if (all != null && !all.isEmpty()) {
+                stale = all.stream()
+                        .filter(chunk -> parseEmbedding(chunk.getEmbedding()).length != probe.length)
+                        .count();
+            } else {
+                stale = 0;
+            }
+        }
         if (stale == 0) {
             return;
         }
@@ -118,16 +130,26 @@ public class GeminiContextService {
         // inflate every count taken over it, which is how "1399 of 1543 chunks invisible" read as an alarm
         // when it was a graveyard. Deleted by the system rather than by hand, so the store's contents stay
         // something the system maintains rather than something an operator remembers to clean.
-        List<ContextChunkEntity> orphaned = repository.findAll().stream()
-                .filter(chunk -> parseEmbedding(chunk.getEmbedding()).length != probe.length)
-                .toList();
-        if (!orphaned.isEmpty()) {
-            java.util.Set<String> refs = orphaned.stream()
+        java.util.Set<String> refs = null;
+        try {
+            List<String> staleRefs = repository.findDistinctSourceRefsByEmbeddingDimsNot(probe.length);
+            if (staleRefs != null && !staleRefs.isEmpty()) {
+                refs = new java.util.HashSet<>(staleRefs);
+            }
+        } catch (Exception ignored) {
+        }
+        if (refs == null) {
+            List<ContextChunkEntity> orphaned = repository.findAll().stream()
+                    .filter(chunk -> parseEmbedding(chunk.getEmbedding()).length != probe.length)
+                    .toList();
+            refs = orphaned.stream()
                     .map(ContextChunkEntity::getSourceRef)
                     .collect(java.util.stream.Collectors.toSet());
+        }
+        if (!refs.isEmpty()) {
             refs.forEach(repository::deleteBySourceRef);
-            log.warn("GeminiContextService: removed {} chunk(s) across {} source(s) that no reindex could "
-                    + "rebuild - their source documents no longer exist.", orphaned.size(), refs.size());
+            log.warn("GeminiContextService: removed stale chunk(s) across {} source(s) that no reindex could "
+                    + "rebuild - their source documents no longer exist.", refs.size());
         }
     }
 
@@ -625,6 +647,13 @@ public class GeminiContextService {
         List<RetrievedChunk> retrieved;
         if (role != null) {
             retrieved = retrieveFiltered(query, DEFAULT_TOP_K,
+                    () -> {
+                        try {
+                            return repository.findVectorRowsBySourceTypeIn(PRODUCT_WORKER_SOURCE_TYPES);
+                        } catch (Exception ignored) {
+                            return repository.findAllVectorRows();
+                        }
+                    },
                     c -> PRODUCT_WORKER_SOURCE_TYPES.contains(c.getSourceType())
                             && (c.getSourceRef() == null || c.getSourceRef().startsWith(role.getTag())
                                     || "philosopher_pattern_common".equals(c.getSourceType())

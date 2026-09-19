@@ -353,7 +353,19 @@ public class InternalGeminiObserverController {
     @GetMapping("/dispatch-eligibility-detail")
     public java.util.List<java.util.Map<String, Object>> dispatchEligibilityDetail(@RequestParam String tag) {
         java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
-        for (AccountEntity a : accountRepository.findAll()) {
+        java.util.List<AccountEntity> accounts;
+        try {
+            accounts = accountRepository.findAllByOrderByNameAsc();
+            if (accounts == null || accounts.isEmpty()) {
+                accounts = accountRepository.findAll();
+            }
+        } catch (Exception ignored) {
+            accounts = accountRepository.findAll();
+        }
+        if (accounts == null) {
+            accounts = java.util.List.of();
+        }
+        for (AccountEntity a : accounts) {
             if (a.getStatus() == com.eneik.production.models.persistence.AccountStatus.decommissioned) continue;
             java.util.Map<String, Object> row = new java.util.HashMap<>();
             row.put("name", a.getName());
@@ -385,12 +397,25 @@ public class InternalGeminiObserverController {
             sessionsByAccount.computeIfAbsent(session.getAccountId(), k -> new java.util.ArrayList<>()).add(session);
         }
         java.util.List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
-        for (AccountEntity account : accountRepository.findAll()) {
+        java.util.List<AccountEntity> accounts;
+        try {
+            accounts = accountRepository.findAllByOrderByNameAsc();
+            if (accounts == null || accounts.isEmpty()) {
+                accounts = accountRepository.findAll();
+            }
+        } catch (Exception ignored) {
+            accounts = accountRepository.findAll();
+        }
+        if (accounts == null) {
+            accounts = java.util.List.of();
+        }
+        for (AccountEntity account : accounts) {
             java.util.List<JulesSessionEntity> sessions = sessionsByAccount.getOrDefault(account.getId(), java.util.List.of());
             int countIncludingBlocked = 0;
             int countExcludingBlocked = 0;
             java.util.List<java.util.Map<String, Object>> detail = new java.util.ArrayList<>();
             for (JulesSessionEntity session : sessions) {
+                if (session.getTaskId() == null) continue;
                 TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
                 if (task == null) continue;
                 boolean countsUnderCurrentQuery = task.getStatus() != TaskStatus.done && task.getStatus() != TaskStatus.failed;

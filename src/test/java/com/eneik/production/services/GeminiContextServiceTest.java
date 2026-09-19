@@ -485,6 +485,59 @@ class GeminiContextServiceTest {
         assertFalse(modified.get(0).content().contains("Original content"));
     }
 
+    @Test
+    void reindexIfEmbeddingModelChangedUsesCountByEmbeddingDimsNotAndAvoidsFindAll() {
+        setUp("");
+        when(mlPredictionServiceClient.embed("dimension probe")).thenReturn(new float[]{1.0f, 2.0f});
+        when(repository.countByEmbeddingDimsNot(2)).thenReturn(0L);
+
+        service.reindexIfEmbeddingModelChanged();
+
+        verify(repository).countByEmbeddingDimsNot(2);
+        verify(repository, never()).findAll();
+    }
+
+    @Test
+    void reindexIfEmbeddingModelChangedCleansOrphanedStaleChunksViaDistinctRefs() {
+        setUp("");
+        when(mlPredictionServiceClient.embed("dimension probe")).thenReturn(new float[]{1.0f, 2.0f});
+        when(repository.countByEmbeddingDimsNot(2)).thenReturn(3L);
+        when(repository.findDistinctSourceRefsByEmbeddingDimsNot(2)).thenReturn(List.of("old_brief_1.md", "old_brief_2.md"));
+
+        service.reindexIfEmbeddingModelChanged();
+
+        verify(repository).countByEmbeddingDimsNot(2);
+        verify(repository).findDistinctSourceRefsByEmbeddingDimsNot(2);
+        verify(repository).deleteBySourceRef("old_brief_1.md");
+        verify(repository).deleteBySourceRef("old_brief_2.md");
+        verify(repository, never()).findAll();
+    }
+
+    @Test
+    void buildProductWorkerContextBlockUsesStratifiedSourceTypesQuery() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        when(repository.count()).thenReturn(10L);
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{1.0f, 0.0f});
+
+        ContextChunkEntity chunkEntity = chunk("Charter content", "ARCH-01", new float[]{1.0f, 0.0f});
+        chunkEntity.setSourceType("engineering_charter");
+        ContextChunkRepository.VectorRow row = vectorRow(chunkEntity);
+        when(repository.findVectorRowsBySourceTypeIn(GeminiContextService.PRODUCT_WORKER_SOURCE_TYPES))
+                .thenReturn(List.of(row));
+        when(repository.findAllById(any())).thenReturn(List.of(chunkEntity));
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("ARCH-01");
+
+        String contextBlock = service.buildProductWorkerContextBlock(role, "build an architecture plan");
+
+        assertNotNull(contextBlock);
+        assertTrue(contextBlock.contains("Charter content"));
+        verify(repository).findVectorRowsBySourceTypeIn(GeminiContextService.PRODUCT_WORKER_SOURCE_TYPES);
+        verify(repository, never()).findAllVectorRows();
+    }
+
     private static ContextChunkRepository.VectorRow vectorRow(ContextChunkEntity chunk) {
         ContextChunkRepository.VectorRow row = mock(ContextChunkRepository.VectorRow.class);
         when(row.getId()).thenReturn(chunk.getId());

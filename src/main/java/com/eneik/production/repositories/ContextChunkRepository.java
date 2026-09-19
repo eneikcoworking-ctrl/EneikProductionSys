@@ -19,6 +19,11 @@ public interface ContextChunkRepository extends JpaRepository<ContextChunkEntity
 
     boolean existsBySourceRefAndContentHash(String sourceRef, String contentHash);
 
+    long countByEmbeddingDimsNot(int embeddingDims);
+
+    @Query("SELECT DISTINCT c.sourceRef FROM ContextChunkEntity c WHERE c.embeddingDims != :embeddingDims AND c.sourceRef IS NOT NULL")
+    List<String> findDistinctSourceRefsByEmbeddingDimsNot(@Param("embeddingDims") int embeddingDims);
+
     @Query("select c.id as id, c.sourceType as sourceType, c.sourceRef as sourceRef, "
             + "c.embedding as embedding, c.embeddingDims as embeddingDims from ContextChunkEntity c")
     List<VectorRow> findAllVectorRows();

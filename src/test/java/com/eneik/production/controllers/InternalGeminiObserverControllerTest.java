@@ -276,6 +276,7 @@ class InternalGeminiObserverControllerTest {
         account.setName("test-account");
         account.setMaxConcurrentSessions(3);
 
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(List.of(account));
         when(accountRepository.findAll()).thenReturn(List.of(account));
 
         UUID taskId1 = UUID.randomUUID();
@@ -286,8 +287,15 @@ class InternalGeminiObserverControllerTest {
         openSession.setTaskId(taskId1);
         openSession.setStatus("running");
 
+        com.eneik.production.models.persistence.JulesSessionEntity sessionWithNullTaskId =
+                new com.eneik.production.models.persistence.JulesSessionEntity();
+        sessionWithNullTaskId.setId(UUID.randomUUID());
+        sessionWithNullTaskId.setAccountId(accountId);
+        sessionWithNullTaskId.setTaskId(null);
+        sessionWithNullTaskId.setStatus("queued");
+
         when(julesSessionRepository.findByStatusIn(List.of("queued", "running", "revising", "stuck")))
-                .thenReturn(List.of(openSession));
+                .thenReturn(List.of(openSession, sessionWithNullTaskId));
 
         com.eneik.production.models.persistence.TaskEntity task1 =
                 new com.eneik.production.models.persistence.TaskEntity();
@@ -304,6 +312,33 @@ class InternalGeminiObserverControllerTest {
         assertThat(result.get(0).get("countExcludingBlocked_afterMyFix")).isEqualTo(1);
         verify(julesSessionRepository).findByStatusIn(List.of("queued", "running", "revising", "stuck"));
         verify(julesSessionRepository, never()).findAll();
+    }
+
+    @Test
+    @DisplayName("dispatchEligibilityDetail uses ordered account query and filters decommissioned accounts")
+    void dispatchEligibilityDetailUsesOrderedAccountQuery() {
+        UUID accountId = UUID.randomUUID();
+        AccountEntity activeAccount = new AccountEntity();
+        activeAccount.setId(accountId);
+        activeAccount.setName("active-account");
+        activeAccount.setEnabled(true);
+        activeAccount.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
+        activeAccount.setCapabilities("BARCAN-TAG-08");
+
+        AccountEntity decommissioned = new AccountEntity();
+        decommissioned.setId(UUID.randomUUID());
+        decommissioned.setName("decommissioned-account");
+        decommissioned.setEnabled(false);
+        decommissioned.setStatus(com.eneik.production.models.persistence.AccountStatus.decommissioned);
+
+        when(accountRepository.findAllByOrderByNameAsc()).thenReturn(List.of(activeAccount, decommissioned));
+
+        List<Map<String, Object>> result = controller.dispatchEligibilityDetail("BARCAN-TAG-08");
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).get("name")).isEqualTo("active-account");
+        assertThat(result.get(0).get("hasTagCapability")).isEqualTo(true);
+        verify(accountRepository).findAllByOrderByNameAsc();
     }
 
     @Test
