@@ -199,6 +199,25 @@ public class GithubWebhookController {
             }
         }
 
+        // Lineage 2.5: Match external session token embedded in branch name
+        if (branch != null && !branch.isBlank()) {
+            List<JulesSessionEntity> tokenSessions = julesSessionRepository.findByExternalSessionIdIsNotNull();
+            if (tokenSessions != null) {
+                for (JulesSessionEntity s : tokenSessions) {
+                    String extId = s.getExternalSessionId();
+                    if (extId != null && !extId.isBlank()) {
+                        String token = extId.startsWith("sessions/") ? extId.substring("sessions/".length()) : extId;
+                        if (!token.isBlank() && branch.contains(token) && s.getTaskId() != null) {
+                            Optional<TaskEntity> opt = taskRepository.findById(s.getTaskId());
+                            if (opt.isPresent()) {
+                                return opt;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Lineage 3: Scoped project task lookup by repository name (no global findAll)
         Optional<ProjectEntity> projectOpt = projectRepository.findFirstByRepositoryNameIgnoreCase(repoName);
         if (projectOpt.isPresent()) {

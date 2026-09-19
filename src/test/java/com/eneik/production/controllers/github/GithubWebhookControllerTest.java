@@ -239,4 +239,50 @@ class GithubWebhookControllerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat(response.getBody()).contains("Missing required repository or PR URL");
     }
+
+    @Test
+    @DisplayName("PR opened matches task via external session token in branch name")
+    void prOpenedMatchesTaskViaSessionTokenInBranchName() {
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+
+        AccountEntity account = new AccountEntity();
+        account.setId(UUID.randomUUID());
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/5354685196398021436");
+
+        when(julesSessionRepository.findByPrUrlIn(any())).thenReturn(List.of());
+        when(julesSessionRepository.findByExternalSessionIdIsNotNull()).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(accountRepository.lockNextIdleAccountForProject(projectId)).thenReturn(Optional.of(account));
+
+        String payload = """
+                {
+                    "action": "opened",
+                    "pull_request": {
+                        "html_url": "https://github.com/org/test-repo/pull/105",
+                        "head": { "ref": "feat/my-feature-5354685196398021436" },
+                        "additions": 15,
+                        "deletions": 5,
+                        "changed_files": 1
+                    },
+                    "repository": { "name": "test-repo" }
+                }
+                """;
+
+        ResponseEntity<String> response = controller.handleWebhook(payload, "pull_request", null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).contains("Review Dispatched for task " + taskId);
+        verify(claimService).complete(taskId);
+        verify(julesDispatchService).dispatch(task, account.getId(), "REVIEWER");
+    }
 }

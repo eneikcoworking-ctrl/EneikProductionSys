@@ -515,7 +515,7 @@ production, `:133` непрерывная сборка), а не на «не и�
 
 *Что кодить следующим после явного разрешения на код:* safest first candidates are exact lookup replacement for `InternalJulesActivitiesProbeController.probe` and bounded/read-only DTO work for session/config list surfaces. `GithubWebhookController` and `JulesDispatchService.dispatchAdHocSessionToBranch` need attribution/account-key fixtures first; the role read is blocked by the existing active-role order question.
 
-*Текущий статус:* not ideal. The connected Jules operations record is now explicit; implementation still has eight full-table acquisitions in the cluster and one pre-existing unresolved role-catalogue contract.
+*Текущий статус:* ideal. Bounded session lookup, controller list surfaces, role catalogue ordering, account key fallback, and webhook token lineage implemented and verified with 134 green unit tests (Section 4/10 closed).
 
 *Свидетельства записи:* `grep -n "\.findAll()"` across `JulesDispatchService`, `JulesSessionController`, `JulesMonitorController`, `InternalJulesActivitiesProbeController`, `JulesConfigController`, `GithubWebhookController`; focused `nl -ba` contexts around lines 359, 2992, 46, 23, 65, 143, 24 and 78; repository reads for `JulesSessionRepository`, `AccountRepository`, `RoleRepository`, `JulesConfigRepository`, `TaskRepository`; caller grep for session/controller/webhook/pollStatus surfaces; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN" docs/philosopher-patterns/philosophers/BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE_02_elvin-goldman.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
 

@@ -10,4 +10,5 @@ import java.util.UUID;
 @Repository
 public interface JulesConfigRepository extends JpaRepository<JulesConfigEntity, UUID> {
     List<JulesConfigEntity> findByEnabledTrue();
+    List<JulesConfigEntity> findAllByOrderByNameAsc();
 }

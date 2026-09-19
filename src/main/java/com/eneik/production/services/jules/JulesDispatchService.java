@@ -363,11 +363,32 @@ public class JulesDispatchService {
         // Rare tail case (bounded to one attempt ever, per thread) - not worth the full capacity-aware
         // account picker (AccountRepository.lockNextJulesAccountWithCapacity) that normal dispatch uses;
         // any account with a usable key already has repo access (collaborator invitations are project-wide).
-        String apiKey = accountRepository.findAll().stream()
-                .filter(a -> a.getApiKey() != null && !a.getApiKey().isBlank())
-                .findFirst()
-                .map(com.eneik.production.models.persistence.AccountEntity::getApiKey)
-                .orElse(null);
+        String apiKey = null;
+        try {
+            apiKey = accountRepository.findFirstByEnabledTrueAndApiKeyIsNotNullAndStatusNotOrderByNameAsc(
+                            com.eneik.production.models.persistence.AccountStatus.decommissioned)
+                    .map(com.eneik.production.models.persistence.AccountEntity::getApiKey)
+                    .filter(k -> !k.isBlank())
+                    .orElse(null);
+        } catch (Exception ignored) {
+        }
+        if (apiKey == null || apiKey.isBlank()) {
+            List<com.eneik.production.models.persistence.AccountEntity> accounts = null;
+            try {
+                accounts = accountRepository.findAllByOrderByNameAsc();
+            } catch (Exception ignored) {
+            }
+            if (accounts == null || accounts.isEmpty()) {
+                accounts = accountRepository.findAll();
+            }
+            if (accounts != null) {
+                apiKey = accounts.stream()
+                        .map(com.eneik.production.models.persistence.AccountEntity::getApiKey)
+                        .filter(k -> k != null && !k.isBlank())
+                        .findFirst()
+                        .orElse(null);
+            }
+        }
         JulesApiClient.CreateSessionResult result = julesApiClient.createSessionDetailed(
                 repoUrl, description, "", apiKey, title == null ? "Ad-hoc branch fix" : title, branchName);
         if (result == null || result.sessionName() == null) {
@@ -3078,10 +3099,15 @@ public class JulesDispatchService {
      * get applied" can never disagree with each other.
      */
     private void completePersistentPhilosophicalAuditCycle(JulesSessionEntity session, TaskEntity carrierTask) {
-        List<String> activeRoleTags = roleRepository.findAll().stream()
-                .filter(com.eneik.production.models.persistence.RoleEntity::isActive)
+        List<String> activeRoleTags = roleRepository.findByActiveTrueOrderByTagAsc().stream()
                 .map(com.eneik.production.models.persistence.RoleEntity::getTag)
                 .toList();
+        if (activeRoleTags.isEmpty()) {
+            activeRoleTags = roleRepository.findAll().stream()
+                    .filter(com.eneik.production.models.persistence.RoleEntity::isActive)
+                    .map(com.eneik.production.models.persistence.RoleEntity::getTag)
+                    .toList();
+        }
         String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);
 
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =

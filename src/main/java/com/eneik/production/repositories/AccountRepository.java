@@ -336,4 +336,6 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     Optional<AccountEntity> findByName(String name);
 
     boolean existsByEnabledTrueAndStatus(AccountStatus status);
+
+    Optional<AccountEntity> findFirstByEnabledTrueAndApiKeyIsNotNullAndStatusNotOrderByNameAsc(AccountStatus status);
 }

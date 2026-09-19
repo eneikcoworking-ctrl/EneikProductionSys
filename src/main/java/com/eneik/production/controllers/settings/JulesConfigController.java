@@ -21,7 +21,11 @@ public class JulesConfigController {
 
     @GetMapping
     public List<JulesConfigDto> list() {
-        return julesConfigRepository.findAll().stream()
+        var configs = julesConfigRepository.findAllByOrderByNameAsc();
+        if (configs == null || configs.isEmpty()) {
+            configs = julesConfigRepository.findAll();
+        }
+        return configs.stream()
                 .map(this::toDto)
                 .toList();
     }

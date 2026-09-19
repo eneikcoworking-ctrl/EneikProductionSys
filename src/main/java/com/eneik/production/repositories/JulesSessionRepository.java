@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -23,6 +24,8 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     List<JulesSessionEntity> findByPrUrlIn(List<String> prUrls);
 
     List<JulesSessionEntity> findByExternalSessionIdIsNotNull();
+    Optional<JulesSessionEntity> findFirstByExternalSessionId(String externalSessionId);
+    List<JulesSessionEntity> findAllByOrderByCreatedAtDesc();
 
     // 2026-08-01: SessionLifecycleService's cleanup-candidate pool - a real remote external session that
     // we haven't yet confirmed deleted. Task/project eligibility (terminal task, or closed project) is

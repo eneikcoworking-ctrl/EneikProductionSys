@@ -39,11 +39,18 @@ public class JulesSessionController {
     }
 
     @GetMapping
-    public List<JulesSessionEntity> listSessions(@RequestParam(required = false) UUID taskId) {
+    public List<JulesSessionEntity> listSessions(
+            @RequestParam(required = false) UUID taskId,
+            @RequestParam(required = false, defaultValue = "100") int limit) {
         if (taskId != null) {
             return julesSessionRepository.findByTaskId(taskId);
         }
-        return julesSessionRepository.findAll();
+        int effectiveLimit = Math.max(1, Math.min(limit, 500));
+        var list = julesSessionRepository.findAllByOrderByCreatedAtDesc();
+        if (list == null || list.isEmpty()) {
+            list = julesSessionRepository.findAll();
+        }
+        return list.stream().limit(effectiveLimit).toList();
     }
 
     @PostMapping("/{id}/cancel")

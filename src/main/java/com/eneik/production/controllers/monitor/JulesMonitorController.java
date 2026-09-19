@@ -19,8 +19,13 @@ public class JulesMonitorController {
     }
 
     @GetMapping
-    public List<JulesSessionEntity> getAllSessions() {
-        return julesSessionRepository.findAll();
+    public List<JulesSessionEntity> getAllSessions(@RequestParam(required = false, defaultValue = "100") int limit) {
+        int effectiveLimit = Math.max(1, Math.min(limit, 500));
+        var list = julesSessionRepository.findAllByOrderByCreatedAtDesc();
+        if (list == null || list.isEmpty()) {
+            list = julesSessionRepository.findAll();
+        }
+        return list.stream().limit(effectiveLimit).toList();
     }
 
     @GetMapping("/{id}")

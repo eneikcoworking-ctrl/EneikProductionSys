@@ -62,9 +62,12 @@ public class InternalJulesActivitiesProbeController {
         // Each session is dispatched under a specific account's own key (JulesDispatchService.
         // apiKeyForSession) - the generic "jules_api_key" setting is a different, unrelated default and
         // returns 403 for a session that belongs to another account (confirmed live on this exact probe).
-        Optional<JulesSessionEntity> sessionOpt = julesSessionRepository.findAll().stream()
-                .filter(s -> sessionId.equals(s.getExternalSessionId()))
-                .findFirst();
+        Optional<JulesSessionEntity> sessionOpt = julesSessionRepository.findFirstByExternalSessionId(sessionId);
+        if (sessionOpt.isEmpty()) {
+            sessionOpt = julesSessionRepository.findAll().stream()
+                    .filter(s -> sessionId.equals(s.getExternalSessionId()))
+                    .findFirst();
+        }
         String apiKey = sessionOpt
                 .map(JulesSessionEntity::getAccountId)
                 .flatMap(accountRepository::findById)
@@ -140,7 +143,11 @@ public class InternalJulesActivitiesProbeController {
     @GetMapping("/session-by-token")
     public ResponseEntity<?> sessionByToken(@RequestParam String token) {
         List<Map<String, Object>> matches = new ArrayList<>();
-        for (JulesSessionEntity s : julesSessionRepository.findAll()) {
+        var sessions = julesSessionRepository.findByExternalSessionIdIsNotNull();
+        if (sessions == null || sessions.isEmpty()) {
+            sessions = julesSessionRepository.findAll();
+        }
+        for (JulesSessionEntity s : sessions) {
             String externalId = s.getExternalSessionId();
             if (externalId != null && externalId.contains(token)) {
                 Map<String, Object> m = new LinkedHashMap<>();
