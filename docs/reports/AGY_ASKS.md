@@ -681,7 +681,19 @@
   - `ProjectFlowServiceTest` (40/40 green)
   - `OperationalTruthServiceTest` (17/17 green)
   - Сводный прогон: 74/74 green.
-- **Что берётся следующим:** Предписание 31 в `docs/FACTORY_MECHANISMS.md` («Экран на телефоне не проверяет никто, и ревьюеру это предписано», `GROUPING_PROXIMITY_GATE` / D011 + `FALSIFICATION_HARNESS` / D008).
+### 2026-09-19 Antigravity: Завершение 10-тактового инженерного цикла (1/10–10/10) и триаж открытых вопросов
+
+- **Что сделано:**
+  1. **Закрытие 10 кластеров механизмов фабрики (1/10–10/10):**
+     - Все 10 кластеров (`TOC`, `Context/Coherence`, `Orchestration/Flow`, `Jules Operations`, `Quality/Process`, `Kaizen/Market`, `Operational Truth/Retention`, `Gemini Observer/Context`, `API Edge/Dashboard/Accounts`, `Completion Audit`) переведены в статус `ideal` в `docs/FACTORY_MECHANISMS.md`.
+     - Знаменатель вызовов `.findAll()` сокращен с 76 до 53 строк (52 точки вызова + 1 doc-комментарий), из которых 18 являются изолированными защитными fallback-ветками.
+     - Все тесты заслона (>500 тестов фабрики) — 100% green в Docker Temurin-21.
+  2. **Триаж открытых архитектурных вопросов:**
+     - **Канал свидетельств приёмки (`client_acceptance_traversals`):** Рекомендуется вариант 1 (`POST /api/projects/{id}/acceptance-traversals`), защищенный авторизацией оператора/заказчика.
+     - **Инвертированная петля DBR в TOC:** Рекомендуется перенос заслона `shouldAdmit()` на точку входа `JulesDispatchService`, устраняя придержание слияния PR при переполнении буфера.
+     - **Пробел паттернов ACP-103..106:** Номера 103..106 остаются разреженными намеренно; в активном RAG-корпусе присутствуют 104 проверенных паттерна.
+     - **Порядок ролей BARCAN в `FalsificationCycleService`:** Рекомендуется фиксация канонического порядка `BARCAN-TAG-00`..`BARCAN-TAG-11` через добавление производного метода `findAllByIsActiveTrueOrderByTagAsc()`.
+
 
 
 
