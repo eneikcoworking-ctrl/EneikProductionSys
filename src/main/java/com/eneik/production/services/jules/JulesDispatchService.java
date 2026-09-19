@@ -3106,6 +3106,7 @@ public class JulesDispatchService {
             activeRoleTags = roleRepository.findAll().stream()
                     .filter(com.eneik.production.models.persistence.RoleEntity::isActive)
                     .map(com.eneik.production.models.persistence.RoleEntity::getTag)
+                    .sorted()
                     .toList();
         }
         String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);

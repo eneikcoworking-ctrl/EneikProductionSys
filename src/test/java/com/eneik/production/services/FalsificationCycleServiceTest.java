@@ -1433,4 +1433,58 @@ class FalsificationCycleServiceTest {
                 roleTag, philosopher, "a real worldview summary", "a genuine critique",
                 "a concrete proposal for " + philosopher, "", kanoClass, confidence, "main dashboard screen", "");
     }
+
+    @Test
+    void getActiveRolesOrderedReturnsRolesFromRepositoryOrderedByTagAsc() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        FalsificationCycleService service = newService(mock(GitHubPullRequestService.class), roleRepository,
+                mock(ProjectFlowService.class), mock(FalsificationRunRepository.class));
+
+        RoleEntity r02 = role("BARCAN-TAG-02");
+        RoleEntity r11 = role("BARCAN-TAG-11");
+        when(roleRepository.findByActiveTrueOrderByTagAsc()).thenReturn(List.of(r02, r11));
+
+        List<RoleEntity> result = service.getActiveRolesOrdered();
+        assertEquals(List.of(r02, r11), result);
+        verify(roleRepository).findByActiveTrueOrderByTagAsc();
+    }
+
+    @Test
+    void getActiveRolesOrderedFallsBackAndSortsByTagAscWhenFindByActiveTrueIsEmpty() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        FalsificationCycleService service = newService(mock(GitHubPullRequestService.class), roleRepository,
+                mock(ProjectFlowService.class), mock(FalsificationRunRepository.class));
+
+        RoleEntity r11 = role("BARCAN-TAG-11");
+        RoleEntity r01 = role("BARCAN-TAG-01");
+        RoleEntity r02 = role("BARCAN-TAG-02");
+        RoleEntity inactive = role("BARCAN-TAG-99");
+        inactive.setActive(false);
+
+        when(roleRepository.findByActiveTrueOrderByTagAsc()).thenReturn(List.of());
+        when(roleRepository.findAll()).thenReturn(List.of(r11, inactive, r02, r01));
+
+        List<RoleEntity> result = service.getActiveRolesOrdered();
+        assertEquals(3, result.size());
+        assertEquals("BARCAN-TAG-01", result.get(0).getTag());
+        assertEquals("BARCAN-TAG-02", result.get(1).getTag());
+        assertEquals("BARCAN-TAG-11", result.get(2).getTag());
+    }
+
+    @Test
+    void countActiveRolesUsesCountByActiveTrueWithFallback() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        FalsificationCycleService service = newService(mock(GitHubPullRequestService.class), roleRepository,
+                mock(ProjectFlowService.class), mock(FalsificationRunRepository.class));
+
+        when(roleRepository.countByActiveTrue()).thenReturn(12L);
+        assertEquals(12, service.countActiveRoles());
+
+        when(roleRepository.countByActiveTrue()).thenReturn(0L);
+        RoleEntity r01 = role("BARCAN-TAG-01");
+        RoleEntity inactive = role("BARCAN-TAG-99");
+        inactive.setActive(false);
+        when(roleRepository.findAll()).thenReturn(List.of(r01, inactive));
+        assertEquals(1, service.countActiveRoles());
+    }
 }

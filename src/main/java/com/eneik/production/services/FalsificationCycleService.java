@@ -236,9 +236,7 @@ public class FalsificationCycleService {
         if (!settingsService.effectiveBoolean("philosophical_falsification_enabled")) {
             return;
         }
-        List<RoleEntity> activeRoles = roleRepository.findAll().stream()
-                .filter(RoleEntity::isActive)
-                .toList();
+        List<RoleEntity> activeRoles = getActiveRolesOrdered();
         if (activeRoles.isEmpty()) {
             return;
         }
@@ -355,9 +353,7 @@ public class FalsificationCycleService {
             return;
         }
 
-        List<RoleEntity> activeRoles = roleRepository.findAll().stream()
-                .filter(RoleEntity::isActive)
-                .toList();
+        List<RoleEntity> activeRoles = getActiveRolesOrdered();
         if (activeRoles.isEmpty()) {
             return;
         }
@@ -1195,9 +1191,7 @@ public class FalsificationCycleService {
             return;
         }
 
-        List<RoleEntity> activeRoles = roleRepository.findAll().stream()
-                .filter(RoleEntity::isActive)
-                .toList();
+        List<RoleEntity> activeRoles = getActiveRolesOrdered();
 
         RecentChanges recentChanges = getRecentCodeChangesForAudit(project);
         if (recentChanges.text().isBlank()) {
@@ -1369,7 +1363,7 @@ public class FalsificationCycleService {
 
     @Transactional
     public void applyAuditViolations(ProjectEntity project, List<AuditViolation> violations, Integer highestPrNumberAudited) {
-        int rolesCheckedCount = (int) roleRepository.findAll().stream().filter(RoleEntity::isActive).count();
+        int rolesCheckedCount = countActiveRoles();
         int violationsFoundCount = 0;
         int followUpsCreatedCount = 0;
         List<AuditViolation> validViolations = violations.stream()
@@ -1725,5 +1719,30 @@ public class FalsificationCycleService {
             return value;
         }
         return value.substring(0, maxLength) + "\n... [truncated at " + maxLength + " chars]";
+    }
+
+    List<RoleEntity> getActiveRolesOrdered() {
+        try {
+            List<RoleEntity> roles = roleRepository.findByActiveTrueOrderByTagAsc();
+            if (roles != null && !roles.isEmpty()) {
+                return roles;
+            }
+        } catch (Exception ignored) {
+        }
+        return roleRepository.findAll().stream()
+                .filter(RoleEntity::isActive)
+                .sorted(java.util.Comparator.comparing(RoleEntity::getTag))
+                .toList();
+    }
+
+    int countActiveRoles() {
+        try {
+            long count = roleRepository.countByActiveTrue();
+            if (count > 0) {
+                return (int) count;
+            }
+        } catch (Exception ignored) {
+        }
+        return (int) roleRepository.findAll().stream().filter(RoleEntity::isActive).count();
     }
 }

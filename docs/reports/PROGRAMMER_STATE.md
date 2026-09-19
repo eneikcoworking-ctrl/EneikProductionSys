@@ -1,15 +1,13 @@
-# Такт L2: Ведущий инженер (2026-09-19 06:27 UTC)
+# Такт L2: Ведущий инженер (2026-09-19 07:25 UTC)
 
-1. Пост-10 такт: Автономный триаж открытых вопросов (`ALFRED_TARSKIY_04_CONSTRUCTIVE_PROOF_OBJECT` / D007, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013):
-   - Проведён архитектурный триаж открытых вопросов в `docs/reports/AGY_ASKS.md`:
-     1. Канал свидетельств приёмки (`client_acceptance_traversals`): рекомендован авторизованный REST-эндпоинт `POST /api/projects/{id}/acceptance-traversals`.
-     2. DBR-петля TOC: рекомендован перенос `shouldAdmit()` на точку входа `JulesDispatchService`.
-     3. Пробел паттернов ACP-103..106: разреженность обоснована, 104 активных паттерна проверены.
-     4. Порядок ролей BARCAN: рекомендован метод `findAllByIsActiveTrueOrderByTagAsc()`.
-   - Подтверждено сохранение инвариантов фабрики: аптайм продукта >40ч, 0 сбоев рантайма.
+1. Механизм детерминированного порядка ролей BARCAN (`RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER` / D002, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013):
+   - В `RoleRepository` добавлены методы канонической выборки `findAllByActiveTrueOrderByTagAsc()`, `countByActiveTrue()` и алиас `findAllByIsActiveTrueOrderByTagAsc()`.
+   - В `FalsificationCycleService` вызовы `.findAll()` переведены на `getActiveRolesOrdered()` и `countActiveRoles()` с гарантией канонического порядка тегов ролей.
+   - В `JulesDispatchService` добавлена каноническая сортировка fallback-ветки тегов ролей.
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Все заслоны фабрики (1/10–10/10) удерживаются на 100% green.
-3. Документация:
-   - Обновлён `docs/reports/AGY_ASKS.md` с фиксацией 10-тактового итога и вариантов решений.
+   - Добавлены тесты `getActiveRolesOrderedReturnsRolesFromRepositoryOrderedByTagAsc`, `getActiveRolesOrderedFallsBackAndSortsByTagAscWhenFindByActiveTrueIsEmpty`, `countActiveRolesUsesCountByActiveTrueWithFallback`.
+   - Прогон 132 тестов: `FalsificationCycleServiceTest` (28/28), `JulesDispatchServiceTest` (103/103), `AgencySchemaTest` (1/1) — 100% green.
+3. Инварианты хоста и рантайма:
+   - Диск: 61% (<70%), память в норме. Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >41ч).
 4. Следующий такт:
-   - Регулярный такт L2: мониторинг состояния, инспекция `MANAGER_STATE.md` и автономная поддержка фабрики.
+   - Регулярный такт L2: проверка `MANAGER_STATE.md`, взятие следующего механизма по наряду L1.
