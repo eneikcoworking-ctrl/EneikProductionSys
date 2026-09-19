@@ -42,17 +42,56 @@ public class DashboardController {
 
     @GetMapping("/agents")
     public List<AgentDashboardDto> getAgents() {
-        return accountRepository.findAll().stream().map(account -> {
-            ClaimEntity activeClaim = claimRepository
-                    .findByAccountIdAndReleasedAtIsNullOrderByClaimedAtDesc(account.getId())
-                    .stream()
-                    .findFirst()
-                    .orElse(null);
+        List<com.eneik.production.models.persistence.AccountEntity> accounts;
+        try {
+            accounts = accountRepository.findAllByOrderByNameAsc();
+            if (accounts == null || accounts.isEmpty()) {
+                accounts = accountRepository.findAll();
+            }
+        } catch (Exception ignored) {
+            accounts = accountRepository.findAll();
+        }
+        if (accounts == null) {
+            accounts = List.of();
+        }
+
+        java.util.Map<UUID, ClaimEntity> latestActiveClaimByAccountId = new java.util.HashMap<>();
+        boolean batchLookupSucceeded = false;
+        try {
+            List<ClaimEntity> activeClaims = claimRepository.findByReleasedAtIsNull();
+            if (activeClaims != null) {
+                batchLookupSucceeded = true;
+                for (ClaimEntity claim : activeClaims) {
+                    if (claim.getAccount() != null && claim.getAccount().getId() != null) {
+                        UUID accId = claim.getAccount().getId();
+                        ClaimEntity existing = latestActiveClaimByAccountId.get(accId);
+                        if (existing == null || (claim.getClaimedAt() != null && (existing.getClaimedAt() == null || claim.getClaimedAt().isAfter(existing.getClaimedAt())))) {
+                            latestActiveClaimByAccountId.put(accId, claim);
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        final boolean batchSuccess = batchLookupSucceeded;
+
+        return accounts.stream().map(account -> {
+            ClaimEntity activeClaim = latestActiveClaimByAccountId.get(account.getId());
+            if (activeClaim == null && !batchSuccess) {
+                try {
+                    activeClaim = claimRepository
+                            .findByAccountIdAndReleasedAtIsNullOrderByClaimedAtDesc(account.getId())
+                            .stream()
+                            .findFirst()
+                            .orElse(null);
+                } catch (Exception ignored) {
+                }
+            }
             return new AgentDashboardDto(
                 account.getId(),
                 account.getName(),
                 account.getStatus(),
-                activeClaim != null ? activeClaim.getRole().getTag() : null,
+                activeClaim != null && activeClaim.getRole() != null ? activeClaim.getRole().getTag() : null,
                 activeClaim != null ? TaskTitleBuilder.displayTitle(activeClaim.getTask()) : null,
                 activeClaim != null ? activeClaim.getClaimedAt() : null,
                 activeClaim != null ? activeClaim.getLeaseExpiresAt() : null,

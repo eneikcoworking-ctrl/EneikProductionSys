@@ -47,7 +47,19 @@ public class AccountController {
 
     @GetMapping
     public List<AccountDto> list() {
-        return accountRepository.findAll().stream()
+        List<AccountEntity> accounts;
+        try {
+            accounts = accountRepository.findAllByOrderByNameAsc();
+            if (accounts == null || accounts.isEmpty()) {
+                accounts = accountRepository.findAll();
+            }
+        } catch (Exception ignored) {
+            accounts = accountRepository.findAll();
+        }
+        if (accounts == null) {
+            accounts = List.of();
+        }
+        return accounts.stream()
                 .map(this::toDto)
                 .toList();
     }

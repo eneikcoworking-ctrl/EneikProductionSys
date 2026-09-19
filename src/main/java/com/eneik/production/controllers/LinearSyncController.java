@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
@@ -28,16 +29,44 @@ public class LinearSyncController {
 
     @GetMapping("/completeness-report")
     public Map<String, Object> getCompletenessReport() {
-        List<TaskEntity> tasksWithLinear = taskRepository.findAll().stream()
-                .filter(t -> t.getLinearIssueId() != null && !t.getLinearIssueId().isEmpty())
+        List<TaskEntity> tasksWithLinear;
+        try {
+            tasksWithLinear = taskRepository.findByLinearIssueIdIsNotNull();
+        } catch (Exception ignored) {
+            tasksWithLinear = taskRepository.findAll();
+        }
+        if (tasksWithLinear == null) {
+            tasksWithLinear = List.of();
+        }
+        tasksWithLinear = tasksWithLinear.stream()
+                .filter(t -> t.getLinearIssueId() != null && !t.getLinearIssueId().isBlank())
                 .collect(Collectors.toList());
+
+        List<UUID> taskIds = tasksWithLinear.stream().map(TaskEntity::getId).toList();
+        Map<UUID, LinearIssueMetadataEntity> metadataByTaskId = new HashMap<>();
+        boolean batchMetadataSucceeded = false;
+        try {
+            for (LinearIssueMetadataEntity meta : metadataRepository.findAllById(taskIds)) {
+                if (meta != null && meta.getTaskId() != null) {
+                    metadataByTaskId.put(meta.getTaskId(), meta);
+                }
+            }
+            batchMetadataSucceeded = true;
+        } catch (Exception ignored) {
+        }
 
         List<Map<String, Object>> reports = new ArrayList<>();
         int fullyComplete = 0;
 
         for (TaskEntity task : tasksWithLinear) {
             List<String> missingFields = new ArrayList<>();
-            LinearIssueMetadataEntity metadata = metadataRepository.findById(task.getId()).orElse(null);
+            LinearIssueMetadataEntity metadata = metadataByTaskId.get(task.getId());
+            if (metadata == null && !batchMetadataSucceeded) {
+                try {
+                    metadata = metadataRepository.findById(task.getId()).orElse(null);
+                } catch (Exception ignored) {
+                }
+            }
 
             // 1. Status (Assume it always exists if task exists)
             // 2. Role (Assume it always exists if task exists)

@@ -1,12 +1,12 @@
-# Такт L2: Ведущий инженер (2026-09-19 03:59 UTC)
+# Такт L2: Ведущий инженер (2026-09-19 04:55 UTC)
 
-1. Кластер Gemini Observer / Context (8/10) закрыт (`ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010):
-   - `ContextChunkRepository`: добавлены проекции `countByEmbeddingDimsNot` и `findDistinctSourceRefsByEmbeddingDimsNot`.
-   - `GeminiContextService`: ликвидированы `findAll()` сканирования при стартовой проверке размерности и очистке stale chunks; `buildProductWorkerContextBlock` переведён на репозиторную стратификацию по `PRODUCT_WORKER_SOURCE_TYPES`.
-   - `InternalGeminiObserverController`: `/dispatch-eligibility-detail` и `/account-capacity` переведены на детерминированную выборку `findAllByOrderByNameAsc()`, добавлен заслон от null `session.taskId`.
+1. Кластер API Edge / Dashboard / Accounts (9/10) закрыт (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006):
+   - `DashboardController`: `/api/dashboard/agents` переведён на `accountRepository.findAllByOrderByNameAsc()` и батчевую загрузку активных клеймов (`claimRepository.findByReleasedAtIsNull()`), ликвидирован N+1 query loop.
+   - `AccountController`: `GET /api/accounts` переведён на детерминированную выборку `findAllByOrderByNameAsc()` с маскированием секретов в `AccountDto`.
+   - `LinearSyncController`: `/api/linear-sync/completeness-report` переведён на точечный `taskRepository.findByLinearIssueIdIsNotNull()` и пакетную резолюцию метаданных `metadataRepository.findAllById(taskIds)`.
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `GeminiContextServiceTest` (28/28), `InternalGeminiObserverControllerTest` (16/16), `InternalGeminiObserverSecurityIntegrationTest` (9/9). Итого: 53/53 green.
+   - `DashboardControllerTest` (2/2), `LinearSyncControllerTest` (2/2), `InternalTaskControllerTest` (6/6), `AccountControllerIntegrationTest` (5/5), `CommandDashboardControllerTest` (4/4). Итого: 19/19 green.
 3. Документация:
-   - Кластер 8/10 в `docs/FACTORY_MECHANISMS.md` переведен в статус `ideal`.
+   - Кластер 9/10 в `docs/FACTORY_MECHANISMS.md` переведен в статус `ideal`.
 4. Следующий такт:
-   - Такт 9/10: Dashboard / Accounts / API Edge cluster (`DashboardController`, `AccountController`, `InternalTaskController`, `LinearSyncController`).
+   - Такт 10/10: Completion audit cluster (re-run full `.findAll()` inventory, reconcile against mechanisms & reports).
