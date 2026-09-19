@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -200,6 +201,9 @@ public class BranchGarbageCollectorService {
 
         Instant now = Instant.now();
         int cleaned = 0;
+        List<JulesSessionEntity> projectSessions = null;
+        Map<UUID, TaskEntity> tasksById = null;
+
         for (var pr : openPrs) {
             String title = pr.title();
             String headRef = pr.headRef();
@@ -239,6 +243,24 @@ public class BranchGarbageCollectorService {
                 continue;
             }
 
+            if (projectSessions == null) {
+                List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+                tasksById = new java.util.HashMap<>();
+                if (projectTasks != null && !projectTasks.isEmpty()) {
+                    for (TaskEntity t : projectTasks) {
+                        if (t != null && t.getId() != null) {
+                            tasksById.put(t.getId(), t);
+                        }
+                    }
+                    projectSessions = julesSessionRepository.findByTaskIdIn(new java.util.ArrayList<>(tasksById.keySet()));
+                } else {
+                    projectSessions = julesSessionRepository.findByExternalSessionIdIsNotNull();
+                }
+                if (projectSessions == null || projectSessions.isEmpty()) {
+                    projectSessions = julesSessionRepository.findAll();
+                }
+            }
+
             // Token-based evidence, not a guessed clock (2026-07-31, replacing yesterday's own
             // MIN_PR_AGE_BEFORE_CLEANUP patch): the previous version matched a PR to its owning session by
             // exact `session.prUrl` string equality - a field that only gets written back to our DB in a
@@ -250,16 +272,18 @@ public class BranchGarbageCollectorService {
             // name against it via the same session-token scheme every other reconciliation path in this
             // codebase already uses (GitHubPullRequestService.matchesSessionToken) has no such race at all:
             // by construction, if a PR exists, the session that will eventually own it already does too.
-            Optional<JulesSessionEntity> sessionOpt = julesSessionRepository.findAll().stream()
+            Optional<JulesSessionEntity> sessionOpt = projectSessions.stream()
                     .filter(s -> s.getExternalSessionId() != null && !s.getExternalSessionId().isBlank())
                     .filter(s -> GitHubPullRequestService.matchesSessionToken(pr, s.getExternalSessionId()))
                     .findFirst();
 
             if (sessionOpt.isPresent()) {
                 JulesSessionEntity session = sessionOpt.get();
-                Optional<TaskEntity> taskOpt = taskRepository.findById(session.getTaskId());
-                if (taskOpt.isPresent()) {
-                    TaskEntity task = taskOpt.get();
+                TaskEntity task = tasksById.get(session.getTaskId());
+                if (task == null) {
+                    task = taskRepository.findById(session.getTaskId()).orElse(null);
+                }
+                if (task != null) {
                     if (task.getStatus() == TaskStatus.done) {
                         continue;
                     }
@@ -341,10 +365,25 @@ public class BranchGarbageCollectorService {
         var openPrs = gitHubPullRequestService.fetchOpenPullRequests(project);
         if (openPrs.isEmpty()) return List.of();
 
-        List<JulesSessionEntity> allSessions = julesSessionRepository.findAll();
+        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        Map<UUID, TaskEntity> tasksById = new java.util.HashMap<>();
+        List<JulesSessionEntity> candidateSessions;
+        if (projectTasks != null && !projectTasks.isEmpty()) {
+            for (TaskEntity t : projectTasks) {
+                if (t != null && t.getId() != null) {
+                    tasksById.put(t.getId(), t);
+                }
+            }
+            candidateSessions = julesSessionRepository.findByTaskIdIn(new java.util.ArrayList<>(tasksById.keySet()));
+        } else {
+            candidateSessions = julesSessionRepository.findByExternalSessionIdIsNotNull();
+        }
+        if (candidateSessions == null || candidateSessions.isEmpty()) {
+            candidateSessions = julesSessionRepository.findAll();
+        }
         List<OrphanedPrCandidate> candidates = new java.util.ArrayList<>();
         for (var pr : openPrs) {
-            JulesSessionEntity match = allSessions.stream()
+            JulesSessionEntity match = candidateSessions.stream()
                     .filter(s -> s.getExternalSessionId() != null && !s.getExternalSessionId().isBlank())
                     .filter(s -> GitHubPullRequestService.matchesSessionToken(pr, s.getExternalSessionId()))
                     .findFirst()
@@ -352,7 +391,10 @@ public class BranchGarbageCollectorService {
             if (match == null || !ORPHANED_CANDIDATE_SESSION_STATUSES.contains(match.getStatus())) {
                 continue;
             }
-            TaskEntity task = taskRepository.findById(match.getTaskId()).orElse(null);
+            TaskEntity task = tasksById.get(match.getTaskId());
+            if (task == null) {
+                task = taskRepository.findById(match.getTaskId()).orElse(null);
+            }
             if (task == null || task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
                 continue;
             }

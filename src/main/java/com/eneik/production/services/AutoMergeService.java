@@ -379,7 +379,18 @@ public class AutoMergeService {
         // 2. Fallback: match repository from PR URL to any known project in database
         PullRequestTarget target = parseGithubPullRequestUrl(review.getPrUrl());
         if (target != null && projectRepository != null) {
-            var allProjects = projectRepository.findAll();
+            java.util.Optional<com.eneik.production.models.persistence.ProjectEntity> directMatch = projectRepository.findFirstByRepositoryNameIgnoreCase(target.repo());
+            if (directMatch.isPresent() && matchesRepository(directMatch.get(), target)) {
+                return directMatch.get().getStatus() == ProjectStatus.active;
+            }
+            var activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+            if (activeProjects != null && activeProjects.stream().anyMatch(p -> matchesRepository(p, target))) {
+                return true;
+            }
+            var allProjects = projectRepository.findAllByOrderByCreatedAtDesc();
+            if (allProjects == null || allProjects.isEmpty()) {
+                allProjects = projectRepository.findAll();
+            }
             if (allProjects != null) {
                 var matchingProject = allProjects.stream()
                         .filter(p -> matchesRepository(p, target))

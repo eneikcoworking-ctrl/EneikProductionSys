@@ -1,15 +1,14 @@
-# Такт L2: Ведущий инженер (2026-09-18 23:35 UTC)
+# Такт L2: Ведущий инженер (2026-09-19 00:30 UTC)
 
-1. ТОС-кластер закрыт (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_06_CAUSAL_PROCESS_TRACE` / D013):
-   - `ConstraintIdentificationService`: барабан (`identifyDrum`) и буфер (`recommendedBufferCapacity`) изолированы проектной выборкой (`findByProjectIdOrderByCreatedAtDesc`, `findByProjectIdAndStatus`), устранены все глобальные `findAll()`.
-   - Исключены N+1 вызовы `findById` для активных сессий через O(1) множество проектных task ID.
-   - Емкость аккаунтов выровнена с инвариантами диспетчера (`isEnabled() && (idle || busy)`); исключены неактивные и заблокированные статусы.
-   - `BottleneckDetectionService`: чтение емкости аккаунтов вынесено из цикла по тегам — один компактный проход за такт.
+1. Кластер оркестрации (3/10) закрыт (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` / D004):
+   - `ProjectFlowService`: `selectBadSession` и `highestMergedPrNumber` ограничены проектными задачами через `findByTaskIdIn`, устранены `findAll()` и N+1 `findById`. `listProjects` упорядочен детерминированно (`findAllByOrderByCreatedAtDesc`).
+   - `ContinuousOrchestrationService`: `checkForSystemStall` проверяет емкость аккаунтов через предикат `existsByEnabledTrueAndStatus(AccountStatus.idle)`.
+   - `AutoMergeService`: сопоставление репозитория в `belongsToActiveProject` сделано адресным (`findFirstByRepositoryNameIgnoreCase` / `findByStatusOrderByCreatedAtDesc(active)`).
+   - `BranchGarbageCollectorService`: сопоставление сессий изолировано проектными задачами (`findByTaskIdIn`), с сохранением инвариантов closeout и persistent worker.
+   - `StrandedFinalizingSweepService`: подтверждена изоляция активными проектами.
 2. Заслон (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `ConstraintIdentificationServiceTest` (6/6 green): проверка проектного скоупа барабана, буфера и отсутствия `findAll()`.
-   - `BottleneckDetectionServiceTest` (4/4 green): проверка однократного чтения аккаунтов вне цикла.
-   - `EvidenceCoherenceServiceTest` (21/21 green). Итого 31/31 green.
+   - `BranchGarbageCollectorServiceTest` (9/9 green), `ContinuousOrchestrationServiceTest` (20/20 green), `AutoMergeServiceTest` (24/24 green), `StrandedFinalizingSweepServiceTest` (8/8 green), `ProjectFlowServiceTest` (44/44 green). Итого: 105/105 green.
 3. Документация:
-   - Кластер ТОС в `docs/FACTORY_MECHANISMS.md` переведен в статус `ideal`.
+   - Кластер оркестрации (3/10) в `docs/FACTORY_MECHANISMS.md` переведен в статус `ideal`.
 4. Следующий такт:
-   - Такт 3/10: project flow/orchestration cluster (`ProjectFlowService`, `ContinuousOrchestrationService`, `AutoMergeService`).
+   - Такт 4/10: Jules operations cluster (`JulesDispatchService`, `JulesSessionController`, `JulesMonitorController`, webhook lineage).

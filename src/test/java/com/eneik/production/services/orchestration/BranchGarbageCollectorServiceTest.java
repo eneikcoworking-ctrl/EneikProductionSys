@@ -401,4 +401,33 @@ class BranchGarbageCollectorServiceTest {
 
         assertEquals(0, candidates.size());
     }
+
+    @Test
+    void cleanOrphanedAndStagnatedPullRequestsUsesProjectTasksAndNeverCallsFindAll() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.claimed);
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
+
+        var openPr = pr(15, "Project feature", "feat/my-feature-xyz999", Instant.now().minus(20, ChronoUnit.MINUTES));
+        when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(openPr));
+
+        JulesSessionEntity projectSession = new JulesSessionEntity();
+        projectSession.setTaskId(taskId);
+        projectSession.setExternalSessionId("sessions/xyz999");
+        projectSession.setLastProgressAt(Instant.now().minus(5, ChronoUnit.MINUTES));
+
+        when(julesSessionRepository.findByTaskIdIn(List.of(taskId))).thenReturn(List.of(projectSession));
+
+        int cleaned = service.cleanOrphanedAndStagnatedPullRequests(project);
+
+        assertEquals(0, cleaned);
+        verify(julesSessionRepository).findByTaskIdIn(List.of(taskId));
+        verify(julesSessionRepository, never()).findAll();
+    }
 }

@@ -638,8 +638,8 @@ public class ContinuousOrchestrationService {
                 return;
             }
 
-            boolean idleCapacityExists = accountRepository.findAll().stream()
-                    .anyMatch(a -> a.isEnabled() && a.getStatus() == com.eneik.production.models.persistence.AccountStatus.idle);
+            boolean idleCapacityExists = accountRepository.existsByEnabledTrueAndStatus(
+                    com.eneik.production.models.persistence.AccountStatus.idle);
 
             if (idleCapacityExists) {
                 boolean isStalled = lastProgress != null

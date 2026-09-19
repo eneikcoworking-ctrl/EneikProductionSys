@@ -549,6 +549,7 @@ class ContinuousOrchestrationServiceTest {
         idleAccount.setEnabled(true);
         idleAccount.setStatus(AccountStatus.idle);
         when(accountRepository.findAll()).thenReturn(List.of(idleAccount));
+        when(accountRepository.existsByEnabledTrueAndStatus(AccountStatus.idle)).thenReturn(true);
 
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
         SystemProgressTracker freshTracker = new SystemProgressTracker(); // startedAt=now, lastProgressAt=null
@@ -600,6 +601,7 @@ class ContinuousOrchestrationServiceTest {
         idleAccount.setEnabled(true);
         idleAccount.setStatus(AccountStatus.idle);
         when(accountRepository.findAll()).thenReturn(List.of(idleAccount));
+        when(accountRepository.existsByEnabledTrueAndStatus(AccountStatus.idle)).thenReturn(true);
 
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
         // Tracker started 60 minutes ago, no external progress recorded (internal audits/compilations don't call recordProgress)

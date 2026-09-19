@@ -1839,12 +1839,15 @@ public class ProjectFlowService {
     }
 
     private Optional<JulesSessionEntity> selectBadSession(Map<UUID, TaskEntity> tasksById, UUID sessionId) {
+        if (tasksById == null || tasksById.isEmpty()) {
+            return Optional.empty();
+        }
         if (sessionId != null) {
             return julesSessionRepository.findById(sessionId)
                     .filter(session -> tasksById.containsKey(session.getTaskId()))
                     .filter(this::isActiveJulesSession);
         }
-        return julesSessionRepository.findAll().stream()
+        return julesSessionRepository.findByTaskIdIn(new java.util.ArrayList<>(tasksById.keySet())).stream()
                 .filter(session -> tasksById.containsKey(session.getTaskId()))
                 .filter(this::isActiveJulesSession)
                 .sorted(Comparator
@@ -5660,13 +5663,11 @@ public class ProjectFlowService {
         if (!snapshot.available()) {
             return null;
         }
-        List<JulesSessionEntity> projectSessions = julesSessionRepository.findAll().stream()
-                .filter(s -> s.getTaskId() != null)
-                .filter(s -> {
-                    TaskEntity t = taskRepository.findById(s.getTaskId()).orElse(null);
-                    return t != null && t.getProject() != null && project.getId().equals(t.getProject().getId());
-                })
+        List<UUID> projectTaskIds = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .map(TaskEntity::getId)
                 .toList();
+        List<JulesSessionEntity> projectSessions = projectTaskIds.isEmpty()
+                ? List.of() : julesSessionRepository.findByTaskIdIn(projectTaskIds);
         return snapshot.closed().stream()
                 .filter(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::merged)
                 .filter(pr -> !isSystemRecordPr(pr, projectSessions))
@@ -7218,7 +7219,7 @@ public class ProjectFlowService {
 
     @Transactional(readOnly = true)
     public List<ProjectDto> listProjects() {
-        return projectRepository.findAll().stream().map(this::toProjectDto).toList();
+        return projectRepository.findAllByOrderByCreatedAtDesc().stream().map(this::toProjectDto).toList();
     }
 
     @Transactional
