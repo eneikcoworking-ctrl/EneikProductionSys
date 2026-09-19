@@ -66,8 +66,17 @@ public class MarketResearchService {
         // factory's own repository instead of this project's - so the carrier project is bookkeeping only
         // and its code is never touched. Picking the most recent one keeps the task visible somewhere real
         // rather than inventing a synthetic project row.
-        ProjectEntity carrier = projectRepository.findAll().stream().findFirst()
-                .orElseThrow(() -> new IllegalStateException("No project exists to carry the research task"));
+        ProjectEntity carrier = null;
+        try {
+            carrier = projectRepository.findFirstByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active)
+                    .or(() -> projectRepository.findAllByOrderByCreatedAtDesc().stream().findFirst())
+                    .orElse(null);
+        } catch (Exception ignored) {
+        }
+        if (carrier == null) {
+            carrier = projectRepository.findAll().stream().findFirst()
+                    .orElseThrow(() -> new IllegalStateException("No project exists to carry the research task"));
+        }
 
         int boundedSample = Math.max(5, Math.min(sampleSize, 40));
 

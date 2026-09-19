@@ -23,6 +23,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -142,5 +144,20 @@ public class FlowMetricsServiceTest {
         assertThat(report.wasteWishlistCount()).isEqualTo(3L);
         assertThat(report.totalWishlistCount()).isEqualTo(10L);
         assertThat(report.wasteRatio()).isEqualTo(0.3, org.assertj.core.data.Offset.offset(1e-9));
+    }
+
+    @Test
+    void computeForProjectUsesProjectScopedTasksWithoutMaterializingAllTasks() {
+        TaskEntity done = doneTask(Instant.now().minusSeconds(3600), Instant.now());
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(done));
+        when(wishlistRepository.countByProjectId(projectId)).thenReturn(5L);
+        when(wishlistRepository.countByProjectIdAndStatus(projectId, WishlistStatus.dismissed)).thenReturn(1L);
+
+        var report = service.computeForProject(projectId);
+
+        assertThat(report.projectId()).isEqualTo(projectId);
+        assertThat(report.totalWishlistCount()).isEqualTo(5L);
+        assertThat(report.wasteWishlistCount()).isEqualTo(1L);
+        verify(taskRepository, never()).findAll();
     }
 }

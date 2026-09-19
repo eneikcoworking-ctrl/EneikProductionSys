@@ -8,7 +8,11 @@ import java.util.UUID;
 
 public interface KaizenProposalRepository extends JpaRepository<KaizenProposalEntity, String> {
     List<KaizenProposalEntity> findByProjectId(UUID projectId);
+    List<KaizenProposalEntity> findByProjectIdIsNull();
+    List<KaizenProposalEntity> findAllByOrderByCreatedAtDesc();
     List<KaizenProposalEntity> findByCategoryAndStatusIn(String category, List<String> statuses);
     List<KaizenProposalEntity> findByStatusIn(List<String> statuses);
     long countByStatus(String status);
+    java.util.Optional<KaizenProposalEntity> findFirstByStatusAndCategoryAndTargetComponentAndProjectId(String status, String category, String targetComponent, UUID projectId);
+    java.util.Optional<KaizenProposalEntity> findFirstByStatusAndCategoryAndTargetComponentAndProjectIdIsNull(String status, String category, String targetComponent);
 }

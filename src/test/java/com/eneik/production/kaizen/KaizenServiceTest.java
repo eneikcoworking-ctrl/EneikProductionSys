@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -84,6 +85,14 @@ public class KaizenServiceTest {
             return e;
         });
         when(kaizenProposalRepository.findAll()).thenAnswer(inv -> new ArrayList<>(proposalStore.values()));
+        when(kaizenProposalRepository.findAllByOrderByCreatedAtDesc()).thenAnswer(inv -> new ArrayList<>(proposalStore.values()));
+        when(kaizenProposalRepository.findByProjectId(any())).thenAnswer(inv -> {
+            UUID pid = inv.getArgument(0);
+            return proposalStore.values().stream().filter(e -> Objects.equals(e.getProjectId(), pid)).toList();
+        });
+        when(kaizenProposalRepository.findByProjectIdIsNull()).thenAnswer(inv ->
+                proposalStore.values().stream().filter(e -> e.getProjectId() == null).toList()
+        );
         when(kaizenProposalRepository.findById(any())).thenAnswer(inv -> Optional.ofNullable(proposalStore.get(inv.getArgument(0))));
         // 2026-08-20: without this the fake answered false to every existsById, so saveProposal's
         // update path - the one testScanAndApplyPdcaCycle actually walks - was never exercised as it
@@ -301,6 +310,27 @@ public class KaizenServiceTest {
                 "Factory self-health: lock contention on the orchestrator's own database", "it came back");
 
         assertThat(kaizenProposalRepository.findAll()).hasSize(afterApply + 1);
+    }
+
+    @Test
+    void recurrenceDoesNotConflateProposalsAcrossDifferentProjects() {
+        UUID projectA = UUID.randomUUID();
+        UUID projectB = UUID.randomUUID();
+
+        kaizenService.recordSystemicDefectProposal(projectA, "Project A",
+                "Quality Gate issue", "Transient check error");
+        kaizenService.recordSystemicDefectProposal(projectB, "Project B",
+                "Quality Gate issue", "Transient check error");
+
+        List<KaizenProposalEntity> all = kaizenProposalRepository.findAll();
+        assertThat(all).hasSize(2);
+
+        var forA = kaizenService.getProposalsForProject(projectA);
+        var forB = kaizenService.getProposalsForProject(projectB);
+        assertThat(forA).hasSize(1);
+        assertThat(forB).hasSize(1);
+        assertThat(forA.iterator().next().getProjectId()).isEqualTo(projectA);
+        assertThat(forB.iterator().next().getProjectId()).isEqualTo(projectB);
     }
 
 }

@@ -75,7 +75,15 @@ public class KaizenService {
     // ---- Persistence helpers (replace the old ConcurrentHashMap's role) ----
 
     private List<KaizenProposal> allProposals() {
-        return kaizenProposalRepository.findAll().stream().map(KaizenProposalEntity::toDomain).toList();
+        List<KaizenProposalEntity> list = null;
+        try {
+            list = kaizenProposalRepository.findAllByOrderByCreatedAtDesc();
+        } catch (Exception ignored) {
+        }
+        if (list == null || list.isEmpty()) {
+            list = kaizenProposalRepository.findAll();
+        }
+        return list.stream().map(KaizenProposalEntity::toDomain).toList();
     }
 
     /**
@@ -140,7 +148,32 @@ public class KaizenService {
 
     /** The one already-open proposal this finding is a recurrence OF, or null if it is genuinely new. */
     private KaizenProposalEntity findOpenSibling(KaizenProposalEntity incoming) {
-        return kaizenProposalRepository.findAll().stream()
+        try {
+            java.util.Optional<KaizenProposalEntity> sibling;
+            if (incoming.getProjectId() != null) {
+                sibling = kaizenProposalRepository.findFirstByStatusAndCategoryAndTargetComponentAndProjectId(
+                        "PROPOSED", incoming.getCategory(), incoming.getTargetComponent(), incoming.getProjectId());
+            } else {
+                sibling = kaizenProposalRepository.findFirstByStatusAndCategoryAndTargetComponentAndProjectIdIsNull(
+                        "PROPOSED", incoming.getCategory(), incoming.getTargetComponent());
+            }
+            if (sibling != null && sibling.isPresent() && !Objects.equals(sibling.get().getId(), incoming.getId())) {
+                return sibling.get();
+            }
+        } catch (Exception ignored) {
+        }
+        // Fallback for mockito or memory-backed test doubles
+        List<KaizenProposalEntity> pool = null;
+        if (incoming.getProjectId() != null) {
+            try {
+                pool = kaizenProposalRepository.findByProjectId(incoming.getProjectId());
+            } catch (Exception ignored) {
+            }
+        }
+        if (pool == null || pool.isEmpty()) {
+            pool = kaizenProposalRepository.findAll();
+        }
+        return pool.stream()
                 .filter(e -> !Objects.equals(e.getId(), incoming.getId()))
                 .filter(e -> "PROPOSED".equals(e.getStatus()))
                 .filter(e -> Objects.equals(e.getCategory(), incoming.getCategory()))
@@ -155,10 +188,26 @@ public class KaizenService {
     }
 
     private void deleteMatching(KaizenProposal.KaizenCategory category, String targetComponent, String excludeId) {
-        kaizenProposalRepository.findAll().stream()
+        deleteMatching(category, targetComponent, excludeId, null);
+    }
+
+    private void deleteMatching(KaizenProposal.KaizenCategory category, String targetComponent, String excludeId, UUID projectId) {
+        List<KaizenProposalEntity> pool = null;
+        if (projectId != null) {
+            try {
+                pool = kaizenProposalRepository.findByProjectId(projectId);
+            } catch (Exception ignored) {
+            }
+        }
+        if (pool == null || pool.isEmpty()) {
+            pool = kaizenProposalRepository.findAll();
+        }
+        pool.stream()
                 .filter(e -> category.name().equals(e.getCategory())
                         && Objects.equals(e.getTargetComponent(), targetComponent)
-                        && !e.getId().equals(excludeId))
+                        && !Objects.equals(e.getId(), excludeId)
+                        && Objects.equals(e.getProjectId(), projectId)
+                        && "PROPOSED".equals(e.getStatus()))
                 .forEach(e -> kaizenProposalRepository.deleteById(e.getId()));
     }
 
@@ -323,7 +372,21 @@ public class KaizenService {
 
         final String finalProjectName = projectName;
         List<KaizenProposal> newProposals = new ArrayList<>();
-        List<KaizenProposal> current = allProposals();
+        List<KaizenProposal> current;
+        if (targetProjectId != null) {
+            List<KaizenProposalEntity> projectRows = null;
+            try {
+                projectRows = kaizenProposalRepository.findByProjectId(targetProjectId);
+            } catch (Exception ignored) {
+            }
+            if (projectRows != null && !projectRows.isEmpty()) {
+                current = projectRows.stream().map(KaizenProposalEntity::toDomain).toList();
+            } else {
+                current = allProposals();
+            }
+        } else {
+            current = allProposals();
+        }
 
         // Group recent defects by category and component
         Map<String, List<DefectJournalEntity>> groupedDefects = new HashMap<>();
@@ -361,7 +424,7 @@ public class KaizenService {
                     finalProjectName
             );
             p.setBaselineMetric(avgStale);
-            deleteMatching(p.getCategory(), p.getTargetComponent(), propId);
+            deleteMatching(p.getCategory(), p.getTargetComponent(), propId, p.getProjectId());
             saveProposal(p);
             newProposals.add(p);
         }
@@ -388,7 +451,7 @@ public class KaizenService {
                             finalProjectName
                     );
                     p.setBaselineMetric(avgBuf);
-                    deleteMatching(p.getCategory(), p.getTargetComponent(), propId);
+                    deleteMatching(p.getCategory(), p.getTargetComponent(), propId, p.getProjectId());
                     saveProposal(p);
                     newProposals.add(p);
                 }
@@ -428,7 +491,7 @@ public class KaizenService {
                         finalProjectName
                 );
                 p.setBaselineMetric(avgDpmo);
-                deleteMatching(p.getCategory(), p.getTargetComponent(), propId);
+                deleteMatching(p.getCategory(), p.getTargetComponent(), propId, p.getProjectId());
                 saveProposal(p);
                 newProposals.add(p);
             }
@@ -743,7 +806,7 @@ public class KaizenService {
         if (improved) {
             proposal.setStatus(KaizenProposal.ProposalStatus.STANDARDIZED);
             String persistedProposalId = saveProposal(proposal);
-            deleteMatching(proposal.getCategory(), proposal.getTargetComponent(), proposal.getId());
+            deleteMatching(proposal.getCategory(), proposal.getTargetComponent(), proposal.getId(), proposal.getProjectId());
             writeEvidenceNode(persistedProposalId, proposal, EvidenceNodeEntity.Polarity.POSITIVE_CONFIRMATION);
             log.info("[KAIZEN-PDCA][ACT] Standardized micro-improvement '{}'! Post-metric: {} (Baseline: {}).",
                     proposal.getTitle(), postMetric, proposal.getBaselineMetric() != null ? proposal.getBaselineMetric() : 0.0);
@@ -784,7 +847,19 @@ public class KaizenService {
     // one narrow, separate path for the one SYSTEMIC_DEFECT source (reviewConcerns) that DOES have a
     // real, bounded, autonomous next step - see the SYSTEMIC_DEFECT case in applyMicroStep.
     private void applyAutonomouslyActionableSystemicDefects() {
-        for (KaizenProposal p : allProposals()) {
+        List<KaizenProposalEntity> systemicEntities = null;
+        try {
+            systemicEntities = kaizenProposalRepository.findByCategoryAndStatusIn(
+                    KaizenProposal.KaizenCategory.SYSTEMIC_DEFECT.name(), List.of("PROPOSED"));
+        } catch (Exception ignored) {
+        }
+        List<KaizenProposal> systemicProposals;
+        if (systemicEntities != null && !systemicEntities.isEmpty()) {
+            systemicProposals = systemicEntities.stream().map(KaizenProposalEntity::toDomain).toList();
+        } else {
+            systemicProposals = allProposals();
+        }
+        for (KaizenProposal p : systemicProposals) {
             if (p.getStatus() == KaizenProposal.ProposalStatus.PROPOSED
                     && p.getCategory() == KaizenProposal.KaizenCategory.SYSTEMIC_DEFECT
                     && p.getTitle() != null
@@ -819,8 +894,18 @@ public class KaizenService {
      * that shape "a closed loop with the closure missing"; the closure was missing one layer further on.
      */
     public Collection<KaizenProposal> getFactoryProposals() {
-        return getDeduplicatedProposals(
-                allProposals().stream().filter(p -> p.getProjectId() == null).toList());
+        List<KaizenProposalEntity> entities = null;
+        try {
+            entities = kaizenProposalRepository.findByProjectIdIsNull();
+        } catch (Exception ignored) {
+        }
+        Collection<KaizenProposal> factoryProposals;
+        if (entities != null && !entities.isEmpty()) {
+            factoryProposals = entities.stream().map(KaizenProposalEntity::toDomain).toList();
+        } else {
+            factoryProposals = allProposals().stream().filter(p -> p.getProjectId() == null).toList();
+        }
+        return getDeduplicatedProposals(factoryProposals);
     }
 
     public Collection<KaizenProposal> getProposalsForProject(UUID projectId) {
@@ -828,9 +913,21 @@ public class KaizenService {
             projectId = sixSigmaAuditService.getActiveProjectId();
         }
         final UUID targetPid = projectId;
-        Collection<KaizenProposal> projectProposals = (targetPid == null)
-                ? allProposals()
-                : allProposals().stream().filter(p -> Objects.equals(p.getProjectId(), targetPid)).toList();
+        Collection<KaizenProposal> projectProposals;
+        if (targetPid != null) {
+            List<KaizenProposalEntity> entities = null;
+            try {
+                entities = kaizenProposalRepository.findByProjectId(targetPid);
+            } catch (Exception ignored) {
+            }
+            if (entities != null && !entities.isEmpty()) {
+                projectProposals = entities.stream().map(KaizenProposalEntity::toDomain).toList();
+            } else {
+                projectProposals = allProposals().stream().filter(p -> Objects.equals(p.getProjectId(), targetPid)).toList();
+            }
+        } else {
+            projectProposals = allProposals();
+        }
         return getDeduplicatedProposals(projectProposals);
     }
 

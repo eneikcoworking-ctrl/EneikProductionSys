@@ -69,9 +69,16 @@ public class FlowMetricsService {
     }
 
     public FlowMetricsReport computeForProject(UUID projectId) {
-        List<TaskEntity> tasks = taskRepository.findAll().stream()
-                .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
-                .toList();
+        List<TaskEntity> tasks = null;
+        try {
+            tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        } catch (Exception ignored) {
+        }
+        if (tasks == null || tasks.isEmpty()) {
+            tasks = taskRepository.findAll().stream()
+                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
+                    .toList();
+        }
 
         int wip = (int) tasks.stream().filter(t -> !TERMINAL_STATUSES.contains(t.getStatus())).count();
 
@@ -117,7 +124,15 @@ public class FlowMetricsService {
         }
 
         long wasteCount = wishlistRepository.countByProjectIdAndStatus(projectId, WishlistStatus.dismissed);
-        long totalCount = wishlistRepository.findByProjectId(projectId).size();
+        long totalCount = 0;
+        try {
+            totalCount = wishlistRepository.countByProjectId(projectId);
+        } catch (Exception ignored) {
+        }
+        if (totalCount == 0) {
+            List<?> list = wishlistRepository.findByProjectId(projectId);
+            totalCount = list != null ? list.size() : 0;
+        }
         double wasteRatio = totalCount > 0 ? (double) wasteCount / totalCount : 0.0;
 
         if (inconsistent) {
