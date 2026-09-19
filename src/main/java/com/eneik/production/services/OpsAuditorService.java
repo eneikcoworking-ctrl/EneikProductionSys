@@ -106,9 +106,16 @@ public class OpsAuditorService {
         if (!settingsService.effectiveBoolean("ops_auditor_enabled")) {
             return;
         }
-        List<ProjectEntity> activeProjects = projectRepository.findAll().stream()
-                .filter(p -> p.getStatus() == ProjectStatus.active)
-                .toList();
+        List<ProjectEntity> activeProjects = null;
+        try {
+            activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        } catch (Exception ignored) {
+        }
+        if (activeProjects == null || activeProjects.isEmpty()) {
+            activeProjects = projectRepository.findAll().stream()
+                    .filter(p -> p.getStatus() == ProjectStatus.active)
+                    .toList();
+        }
         for (ProjectEntity project : activeProjects) {
             // Operator directive (2026-07-25): correct PROJECT:{id} scope per project, not SYSTEM for the
             // whole loop - same fix applied to GeminiProjectObserverService for the same reason.

@@ -1124,10 +1124,17 @@ public class FlowSpineService {
 
     @Scheduled(fixedRate = 900000, initialDelay = 300000)
     public void shadowCheckEmbeddingDuplicatesAcrossActiveProjects() {
-        for (ProjectEntity project : projectRepository.findAll()) {
-            if (project.getStatus() != ProjectStatus.active) {
-                continue;
-            }
+        List<ProjectEntity> activeProjects = null;
+        try {
+            activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        } catch (Exception ignored) {
+        }
+        if (activeProjects == null || activeProjects.isEmpty()) {
+            activeProjects = projectRepository.findAll().stream()
+                    .filter(p -> p.getStatus() == ProjectStatus.active)
+                    .toList();
+        }
+        for (ProjectEntity project : activeProjects) {
             try {
                 shadowCheckEmbeddingDuplicatesForProject(project.getId());
             } catch (Exception e) {

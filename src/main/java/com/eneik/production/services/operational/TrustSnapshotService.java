@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -55,10 +56,17 @@ public class TrustSnapshotService {
     @Scheduled(fixedRate = 7200000, initialDelay = 180000)
     @Transactional
     public void captureAndBackfillSnapshots() {
-        for (ProjectEntity project : projectRepository.findAll()) {
-            if (project.getStatus() != ProjectStatus.active) {
-                continue;
-            }
+        List<ProjectEntity> activeProjects = null;
+        try {
+            activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        } catch (Exception ignored) {
+        }
+        if (activeProjects == null || activeProjects.isEmpty()) {
+            activeProjects = projectRepository.findAll().stream()
+                    .filter(p -> p.getStatus() == ProjectStatus.active)
+                    .toList();
+        }
+        for (ProjectEntity project : activeProjects) {
             try {
                 captureSnapshot(project.getId());
             } catch (Exception e) {

@@ -81,7 +81,16 @@ public class ProjectEventLogRetentionService {
         int removedFromAccepted = 0;
         int removedByCeiling = 0;
 
-        for (ProjectEntity project : projectRepository.findAll()) {
+        List<ProjectEntity> projects = null;
+        try {
+            projects = projectRepository.findAllByOrderByCreatedAtDesc();
+        } catch (Exception ignored) {
+        }
+        if (projects == null || projects.isEmpty()) {
+            projects = projectRepository.findAll();
+        }
+
+        for (ProjectEntity project : projects) {
             try {
                 if (project.getStatus() == ProjectStatus.accepted && project.getAcceptedAt() != null) {
                     Instant graceEnds = project.getAcceptedAt().plus(retainAfterAcceptedDays, ChronoUnit.DAYS);

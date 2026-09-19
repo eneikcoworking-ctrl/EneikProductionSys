@@ -995,9 +995,16 @@ public class DeliveryRealityProducerService {
 
     @Scheduled(cron = "${delivery-reality-producer.cron:0 20 * * * ?}")
     public void produce() {
-        List<ProjectEntity> active = projectRepository.findAll().stream()
-                .filter(p -> p.getStatus() == ProjectStatus.active)
-                .toList();
+        List<ProjectEntity> active = null;
+        try {
+            active = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        } catch (Exception ignored) {
+        }
+        if (active == null || active.isEmpty()) {
+            active = projectRepository.findAll().stream()
+                    .filter(p -> p.getStatus() == ProjectStatus.active)
+                    .toList();
+        }
         for (ProjectEntity project : active) {
             LogScope.project(project.getId());
             try {

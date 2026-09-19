@@ -239,4 +239,26 @@ class TrustSnapshotServiceTest {
         assertNotEquals("pass", saved.getValue().getStatus());
     }
 
+    @Test
+    void captureAndBackfillSnapshotsAcquiresOnlyActiveProjects() {
+        ProjectEntity activeProject = new ProjectEntity();
+        activeProject.setId(UUID.randomUUID());
+        activeProject.setStatus(ProjectStatus.active);
+
+        ProjectEntity frozenProject = new ProjectEntity();
+        frozenProject.setId(UUID.randomUUID());
+        frozenProject.setStatus(ProjectStatus.frozen);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active))
+                .thenReturn(List.of(activeProject));
+        when(operationalTruthService.build(activeProject.getId()))
+                .thenReturn(dtoWith(2, 2, 0, 0, 0, 0.8, false));
+        when(snapshotRepository.findByEventualOutcomeIsNull()).thenReturn(List.of());
+
+        service.captureAndBackfillSnapshots();
+
+        verify(operationalTruthService).build(activeProject.getId());
+        verify(operationalTruthService, never()).build(frozenProject.getId());
+        verify(projectRepository, never()).findAll();
+    }
 }
