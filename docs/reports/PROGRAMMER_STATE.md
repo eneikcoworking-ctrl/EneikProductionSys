@@ -1,16 +1,16 @@
-# Такт L2: Ведущий инженер (2026-09-28 19:23 UTC)
+# Такт L2: Ведущий инженер (2026-09-28 20:11 UTC)
 
-1. Фальсифицирующий замер Ступени 2: LogScopeBuffer & DefectJournalEntity (D007 Grice, D007 Mackie):
-   - Проведён фальсифицирующий аудит изоляции операционного шума и структуры причинно-следственной связи INUS.
-   - Разработан тест-заслон `LogScopeAndDefectJournalInusFalsificationTest` (5 тестов):
-     - LogScopeBuffer: строгое ограничение 200 строками с вытеснением старых записей по FIFO (прогон 250 строк).
-     - ScopedBufferAppender: изоляция PROJECT-скоупов, полное отсечение системного фонового шума (`SYSTEM`, `GLOBAL`).
-     - Потокобезопасность буфера при конкурентном заполнении (10 потоков, 300 добавлений, размер строго 200).
-     - DefectJournalEntity: структура INUS-причин (валидация `rootCausePatternId` 1..16 по каталогу ProcessControlService).
-     - Симптомный дефект: отсутствие ложной псевдо-причины до триажа (`featureId=null`, `rootCausePatternId=null`).
+1. Фальсифицирующий замер Ступени 2: StrandedFinalizingSweepService (D007 Levi, D013 Wittgenstein):
+   - Проведён фальсифицирующий аудит динамического расчета таймаута финализации и эмпирической валидации рантайма.
+   - Разработан тест-заслон `StrandedFinalizingDynamicTimeoutFalsificationTest` (5 тестов):
+     - Доксастическая ревизия Леви (AYZEK_LEVI_01): переход от константы к эмпирическому расчету по свидетельствам.
+     - Fallback-защита при нехватке эмпирики: возврат безопасного `maxAgeMinutes` (3 мин) при 0..4 наблюдениях.
+     - Робастность медианы: устойчивость к единичным экстремальным выбросам (отсечение выброса 600с и прижим к полу 30с).
+     - Интерполяция четного числа наблюдений: строгое усреднение двух центральных значений выборки.
+     - Анти-зеркальная телеметрия рантайма (CAS-защита живого исполнителя от кражи аренды, очистка MDC-скоупа в `finally`).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон `LogScopeAndDefectJournalInusFalsificationTest`, `LogScopeBufferTest`, `DefectJournalRootCauseAttributionTest`, `DefectJournalServiceTest` (20/20) — 100% green.
+   - Прогон `StrandedFinalizingDynamicTimeoutFalsificationTest`, `StrandedFinalizingSweepServiceTest` (13/13) — 100% green.
 3. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), RAM в норме (avail 628Mi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
+   - Диск: 65% (<70%), RAM в норме (avail 677Mi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
 4. Следующий такт:
    - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 2, покрыть тестом-заслоном.
