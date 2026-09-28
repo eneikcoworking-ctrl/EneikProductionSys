@@ -175,11 +175,11 @@ public class AutoMergeService {
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
     public void processAutoMerge() {
         if (tocSentinelService != null) {
-            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("AUTOMERGE_CYCLE", 40);
-            if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
-                log.info("[AUTOMERGE] Cycle throttled by TOC Sentinel DBR Rope due to constraint buffer overflow.");
-                return;
-            }
+            // TOC DBR Invariant (AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY [D006], AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP [D004]):
+            // AutoMerge is the constraint drain/sink (merging PRs completes tasks and frees buffer capacity).
+            // Throttling PR merges when the buffer overflows causes an inverted deadlock where work cannot clear.
+            // DBR rope throttles injection (JulesDispatchService), while AutoMerge bypasses throttling (priority 90).
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("AUTOMERGE_CYCLE", 90);
             try {
                 tocSentinelService.enterStep(token, com.eneik.production.toc.model.TocStages.AUTOMERGE_PROCESSING);
                 executeAutoMergeCycle();

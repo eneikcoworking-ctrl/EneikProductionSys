@@ -445,4 +445,29 @@ public class TocSentinelServiceTest {
         assertThat(status.ropeThrottlingActive()).isFalse();
         assertThat(status.recommendation()).contains("System flow optimal");
     }
+
+    @Test
+    void shouldAdmitReflectsOptimizerDbrGateAndPriorityBypass() {
+        // Buffer clear
+        assertThat(sentinelService.shouldAdmit("DISPATCH", 50)).isTrue();
+        assertThat(sentinelService.shouldAdmit("DISPATCH")).isTrue();
+
+        // Fill buffer to trigger rope throttling
+        sentinelService.setMaxBufferCapacity(2);
+        TocToken t1 = sentinelService.startExecution("FLOW_1", 10);
+        sentinelService.enterStep(t1, "BOTTLENECK_STEP");
+        TocToken t2 = sentinelService.startExecution("FLOW_2", 10);
+        sentinelService.enterStep(t2, "BOTTLENECK_STEP");
+        sentinelService.periodicWatchdog();
+
+        assertThat(sentinelService.getDbrStatus().ropeThrottlingActive()).isTrue();
+
+        // Normal priority throttled
+        assertThat(sentinelService.shouldAdmit("DISPATCH", 50)).isFalse();
+        assertThat(sentinelService.shouldAdmit("DISPATCH")).isFalse();
+
+        // High priority (>= 80) bypasses DBR rope
+        assertThat(sentinelService.shouldAdmit("DISPATCH", 85)).isTrue();
+        assertThat(sentinelService.shouldAdmit("AUTOMERGE", 90)).isTrue();
+    }
 }

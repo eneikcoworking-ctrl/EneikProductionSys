@@ -359,6 +359,10 @@ public class JulesDispatchService {
                 || description == null || description.isBlank()) {
             return;
         }
+        if (tocSentinelService != null && !tocSentinelService.shouldAdmit("JULES_ADHOC_DISPATCH", 50)) {
+            log.info("JulesDispatchService: ad-hoc session dispatch throttled by TOC Sentinel DBR Rope for branch {}", branchName);
+            return;
+        }
         String repoUrl = julesSourceForProject(project, project.getRepositoryName());
         // Rare tail case (bounded to one attempt ever, per thread) - not worth the full capacity-aware
         // account picker (AccountRepository.lockNextJulesAccountWithCapacity) that normal dispatch uses;
@@ -564,9 +568,15 @@ public class JulesDispatchService {
 
     public JulesDispatchResult dispatch(TaskEntity task, UUID accountId, String mode) {
         if (tocSentinelService != null) {
-            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("JULES_DISPATCH_CYCLE", 50);
+            int priority = (task != null && task.getPriority() > 0) ? task.getPriority() : 50;
+            if (!tocSentinelService.shouldAdmit("JULES_DISPATCH_CYCLE", priority)) {
+                log.info("[JULES_DISPATCH] Dispatch admission denied by TOC Sentinel DBR Rope (shouldAdmit) for task {} (priority {})",
+                        task != null ? task.getId() : null, priority);
+                return new JulesDispatchResult(false, null, "Throttled by TOC Sentinel DBR Rope");
+            }
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("JULES_DISPATCH_CYCLE", priority);
             if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
-                log.info("[JULES_DISPATCH] Dispatch throttled by TOC Sentinel DBR Rope for task {}", task.getId());
+                log.info("[JULES_DISPATCH] Dispatch throttled by TOC Sentinel DBR Rope for task {}", task != null ? task.getId() : null);
                 return new JulesDispatchResult(false, null, "Throttled by TOC Sentinel DBR Rope");
             }
             try {
@@ -595,6 +605,9 @@ public class JulesDispatchService {
         }
 
         JulesSessionEntity session = dispatchInternal(task, accountId, mode);
+        if (session == null) {
+            return new JulesDispatchResult(false, null, "Session could not be initialized");
+        }
         boolean dispatched = "running".equals(session.getStatus()) || "queued".equals(session.getStatus());
         String reason;
         if ("skipped".equals(session.getExternalSessionId())) {
@@ -621,6 +634,12 @@ public class JulesDispatchService {
     public JulesSessionEntity dispatch(UUID taskId, UUID accountId) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+
+        int priority = task.getPriority() > 0 ? task.getPriority() : 50;
+        if (tocSentinelService != null && !tocSentinelService.shouldAdmit("JULES_DISPATCH_CYCLE", priority)) {
+            log.info("[JULES_DISPATCH] Direct dispatch rejected by TOC Sentinel DBR Rope (shouldAdmit) for task {} (priority {})", taskId, priority);
+            return null;
+        }
 
         // Ensure task is claimed if being dispatched directly via controller
         if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.queued && accountId != null) {

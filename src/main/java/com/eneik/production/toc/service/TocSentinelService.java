@@ -121,6 +121,18 @@ public class TocSentinelService implements SchedulingConfigurer {
     }
 
     /**
+     * Checks Drum-Buffer-Rope (DBR) admission gate directly without registering a token.
+     * Used by admission entry points (e.g. JulesDispatchService) before taking claims or launching work.
+     */
+    public boolean shouldAdmit(String scenarioName, int priority) {
+        return optimizer != null && optimizer.shouldAdmit(scenarioName, priority);
+    }
+
+    public boolean shouldAdmit(String scenarioName) {
+        return shouldAdmit(scenarioName, 50);
+    }
+
+    /**
      * Starts tracking a new execution instance (Token).
      * Checks Drum-Buffer-Rope (DBR) admission gate.
      */
