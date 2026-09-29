@@ -1,15 +1,15 @@
-# Такт L2: Ведущий инженер (2026-09-29 04:24 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 05:13 UTC)
 
-1. Фальсифицирующий замер Ступени 3: AnomalyReport (D010 Parfit, D011 Dretske):
+1. Фальсифицирующий замер Ступени 3: JulesRoleCapabilities (D001 Kripke, D006 Raz):
    - Исходный код фабрики сохранён без изменений ("кода не менять!").
-   - Заслон DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT (D010): неизменяемый record фиксирует полную каузальную идентичность инцидента (`id`, `type`, `tokenId`, `nodeName`, `resourceId`, `details`, `actionTaken`, `timestamp`); универсум типов закрыт (4 типа); контроллер отдаёт аномалии как unmodifiable snapshot.
-   - Заслон FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK (D011): сигнал аномалии активно модифицирует следующее действие рантайма (прерывание циклов с переводом токена в `CYCLE_ABORTED`, снятие дедлоков принесением в жертву низкоприоритетного токена `DEADLOCK_ABORTED`, маркировка узла `stallBottleneck` при превышении динамического порога Welford, защита канала от зашумления через 5-минутную дедупликацию).
-   - Разработан тест-заслон `AnomalyReportFalsificationTest` (7 тестов).
+   - Заслон SOL_KRIPKE_01_RIGID_API_REFERENT (D001): ролевой словарь неизменяем (`List.of`) и жестко десигнирует ровно 13 канонических тегов `BARCAN-TAG-00` .. `BARCAN-TAG-12` в детерминированном порядке без дубликатов; каноническая строка `ALL_CAPABILITIES` детерминированно связывает все 13 тегов через запятую и форсируется для всех исполнителей.
+   - Заслон DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): предикат закрытого мира `isKnownRole` строго признаёт все 13 канонических тегов и безоговорочно отвергает нелегитимные, искаженные, опечатанные, пустые строки и нижний регистр; передача `null` пресекается NPE по контракту `ImmutableCollections.contains`.
+   - Разработан тест-заслон `JulesRoleCapabilitiesFalsificationTest` (16 тестов).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон `AnomalyReportFalsificationTest` (7/7) — BUILD SUCCESS (0 Failures, 0 Errors, 45s).
+   - Прогон `JulesRoleCapabilitiesFalsificationTest` (16/16) — BUILD SUCCESS (0 Failures, 0 Errors, 43s).
 3. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` (§XXIг) обновлена запись `AnomalyReport` с фиксацией живого состояния и свидетельства заслона.
+   - В `docs/FACTORY_MECHANISMS.md` (§XXIд) обновлена запись `JulesRoleCapabilities` с фиксацией живого состояния и свидетельства заслона.
 4. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), память доступна (>310Mi + swap 1.7Gi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
+   - Диск: 65% (<70%), память доступна (>410Mi + swap 1.5Gi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
 5. Следующий такт:
    - Проверить `MANAGER_STATE.md`, взять следующий механизм/пробу из очереди или директивы L1/L3, покрыть тестом-заслоном.

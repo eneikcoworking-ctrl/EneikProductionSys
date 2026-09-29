@@ -6153,7 +6153,7 @@ is either an enforced denial boundary or removed as non-behavioral vocabulary re
 `JulesRoleCapabilities.java:5-33`; `AccountController.java:62-81,101-103`;
 `ProjectOperationalContextService.java:469-510`; `LeverPromotionServiceTest.java:41-162`;
 `TocSubordinationTruthTest.java:22-50`; `AccountControllerIntegrationTest.java:89-97`;
-`04_FACTORY_DERIVED_PATTERNS.md:21-50`. Commands: `grep -RIn 'LeverAgreement\|LeverStage\|TaskTitleBuilder\|JulesRoleCapabilities' src/main/java src/test/java`.
+`04_FACTORY_DERIVED_PATTERNS.md:21-50`; `JulesRoleCapabilitiesFalsificationTest.java:1-135`. Commands: `grep -RIn 'LeverAgreement\|LeverStage\|TaskTitleBuilder\|JulesRoleCapabilities' src/main/java src/test/java`.
 
 **Текущий статус:** partially ideal. The authority ladder and diagnostic agreement are strong. The section is
 not fully ideal because title contracts lack focused tests and the role-vocabulary helper includes an unused
@@ -6173,7 +6173,8 @@ unknown-role predicate.
 - `SixSigmaAuditService` EWMA lever producer: считаю механизм идеальным
 - `TocSubordinationLever`: считаю механизм идеальным
 - `TaskTitleBuilder`: не идеален по тестовой защите; apply `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` and add focused tests that display title, persisted id and API identity cannot be confused.
-- `JulesRoleCapabilities`: не идеален as executable prohibition while `isKnownRole` is unused; apply `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, either enforce it at an input boundary or remove it as non-behavioral residue.
+- `JulesRoleCapabilities`: сильная форма десигнации ролей (`SOL_KRIPKE_01_RIGID_API_REFERENT`, D001); предикат закрытого мира защищает ролевую границу (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, D006). Ролевой словарь жестко десигнирует 13 канонических тегов `BARCAN-TAG-00` .. `BARCAN-TAG-12`.
+*Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `JulesRoleCapabilitiesFalsificationTest`, 16/16 green). Доказаны инварианты Крипке и Раза: 1) ролевой словарь неизменяем (`List.of`) и содержит ровно 13 уникальных десигнаторов в детерминированном порядке; 2) каноническая строка `ALL_CAPABILITIES` жестко связывает все 13 тегов и форсируется при создании/обновлении любого аккаунта (`AccountController`), предотвращая фрагментацию пула исполнителей; 3) предикат закрытого мира `isKnownRole` строго признает 13 канонических тегов и безоговорочно отвергает любые искаженные, внешние, опечатанные или пустые строки, демаркируя границу легитимных ролей фабрики (при этом передача `null` пресекается `NullPointerException` по контракту `ImmutableCollections.contains`).
 
 # XXIе. Журнал проекта: граница, которая держала — и отвечала не на тот вопрос
 
