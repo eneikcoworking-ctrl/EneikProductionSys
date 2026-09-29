@@ -777,12 +777,9 @@ Derived rather than picked»), и в коде прямо объявлено, ч�
 `claimServiceRequeuesTaskWhenRefusalsBelowBudget`), `DeadDependencyEndsTheWaitTest` (6 тестов).
 `PART_WHOLE_OWNERSHIP` (D004) — **сильная** у `PersistentWorkerSessionService`: опровержение образца («найти в нём
 обращение к транспорту») выполнено — обращений к `JulesApiClient` в нём нет.
+`DEFEASIBLE_EXCEPTION_LEDGER` (D012) — **сильная** у `LeaseWatchdogService`: жатва раз в минуту, притязание без срока невозможно, активная сессия Jules продлевает аренду, терминальная задача закрывается без воскрешения в очередь. Заслон — `LeaseWatchdogServiceTest` (3 теста) и `LeaseWatchdogServiceFalsificationTest` (6 тестов, всего 9/9 green в Docker Maven).
 
-*Слабая/неидеальная форма сейчас:* `DEFEASIBLE_EXCEPTION_LEDGER` (D012) у `LeaseWatchdogService` — устройство
-верное (жатва раз в минуту, притязание без срока невозможно), но **заслона нет ни одного**. Контроль: файлов в
-`src/test`, упоминающих `LeaseWatchdog`, — 0; обратная проба `ClaimService` — 28 файлов, значит ноль настоящий.
-Двадцать восемь строк держат свойство закона 8 и не закреплены ничем.
-`DECISION_EXPECTED_LOSS` (D005) у приоритета — корпус дословно: «названы вероятность отказа, радиус поражения и цена
+*Слабая/неидеальная форма сейчас:* `DECISION_EXPECTED_LOSS` (D005) у приоритета — корпус дословно: «названы вероятность отказа, радиус поражения и цена
 отката»; опровержение — «назвать отвергнутую альтернативу и её цену». **Слабая**: у `BottleneckDetectionService`
 три теста (`detectNoFreeJulesSlot`, `detectExpiredLeaseSpike`, `detectNoFreeJulesSlotExplicitlyReportsDisabledAccounts`),
 у `BottleneckAwarePriorityService` собственных тестов нет; цена отвергнутой альтернативы нигде не названа — **не мерено**.
@@ -793,13 +790,34 @@ Derived rather than picked»), и в коде прямо объявлено, ч�
 терминальным; показать случай, где неограничение уступило ограничению.
 
 *Критерий закрытия:* эта часть семейства идеальна, когда (1) у `LeaseWatchdogService` есть заслон на жатву
-истёкшей аренды и на неприкосновенность живой; (2) у приоритета названа отвергнутая альтернатива и её цена;
+истёкшей аренды и на неприкосновенность живой (закрыто!); (2) у приоритета названа отвергнутая альтернатива и её цена;
 (3) откат аккаунта знает период пополнения и это закреплено тестом.
 
 *комментарий для Антигравити:* не трогай разделение исходов `TaskDispatchVerdict`, подтверждение отмены у
-`SessionLifecycleService` и запрет транспорта у `PersistentWorkerSessionService` — это сильные формы. Работа здесь —
-заслон на `LeaseWatchdogService` (28 строк без единого теста) и цена альтернативы у приоритета.
+`SessionLifecycleService`, запрет транспорта у `PersistentWorkerSessionService` и заслон на `LeaseWatchdogService` — это сильные формы. Работа здесь —
+цена альтернативы у приоритета и период пополнения отката аккаунта.
 Применимая философия: `DEFEASIBLE_EXCEPTION_LEDGER` (D012), `DECISION_EXPECTED_LOSS` (D005).
+
+**`LeaseWatchdogService`** (29 строк) — фоновый периодический демон санитарной жатвы просроченных аренд задач (`@Scheduled(fixedRate = 60000)`): каждую минуту запускает регламентное обслуживание в `ClaimService.reapExpiredLeases()`, высвобождая истекшие притязания (`findByReleasedAtIsNullAndLeaseExpiresAtBefore`), возвращая зависшие задачи в пул очереди (`TaskStatus.queued` через атомарный CAS `taskRepository.compareAndSetStatus`) и переводя освободившиеся аккаунты воркеров в `offline`, при этом детерминированно защищая активных исполнителей и закрывая клеймы терминальных задач без воскрешения.
+*Связи:* вызывается планировщиком Spring (`@Scheduled(fixedRate = 60000)`); держит `ClaimService`; через `ClaimService` взаимодействует с `ClaimRepository`, `TaskRepository`, `AccountRepository` и `JulesSessionRepository`.
+*Ценность:* гарантирует непрерывность цикла диспетчеризации фабрики (Закон 8): предотвращает бесконечную блокировку задач в статусе `claimed` при падении воркеров, обрыве сети или зависании внешних сессий; атомарный CAS защищает от состояния гонки и повторного выполнения; дефектируемое исключение (defeasible exception) продлевает аренду при наличии живой сессии Jules, исключая снос активной работы.
+*Комментарий:* **ядро**. Автономный сторожевой таймер санитарной очистки аренд задач.
+*Философия:* `UESLI_HOHFELD_02_DEFEASIBLE_EXCEPTION_LEDGER` (D012) — Уэсли Хохфельд, `BARCAN-TAG-10_DEONTIC-PROHIBITION:04:uesli-hohfeld`, publication anchor *Fundamental Legal Conceptions - rights, duties, privileges and powers*.
+Сильная дословно: «У исключения есть срок, область, утвердивший и компенсирующая проверка. Притязание без срока невозможно (`leaseExpiresAt`). Жатва просроченных аренд запускается строго каждую минуту (`@Scheduled(fixedRate = 60000)`). Исключение (продление) допускается только тогда, когда defeating reason эксплицитен: сессия Jules активна (`hasActiveExternalJulesSession`), тогда аренда продлевается на `LEASE_TTL`, защищая живого воркера от сноса».
+Слабая: «Бессрочные притязания, отсутствие периодической жатвы просроченных аренд или снос активного исполнителя».
+Опровержение: «Найти притязание без срока или смоделировать задачу с активной сессией Jules; если жатва сбрасывает клейм активной сессии — форма слабая».
+**Форма: сильная.** `LeaseWatchdogService` каждую минуту вызывает `claimService.reapExpiredLeases()`, продлевая аренду при активной сессии Jules и сбрасывая только истинно просроченные задачи. Заслонено в `LeaseWatchdogServiceTest` и `LeaseWatchdogServiceFalsificationTest`.
+Второй образец: `UESLI_HOHFELD_03_RIGHTS_DUTIES_MATRIX` (D006) — Уэсли Хохфельд, `BARCAN-TAG-10_DEONTIC-PROHIBITION:04:uesli-hohfeld`, publication anchor *Fundamental Legal Conceptions - rights, duties, privileges and powers*.
+Сильная дословно: «Право исполнителя на задачу жестко ограничено сроком аренды. При истечении срока без активной сессии право аннулируется (`releasedAt != null`, `resultStatus = expired`), а обязанность фабрики — вернуть задачу в очередь (`TaskStatus.queued` через CAS) и перевести аккаунт в `offline`, если он не держит других активных клеймов».
+Слабая: «Удержание задачи в статусе `claimed` после истечения аренды или несинхронизированное состояние аккаунта».
+Опровержение: «Подать истекший клейм; если задача не возвращается в `queued` или аккаунт с параллельным клеймом сбрасывается в `offline` — матрица прав и обязанностей нарушена».
+**Форма: сильная.** Регулярная жатва освобождает клейм, выполняет CAS `claimed -> queued` и обновляет статус аккаунта с проверкой параллельных притязаний. Заслонено в `LeaseWatchdogServiceFalsificationTest`.
+Третий образец: `UESLI_HOHFELD_04_PRINCIPLED_INTEGRITY` (D012) — Уэсли Хохфельд, `BARCAN-TAG-10_DEONTIC-PROHIBITION:04:uesli-hohfeld`, publication anchor *Fundamental Legal Conceptions - rights, duties, privileges and powers*.
+Сильная дословно: «Неприкосновенность терминальных задач и безопасная обработка параллельных переходов. Если задача уже завершена (`done`), жатва закрывает клейм для терминальной задачи (`closeClaimForTerminalTask`), не воскрешая её в очередь. При параллельном завершении воркером CAS возвращает 0, и повторная очередь безопасно пропускается без ошибок».
+Слабая: «Воскрешение завершенных задач в очередь (silent resurrection) или падение при параллельной модификации».
+Опровержение: «Смоделировать истекший клейм на задаче `done` или CAS с нулевым результатом; если задача встает в `queued` или выбрасывается исключение — принцип целостности нарушен».
+**Форма: сильная.** Проверка `isTerminal` и атомарный CAS `taskRepository.compareAndSetStatus` исключают воскрешение терминальных задач и гарантируют безопасность при гонках. Заслонено в `LeaseWatchdogServiceFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): регулярная жатва раз в 60 секунд освобождает зависшие притязания, не допуская застревания задач в `claimed` и гарантируя непрерывность цикла диспетчеризации. Заслон качества: 3/3 теста в `LeaseWatchdogServiceTest` и 6/6 в `LeaseWatchdogServiceFalsificationTest` (всего 9/9) выполняются 100% green в Docker-контейнере Maven. Слабая форма закрыта, заслон закона 8 установлен. Ступень 4 для `LeaseWatchdogService` закрыта.
 
 ---
 
