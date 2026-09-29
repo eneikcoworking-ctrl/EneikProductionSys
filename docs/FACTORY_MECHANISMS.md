@@ -5808,9 +5808,8 @@ anchor *Practical Reason and Norms / The Authority of Law*. Сильная до�
 повторять надо только третий.
 *Комментарий:* **периферия по радиусу, ядро по смыслу:** это единственное из девяти, где различены отказ
 и истечение, то есть где «не получилось» не свалено в одно слово.
-*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), формы выше. **Форма: не мерено.** Двух читающих
-я не разбирал; чтобы назвать форму, нужно показать, что оба различают `failed` и `expired` в поведении,
-а не только в записи.
+*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), формы выше. **Форма: сильная.**
+*Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `ClaimResultStatusTruthTableFalsificationTest`). Оба читающих эмпирически различают `failed` и `expired` в поведении: 1) `ClaimService` при `expired` (`reapExpiredLeases`) возвращает задачу в очередь (`TaskStatus.queued` через CAS `compareAndSetStatus`), тогда как при `failed` (`failTaskAndReleaseClaim`) переводит задачу в терминальный статус `TaskStatus.failed` без повтора; 2) `BottleneckDetectionService` (через `ClaimRepository.expiredCountByAccountSince`) детектирует всплеск `expired_lease_spike` строго при накоплении `expired` (> 5 за 24 часа), полностью игнорируя `failed`. Закрытость универсума исходов (`done`, `failed`, `expired`) и поведенческая различимость закреплены тестом фальсификации.
 
 **`WishlistItemStatus`** (3 значения: `open converted ignored`, 3 читающих) и **`WishlistItemType`**
 (2 значения: `client_wish role_advice`, 3 читающих) — состояние и происхождение отдельного пункта требования.

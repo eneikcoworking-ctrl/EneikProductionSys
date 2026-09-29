@@ -1,12 +1,16 @@
-# Такт L2: Ведущий инженер (2026-09-29 01:52 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 02:44 UTC)
 
-1. Фальсифицирующий замер Ступени 2: V58/V111 Observer Decommission & Project Event Log Durability (D002, D013):
-   - Заслон GILBERT_RAYL_03 & LYUDVIG_VITGENSHTEYN_14 (D002, D013): устранена категориальная ошибка смешения внутреннего лога бэкенда с объектом наблюдения; подтверждена полная инертность декоммиссионированного `GeminiProjectObserverService.runObserverCycle` (0 зависимостей, 0 вызовов); подтверждён запрет в коде на включение `gemini_project_observer_enabled` через API (`SystemSettingsService.save` выбрасывает отказ V111 Muda).
-   - Заслон AHILLE_VARTSI_04 (D002): персистентность `project_event_log` в БД обеспечивает сохранность истории проекта независимо от редеплоев контейнеров (V61); `flush()` при выключенном флаге безопасно дренирует очередь без сохранения в БД (защита от OOM), а при включенном батчами персистирует события; методы `recent` и `since` защищены граничным лимитом (до 5000).
-   - Разработан тест-заслон `V58AndV111ObserverDecommissionFalsificationTest` (6 тестов: 2 Ryle/Wittgenstein Observer Decommission, 4 Varzi Event Log Durability).
+1. Фальсифицирующий замер Ступени 3: ClaimResultStatus Truth Table & Behavioral Divergence (D008, D012, Belnap):
+   - Исходный код фабрики сохранён без изменений ("кода не менять!").
+   - Заслон NUEL_BELNAP_03_TRUTH_STATUS_TABLE & NUEL_BELNAP_01_FALSIFICATION_HARNESS (D008, D012): универсум исходов закрыт (done, failed, expired); доказана строгая поведенческая различимость между failed и expired у обоих читающих:
+     1) `ClaimService`: при expired (`reapExpiredLeases`) задача возвращается в очередь через CAS (`TaskStatus.queued`), при failed (`failTaskAndReleaseClaim`) переводится в терминальный статус `TaskStatus.failed` без повтора.
+     2) `BottleneckDetectionService` (через `ClaimRepository.expiredCountByAccountSince`): детектирует `expired_lease_spike` строго по накоплению expired (> 5 за 24 ч) и полностью игнорирует сбои failed.
+   - Разработан тест-заслон `ClaimResultStatusTruthTableFalsificationTest` (5 тестов: закрытость универсума, семантическая таблица исходов, различимость в ClaimService, различимость в BottleneckDetectionService).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон `V58AndV111ObserverDecommissionFalsificationTest` (6/6) — BUILD SUCCESS (0 Failures, 0 Errors, 43s).
-3. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), память в норме (avail 601Mi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
-4. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 2, покрыть тестом-заслоном.
+   - Прогон `ClaimResultStatusTruthTableFalsificationTest` (5/5) — BUILD SUCCESS (0 Failures, 0 Errors, 47s).
+3. Документация фабрики:
+   - В `docs/FACTORY_MECHANISMS.md` (§XXIб) статус `ClaimResultStatus` обновлен с «Форма: не мерено» на «Форма: сильная» с фиксацией эмпирического поведения обоих читающих.
+4. Инварианты хоста и рантайма:
+   - Диск: 65% (<70%), память в норме (avail >450Mi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
+5. Следующий такт:
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм/пробу из очереди или директивы L1/L3, покрыть тестом-заслоном.
