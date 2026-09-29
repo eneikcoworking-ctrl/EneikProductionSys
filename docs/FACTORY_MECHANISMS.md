@@ -238,8 +238,28 @@
 Слабая: «Подмена проверки целых слов поиском подстрок (`shop` внутри `workshop`, `cart` внутри `cartography`, `auth` внутри `author`), слепая вера в память вместо mtime или падение при сбое парсинга JSON».
 Опровержение: «Подать текст со словами-омонимами или вложенными подстроками; если `mentions()` ложно срабатывает на `workshop` для `shop` — форма слабая».
 **Форма: сильная.** Метод `mentions()` использует строгое регулярное выражение `\bKEYWORD...\b` с проверкой границ слов и допустимых морфологических флексий, `readJson` сверяет `Instant mtime` физического файла, а сбои парсинга логируются с безопасным возвратом `null`/empty. Заслонено в `MarketCorpusServiceFalsificationTest`.
-Третий образец: `AHILLE_VARTSI_03_PROHIBITION_AS_CODE` (D006) — Ахилле Варци: **форма сильная**, `neverReportsAnythingUnverified`, `doesNotExemptAPlanItCannotClassify`, `staysSilentWhenThePlanDoesAddressTheDuties`, `everyFindingCarriesTheActItComesFrom` (`MarketComplianceGateTest`, 12 тестов).
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Боевой корпус `market-corpus/capabilities.json` (schemaVersion 2): 13 способностей, 26 ожиданий, 100% записей содержат подтвержденный `source` (statutory: 17, derived: 5, observed: 3, standard: 1). В `profiles.json` — 17 профилей со статусом `derived` и каноническое `acceptanceRule`. Подстрочные коллизии исключены. Заслон качества: 19/19 тестов в `MarketCorpusServiceTest` и 6/6 в `MarketCorpusServiceFalsificationTest` (всего 25/25) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `MarketCorpusService` закрыта.
+
+**`MarketComplianceGate`** (160 строк) — гейт соответствия уставным (statutory) требованиям: сопоставляет текст плана декомпозиции с корпусом обязательных правовых предписаний (`statutory`) и генерирует список незакрытых пробелов (`Finding`).
+*Связи:* вызывается из `ProjectFlowService` (строки 4368–4391); обращается к `MarketCorpusService`; ничего в БД напрямую не пишет, отдаёт результаты в `ProjectFlowService` для сохранения в `project.factoryReport`.
+*Ценность:* защищает продукт от нарушений правовых норм (GDPR, BGB Impressum, JuSchG, CCPA, WCAG accessibility) без блокировки творческого процесса декомпозиции на стадии приближённого анализа.
+*Комментарий:* **гейт**. Сообщает, но намеренно не блокирует, исключая ложные прерывания пайплайна до калибровки доли ложных срабатываний.
+*Философия:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз, `BARCAN-TAG-10_DEONTIC-PROHIBITION:03:dzhozef-raz`, publication anchor *Practical Reason and Norms / The Authority of Law - authority and exclusionary reasons*.
+Сильная дословно: «Каждая нормативная обязанность превращается в исполняемый путь отказа или аудита с объяснимой причиной. Проверяются строго нормы закона (`statutory`), субъективные мнения и гипотезы отсекаются».
+Слабая: «Навязывание произвольных вкусовых предпочтений или блокировка планов по непроверенным гипотетическим шаблонам».
+Опровержение: «Подать план без упоминания гипотетических требований (account-recovery); если гейт выставляет замечание по не-statutory статусам — форма слабая».
+**Форма: сильная.** Метод `uncoveredStatutoryRequirements` строго фильтрует `expectation.status().equals("statutory")`, гарантируя, что аудит касается только юридических императивов. Заслонено в `MarketComplianceGateTest` и `MarketComplianceGateFalsificationTest`.
+Второй образец: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Данным доверяют только тогда, когда процесс их сбора эпистемически надежен. Каждая находка несет обязательную ссылку на конкретный закон (`source`), исключая голословные обвинения».
+Слабая: «Формирование отчета с пустыми или фантомными источниками права».
+Опровержение: «Сгенерировать замечания по неполному плану; если хотя бы одно замечание `Finding` не содержит заполненного поля `source()` — форма слабая».
+**Форма: сильная.** Запись `Finding` формируется строго из `expectation.source()`, где 100% уставных записей несут проверенную ссылку на акт/статью закона. Заслонено в `MarketComplianceGateFalsificationTest`.
+Третий образец: `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци, `BARCAN-TAG-08_MEREOLOGY:01:ahille-vartsi`, publication anchor *Parts and Places / formal ontology of boundaries and spatial parts*.
+Сильная дословно: «Чётко очерчиваются топологические границы применимости норм: по профилю продукта, по условиям активации и по рынкам. План без коммерции не получает торговых обязанностей, но неклассифицируемый план не освобождается от базовых универсальных требований».
+Слабая: «Утечка юрисдикций между рынками (немецкий Impressum в плане для США) или ложные требования раскрытия лутбоксов в школьной игре».
+Опровержение: «Проверить план для США; если в результат попадают специфичные для DE статьи — форма слабая».
+**Форма: сильная.** Реализована строгая изоляция юрисдикций (`markets`), проверка профилей (`appliesToAnyOf`) и условий (`conditionHolds`), а универсальные обязанности защищены от молчаливого списания при пустом профиле. Заслонено в `MarketComplianceGateFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): гейт отрабатывает штатно при формировании `factoryReport`, фиксируя соблюдение уставных норм. Заслон качества: 12/12 тестов в `MarketComplianceGateTest` и 5/5 в `MarketComplianceGateFalsificationTest` (всего 17/17) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `MarketComplianceGate` закрыта.
 
 *Слабая/неидеальная форма сейчас:* `RAG_GROUNDING_CAPSULE` (D014) — корпус дословно: «правило хранится извлекаемым
 куском с источником, оценкой и классом дефекта, и цитируется идентификатором»; опровержение — «потребовать
