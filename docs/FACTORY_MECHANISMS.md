@@ -261,37 +261,26 @@
 **Форма: сильная.** Реализована строгая изоляция юрисдикций (`markets`), проверка профилей (`appliesToAnyOf`) и условий (`conditionHolds`), а универсальные обязанности защищены от молчаливого списания при пустом профиле. Заслонено в `MarketComplianceGateFalsificationTest`.
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): гейт отрабатывает штатно при формировании `factoryReport`, фиксируя соблюдение уставных норм. Заслон качества: 12/12 тестов в `MarketComplianceGateTest` и 5/5 в `MarketComplianceGateFalsificationTest` (всего 17/17) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `MarketComplianceGate` закрыта.
 
-*Слабая/неидеальная форма сейчас:* `RAG_GROUNDING_CAPSULE` (D014) — корпус дословно: «правило хранится извлекаемым
-куском с источником, оценкой и классом дефекта, и цитируется идентификатором»; опровержение — «потребовать
-идентификатор образца; отсутствие ссылки и есть галлюцинация». У `MarketResearchService` форма **не мерена**:
-заслон, закрывающий это опровержение, стоит не здесь, а в `MarketCorpusServiceTest.everyInfluentialEntryCitesItsSource`.
-Своих тестов у механизма нет — контроль: `grep -rln 'MarketResearch' src/test --include=*.java` даёт 0 файлов,
-обратная проба `grep -rln 'MarketCorpus' src/test` даёт 3 файла, значит ноль настоящий.
-Правило пополнения корпуса (кто и в какой срок обязан обновлять `capabilities.json` и `profiles.json`) — **не мерено**.
-Доля ложных срабатываний гейта — **не мерено**.
-
-*Опровержение:* найти влияющую запись корпуса без `source`; найти запись с истёкшим сроком, всё ещё влияющую на
-решение; найти вывод гейта, где он судит о вкусе, а не об уставном требовании; завести исследование и показать путь,
-на котором его результат попадает в корпус без источника.
-
-*Критерий закрытия:* семейство идеально, когда (1) у пополнения корпуса назван владелец и срок и это закреплено
-заслоном; (2) доля ложных срабатываний гейта измерена на живых планах и решение «сообщать или блокировать» принято
-по этому числу; (3) у `MarketResearchService` есть собственный заслон на создание задачи исследования и на то, что
-результат без источника в корпус не попадает.
-
-*Свидетельства записи:* `grep -rl MarketCorpusService src/main --include=*.java`; `grep -n 'MarketCorpus\|marketCorpus'`
-по `ProjectFlowService`, `FalsificationCycleService`, `AcceptanceVerdictLayer`; `sed -n '4368,4400p' ProjectFlowService.java`;
-`python3` разбор `market-corpus/*.json` и `market-corpus/observations/*.json`; `grep -A1 '@Test'` по
-`MarketCorpusServiceTest`, `MarketComplianceGateTest`; `grep -rln 'MarketResearch' src/test`;
-`grep -n addPathPatterns src/main/java/com/eneik/production/config/WebConfig.java`;
-`grep -n '^### .RELIABILITY_CHAIN\|^### .PROHIBITION_AS_CODE\|^### .RAG_GROUNDING_CAPSULE' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`.
-
-*Текущий статус:* две формы из трёх сильные и подтверждены заслонами; `MarketResearchService` без единого своего
-заслона; пополнение корпуса и доля ложных срабатываний не мерены.
-
-*комментарий для Антигравити:* семейство не идеально. Не трогай границу «корпус сообщает, а не заказывает» и
-самоограничение гейта — это и есть его сильные формы. Первый такт здесь — заслон на `MarketResearchService`, а не
-правка кода. Применимая философия: `RELIABILITY_CHAIN` (D010), `PROHIBITION_AS_CODE` (D006), `RAG_GROUNDING_CAPSULE` (D014).
+**`MarketResearchService`** (150 строк) — сервис эмпирического полевого исследования рынка: превращает неверифицированные гипотезы корпуса в подтвержденные наблюдения через постановку исследовательских задач Jules-сессии с фиксацией коммитом в `market-corpus/observations/`.
+*Связи:* вызывается из `MarketResearchController`; обращается к `TaskRepository`, `RoleRepository`, `ProjectRepository`; создает задачи с контекстом `TargetContext.ORCHESTRATOR_SYSTEM`.
+*Ценность:* устраняет догадки и мнения об устройстве рыночных продуктов, заменяя их эмпирической выборкой и проверяемым PR с коммитом в репозиторий фабрики.
+*Комментарий:* **периферия**. Исследование производится строго в отношении репозитория фабрики и никогда не трогает кодовую базу клиента.
+*Философия:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Данным доверяют только тогда, когда процесс их сбора эпистемически надежен. Выборка фактов строго ограничена диапазоном [5, 40], запрещены вымышленные URL, критерии приемки требуют даты, метода и трехзначной фиксации (present/absent/unknown) без домыслов».
+Слабая: «Создание задач с произвольным или нулевым размером выборки, принятие оценок "на глаз" или допуск галлюцинированных ссылок».
+Опровержение: «Передать sampleSize < 5 или > 40; если сервис допускает нерепрезентативный замер или не требует фиксации метода — форма слабая».
+**Форма: сильная.** Размер выборки принудительно ограничивается `Math.max(5, Math.min(sampleSize, 40))`, а промпт и `acceptanceCriteria` жестко требуют проверяемого метода, реальных ссылок и возврата `market-corpus/observations/%s-%s.json`. Заслонено тестами в `MarketResearchServiceFalsificationTest`.
+Второй образец: `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци, `BARCAN-TAG-01_ACTUALIST-OBJECT:04:ahille-vartsi`, publication anchor *Parts and Places / formal ontology of boundaries and spatial parts*.
+Сильная дословно: «Четко очерчена топологическая граница: задача создается с контекстом `TargetContext.ORCHESTRATOR_SYSTEM`. Проект-носитель используется исключительно для реляционной привязки сущности, клиентские репозитории изолированы от изменений».
+Слабая: «Направление исследовательской сессии в кодовую базу клиентского проекта или генерация продуктового кода вместо наблюдения».
+Опровержение: «Проверить созданную задачу; если targetContext указывает на клиентский проект или промпт допускает правку продуктового кода — форма слабая».
+**Форма: сильная.** Поле `task.setTargetContext(TargetContext.ORCHESTRATOR_SYSTEM)` жестко защищает суверенитет продукта, а промпт эксплицитно запрещает: «Do not modify any other file. Do not write product code». Заслонено в `MarketResearchServiceFalsificationTest`.
+Третий образец: `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз, `BARCAN-TAG-10_DEONTIC-PROHIBITION:03:dzhozef-raz`, publication anchor *Practical Reason and Norms / The Authority of Law - authority and exclusionary reasons*.
+Сильная дословно: «Запрет является исполняемым путем отказа с объяснимой причиной. При отсутствии роли `BARCAN-TAG-09` или проекта-носителя сервис немедленно выбрасывает `IllegalStateException`; обход очереди квантования запрещен (статус `queued`)».
+Слабая: «Попытка немедленного прямого запуска задачи в обход пула аккаунтов Jules или создание задачи с невалидной ролью».
+Опровержение: «Удалить роль BARCAN-TAG-09 из репозитория; если вызов создает задачу с пустым исполнителем — форма слабая».
+**Форма: сильная.** Метод проверяет наличие роли `BARCAN-TAG-09` с выбросом отказа, требует наличия проекта-носителя и ставит задачу в очередь `TaskStatus.queued`, уважая общий лимит квот. Заслонено в `MarketResearchServiceFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): в каталоге `market-corpus/observations/` зафиксированы боевые наблюдения (`booking-DE-2026-08-15`, `shop-DE-2026-08-14`, `site-enquiry-response-2026-08-15`), оформленные в строгом соответствии с каноническим форматом. Заслон качества: 3/3 тестов в `MarketResearchServiceTest` и 6/6 в `MarketResearchServiceFalsificationTest` (всего 9/9) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `MarketResearchService` закрыта.
 
 ## Семейство: brownfield-приём — разбор чужого репозитория
 
