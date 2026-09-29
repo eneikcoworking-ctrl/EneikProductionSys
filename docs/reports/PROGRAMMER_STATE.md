@@ -1,15 +1,15 @@
-# Такт L2: Ведущий инженер (2026-09-29 05:13 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 06:01 UTC)
 
-1. Фальсифицирующий замер Ступени 3: JulesRoleCapabilities (D001 Kripke, D006 Raz):
+1. Фальсифицирующий замер Ступени 3: ScopedBufferAppender (D006 Varzi, D002 Ryle):
    - Исходный код фабрики сохранён без изменений ("кода не менять!").
-   - Заслон SOL_KRIPKE_01_RIGID_API_REFERENT (D001): ролевой словарь неизменяем (`List.of`) и жестко десигнирует ровно 13 канонических тегов `BARCAN-TAG-00` .. `BARCAN-TAG-12` в детерминированном порядке без дубликатов; каноническая строка `ALL_CAPABILITIES` детерминированно связывает все 13 тегов через запятую и форсируется для всех исполнителей.
-   - Заслон DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): предикат закрытого мира `isKnownRole` строго признаёт все 13 канонических тегов и безоговорочно отвергает нелегитимные, искаженные, опечатанные, пустые строки и нижний регистр; передача `null` пресекается NPE по контракту `ImmutableCollections.contains`.
-   - Разработан тест-заслон `JulesRoleCapabilitiesFalsificationTest` (16 тестов).
+   - Заслон AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY (D006): топологическая граница MDC scope (`PROJECT:{id}`) строго соблюдается; события пропускаются с детерминированным форматированием (`timestamp level logger - message`); доказана топологическая изоляция между разными проектами без взаимного загрязнения буферов.
+   - Заслон GILBERT_RAYL_03_CATEGORY_ERROR_SCAN (D002): системный фоновый шум фабрики (`SYSTEM`), события без scope (`null`) и чужеродные префиксы (`GLOBAL`, `WORKER`, `TASK`) безоговорочно отсекаются аппендером как категориальные ошибки; `LogScope` гарантирует строгую дисциплину thread-local MDC.
+   - Разработан тест-заслон `ScopedBufferAppenderFalsificationTest` (13 тестов).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон `JulesRoleCapabilitiesFalsificationTest` (16/16) — BUILD SUCCESS (0 Failures, 0 Errors, 43s).
+   - Прогон `ScopedBufferAppenderFalsificationTest` (13/13) — BUILD SUCCESS (0 Failures, 0 Errors, 45s).
 3. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` (§XXIд) обновлена запись `JulesRoleCapabilities` с фиксацией живого состояния и свидетельства заслона.
+   - В `docs/FACTORY_MECHANISMS.md` (§XXIе) обновлена запись `ScopedBufferAppender` с фиксацией живого состояния и свидетельства заслона.
 4. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), память доступна (>410Mi + swap 1.5Gi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
+   - Диск: 65% (<70%), память доступна (>380Mi + swap 1.5Gi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
 5. Следующий такт:
    - Проверить `MANAGER_STATE.md`, взять следующий механизм/пробу из очереди или директивы L1/L3, покрыть тестом-заслоном.

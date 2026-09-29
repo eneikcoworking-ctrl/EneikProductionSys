@@ -6244,7 +6244,7 @@ recent activity; `DURABLE_PROJECT_LOG` только operator/external-agent fore
 `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` и убрать из комментария обещание falsification/prompt-consumption.
 
 **`ScopedBufferAppender`**
-*Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
+*Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006), `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002).
 *Связи:* подключён как `SCOPED_BUFFER`; читает MDC `scope`; пишет в `LogScopeBuffer`.
 *Идеал:* в in-memory окно проекта попадают только строки с валидной меткой `PROJECT:{id}`.
 *Граница:* `if` по префиксу `PROJECT:` внутри appender.
@@ -6262,8 +6262,9 @@ recent activity; `DURABLE_PROJECT_LOG` только operator/external-agent fore
 *Опровержение / проверка:* событие `SYSTEM` или без scope не должно появиться в recent buffer.
 *Критерий закрытия:* `LogScopeBufferTest.appenderOnlyBuffersProjectScopedEvents` остаётся зелёным, а список
 потребителей буфера ограничен debug/read-only поверхностью.
-*Свидетельства:* `ScopedBufferAppender.java:8-30`; `LogScopeBufferTest.java:16-29`.
+*Свидетельства:* `ScopedBufferAppender.java:8-30`; `LogScopeBufferTest.java:16-29`; `ScopedBufferAppenderFalsificationTest.java:1-180`.
 *Статус:* механизм идеален как boundary filter; ограничение по роду потребителя записано рядом.
+*Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `ScopedBufferAppenderFalsificationTest`, 13/13 green). Доказаны инварианты Varzi и Ryle: 1) топологическая граница MDC scope (`PROJECT:{id}`) строго соблюдается: только проектно-меченые события пересекают границу с детерминированным форматированием (`timestamp level logger - message`); 2) обеспечена топологическая изоляция между проектами (события разных проектов попадают в строго изолированные буферы без взаимного загрязнения); 3) системный фоновый шум фабрики (`SYSTEM`), события без scope (`null`) и чужеродные префиксы (`GLOBAL`, `WORKER`, `TASK`) безоговорочно отсекаются аппендером как категориальные ошибки, исключая проникновение внутренней оркестровки к проектным потребителям.
 *комментарий для Антигравити:* `ScopedBufferAppender`: считаю механизм идеальным.
 
 **`LogScopeBuffer`**
