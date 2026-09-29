@@ -5924,7 +5924,7 @@ to compare current judgement with a past one.
 `CommandDashboardService.java:306-335`; `ProjectFlowService.java:6408-6417`;
 `ProjectController.java:226-243`; `AutoMergeService.java:1357-1375`; `SystemSettingsService.java:413-422`;
 `VerdictReconciliationTest.java:28-153`; `VerdictGateTest.java:52-159,164-326`;
-`OperationalPolicyServiceTest.java:280-330`. Команды: `grep -RIn 'evaluateActionProhibition\|OperationalPolicyDeniedException' src/main/java src/test/java`;
+`OperationalPolicyServiceTest.java:280-330`; `OperationalPolicyDeniedExceptionFalsificationTest.java:1-255`. Команды: `grep -RIn 'evaluateActionProhibition\|OperationalPolicyDeniedException' src/main/java src/test/java`;
 `nl -ba src/main/java/com/eneik/production/services/verdict/VerdictGate.java`.
 
 **Текущий статус:** partially ideal. The algebra itself and the gate's monotone/scoped behavior are strong.
@@ -5942,7 +5942,8 @@ belief-update ledger when historical comparison is required.
 - `VerdictGate.evaluateActionProhibition`: не идеален до полной матрицы прав и обязанностей; применить `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` and add each new prohibition only with one allowed and one denied test.
 - `VerdictGate.evaluateTaskProhibition`: считаю механизм идеальным
 - `OperationalPolicyService.authorize/requireAllowed`: не идеален на транспорт отказа; применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, чтобы `ruleName`/`blockers` не терялись между decision and exception.
-- `OperationalPolicyDeniedException`: не идеален; add structured `ruleName`/`blockers` fields instead of leaving the prohibition identity only inside message text.
+- `OperationalPolicyDeniedException`: частично идеален / сильная форма исполнения отказа (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, D006). Не идеален по полноте типизации полей правила (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, D006): несёт структурированные `projectId`, `action`, `state`, `authorizationStatus`, но имя правила `ruleName` и список блокировок `blockers` передаются внутри `getMessage()` (в тексте объяснения), а не отдельными полями исключения.
+*Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `OperationalPolicyDeniedExceptionFalsificationTest`, 9/9 green). Запрет любого недозволенного действия исполняется как типизированный отказ через `OperationalPolicyService.requireAllowed`, предотвращая тихий пропуск или аварийное падение. Проверена матрица прав и обязанностей по терминальным (`ARCHIVED`), глобально блокирующим (`FROZEN`) и ресурсным (`IDLE` с/без очереди) состояниям, включая сохранение recovery exemption при запретах доктрины `VerdictGate`. На транспортном слое HTTP (`ProjectController.orchestrate`) отказ транслируется в 409 Conflict со структурированным телом (`code`, `action`, `state`, `authorizationStatus`, `error`), а на слое автослияния (`AutoMergeService`) трактуется как штатный возврат карточки при пустой очереди, исключая ложную порчу метрик слияния.
 - `CommandDashboardService` readiness edge: считаю механизм идеальным
 - `ProjectFlowService` task dispatch edge: считаю механизм идеальным
 - `ProjectController.orchestrate` denial response: не идеален; once exception carries structured fields, expose them in the `409` body so the operator sees the exact prohibition without parsing prose.
