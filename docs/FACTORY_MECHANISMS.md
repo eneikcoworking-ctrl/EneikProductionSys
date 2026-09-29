@@ -8965,18 +8965,12 @@ should think — many-valued diagnostics*. Сильная дословно: «и
 *Комментарий:* **ядро, и здесь стоит настоящая граница полномочий.** Два режима в одном хранилище событий —
 `observe_only` и `flow_core_enforced` — это записанное различие между «мы это видели» и «мы на этом
 основании отказали». Различие полезное: по журналу можно отличить наблюдение от применения, не гадая.
-*Живое, 7 сентября 2026:* работает и отказывает объяснимо. Доминирующая строка суток — отказ раздачи с
-названным основанием: «not blocked by Flow Core state IMPLEMENTING; its own precondition is unmet — there is
-nothing for it to act on right now». То есть механизм различает «запрещено состоянием потока» и «нечего
-делать», и говорит, которое из двух.
-*Философия:* `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` (D006) — Джозеф Раз, `BARCAN-TAG-10 DEONTIC-PROHIBITION`,
-принцип исключающих причин, anchor *Practical Reason and Norms / The Authority of Law*. Сильная дословно:
-«до реализации полномочий составлена матрица прав, обязанностей, привилегий и власти, и на каждое отношение
-есть тест разрешённого и запрещённого». Слабая: «роли перечислены, проверки написаны по месту».
-Опровержение: «найти отношение, у которого нет теста запрета». **Форма: не мерено.** Матрица есть по
-существу — действие, состояние потока и исход, — и отказ называет своё основание, что уже больше слабой
-формы. Но есть ли на каждое отношение тест разрешённого и запрещённого, проверка не проводилась, а без этого называть
-форму нельзя.
+*Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `OperationalFlowCoreFalsificationTest`, 39/39 green; вместе с `OperationalFlowCoreServiceTest` — 45/45 green). Доказаны инварианты Раза (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` и `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006]):
+1) Полная матрица прав и обязанностей Flow Core проверена по всем отношениям: неактивный проект (`paused`, `maintenance`, `archived`) и терминальные состояния (`ACCEPTED`, `ARCHIVED`, `FROZEN`, `PROJECT_NOT_ACTIVE`) гарантируют `ENFORCED_PROJECT_NOT_MUTABLE` с полным запретом мутации, раздачи и слияния; все 7 состояний жесткой блокировки (`BLOCKED_BY_DUPLICATE_CONTENT`, `GITHUB_RATE_LIMITED`, `SYSTEM_STALLED`, `BLOCKED_BY_TASK`, `BLOCKED_BY_REVIEW`, `BLOCKED_BY_MAIN_CI`, `BLOCKED_BY_FAILED_FRONTIER`) безусловно исполняют `ENFORCED_STOP_THE_LINE`;
+2) Избирательные привилегии под `ENFORCED_ACTIONS_AVAILABLE` строго дифференцированы: `QUEUED` с задачами разрешает раздачу агентов (`agentDispatchAllowed=true`), но запрещает слияние (`mergeAllowed=false`); `UNDER_REVIEW` с открытыми PR разрешает и раздачу, и слияние; `IDLE_NO_ACTIONABLE_WORK` сохраняет доступ к мутации, но запрещает ложные раздачи и слияния;
+3) `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`: все 19 состояний потока несут обязательный непустой список `forbiddenActions` с уникальным ключом `advisory.*` и верифицируемыми предусловиями/исходами;
+4) Доказана чистота и детерминированность `decisionHash` (SHA-256) и инвариант дедупликации журнала (повторные наблюдения без изменения решения не порождают лишних записей в `flow_spine_events`).
+*Философия:* `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` (D006), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз, `BARCAN-TAG-10 DEONTIC-PROHIBITION`, принцип исключающих причин, anchor *Practical Reason and Norms / The Authority of Law*. **Форма: сильная.** До реализации полномочий составлена и проверена матрица прав, обязанностей, привилегий и власти; на каждое отношение есть тест разрешённого и запрещённого (`OperationalFlowCoreFalsificationTest`).
 
 **`SystemStatusService`** (832 строки) — сводит состояние всей системы в один ответ.
 *Связи:* зовут `FlowSpineService` и другие; выходит наружу через `SystemStatusController`.
@@ -9481,7 +9475,7 @@ nothing for it to act on right now». То есть механизм разли�
 
 *Текущий статус:* mechanism record filled; implementation not ideal. `FlowSpineController`, `OperationalFlowCoreController`, `TocSentinelController` and `TocExecutionGraph` move from mentioned-only denominator work into a whole-family record. The safest later implementation candidate is not a controller rewrite; it is to add/verify tests for observe idempotency and TOC unknown-token/throttle semantics before any behavioral change.
 
-*Свидетельства записи:* denominator scan after tact 3; `nl -ba` for `FlowSpineController`, `OperationalFlowCoreController`, `TocSentinelController`, `TocExecutionGraph`, `TocSentinelService`; `grep` for `FlowSpineService.build/observe/events`; `grep` for `OperationalFlowCoreService.build/observe/events`; `FlowSpineEventRepository` bounded event methods; TOC controller/service tests grep; philosophy rows `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, and common `ACP-061`.
+*Свидетельства записи:* denominator scan after tact 3; `nl -ba` for `FlowSpineController`, `OperationalFlowCoreController`, `TocSentinelController`, `TocExecutionGraph`, `TocSentinelService`; `grep` for `FlowSpineService.build/observe/events`; `grep` for `OperationalFlowCoreService.build/observe/events`; `src/test/java/com/eneik/production/services/operational/OperationalFlowCoreFalsificationTest.java:1-297`; `FlowSpineEventRepository` bounded event methods; TOC controller/service tests grep; philosophy rows `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, and common `ACP-061`.
 
 *комментарий для Антигравити:* механизм-документация этой семьи теперь заполнена, но реализация не идеальна. Do not patch these controllers as isolated endpoint cleanup. First preserve the whole observation/control distinction: read endpoints do not write, observe endpoints write one idempotent event through owner services, flow-core mode stays separate, and TOC HTTP events mutate only runtime telemetry with explicit throttle/not-found semantics. Applicable philosophy: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; additionally `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` for live read vs durable observation vs in-memory telemetry; common background `ACP-061 Hoare Triple Review`.
 
