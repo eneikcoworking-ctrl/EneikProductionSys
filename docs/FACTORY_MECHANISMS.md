@@ -6038,7 +6038,7 @@ not as complete factory bottleneck knowledge.
 `TocSentinelController.java:30-63,69-90`; `BottleneckAwarePriorityService.java:39-89`;
 `SixSigmaAuditService.java:330-336`; `KaizenService.java:238-245,729-733`; `SystemAuditController.java:61-79`;
 `WebConfig.java:55-58`; `ApiAuthorizationInterceptor.java:73-79,109-128`; `TocOptimizerTest.java:35-157`;
-`TocNodeTimeoutTest.java:21-57`; `TocSentinelServiceTest.java:41-238`. Commands:
+`TocNodeTimeoutTest.java:21-57`; `TocSentinelServiceTest.java:41-238`; `AnomalyReportFalsificationTest.java:1-260`. Commands:
 `grep -RInE '\.enterStep\(|\.exitStep\(|\.startExecution\(|\.endExecution\(' src/main/java | grep -v '/toc/'`;
 `grep -RIn '@Entity' src/main/java/com/eneik/production/toc || true`.
 
@@ -6051,7 +6051,8 @@ and persistence are still too narrow for a global bottleneck claim.
 - `TocNode`: не идеален for historical identity because counters are in-memory; apply `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` if node timing is used after restart or in RCA.
 - `TocEdge`: не идеален until more than one product stage is instrumented and a consumer uses transitions; apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`.
 - `DbrStatus`: не идеален as a public projection until it exposes observation scope/stage count with `primaryConstraintNode`; apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
-- `AnomalyReport`: считаю механизм идеальным
+- `AnomalyReport`: считаю механизм идеальным (`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` / D010, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011). Неизменяемый record сохраняет полную каузальную идентичность инцидента; сигнал аномалии активно модифицирует поведение рантайма и предотвращает деградацию потока.
+*Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `AnomalyReportFalsificationTest`, 7/7 green). Доказаны инварианты Parfit и Dretske: 1) снапшот аномалии сохраняет все 8 полей контекста (`id`, `type`, `tokenId`, `nodeName`, `resourceId`, `details`, `actionTaken`, `timestamp`), универсум `AnomalyType` закрыт ровно 4 типами; 2) контроллер и сервис отдают аномалии как unmodifiable snapshot; 3) сигналы аномалий вызывают немедленное компенсирующее действие: `CYCLE_DETECTED` прерывает цикл и снимает токен (`CYCLE_ABORTED`), `DEADLOCK_DETECTED` разрывает взаимную блокировку ресурсов принесением в жертву низкоприоритетного токена (`DEADLOCK_ABORTED`), `STALL_DETECTED` маркирует узел как `stallBottleneck`, а 5-минутная дедупликация защищает канал телеметрии от зашумления.
 - `TocAnomalyDetector`: считаю механизм идеальным
 - `TocOptimizer`: не идеален as a global bottleneck oracle without richer instrumentation; preserve single-stage "unmeasured" and apply `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
 - `TocSentinelService`: не идеален as factory-wide observer; preserve pure read, explicit refresh, single-writer lifecycle and dynamic cadence, then add real stage producers.

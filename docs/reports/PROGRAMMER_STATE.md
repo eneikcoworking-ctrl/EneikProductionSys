@@ -1,15 +1,15 @@
-# Такт L2: Ведущий инженер (2026-09-29 03:34 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 04:24 UTC)
 
-1. Фальсифицирующий замер Ступени 3: OperationalPolicyDeniedException (D006, Raz):
+1. Фальсифицирующий замер Ступени 3: AnomalyReport (D010 Parfit, D011 Dretske):
    - Исходный код фабрики сохранён без изменений ("кода не менять!").
-   - Заслон DZHOZEF_RAZ_01_PROHIBITION_AS_CODE & DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX (D006): запрет любого действия исполняется как типизированный отказ через `OperationalPolicyService.requireAllowed`, несущий `projectId`, `action`, `state`, `authorizationStatus` и причину отказа; проверена матрица прав/обязанностей по терминальным (`ARCHIVED`), блокирующим (`FROZEN`) и ресурсным (`IDLE`) состояниям, а также сохранение recovery exemption при запретах `VerdictGate`.
-   - Проверена презентация отказа на границе HTTP (`ProjectController.orchestrate` -> 409 Conflict со структурированным телом) и бессбойный возврат карточки в `AutoMergeService` при пустой очереди.
-   - Разработан тест-заслон `OperationalPolicyDeniedExceptionFalsificationTest` (9 тестов).
+   - Заслон DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT (D010): неизменяемый record фиксирует полную каузальную идентичность инцидента (`id`, `type`, `tokenId`, `nodeName`, `resourceId`, `details`, `actionTaken`, `timestamp`); универсум типов закрыт (4 типа); контроллер отдаёт аномалии как unmodifiable snapshot.
+   - Заслон FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK (D011): сигнал аномалии активно модифицирует следующее действие рантайма (прерывание циклов с переводом токена в `CYCLE_ABORTED`, снятие дедлоков принесением в жертву низкоприоритетного токена `DEADLOCK_ABORTED`, маркировка узла `stallBottleneck` при превышении динамического порога Welford, защита канала от зашумления через 5-минутную дедупликацию).
+   - Разработан тест-заслон `AnomalyReportFalsificationTest` (7 тестов).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон `OperationalPolicyDeniedExceptionFalsificationTest` (9/9) — BUILD SUCCESS (0 Failures, 0 Errors, 44s).
+   - Прогон `AnomalyReportFalsificationTest` (7/7) — BUILD SUCCESS (0 Failures, 0 Errors, 45s).
 3. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` (§XXIв) обновлена запись `OperationalPolicyDeniedException` с фиксацией живого поведения и свидетельства заслона.
+   - В `docs/FACTORY_MECHANISMS.md` (§XXIг) обновлена запись `AnomalyReport` с фиксацией живого состояния и свидетельства заслона.
 4. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), память доступна (>280Mi + swap 1.7Gi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
+   - Диск: 65% (<70%), память доступна (>310Mi + swap 1.7Gi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
 5. Следующий такт:
    - Проверить `MANAGER_STATE.md`, взять следующий механизм/пробу из очереди или директивы L1/L3, покрыть тестом-заслоном.
