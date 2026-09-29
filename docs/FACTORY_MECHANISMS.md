@@ -8557,6 +8557,7 @@ measurements state correct field and source.
 **Свидетельства записи** — `src/main/resources/db/migration/V55__create_context_chunks.sql:1-19`;
 `src/main/resources/db/migration/V62__add_context_chunk_content_hash.sql:1-6`;
 `src/main/resources/db/migration/V25__add_depends_on_and_hotspots.sql:1-10`;
+`src/test/java/com/eneik/production/migrations/V25MigrationFalsificationTest.java:1-263`;
 `src/main/java/com/eneik/production/services/GeminiContextService.java:134-184`;
 `src/main/java/com/eneik/production/services/GeminiContextService.java:234-272`;
 `src/main/java/com/eneik/production/services/GeminiContextService.java:342-428`;
@@ -8566,7 +8567,7 @@ measurements state correct field and source.
 
 **Текущий статус** — partially strong but not ideal: storage/retrieval/cost guard are strong by source, but
 prompt citation, content-hash equivalence proof, dependency-cycle handling and settings measurement discipline
-remain non-ideal.
+remain non-ideal. V25 schema and ownership invariants proved by Stage 3 falsification screen (7/7 green).
 
 ## XXIIи.1. Комментарии для Антигравити по механизмам
 
@@ -8578,8 +8579,11 @@ remain non-ideal.
   but add equivalence/golden evidence that unchanged source plus current dimension preserves retrieved
   content behavior.
 * `V25__add_depends_on_and_hotspots.sql` / `tasks.depends_on` / `project_hotspot_files` — **комментарий для
-  Антигравити:** механизм не идеален: применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; preserve
-  dependency/hotspot facts, but prove cycle guard and hotspot expansion before coding around them.
+  Антигравити:** механизм проверен пробой Ступени 3 (тест-заслон `V25MigrationFalsificationTest`, 7/7 green).
+  Доказаны инварианты Шаффера (`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` [D004] и `DZHONATAN_SHAFFER_01_ACTUAL_OBJECT_REGISTER` [D002]):
+  1) `tasks.depends_on`: внешний ключ `fk_tasks_depends_on` строго пресекает указание несуществующих задач-родителей (ghost dependencies), предотвращая фрагментацию графа; в рантайме `TaskRepository.hasUnresolvedDependency` блокирует захват зависимой задачи (`lockNextQueuedTask`), пока родитель не перейдет в терминальный статус `done`;
+  2) `project_hotspot_files`: таблица зарегистрированных точек концентрации изменений гарантирует валидность владения (`NOT NULL` для `project_id` и `file_path`, `fk_hotspots_project`), изоляцию реестра между проектами и атомарное каскадное удаление (`ON DELETE CASCADE`) при удалении проекта-агрегата, исключая появление объектов-сирот в контуре компилятора (`TechnicalLeadCompiler`).
+  *Живое, 29 сентября 2026:* Проба Ступени 3 проведена. Полнота схемы V25 подтверждена на H2/PostgreSQL реляционном слое без изменения производственного кода.
 * `gemini_context_learning_enabled` — **комментарий для Антигравити:** считаю механизм идеальным
 * `verdict_gating_project_slug` measurement — **комментарий для Антигравити:** механизм не идеален as
   measurement practice: применить `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; read string settings from
