@@ -1,12 +1,12 @@
-# Такт L2: Ведущий инженер (2026-09-28 23:25 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 00:12 UTC)
 
-1. Фальсифицирующий замер Ступени 2: V62/Floridi LOA Lock и V21/Varzi Mereological Boundary (D010, D004):
-   - Заслон V62 (`content_hash` в `GeminiContextService`): неизмененный контент пропускает реэмбеддинг без вызовов ML и удалений; дрейф контента или размерности вектора (`storedAtCurrentDimension`) форсирует актуализацию; null/blank очищает чанки.
-   - Заслон V21 (`file_scope` в `TaskRepository`): проверено пересечение путей (точные совпадения, иерархия каталогов `/`, wildcard `...`, POSIX нормализация слешей); подтверждено обнаружение конфликтов задач одного проекта и исключение самоколлизий кандидата.
-   - Разработан тест-заслон `ContextChunkHashAndFileScopeConflictFalsificationTest` (10 тестов: 4 Floridi LOA, 6 Varzi Mereology).
+1. Фальсифицирующий замер Ступени 2: V19/Marcus Single Active Project & Wittgenstein Account Pool (D002, D013, D007):
+   - Заслон RUT_BARKAN_MARKUS_01 (D002): подтверждён инвариант ровно одного активного проекта (строго новейший active по createdAt); `retirePriorActiveProjectsLocally` переводит предыдущий проект в frozen, закрывает незавершенные задачи с причиной суперсессии, сохраняет терминальные задачи (Law 20 immutability) и освобождает повисшие клеймы; `resolveProject(null)` strictly адресует активный проект (RUT_BARKAN_MARKUS_18).
+   - Заслон LYUDVIG_VITGENSHTEYN_14 & DZHON_SERL_05 (D013, D007): проверена структура `AccountEntity` (enabled=true по умолчанию); статус `decommissioned` делает аккаунт не-оперативным и недоступным; квалификация пула отсекает проектные и выключенные аккаунты; доступность по проектам исключает чужие и декоммиссионированные записи.
+   - Разработан тест-заслон `V19AccountPoolAndSingleActiveProjectFalsificationTest` (8 тестов: 3 Marcus Single Project, 5 Wittgenstein/Searle Account Pool).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10) — BUILD SUCCESS (0 Failures, 0 Errors, 44s).
+   - Прогон `V19AccountPoolAndSingleActiveProjectFalsificationTest` (8/8) — BUILD SUCCESS (0 Failures, 0 Errors, 44s).
 3. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), память в норме (avail 885Mi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
+   - Диск: 65% (<70%), память в норме (avail 558Mi). Фабрика (:8080) и продукт (:18080) UP (healthy, аптайм >11d).
 4. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 2, покрыть тестом-заслоном.
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 2, покрой тестом-заслоном.
