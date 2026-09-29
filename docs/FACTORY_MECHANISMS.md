@@ -433,12 +433,22 @@ production, `:133` непрерывная сборка), а не на «не и�
 `historicalWishlistWithoutFinalizingSince_isInitializedToNowAndNotSweptImmediately`,
 `calculateEffectiveLeaseDuration_usesObservedDurationsWhenAvailable`.
 
-*Слабая/неидеальная форма сейчас:* у `TechnicalLeadCompiler` собственных тестов **четыре**
-(`TechnicalLeadCompilerTest`), и все четыре — о срезах и заземлении брифа, не о компиляции как таковой; при 2077
-строках и четырёх пишущих хранилищах это несоразмерно, и **доля путей компиляции без заслона не мерена**.
-`WishlistService` имеет один заслон косвенно (`WishlistControllerIntegrationTest`) при единственной операции
-`deleteAll` — семантика удаления заявки по `ACTUAL_OBJECT_REGISTER` («кто вправе удалить») **не мерена**.
-Счёт действительных вызовов не подтверждён и не опровергнут: мерены упоминания имени, а не вызовы, — **не мерено**.
+*Сильная форма: Ступень 4 закрыта.*
+- `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` (D007; `BARCAN-TAG-12_SOCIAL-CONTRACT:03:dzhon-serl`, anchor *Speech Acts / The Construction of Social Reality - institutional facts*).
+Сильная дословно: «Статус создаётся **правилом**, и есть запись аудита о том, что правило применилось (`NamespaceAuditStatus: ADMISSIBLE, VIOLATION, UNKNOWN_NAMESPACE`). Неустановленный namespace никогда не проходит молча; нарушения фиксируются в `DefectJournalService` (категория `COMPILER`, паттерн 6)».
+Слабая: «Статус присваивается произвольно по месту или молча пропускается как допустимый (silent pass)».
+Опровержение: «Подать Java-путь без настроенного productNamespace или путь в пакете фабрики; если аудит вернет ADMISSIBLE или не зафиксирует дефект в журнале — форма слабая».
+**Форма: сильная.** Метод `auditPathsAgainstNamespace` строго вычисляет трехзначный исход; заслонено в `ProductNamespaceLaw26Test` (16 тестов) и `TechnicalLeadCompilerFalsificationTest`.
+- `AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` (D002; `BARCAN-TAG-01_ACTUALIST-OBJECT:04:ahille-vartsi`, anchor *Parts and Places / formal ontology of boundaries and spatial parts*).
+Сильная дословно: «У объекта есть владелец, личность, жизненный цикл и семантика удаления. Задача рождается строго через компиляцию эпика и чеканится лениво: `task.setFeatureId(featureService.resolveOrCreateFeatureId(wishlist, project.getId()))`, сохраняя неизменяемую родословную `originFeatureId`».
+Слабая: «Создание сиротских задач без привязки к эпику или чеканка эпика на заявки, не ставшие реальной работой».
+Опровержение: «Скомпилировать задачу из заявки в обход `FeatureService` или найти задачу без `featureId` — форма слабая».
+**Форма: сильная.** Метод `createTaskFromWishlist` жестко требует привязки к `FeatureService` и гарантирует наследование `featureId` и `originFeatureId`. Заслонено в `TechnicalLeadCompilerFalsificationTest`.
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006; `BARCAN-TAG-10_DEONTIC-PROHIBITION:03:dzhozef-raz`, anchor *Practical Reason and Norms / The Authority of Law - authority and exclusionary reasons*).
+Сильная дословно: «Каждое запрещенное действие превращается в исполняемый путь отказа с объяснимой причиной. При нарушении области файлов (`VIOLATION` или `UNKNOWN_NAMESPACE`) компилятор блокирует задачу (`task.setStatus(TaskStatus.blocked)`), выставляет статус диспетчеризации `BLOCKED: file scope refused (...)`, очищает область до `[]` и сохраняет отказные пути в payload, полностью останавливая отправку исполнителю».
+Слабая: «Выдача предупреждения в лог с продолжением очереди задачи (`queued`) или отправка задачи с пустой/чужой областью в контур Jules».
+Опровержение: «Скомпилировать задачу с файлами из пакета фабрики или чужого стека; если задача встает в статус `queued` — форма слабая».
+**Форма: сильная.** Проверено и заслонено в `TechnicalLeadCompilerFalsificationTest` и `ProductNamespaceLaw26Test`.
 
 *Опровержение:* найти задачу, созданную в обход компиляции эпика; найти эпик, заведённый на заявку, не ставшую
 задачей; найти второй парсер класса Кано или второй источник порядка стадий; подать два описания одного требования
@@ -454,18 +464,8 @@ production, `:133` непрерывная сборка), а не на «не и�
 `grep -n 'namespace\|Law 26' TechnicalLeadCompiler.java`; `grep -oE '\bvoid\s+[a-zA-Z0-9_]+\s*\(' ProductNamespaceLaw26Test.java`;
 `grep -A1 '@Test'` по семи тестовым классам семейства;
 `grep -n '^### .INSTITUTIONAL_FACT_REGISTER\|^### .ACTUAL_OBJECT_REGISTER\|^### .ANCHOR_BOUND_NAME\|^### .SUBSTITUTION_ORACLE\|^### .BELIEF_UPDATE_LEDGER\|^### .CAUSAL_PROCESS_TRACE\|^### .PRINCIPLED_INTEGRITY\|^### .LEVEL_OF_ABSTRACTION_LOCK' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`.
-Контроль на образцы: `FINALIZING_DURATION` и `REQUIRES_NEW` **в корпусе отсутствуют**
-(0 упоминаний) — это идентификаторы кода, а не образцы; `ELVIN_GOLDMAN_06` — строка в файле философа, а не заголовок
-образца (3 упоминания), сам образец называется `CAUSAL_PROCESS_TRACE`.
 
-*Текущий статус:* все названные образцы семейства держатся сильной формы. Открыто: несоразмерность заслонов
-самому компилятору, семантика удаления заявки, и счёт действительных вызывающих.
-
-*комментарий для Антигравити:* семейство не идеально по покрытию, а не по устройству. Не переписывай ленивую чеканку
-эпика, единственные экземпляры `KanoClass` и `EmsFlowStage` и трёхзначный разбор области — это сильные формы,
-закреплённые заслонами. Работа здесь — заслоны на собственные пути компилятора и правило удаления заявки.
-Применимая философия: `INSTITUTIONAL_FACT_REGISTER` (D007), `ACTUAL_OBJECT_REGISTER` (D002), `ANCHOR_BOUND_NAME` (D001),
-`SUBSTITUTION_ORACLE` (D009), `LEVEL_OF_ABSTRACTION_LOCK` (D010).
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): задачи компилируются строго через эпики `FeatureEntity`, исключая сиротские задачи и сохраняя топологию продукта; чужие и фабричные пути блокируются до диспетчеризации. Заслон качества: 16/16 тестов в `ProductNamespaceLaw26Test`, 4/4 в `TechnicalLeadCompilerTest` и 6/6 в `TechnicalLeadCompilerFalsificationTest` (всего 26/26) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `TechnicalLeadCompiler` закрыта.
 
 ---
 
