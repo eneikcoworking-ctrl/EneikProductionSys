@@ -488,6 +488,27 @@ production, `:133` непрерывная сборка), а не на «не и�
 **Форма: сильная.** Сервис бережно сохраняет существующий `originFeatureId` и фиксирует полную классификационную матрицу в `FeatureEntity`. Заслонено в `FeatureServiceFalsificationTest`.
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): эпики чеканятся лениво, строго по правилу, сохраняя целостность границ проектов и неизменяемую родословную. Заслон качества: 5/5 тестов в `FeatureServiceTest` и 6/6 в `FeatureServiceFalsificationTest` (всего 11/11) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `FeatureService` закрыта.
 
+**`EpistemicMetadataClassifier`** (136 строк) — детерминированный двуязычный экстрактор осей эпистемического укоренения (домен Cynefin и класс Kano) из неструктурированного текста клиентских пожеланий (`content`, `jtbd`, `acceptanceCriteria`).
+*Связи:* вызывается из `FeatureService`; не держит хранилищ; чистый детерминированный компонент без обращения к базе данных или внешним моделям.
+*Ценность:* гарантирует эмпирическую воспроизводимость и нулевую стоимость классификации; исключает фиктивную псевдоопределенность, защищая предупорядок AGM-ревизии убеждений.
+*Комментарий:* **периферия**. Чистая функция классификации без побочных эффектов.
+*Философия:* `LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK` (D010) — Лучано Флориди, `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE:03:luchano-floridi`, publication anchor *The Philosophy of Information - informational objects and levels of abstraction*.
+Сильная дословно: «Честный null на объявленном уровне абстракции. Отсутствие распознанных маркеров возвращает строгий `null` для оси (или `Classification(null, null)`), не выдумывая фиктивное "среднее" значение (`complex` / `one-dimensional`), что позволяет `FeatureService` отнести сущность к `UNCLASSIFIED_COMPONENT = 20.0` в слой `PERIPHERY`. Обе оси независимы по nullability».
+Слабая: «Подстановка среднего значения по умолчанию при отсутствии маркеров, маскирующая незнание под умеренно понятную задачу».
+Опровержение: «Подать пустой или нейтральный текст без маркеров; если классификатор возвращает ненулевой домен или класс — форма слабая».
+**Форма: сильная.** Метод `classify` возвращает `null` на обеих осях для пустых/нейтральных входов, а оси независимы. Заслонено в `EpistemicMetadataClassifierTest` и `EpistemicMetadataClassifierFalsificationTest`.
+Второй образец: `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` (D007) — Питер Гэрденфорс, `BARCAN-TAG-04_MODAL-QUANTIFIER:07:piter-gerdenfors`, publication anchor *Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment*.
+Сильная дословно: «Свидетельства для AGM-ранжирования осей. Классификатор извлекает детерминированные маркеры Cynefin (`chaotic`, `complex`, `complicated`, `clear`) и Kano (`must-be`, `one-dimensional`, `attractive`, `indifferent`). При равенстве совпадений побеждает более консервативная (нижняя по определенности) категория (упорядоченность в `LinkedHashMap`), предотвращая ложную уверенность (false certainty) при пересмотре убеждений. Преобладающее число маркеров честно побеждает порядок объявления».
+Слабая: «Случайный или алфавитный выбор при тай-брейке, завышающий определенность задачи».
+Опровержение: «Подать текст с равным числом маркеров из категорий chaotic и clear; если побеждает менее критическая категория (clear) — форма слабая».
+**Форма: сильная.** Тай-брейк детерминирован структурой `CYNEFIN_MARKERS` и `KANO_MARKERS` в `LinkedHashMap`, где консервативные категории проверяются первыми. Заслонено в `EpistemicMetadataClassifierFalsificationTest`.
+Третий образец: `GOTLOB_FREGE_01_SUBSTITUTION_ORACLE` (D009) — Готлоб Фреге, `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE:06:gotlob-frege`, publication anchor *Begriffsschrift / On Sense and Reference - sense, reference and compositionality*.
+Сильная дословно: «Двуязычное извлечение (EN/RU) сохраняет референт независимо от языка формулировки клиентского требования. Маркеры на русском и английском языках взаимно заменяемы salva veritate: "auth"/"аутентифик" -> must-be; "outage"/"авария" -> chaotic; "api"/"интеграция" -> complicated; "crud"/"кнопка" -> clear».
+Слабая: «Одноязычный классификатор, теряющий референт или возвращающий null для русскоязычных пожеланий заказчика».
+Опровержение: «Подать русскоязычный текст с ключевыми словами; если класс или домен возвращает null — форма слабая».
+**Форма: сильная.** Наборы маркеров содержат симметричные эквиваленты на обоих языках для всех доменов и классов. Заслонено в `EpistemicMetadataClassifierTest` и `EpistemicMetadataClassifierFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): классификация текста происходит детерминированно при чеканке эпиков, поставляя точные маркеры для формулы укоренения Quine-Gärdenfors без накладных расходов. Заслон качества: 5/5 тестов в `EpistemicMetadataClassifierTest` и 5/5 в `EpistemicMetadataClassifierFalsificationTest` (всего 10/10) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `EpistemicMetadataClassifier` закрыта.
+
 ---
 
 # III. Отправка: задача уходит в работу
