@@ -467,6 +467,27 @@ production, `:133` непрерывная сборка), а не на «не и�
 
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): задачи компилируются строго через эпики `FeatureEntity`, исключая сиротские задачи и сохраняя топологию продукта; чужие и фабричные пути блокируются до диспетчеризации. Заслон качества: 16/16 тестов в `ProductNamespaceLaw26Test`, 4/4 в `TechnicalLeadCompilerTest` и 6/6 в `TechnicalLeadCompilerFalsificationTest` (всего 26/26) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `TechnicalLeadCompiler` закрыта.
 
+**`FeatureService`** (263 строки) — сервис ленивой чеканки и управления идентичностью эпиков (`FeatureEntity`): преобразует абстрактную строку пожелания (`WishlistEntity`) в фактический объект производственного учета в момент начала реальной работы над ним, синтезируя эпистемическую укорененность Quine-Gärdenfors (`epistemicScore`, `epistemicLayer`).
+*Связи:* вызывается из `TechnicalLeadCompiler`, `ProjectFlowService`, `EvidenceCoherenceService`; держит `FeatureRepository` и `WishlistRepository`; зовет `EpistemicMetadataClassifier` и `EvidenceCoherenceService`.
+*Ценность:* гарантирует, что ни одна задача не может быть сиротой без эпика, а эпик никогда не создается вхолостую на невостребованные требования; сохраняет неизменяемую родословную `originFeatureId` от клиентского брифа до конечных коммитов.
+*Комментарий:* **ядро**. Личность эпика чеканится ровно один раз и лениво.
+*Философия:* `AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` (D002) — Ахилле Варци, `BARCAN-TAG-01_ACTUALIST-OBJECT:04:ahille-vartsi`, publication anchor *Parts and Places / formal ontology of boundaries and spatial parts*.
+Сильная дословно: «У объекта есть владелец, личность, жизненный цикл и семантика удаления. Эпик (`FeatureEntity`) рождается лениво в точке реальной работы (`resolveOrCreateFeatureId`), чеканит самореферентную родословную (`originFeatureId = id`), а неклассифицированные сущности получают `UNCLASSIFIED_COMPONENT = 20.0` (15.0 PERIPHERY), исключая ложное попадание в CORE без верифицированного контракта E_EMS».
+Слабая: «Создание фиктивных эпиков на любое текстовое пожелание или принудительное назначение среднего скора недооцененным сущностям».
+Опровержение: «Подать wishlist без контракта или с неклассифицированным содержанием; если сущность получает CORE (>= 75.0) или повторный вызов чеканит дубликат — форма слабая».
+**Форма: сильная.** Метод `resolveOrCreateFeatureId` повторно переиспользует уже установленный ID, не трогает существующий `originFeatureId`, а формула EE строго изолирует CORE для сущностей без верифицированного EMS-контракта (максимум 67.5). Заслонено в `FeatureServiceTest` и `FeatureServiceFalsificationTest`.
+Второй образец: `GOTLOB_FREGE_01_SUBSTITUTION_ORACLE` (D009) — Готлоб Фреге, `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE:06:gotlob-frege`, publication anchor *Begriffsschrift / On Sense and Reference - sense, reference and compositionality*.
+Сильная дословно: «Сохранение смысла и референта при подстановке (substitutivity salva veritate). Разрешение эпиков (`findExistingEpic`) валидирует тождество идентификатора в границах проекта (`f.getProjectId().equals(projectId)`); чужие проектные идентификаторы и поврежденные строки отсекаются (fail closed, `Optional.empty()`), а архивные (`dismissedAt != null`) исключаются из кандидатов компилятора».
+Слабая: «Слепое доверие строковому идентификатору из промпта агента с риском подстановки сущности чужого проекта».
+Опровержение: «Передать идентификатор эпика из другого проекта в `findExistingEpic`; если метод вернет чужой эпик — совершена ошибка подстановки».
+**Форма: сильная.** Поиск строго фильтрует по `projectId` и состоянию `dismissedAtIsNull`. Заслонено в `FeatureServiceFalsificationTest`.
+Третий образец: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Доказательная родословная и причинная надежность знания. Срезы требований сохраняют неизменный `originFeatureId` от родительского брифа, а гипотеза сущности верифицируется в графе объяснительной связности `EvidenceCoherenceService.evaluateFeatureHypothesis`».
+Слабая: «Перезапись родословной дочерних срезов или генерация эпиков без фиксации причинных осей Cynefin, Kano и EMS».
+Опровержение: «Скомпилировать дочерний срез с уже заданным originFeatureId; если сервис перезапишет originFeatureId собственным ID — причинная цепь разорвана».
+**Форма: сильная.** Сервис бережно сохраняет существующий `originFeatureId` и фиксирует полную классификационную матрицу в `FeatureEntity`. Заслонено в `FeatureServiceFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): эпики чеканятся лениво, строго по правилу, сохраняя целостность границ проектов и неизменяемую родословную. Заслон качества: 5/5 тестов в `FeatureServiceTest` и 6/6 в `FeatureServiceFalsificationTest` (всего 11/11) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `FeatureService` закрыта.
+
 ---
 
 # III. Отправка: задача уходит в работу
