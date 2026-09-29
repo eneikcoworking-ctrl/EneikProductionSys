@@ -228,17 +228,18 @@
 `ApiAuthorizationInterceptor` на `/api/**` и `/internal/**` (`WebConfig:58`): не-локальный запрос к `/internal/**`
 получает отказ, изменяющая операция требует `X-API-Key` или `Authorization: Bearer`.
 
-*Сильная форма сейчас:* `RELIABILITY_CHAIN` (D010) — корпус дословно: «данным верят только когда процесс их добычи
-надёжен для этого класса дефекта; названы источник, отметка времени, правило свежести и путь проверки»;
-опровержение образца — «назвать возраст значения». **Форма сильная**: её опровержение закрыто заслонами
-`marketObservationsStopInfluencingOnceTheyExpire`,
-`aLawDoesNotLapseBecauseNobodyRevisitedTheFile`, `treatsAnUnreadableShelfLifeAsExpiredRatherThanImmortal`,
-`anObservationWithNoStatedShelfLifeStillCounts`, `everyInfluentialEntryCitesItsSource`,
-`neverLetsUnverifiedEntriesInfluenceAnything` (`MarketCorpusServiceTest`, 19 тестов).
-`PROHIBITION_AS_CODE` (D006) — корпус дословно: «запрет — исполнимый путь отказа с объяснимой причиной, и на него
-есть тест»; опровержение — «совершить запрещённое действие; если оно прошло — запрета нет, есть пожелание».
-**Форма сильная**: `neverReportsAnythingUnverified`, `doesNotExemptAPlanItCannotClassify`,
-`staysSilentWhenThePlanDoesAddressTheDuties`, `everyFindingCarriesTheActItComesFrom` (`MarketComplianceGateTest`, 12 тестов).
+*Философия:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Данным доверяют только тогда, когда процесс их сбора эпистемически надежен для предотвращения дефекта. Показаны источник, временная метка, правило свежести и путь валидации».
+Слабая: «Допуск в процесс декомпозиции гипотез, непроверенных мнений или устаревших наблюдений с истёкшим сроком годности».
+Опровержение: «Подать в корпус запись со статусом `hypothesis` или с истёкшим сроком `validUntil`; если она попадает в `influentialExpectations` — форма слабая».
+**Форма: сильная.** Метод `influentialExpectations` фильтрует только верифицированные статусы (`statutory`, `standard`, `observed`, `derived`), отсекая любые гипотезы; устаревшие наблюдения отсекаются по сроку годности, а нечитаемый срок трактуется как истёкший (`treatsAnUnreadableShelfLifeAsExpiredRatherThanImmortal`). Заслонено в `MarketCorpusServiceTest` и `MarketCorpusServiceFalsificationTest`.
+Второй образец: `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн, `BARCAN-TAG-00_CODE-GUARDIAN:01:lyudvig-vitgenshteyn`, publication anchor *Philosophical Investigations - language-games, meaning as use, private-language argument*.
+Сильная дословно: «Предпочитать операционную телеметрию рантайма внутреннему словесному нарративу агента. Границы слов в регулярных выражениях исключают ложные срабатывания классификации, кэш mtime отслеживает физические изменения файлов, а отсутствие или повреждение корпуса деградирует безопасно без сбоя компилятора».
+Слабая: «Подмена проверки целых слов поиском подстрок (`shop` внутри `workshop`, `cart` внутри `cartography`, `auth` внутри `author`), слепая вера в память вместо mtime или падение при сбое парсинга JSON».
+Опровержение: «Подать текст со словами-омонимами или вложенными подстроками; если `mentions()` ложно срабатывает на `workshop` для `shop` — форма слабая».
+**Форма: сильная.** Метод `mentions()` использует строгое регулярное выражение `\bKEYWORD...\b` с проверкой границ слов и допустимых морфологических флексий, `readJson` сверяет `Instant mtime` физического файла, а сбои парсинга логируются с безопасным возвратом `null`/empty. Заслонено в `MarketCorpusServiceFalsificationTest`.
+Третий образец: `AHILLE_VARTSI_03_PROHIBITION_AS_CODE` (D006) — Ахилле Варци: **форма сильная**, `neverReportsAnythingUnverified`, `doesNotExemptAPlanItCannotClassify`, `staysSilentWhenThePlanDoesAddressTheDuties`, `everyFindingCarriesTheActItComesFrom` (`MarketComplianceGateTest`, 12 тестов).
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Боевой корпус `market-corpus/capabilities.json` (schemaVersion 2): 13 способностей, 26 ожиданий, 100% записей содержат подтвержденный `source` (statutory: 17, derived: 5, observed: 3, standard: 1). В `profiles.json` — 17 профилей со статусом `derived` и каноническое `acceptanceRule`. Подстрочные коллизии исключены. Заслон качества: 19/19 тестов в `MarketCorpusServiceTest` и 6/6 в `MarketCorpusServiceFalsificationTest` (всего 25/25) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `MarketCorpusService` закрыта.
 
 *Слабая/неидеальная форма сейчас:* `RAG_GROUNDING_CAPSULE` (D014) — корпус дословно: «правило хранится извлекаемым
 куском с источником, оценкой и классом дефекта, и цитируется идентификатором»; опровержение — «потребовать
