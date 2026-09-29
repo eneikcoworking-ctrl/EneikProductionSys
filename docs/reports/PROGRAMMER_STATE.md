@@ -1,18 +1,18 @@
-# Такт L2: Ведущий инженер (2026-09-29 22:23 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 22:28 UTC)
 
-1. Фиксация Ступени 4: WishlistService (D002 Varzi, D006 Raz, D010 Goldman):
-   - Исходный код механизма сохранён без изменений («работа замером, не правкой!»).
-   - Образец AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER (D002): форма сильная. Жесткое разделение мягкого архивирования (dismiss переводит в dismissed) и физического удаления (hardDelete purges from repo).
-   - Образец DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): форма сильная. Исполняемый запрет на отсутствующих сущностях: dismiss и hardDelete выбрасывают 404 NOT_FOUND при ненайденном ID.
-   - Образец ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D010): форма сильная. Надежность data lineage: purgeGhostWishlists очищает декомиссионированные источники и текстовые фантомы, сохраняя клиентские заявки.
+1. Фиксация Ступени 4: StrandedFinalizingSweepService (D007 Gärdenfors, D013 Salmon, D012 Dworkin):
+   - Исходный код сохранён без изменений («работа замером, не правкой!»).
+   - Образец PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER (D007): форма сильная. Адаптивный пересмотр аренды по журналу `FINALIZING_DURATION` (медиана * 10x safety multiplier, 30s floor, fallback к maxAgeMinutes).
+   - Образец UESLI_SELMON_02_CAUSAL_PROCESS_TRACE (D013): форма сильная. Каузальный отсчет возраста по `finalizingSince` (V139), а не по чужим меткам `createdAt`/`lastCompileDispatchedAt`, с защитой живых воркеров.
+   - Образец RONALD_DVORKIN_04_PRINCIPLED_INTEGRITY (D012): форма сильная. Неприкосновенность работы воркера через атомарный CAS (`finalizing -> pending`), идемпотентность и нижний зажим к полу 30с.
 2. Замер рантайма (*Живое:*):
-   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 12d): жизненный цикл заявок управляется `WishlistService`, гарантируя целостность сущностей и чистоту пула требований.
+   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 12d): регулярный обход устраняет deadlock в Flow Core состоянии `DECOMPOSING`.
 3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Создан тест-заслон `WishlistServiceFalsificationTest` (6 тестов: Varzi D002, Raz D006, Goldman D010).
-   - Прогон: `WishlistServiceFalsificationTest` = 6/6 BUILD SUCCESS (0 failures, 0 errors, 49s).
+   - Создан тест-заслон `StrandedFinalizingSweepServiceFalsificationTest` (6 тестов).
+   - Прогон: 8/8 в `StrandedFinalizingSweepServiceTest` + 6/6 в `StrandedFinalizingSweepServiceFalsificationTest` (всего 14/14 green, BUILD SUCCESS, 51s).
 4. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирована полная каноническая запись `WishlistService` (сильная форма, образцы, опровержение, *Живое:*), Ступень 4 закрыта.
+   - В `docs/FACTORY_MECHANISMS.md` зафиксирована запись `StrandedFinalizingSweepService`. Ступень 4 закрыта для всех 9 механизмов Семейства II («Компиляция — требование становится задачами»)!
 5. Инварианты хоста:
-   - Диск: 65% (норма <70%), RAM: 232Mi avail + 1.6Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy).
+   - Диск: 65% (норма <70%), RAM: 623Mi avail + 1.2Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy).
 6. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 4 (`StrandedFinalizingSweepService`), завершить семейство компиляции.
+   - Проверить `MANAGER_STATE.md`, перейти к Семейству III («Отправка — задача уходит в работу», стартуя с `JulesDispatchService`).
