@@ -131,8 +131,18 @@
 *Ценность:* приём требования не должен зависеть от того, ответил ли GitHub.
 *Комментарий:* **ядро.** Провижининг вынесен из транзакции приёма намеренно; отказ пишется в `factoryStatus`,
 а проект принимается.
-*Философия:* `BOUNDARY_TOPOLOGY` (D006) — **сильная**, заслонена структурно: во всём транзитивном графе
-вызовов приёма нет сетевых клиентов. Опровержение: внести сетевой вызов в граф приёма — тест обязан покраснеть.
+*Философия:* `NUEL_BELNAP_06_SUBSTITUTION_ORACLE` (D009) — Нуэль Белнап, `BARCAN-TAG-06_DEONTIC-CONSISTENCY:03:nuel-belnap`, publication anchor *A Useful Four-Valued Logic / how a computer should think - many-valued diagnostics*.
+Сильная дословно: «Перед заменой кода, зависимости, модели или схемы доказывается сохранение свойств при всех релевантных наблюдениях. При отсутствии или отказе внешнего провижининга фабрика строго сохраняет null и никогда не подменяет реальный репозиторий фиктивным (phantom URL)».
+Слабая: «Подстановка вымышленного или предварительного URL (`https://github.com/...`) в `repositoryUrl` при пропущенном или сбойном создании удаленного репозитория».
+Опровержение: «Подать проект со сбойным или отключенным GitHub-клиентом; если в результат возвращается непустой unbacked URL — форма слабая».
+**Форма: сильная.** `ProjectFactoryService.provision` берет `github.repositoryUrl()` напрямую, при `skipped`/`failed` возвращает строгий `null` и передает `null` в Linear, исключая фиктивные подстановки. Закреплено в `ProjectFactoryServiceTest` и `ProjectFactoryServiceFalsificationTest`.
+Второй образец: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Данным доверяют только тогда, когда процесс их сбора эпистемически надежен для предотвращения дефекта. Показаны источник, временная метка, правило свежести и путь валидации».
+Слабая: «Смешение greenfield/brownfield онбординга, потеря статусов коллабораторов или регистрация хотспотов без строгой привязки к ID проекта».
+Опровержение: «Попытаться создать greenfield-проект с уже существующим удаленным репозиторием; если система не выбрасывает name_conflict или регистрирует хотспоты без привязки к проекту — цепочка ненадежна».
+**Форма: сильная.** Провижининг разделяет `greenfield` (с выбросом `name_conflict` при существовании репозитория) и `brownfield` (с сохранением подтвержденного URL), автоматически регистрирует 4 стандартных хотспота проекта (`ProjectHotspotFileEntity`), а полный отчет `factoryReport` несет валидированный JSON-след всех подсистем (workspace, github, linear, collaborators).
+Третий образец: `BOUNDARY_TOPOLOGY` (D006) — **сильная**, заслонена структурно: во всём транзитивном графе вызовов приёма нет сетевых клиентов.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): режим `brownfield`, подтвержденный репозиторий `https://github.com/eneikdru/test-fiftieth`, 7 аккаунтов. В логах провижининга отсутствуют фантомные подстановки URL; при отсутствии Linear sync выдается штатный пропуск (`linear sync not available, skipped`). Верификация заслонена тестами: 17 тестов в проектном семействе (`ProjectFactoryServiceTest` 4/4, `ProjectFactoryServiceFalsificationTest` 6/6, `GitHubProjectFactoryClientTest` 3/3, `LinearProjectFactoryClientTest` 4/4) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProjectFactoryService` закрыта.
 
 **`RequirementGroundingService`** — сверяет текст клиента с корпусом строгих понятий и **дописывает** контекст.
 *Связи:* вызывает `ProjectFlowService`; зовёт `GeminiContextService`; ничего не пишет.

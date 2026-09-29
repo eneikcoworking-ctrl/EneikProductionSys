@@ -1,17 +1,17 @@
-# Такт L2: Ведущий инженер (2026-09-29 09:45 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 10:35 UTC)
 
-1. Фиксация Ступени 4: ProjectFlowService (D004 Shaffer, D010 Goldman):
+1. Фиксация Ступени 4: ProjectFactoryService (D009 Belnap, D010 Goldman):
    - Исходный код ядра сохранён без изменений («работа замером, не правкой!»).
-   - Образец DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP (D004): объявлена мерология владения состоянием потока. Форма слабая по мерологическому разделению (7649 строк, 15 репозиториев; механический сплит запрещён до фиксации карты в §XIII), сильная по транзакционной изоляции CAS/терминальных состояний.
-   - Образец ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D010): доказана надежность проектных границ. Запросы `selectBadSession`, `highestMergedPrNumber` строго ограничены задачами проекта (`findByTaskIdIn`), устраняя cross-project leakage и N+1.
+   - Образец NUEL_BELNAP_06_SUBSTITUTION_ORACLE (D009): форма сильная. Исключены фантомные подстановки URL при отключенном/сбойном GitHub (`repositoryUrl` строго `null`, передается `null` в Linear).
+   - Образец ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D010): форма сильная. Разделены `greenfield` (`name_conflict` при существовании репо) и `brownfield`, регистрируются 4 стандартных хотспота, отчет `factoryReport` несет полную JSON-трассировку подсистем.
 2. Замер рантайма (*Живое:*):
-   - Продукт `test-fiftieth` (:18080 UP): 493 задачи (`done: 382`, `failed: 56`, `spike_completed: 55`), 653 заявки вишлиста, 0 активных блокировок. В цикле оркестрации 0 ошибок целостности потока.
+   - Продукт `test-fiftieth` (:18080 UP): режим brownfield, подтвержденный repo `https://github.com/eneikdru/test-fiftieth`, 7 аккаунтов, 0 фантомных подстановок.
 3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Разработан тест-заслон `ProjectFlowServiceFalsificationTest` (6 тестов).
-   - Прогон полного пакета: `ProjectFlowServiceTest` (44/44) + `ProjectFlowServiceFalsificationTest` (6/6) = 50/50 BUILD SUCCESS (0 Failures, 0 Errors, 55s).
+   - Разработан тест-заслон `ProjectFactoryServiceFalsificationTest` (6 тестов).
+   - Прогон полного семейства: `ProjectFactoryServiceTest` (4/4) + `ProjectFactoryServiceFalsificationTest` (6/6) + `GitHubProjectFactoryClientTest` (3/3) + `LinearProjectFactoryClientTest` (4/4) = 17/17 BUILD SUCCESS (0 Failures, 0 Errors, 51s).
 4. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` (Раздел I) дописана полная запись `ProjectFlowService` (образцы, сильные/слабые формы, опровержение, *Живое:*), Ступень 4 для него закрыта.
+   - В `docs/FACTORY_MECHANISMS.md` (Раздел I) дописана полная запись `ProjectFactoryService` (образцы, формы, опровержение, *Живое:*), Ступень 4 для него закрыта.
 5. Инварианты хоста:
-   - Диск: 65% (<70%), RAM: 554Mi avail + 1.8Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy).
+   - Диск: 65% (<70%), RAM: 346Mi avail + 1.7Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy).
 6. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 4 (`ProjectFactoryService`), дописать запись и провести замер.
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 4 (`ProjectWorkspaceFactoryService`), дописать запись и провести замер.
