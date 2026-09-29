@@ -1,16 +1,17 @@
-# Такт L2: Ведущий инженер (2026-09-29 08:47 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 09:45 UTC)
 
-1. Фальсифицирующий замер Ступени 3: AccountRepository (D002 Marcus, D008 Goldman, D006 Raz):
-   - Исходный код фабрики сохранён без изменений ("кода не менять!").
-   - Заслон RUT_BARKAN_MARKUS_01_DE_RE_MODALITY_CHECK (D002): модальность de re емкости (`estimated_concurrent_capacity`, `estimated_daily_capacity`) доказана как неотъемлемый предикат сущности, строго вытесняющий абстрактные глобальные догадки. Сессии задач `blocked`/`done`/`failed` исключены из расхода емкости.
-   - Заслон ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D008): доказано полное исключение двойного захвата аккаунтов при параллельных конкурентных транзакциях (`FOR UPDATE SKIP LOCKED`).
-   - Заслон DZHOZEF_RAZ_21_PENALTY_AS_ORDERING (D006): штраф за отказы сессий ранжирует очередь, но не исключает из пула; успешная сессия сбрасывает штраф.
-   - Разработан тест-заслон `AccountRepositoryFalsificationTest` (8 тестов).
-2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон полного пакета: `AccountRepositoryFalsificationTest` (8/8) + `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12) + `AccountRepositoryIntegrationTest` (8/8) + `AccountSelectionFairnessTest` (5/5) = 33/33 BUILD SUCCESS (0 Failures, 0 Errors, 80s).
-3. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` (§XXXV) обновлены свидетельства и статус семейства `AccountRepository`, Ступень 3 закрыта со статусом «идеальный».
-4. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), RAM 725Mi + 1.4Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy, 11d).
-5. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий наряд/директиву L1/L3, покрыть тестом-заслоном.
+1. Фиксация Ступени 4: ProjectFlowService (D004 Shaffer, D010 Goldman):
+   - Исходный код ядра сохранён без изменений («работа замером, не правкой!»).
+   - Образец DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP (D004): объявлена мерология владения состоянием потока. Форма слабая по мерологическому разделению (7649 строк, 15 репозиториев; механический сплит запрещён до фиксации карты в §XIII), сильная по транзакционной изоляции CAS/терминальных состояний.
+   - Образец ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D010): доказана надежность проектных границ. Запросы `selectBadSession`, `highestMergedPrNumber` строго ограничены задачами проекта (`findByTaskIdIn`), устраняя cross-project leakage и N+1.
+2. Замер рантайма (*Живое:*):
+   - Продукт `test-fiftieth` (:18080 UP): 493 задачи (`done: 382`, `failed: 56`, `spike_completed: 55`), 653 заявки вишлиста, 0 активных блокировок. В цикле оркестрации 0 ошибок целостности потока.
+3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
+   - Разработан тест-заслон `ProjectFlowServiceFalsificationTest` (6 тестов).
+   - Прогон полного пакета: `ProjectFlowServiceTest` (44/44) + `ProjectFlowServiceFalsificationTest` (6/6) = 50/50 BUILD SUCCESS (0 Failures, 0 Errors, 55s).
+4. Документация фабрики:
+   - В `docs/FACTORY_MECHANISMS.md` (Раздел I) дописана полная запись `ProjectFlowService` (образцы, сильные/слабые формы, опровержение, *Живое:*), Ступень 4 для него закрыта.
+5. Инварианты хоста:
+   - Диск: 65% (<70%), RAM: 554Mi avail + 1.8Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy).
+6. Следующий такт:
+   - Проверить `MANAGER_STATE.md`, взять следующий механизм из очереди Ступени 4 (`ProjectFactoryService`), дописать запись и провести замер.

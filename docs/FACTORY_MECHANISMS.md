@@ -68,16 +68,26 @@
 
 # I. Приём требования
 
-**`ProjectFlowService`** (6809 строк) — главный цех: принимает проект и заявки клиента, собирает граф задач,
+**`ProjectFlowService`** (7649 строк) — главный цех: принимает проект и заявки клиента, собирает граф задач,
 ставит в очередь, отправляет, считает блокеры.
-*Связи:* вызывают 12 механизмов; зовёт 29; **пишет 13 хранилищ из 46**.
+*Связи:* вызывают 12 механизмов; зовёт 29; **пишет 15 хранилищ из 46** (`ProjectRepository`, `WishlistRepository`, `AccountRepository`, `TaskRepository`, `ClaimRepository`, `RoleRepository`, `ProjectFinalReportRepository`, `JulesSessionRepository`, `JulesActivityResponseRepository`, `ProjectGenerationStateRepository`, `ProjectFileClaimRepository`, `TaskConflictRepository`, `LinearIssueMetadataRepository`, `FeatureRepository`, `FeatureThreadRepository`).
 *Ценность:* единственная точка, где требование становится исполнимой работой.
-*Комментарий:* **ядро, и самая тяжёлая проблема фабрики.** Тринадцать хранилищ у одного класса означают, что
+*Комментарий:* **ядро, и самая тяжёлая проблема фабрики.** Пятнадцать хранилищ у одного класса означают, что
 почти всякая правка ядра — правка здесь, и потому критерий Куайна нарушается почти каждым коммитом. Это не
 придирка к размеру: пока приём, компиляция, отправка и подсчёт блокеров живут вместе, «не менять ядро»
 физически невозможно.
-*Философия:* `PART_WHOLE_OWNERSHIP` (D004) — **слабая**. Опровержение: найти поле, которое пишут два пути
-внутри него. Разделять начинать нельзя, пока владение не объявлено — образец требует именно этого порядка.
+*Философия:* `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` (D004) — Джонатан Шаффер, `BARCAN-TAG-01_ACTUALIST-OBJECT:05:dzhonatan-shaffer`, anchor *Monism: The Priority of the Whole - priority monism and grounding*.
+Сильная дословно: «Владение частями и инварианты целого объявляются явно до любого разделения модулей, таблиц или сервисов. Для каждой части показано, какой агрегат или сервис вправе её мутировать».
+Слабая: «Монолитный класс управляет множеством подсистем (прием, компиляция, планирование, блокировки, восстановление, отчетность) и пишет 15 хранилищ без разделения границ владения состояниями».
+Опровержение: «Найти поле/состояние, которое изменяется несколькими конкурирующими путями без явного объявления владельца перехода».
+**Форма: слабая** по мерологическому разделению (класс разросся до 7649 строк и инжектирует 15 репозиториев; механическое разделение по размеру запрещено до закрепления карты владения в §XIII). При этом **сильная** по транзакционной изоляции и защите терминальных статусов: прямые перезаписи задач вытеснены на CAS-методы (`compareAndSetStatusAt`, `writeStatusUnlessTerminalAt`), а добавление заявок (`addWishlistItem`) строго удерживает лимит попыток декомпозиции (`WISHLIST_COMPILE_ATTEMPT_BUDGET = 3`).
+Второй образец: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Данным доверяют только тогда, когда процесс их сбора эпистемически надежен для предотвращения дефекта. Показаны источник, временная метка, правило свежести и путь валидации».
+Слабая: «Глобальные выборки всей таблицы (`findAll`) с фильтрацией в памяти Java, смешивающие данные разных проектов и вызывающие N+1».
+Опровержение: «Сконструировать тестовый фикстур с двумя проектами и доказать, что запросы сервиса вычитывают сущности чужого проекта или приводят к N+1».
+**Форма: сильная** в части проектных границ и выборок задач. Все критические точки выборки (`selectBadSession`, `highestMergedPrNumber`) переведены на scoped-предикаты `findByTaskIdIn`, устранив N+1; `listProjects` упорядочен детерминированно (`findAllByOrderByCreatedAtDesc`).
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): 493 задачи (`done: 382`, `failed: 56`, `spike_completed: 55`, `queued: 0`, `claimed: 0`, `in_progress: 0`), 653 заявки вишлиста (`converted_to_task: 462`, `dismissed: 191`), активных блокировок 0. В журнале оркестрации 0 ошибок целостности потока; санитарные проверки удаляют остаточные записи оркестратора из ветки main (`removed 1 of 1 orchestrator record(s) from test-fiftieth's main branch`). Верификация заслонена тестами: 50 тестов (`ProjectFlowServiceTest` 44/44, `ProjectFlowServiceFalsificationTest` 6/6) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProjectFlowService` закрыта.
+
 
 
 *Строгая запись семейства: project flow/orchestration cluster.* Это lifecycle/orchestration mechanism, not eight scattered `findAll()` lines. The common subject is the project work loop: `ProjectFlowService` creates and lists work, `ContinuousOrchestrationService` chooses the next tick, `AutoMergeService` reconciles PR truth, `BranchGarbageCollectorService` retires dead branches, and `StrandedFinalizingSweepService` releases a transient claim when the original holder is gone.
