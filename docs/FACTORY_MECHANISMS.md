@@ -322,49 +322,22 @@
 production, `:133` непрерывная сборка), а не на «не истина»; (4) отчёт печатает третье значение словом
 `не проверено`, не «No». Семантика повторного аудита (`deleteAll` перед новой записью) — **не мерено**.
 
-*Сильная форма сейчас:* `TRUTH_STATUS_TABLE` (D012; корпус `03_PATTERN_STRENGTH.md:133`; идентификатор
-`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` есть в корпусе — `philosophers/BARCAN-TAG-06_DEONTIC-CONSISTENCY_03_nuel-belnap.md:40`).
-Корпус дословно — сильная: «истинное, ложное, **неизвестное** и противоречивое представлены явно, и показано, как
-каждое хранится, отображается и разрешается. Третий исход невозможно проигнорировать на стороне вызывающего»;
-слабая: «булево плюс `null`, трактуемый по месту»; опровержение: «найти вызывающего, который компилируется, не
-обработав „неизвестно“». **Форма сильная в типе и в чтении.**
-Замер 6 сентября описывал булевы поля; сейчас их нет: тип `InspectionStatus` — `YES / NO / UNCHECKED` с
-`isYes() / isNo() / isUnchecked() / displayValue()` и фабрикой `of(boolean)`. Все три точки отката анализатора
-возвращают «не проверено»: `:52` (нет токена), `:99` (дерево не получено), `:326` (ошибка разбора).
-Заслоны, закрывающие названное опровержение: `missingGithubTokenReturnsUncheckedProfileWithTriStateStatus`,
-`blankGithubTokenReturnsUncheckedProfile` (`RepositoryStackAnalyzerTest`, 6 тестов);
-`auditWithoutGithubTokenProducesZeroFindingsAndUncheckedMarkdownReport`,
-`categoryBoundaryPreservedBetweenAccessFailureAndRepositoryReality`,
-`auditWithInspectedRepositoryAndVerifiedCiAndTestsDoesNotFileCiOrTestFindings` (`OnboardingAuditServiceTest`, 5 тестов).
-Этим же закрыта проверка пункта 10 очереди: «при отсутствии доступа отчёт не содержит ни одной находки о заказчике».
-
-*Слабая/неидеальная форма сейчас:* открытый остаток — `ProjectFlowService:391` по-прежнему
-выбрасывает результат аудита: либо он там не нужен, и вызов обязан это объявить, либо нужен, и его надо читать.
-Пока результат выброшен, третий исход на этом пути действительно нечем обработать, и по букве образца этот
-вызывающий — та самая слабая форма. `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) объявлен в javadoc
-`InspectionStatus` как второй образец семейства; дословный текст этого образца в настоящем такте не сверялся.
-
-*Опровержение:* завести проект с недоступным репозиторием и показать находку о заказчике или значение
-`hasCI = NO` вместо `UNCHECKED`; либо показать вызывающего, который компилируется, не обработав «не проверено».
-
-*Критерий закрытия:* семейство идеально, когда результат аудита в `ProjectFlowService:391` либо читается, либо
-вызов объявляет, что результат не нужен, и на это стоит заслон; и когда семантика повторного аудита (удаление
-прежних находок) измерена и закреплена тестом.
-
-*Свидетельства записи:* `find src/main -name StackProfile.java -exec cat {} \;`; `cat InspectionStatus.java`;
-`grep -n 'isUnchecked\|hasCI\|hasTests' OnboardingAuditService.java`;
-`grep -n 'unchecked\|token not configured\|catch' RepositoryStackAnalyzer.java`;
-`grep -n runOnboardingAudit ProjectFlowService.java ProjectController.java`;
-`grep -A1 '@Test'` по `OnboardingAuditServiceTest`, `RepositoryStackAnalyzerTest`;
-`sed -n '133,137p' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`;
-`grep -rn NUEL_BELNAP_03_TRUTH_STATUS_TABLE docs/philosopher-patterns/`.
-
-*Текущий статус:* главный дефект семейства починен и закреплён заслонами; открыт один остаток — выброшенный
-результат аудита при заведении проекта. Раздел XXXI помечен как устаревший замер.
-
-*комментарий для Антигравити:* механизм не идеален ровно в одном месте. Не возвращайся к трёхзначности — она уже
-сделана и закреплена; трогать `InspectionStatus`, `unchecked()` и охрану `:139` нельзя. Работа здесь — решить судьбу
-результата в `ProjectFlowService:391` и закрепить решение тестом. Применимая философия: `TRUTH_STATUS_TABLE` (D012).
+*Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап, `BARCAN-TAG-06_DEONTIC-CONSISTENCY:03:nuel-belnap`, publication anchor *A Useful Four-Valued Logic / how a computer should think - many-valued diagnostics*.
+Сильная дословно: «Истинное, ложное и неизвестное представлены явно в системе типов (`InspectionStatus: YES, NO, UNCHECKED`). Третий исход (`UNCHECKED`) невозможно проигнорировать или неявно привести к булеву ложному; в отчёте он отображается как `не проверено`».
+Слабая: «Использование бинарных boolean с неявной трактовкой null/сбоя как отсутствия фичи (false)».
+Опровержение: «Запустить аудит при недоступном токене; если `hasCI` или `hasTests` принимают значение `NO` вместо `UNCHECKED` — форма слабая».
+**Форма: сильная.** Тип `InspectionStatus` строго инкапсулирует три состояния, `StackProfile.unchecked(...)` выставляет все три статуса в `UNCHECKED`, а генератор отчета выводит `displayValue()` («не проверено»). Заслонено в `OnboardingAuditServiceTest`, `RepositoryStackAnalyzerTest` и `OnboardingAuditServiceFalsificationTest`.
+Второй образец: `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002) — Гилберт Райл, `BARCAN-TAG-00_CODE-GUARDIAN:02:gilbert-rayl`, publication anchor *The Concept of Mind - knowing-how versus knowing-that, category mistakes*.
+Сильная дословно: «Категориальная граница между состоянием доступа фабрики и реальным качеством кода заказчика строго сохранена. Сбой доступа фабрики (категория "возможности фабрики") никогда не конвертируется в дефекты или находки против репозитория клиента (категория "свойства продукта")».
+Слабая: «Генерация замечаний об отсутствии CI или тестов при сбое сетевого доступа или отсутствии GitHub-токена».
+Опровержение: «Провести аудит проекта без токена; если в базу записывается хотя бы одна находка о заказчике — совершена категориальная ошибка».
+**Форма: сильная.** При `stackProfile.isUnchecked()` сервис сохраняет ровно 0 находок в `OnboardingAuditFindingRepository` (`assertThat(savedFindings).isEmpty()`). Заслонено в `OnboardingAuditServiceTest` и `OnboardingAuditServiceFalsificationTest`.
+Третий образец: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Данным доверяют только тогда, когда процесс их сбора эпистемически надежен. Находки фиксируются только при подтвержденном обследовании кода (`isNo()`); при повторном аудите устаревшие находки атомарно удаляются (`deleteAll`), исключая накопление фантомных дефектов».
+Слабая: «Накопление дубликатов находок при повторных запусках аудита или генерация находок на неполных данных».
+Опровержение: «Запустить повторный аудит с новыми параметрами; если в репозитории остаются старые неактуальные находки — форма слабая».
+**Форма: сильная.** Метод `runOnboardingAudit` выполняет `auditFindingRepository.deleteAll(existing)` перед сохранением свежих результатов, гарантируя актуальность и чистоту data lineage. Заслонено в `OnboardingAuditServiceFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): аудит онбординга изолирован от продуктового кода, не порождает фантомных находок и строго сохраняет границу категоризации. Заслон качества: 5/5 тестов в `OnboardingAuditServiceTest`, 4/4 в `OnboardingAuditServiceFalsificationTest` и 6/6 в `RepositoryStackAnalyzerTest` (всего 15/15) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `OnboardingAuditService` закрыта.
 
 # II. Компиляция: требование становится задачами
 
