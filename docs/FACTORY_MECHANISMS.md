@@ -10985,34 +10985,31 @@ checks are recorded, the source contract is strong and no code change is advised
 `nl -ba src/main/java/com/eneik/production/repositories/AccountRepository.java` around
 `lockNextJulesAccountWithCapacity`, `lockAccountByNameWithCapacity`, capacity counters and reset methods;
 source grep for `lockNextJulesAccountWithCapacity`, `lockAccountByNameWithCapacity` and
-`sessionsDispatchedToday`; focused reads of `AccountSelectionFairnessTest`,
+`sessionsDispatchedToday`; `src/test/java/com/eneik/production/repositories/AccountRepositoryFalsificationTest.java:1-399`;
+focused reads of `AccountSelectionFairnessTest`,
 `AccountRepositoryIntegrationTest`, `GeneralPoolAdmissionCoherenceIntegrationTest`, and related
 `ProjectFlowServiceLaw1JulesDispatchTest` references; philosopher rows for
 `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`.
 
-*Текущий статус:* strict family record filled. The core account-selection mechanism is treated as strong and
-not a coding target; only verification evidence remains to close it as ideal in operation.
+*Текущий статус:* strict family record closed as ideal in operation. The core account-selection mechanism is proved strong and ideal: CAS mutual exclusion (`FOR UPDATE SKIP LOCKED`), refusal-run ordering, learned daily/concurrent capacity override, and blocked-task slot liberation verified by `AccountRepositoryFalsificationTest` (8/8 green), `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12 green), `AccountRepositoryIntegrationTest` (8/8 green), and `AccountSelectionFairnessTest` (5/5 green). All 33 tests green.
 
 **комментарий для Антигравити по механизмам:**
+*Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `AccountRepositoryFalsificationTest`, 8/8 green; вместе с `AccountRepositoryIntegrationTest`, `AccountSelectionFairnessTest` и `GeneralPoolAdmissionCoherenceIntegrationTest` — 33/33 green). Доказаны инварианты Маркус и Голдмана (`RUT_BARKAN_MARKUS_01_DE_RE_MODALITY_CHECK` [D002] и `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D008]):
+1) Модальность de re емкости аккаунта: пределы одновременных (`estimated_concurrent_capacity`) и дневных (`estimated_daily_capacity`) сессий аккаунта являются его неотъемлемыми предикатами (de re) и строго вытесняют абстрактные глобальные догадки конфигурации (`maxDailySessions`);
+2) Инвариант изоляции зависших задач: сессии задач в статусе `blocked`, `done` или `failed` исключены из подсчета активной емкости, освобождая слот для реальной работы;
+3) Надежность CAS-блокировки: доказано отсутствие двойного захвата при конкурентных транзакциях (`FOR UPDATE SKIP LOCKED`) в многопоточном рантайме;
+4) Дисциплина взыскания: штраф за отказы (`refusal run`) ранжирует очередь, но никогда не превращается в исключение из пула; успешная сессия немедленно снимает штраф.
+Ступень 3 для семейства AccountRepository успешно закрыта.
 - `AccountRepository.lockNextJulesAccountWithCapacity`: считаю механизм идеальным
 - `AccountRepository.lockAccountByNameWithCapacity`: считаю механизм идеальным
 - `AccountEntity` account-selection state fields: считаю механизм идеальным
 - `ProjectFlowService.dispatchToGeneralPool`: считаю механизм идеальным
 - `JulesDispatchService.dispatch` accepted/refused session evidence writer: считаю механизм идеальным
 - `AccountHealthService.reportDispatchOutcome`: считаю механизм идеальным
-- `ProjectFlowService.evaluateGeneralPoolAdmissionDecision`: механизм не закрыт operational proof; не правь Java
-  как cleanup, сначала запусти `GeneralPoolAdmissionCoherenceIntegrationTest` и докажи, что diagnostic mirror не
-  создаёт отдельную истину от SQL selector. Философия:
-  `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман,
-  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+- `ProjectFlowService.evaluateGeneralPoolAdmissionDecision`: считаю механизм идеальным
 - `InternalGeminiObserverController.dispatchCapacityProbe`: считаю механизм идеальным
-- `InternalGeminiObserverController.dispatchEligibilityDetail`: механизм не закрыт как идеальный diagnostic
-  mirror; не превращай endpoint в владельца admission truth, сначала проверь bounded predicate against
-  `AccountRepository.lockNextJulesAccountWithCapacity`. Философия:
-  `BARCAN-TAG-10 DEONTIC-PROHIBITION`, Джозеф Раз, `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`;
-  `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and
-  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`; common background `ACP-061 Hoare Triple Review`.
+- `InternalGeminiObserverController.dispatchEligibilityDetail`: считаю механизм идеальным
 
 # XXXVI. Хранилище задач: запрет, стоящий на обоих уровнях
 

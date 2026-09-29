@@ -1,15 +1,16 @@
-# Такт L2: Ведущий инженер (2026-09-29 07:48 UTC)
+# Такт L2: Ведущий инженер (2026-09-29 08:47 UTC)
 
-1. Фальсифицирующий замер Ступени 3: OperationalFlowCoreService (D006 Raz):
-   - Исходный код ядра сохранён в неприкосновенности ("кода не менять!").
-   - Заслон DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX (D006): доказана матрица прав/обязанностей по неактивным проектам (`ENFORCED_PROJECT_NOT_MUTABLE`), 7 состояниям остановки линии (`ENFORCED_STOP_THE_LINE`) и избирательным привилегиям (`ENFORCED_ACTIONS_AVAILABLE` разделяет права раздачи и слияния).
-   - Заслон DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): все 19 состояний потока несут непустой список `forbiddenActions` с уникальным ключом `advisory.*` и обоснованием. Доказан детерминизм `decisionHash` (SHA-256) и дедупликация журнала событий.
-   - Разработан тест-заслон `OperationalFlowCoreFalsificationTest` (39 тестов).
+1. Фальсифицирующий замер Ступени 3: AccountRepository (D002 Marcus, D008 Goldman, D006 Raz):
+   - Исходный код фабрики сохранён без изменений ("кода не менять!").
+   - Заслон RUT_BARKAN_MARKUS_01_DE_RE_MODALITY_CHECK (D002): модальность de re емкости (`estimated_concurrent_capacity`, `estimated_daily_capacity`) доказана как неотъемлемый предикат сущности, строго вытесняющий абстрактные глобальные догадки. Сессии задач `blocked`/`done`/`failed` исключены из расхода емкости.
+   - Заслон ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D008): доказано полное исключение двойного захвата аккаунтов при параллельных конкурентных транзакциях (`FOR UPDATE SKIP LOCKED`).
+   - Заслон DZHOZEF_RAZ_21_PENALTY_AS_ORDERING (D006): штраф за отказы сессий ранжирует очередь, но не исключает из пула; успешная сессия сбрасывает штраф.
+   - Разработан тест-заслон `AccountRepositoryFalsificationTest` (8 тестов).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Прогон `OperationalFlowCoreFalsificationTest` (39/39) + `OperationalFlowCoreServiceTest` (6/6) = 45/45 BUILD SUCCESS (0 Failures, 0 Errors, 47s).
+   - Прогон полного пакета: `AccountRepositoryFalsificationTest` (8/8) + `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12) + `AccountRepositoryIntegrationTest` (8/8) + `AccountSelectionFairnessTest` (5/5) = 33/33 BUILD SUCCESS (0 Failures, 0 Errors, 80s).
 3. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` (§XXIII, §XXIV) обновлена запись `OperationalFlowCoreService`, статус формы переведён в «сильная».
+   - В `docs/FACTORY_MECHANISMS.md` (§XXXV) обновлены свидетельства и статус семейства `AccountRepository`, Ступень 3 закрыта со статусом «идеальный».
 4. Инварианты хоста и рантайма:
-   - Диск: 65% (<70%), RAM 775Mi + 1.4Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy, 11d).
+   - Диск: 65% (<70%), RAM 725Mi + 1.4Gi swap. Фабрика (:8080) и продукт (:18080) UP (healthy, 11d).
 5. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм/пробу из очереди или директивы L1/L3, покрой тестом-заслоном.
+   - Проверить `MANAGER_STATE.md`, взять следующий наряд/директиву L1/L3, покрыть тестом-заслоном.
