@@ -125,8 +125,7 @@
 
 *комментарий для Антигравити: механизм переведен в статус ideal. Жизненный цикл, оркестрация, автомерж и сборка мусора веток строго изолированы границами проекта и статусными предикатами. Следующий такт 4/10 — Jules operations cluster: `JulesDispatchService`, `JulesSessionController`, `JulesMonitorController`, `InternalJulesActivitiesProbeController`, `JulesConfigController`, GitHub webhook lineage and session/activity freshness. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, publication anchor `A Causal Theory of Knowing / Epistemology and Cognition - reliabilism`, pattern `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`; для владения частями дополнительно держать `PART_WHOLE_OWNERSHIP`.*
 
-**`ProjectFactoryService`**, **`GitHubProjectFactoryClient`**, **`LinearProjectFactoryClient`**,
-**`ProjectWorkspaceFactoryService`** — провижининг: репозиторий, проект в Linear, рабочее пространство.
+**`ProjectFactoryService`**, **`GitHubProjectFactoryClient`**, **`LinearProjectFactoryClient`** — провижининг: репозиторий, проект в Linear, регистрация хотспотов.
 *Связи:* цепочка от `ProjectFlowService` вниз; наружу пишет только `ProjectHotspotFileRepository`.
 *Ценность:* приём требования не должен зависеть от того, ответил ли GitHub.
 *Комментарий:* **ядро.** Провижининг вынесен из транзакции приёма намеренно; отказ пишется в `factoryStatus`,
@@ -143,6 +142,22 @@
 **Форма: сильная.** Провижининг разделяет `greenfield` (с выбросом `name_conflict` при существовании репозитория) и `brownfield` (с сохранением подтвержденного URL), автоматически регистрирует 4 стандартных хотспота проекта (`ProjectHotspotFileEntity`), а полный отчет `factoryReport` несет валидированный JSON-след всех подсистем (workspace, github, linear, collaborators).
 Третий образец: `BOUNDARY_TOPOLOGY` (D006) — **сильная**, заслонена структурно: во всём транзитивном графе вызовов приёма нет сетевых клиентов.
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): режим `brownfield`, подтвержденный репозиторий `https://github.com/eneikdru/test-fiftieth`, 7 аккаунтов. В логах провижининга отсутствуют фантомные подстановки URL; при отсутствии Linear sync выдается штатный пропуск (`linear sync not available, skipped`). Верификация заслонена тестами: 17 тестов в проектном семействе (`ProjectFactoryServiceTest` 4/4, `ProjectFactoryServiceFalsificationTest` 6/6, `GitHubProjectFactoryClientTest` 3/3, `LinearProjectFactoryClientTest` 4/4) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProjectFactoryService` закрыта.
+
+**`ProjectWorkspaceFactoryService`** (181 строка) — фабрика локального рабочего пространства: инициализирует файловую структуру проекта, генерирует канонические артефакты (`README.md`, `.env.example`, `.github/workflows/ci.yml`, `docs/PROJECT_BRIEF.md`) и защищает границу каталога `workspaceRoot`.
+*Связи:* зовётся из `ProjectFactoryService.provision`; пишет локальную файловую систему строго в пределах `workspaceRoot`.
+*Ценность:* гарантирует наличие консистентных артефактов и CI-шаблонов без риска побега за пределы сконфигурированного корня.
+*Комментарий:* **ядро.** Провижининг рабочего пространства не должен повреждать предсуществующий код клиента и обязан физически исключать побег за пределы корня.
+*Философия:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци, `BARCAN-TAG-01_ACTUALIST-OBJECT:04:ahille-vartsi`, publication anchor *Parts and Places / formal ontology of boundaries and spatial parts*.
+Сильная дословно: «Определяется точная граница, где валидация, авторизация, персистентность или владение переходят из рук в руки. Путь рабочего пространства строго ограничен сконфигурированным корнем workspaceRoot; любая попытка path traversal (`../`) немедленно пресекается до вызова файловых операций».
+Слабая: «Слепое создание каталогов по `root.resolve(slug)` без проверки `startsWith(root)`, позволяющее слагам с относительными путями выйти за пределы рабочей директории».
+Опровержение: «Передать в проект слаг с относительным выходом `../../escaped`; если метод создает каталог или файлы вне workspaceRoot — форма слабая».
+**Форма: сильная.** Проверка `workspace.startsWith(root)` строго защищает границу топологии и выбрасывает `IllegalStateException("Workspace path escaped configured root")`. Заслонено тестами в `ProjectWorkspaceFactoryServiceFalsificationTest`.
+Второй образец: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (D010) — Элвин Голдман, `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman`, anchor *A Causal Theory of Knowing / Epistemology and Cognition - reliabilism*.
+Сильная дословно: «Данным доверяют только тогда, когда процесс их сбора эпистемически надежен для предотвращения дефекта. Показаны источник, временная метка, правило свежести и путь валидации».
+Слабая: «Перезапись или порча предсуществующих файлов клиентского репозитория в режиме brownfield-онбординга».
+Опровержение: «Подать brownfield-проект с уже существующим `README.md`; если провижининг перезапишет файл дефолтным шаблоном фабрики — форма слабая».
+**Форма: сильная.** При `isBrownfield` сервис мгновенно возвращает `WorkspaceProvisioningResult` без перезаписи локальных файлов, а вспомогательный метод `write` явно содержит страховку `if (isBrownfield && Files.exists(path)) return;`. Проверено в `ProjectWorkspaceFactoryServiceFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 10d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): режим `brownfield`, рабочий каталог `./project-workspaces/test-fiftieth` сохранен без повреждения клиентских артефактов. Попыток path traversal не зафиксировано. Заслон качества: 5/5 тестов в `ProjectWorkspaceFactoryServiceFalsificationTest` и 22/22 в полном семействе `projectfactory` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProjectWorkspaceFactoryService` закрыта.
 
 **`RequirementGroundingService`** — сверяет текст клиента с корпусом строгих понятий и **дописывает** контекст.
 *Связи:* вызывает `ProjectFlowService`; зовёт `GeminiContextService`; ничего не пишет.
