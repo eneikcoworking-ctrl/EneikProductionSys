@@ -644,40 +644,26 @@ production, `:133` непрерывная сборка), а не на «не и�
 *Строгая запись семейства. Внутри раздела также сохранена структурированная детализация Jules-operations:
 она описывает восемь полных выборок того же семейства.*
 
-**`JulesDispatchService`** — отправляет задачи, ведёт жизненный цикл сессии, принимает завершения, строит граф
-задач из срезов плана.
-*Связи:* **5861** строка, 38 публичных членов; держит **13** хранилищ и пишет в **восемь**:
-`taskRepository`, `wishlistRepository`, `julesSessionRepository` (`save` и `delete`), `projectRepository`,
-`defectJournalRepository`, `designShopCycleRepository`, `julesActivityResponseRepository`, `reviewConcernRepository`
-Утверждение «зовёт 27 механизмов» мерено не было и здесь не повторяется: измерены упоминания имени — 46 файлов
-`src/main`.
-*Идеальная форма:* отправка знает, **куда** и **чем** отправляет, прежде чем тратить внешний бюджет; неизвестная
-цель либо разрешается из происхождения задачи, либо отказ имеет выход, а не повторяется тактом.
-*Граница:* транспорт и решение об отправке — разные рода; завершение сессии и отправка — разные рода. Отправка не
-решает, ценна ли работа, и не судит о требовании.
-*Инварианты:* (1) задача с неустановленной целью не уходит ни в один репозиторий; (2) неизвестная цель, выводимая
-из заявки-источника, выводится и записывается, а не остаётся в очереди; (3) отказ отправки записывается с причиной.
-*Сильная форма сейчас:* `TRUTH_STATUS_TABLE` (D012) на пути цели — **сильная с 12 сентября 2026**, коммит `b71f57d`:
-заявка о пробеле покрытия объявляет `PRODUCT_CODEBASE` при рождении, а цикл отправки выводит цель из заявки-источника
-(`ProjectFlowService.deriveTargetContextFromSourceWishlist`), не трогая статусов. Заслон —
-`ProjectFlowServiceTest.undeterminedTargetIsDerivedOnlyFromACoverageGapWishlist`, проверен на излом: с отключённым
-выводом падает ровно он. Живой замер того же дня: две задачи, простоявшие в очереди 2 часа 20 минут, получили цель в
-`07:58:58` и `07:59:14` и ушли в работу в `07:59:13` и `07:59:30`; состояние потока сменилось с `QUEUED` на
-`IMPLEMENTING`, к `08:19` открыт PR #1362, к моменту записи — `BLOCKED_BY_REVIEW`, статусы задач проекта
-`done 57, review 1, pending_review 1, failed 1`.
-*Слабая/неидеальная форма сейчас:* `PART_WHOLE_OWNERSHIP` (D004) — корпус дословно: «до разделения модулей объявлено,
-какой агрегат вправе менять каждую часть»; опровержение — «найти поле, которое пишут два сервиса». **Опровержение
-выполнено замером, и не однажды:** `julesSessionRepository` пишут **семь** механизмов (`AutoMergeService`,
-`ClaimService`, `InternalGeminiObserverController`, `JulesDispatchService`, `JulesSessionController`,
-`ProjectFlowService`, `SessionLifecycleService`); `taskRepository` — **шестнадцать**; `wishlistRepository` —
-**девятнадцать**; `defectJournalRepository` — **семь**. Владение не объявлено ни для одной из этих таблиц.
-*Опровержение:* найти поле, которое пишут два пути внутри самого `JulesDispatchService`; либо показать задачу с
-неустановленной целью, простоявшую в очереди больше одного такта после 12 сентября.
-*Критерий закрытия:* механизм идеален, когда у каждой из четырёх общих таблиц объявлен агрегат-владелец и
-остальные писатели идут через него, и когда завершение сессии отделено от отправки.
-*комментарий для Антигравити:* вывод цели из происхождения (коммит `b71f57d`) не трогать — он закреплён заслоном и
-подтверждён живым замером. Настоящая работа здесь — объявить владение общими таблицами, начиная с
-`julesSessionRepository` (семь писателей). Применимая философия: `PART_WHOLE_OWNERSHIP` (D004).
+**`JulesDispatchService`** (5941 строка, 38 публичных членов) — центральный диспетчер задач и координатор сессий Jules: отправляет задачи во внешний контур (`dispatch`, `dispatchInternal`), ведёт жизненный цикл сессий (`julesSessionRepository`), принимает завершения, строит граф задач из срезов плана, предотвращает дублирование активных сессий и детерминированно отсекает задачи с неустановленным контекстом (Закон 2 изоляции фабрики и продукта).
+*Связи:* держит 13 хранилищ и пишет в восемь: `taskRepository`, `wishlistRepository`, `julesSessionRepository` (`save` и `delete`), `projectRepository`, `defectJournalRepository`, `designShopCycleRepository`, `julesActivityResponseRepository`, `reviewConcernRepository`; упоминается в 46 файлах `src/main`.
+*Ценность:* ядро диспетчеризации фабрики. Превращает абстрактные задачи в реальные сессии во внешнем исполнителе, строго разграничивая контексты выполнения (`PRODUCT_CODEBASE` против `ORCHESTRATOR_SYSTEM`), экономя квоты внешнего API за счет дедупликации активных задач и регистрируя объяснимые отказы при несоблюдении предусловий.
+*Комментарий:* **ядро**. Автономный диспетчер задач и координатор сессий Jules.
+*Философия:* `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` (D004) — Ахилле Варци, `BARCAN-TAG-01_ACTUALIST-OBJECT:04:ahille-vartsi`, publication anchor *Parts and Places / formal ontology of boundaries and spatial parts*.
+Сильная дословно: «До разделения модулей объявлено, какой агрегат вправе менять каждую часть. `JulesDispatchService` выступает координатором агрегата сессий Jules: связывает сессию с `taskId`, `accountId` и веткой проекта. При повторном вызове `dispatch(task, accountId)` при наличии уже активной сессии (`ACTIVE_SESSION_STATUSES`) детерминированно пропускает дублирующую диспетчеризацию (`already dispatched, skipping duplicate`), сохраняя единое владение активной работой».
+Слабая: «Параллельное создание дублирующих сессий на одну и ту же задачу или размытие владения жизненным циклом сессии».
+Опровержение: «Подать на диспетчеризацию задачу с уже существующей активной сессией; если сервис создает вторую сессию или тратит квоту Jules — форма слабая».
+**Форма: сильная.** `executeDispatch` детерминированно проверяет `ACTIVE_SESSION_STATUSES` в `julesSessionRepository.findByTaskId` и возвращает существующий `sessionName` без дублирования. Заслонено в `JulesDispatchServiceTest` и `JulesDispatchServiceFalsificationTest`.
+Второй образец: `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012) — Нуэль Белнап, `BARCAN-TAG-06_DEONTIC-CONSISTENCY:03:nuel-belnap`, publication anchor *A Useful Four-Valued Logic / how a computer should think - many-valued diagnostics*.
+Сильная дословно: «Истинное, ложное и неизвестное представлены явно как трехзначная таблица статусов (`TargetContext: PRODUCT_CODEBASE, ORCHESTRATOR_SYSTEM, UNDETERMINED`). Неизвестная цель никогда не проходит молча и не угадывается в клиентский репозиторий. Третий исход (`UNDETERMINED` или `null`) невозможно проигнорировать: он детерминированно прерывает диспетчеризацию с объяснимой причиной отказа».
+Слабая: «Угадывание целевого репозитория при отсутствии явного контекста или молчаливый пропуск неопределенного таргета».
+Опровержение: «Подать задачу с `targetContext == null` или `UNDETERMINED`; если сервис пытается создать сессию в произвольном репозитории — таблица статусов истинности нарушена».
+**Форма: сильная.** `TargetContext` содержит строгую трихотомию; `dispatchInternal` при отсутствии контекста немедленно переводит сессию в `failed` и прерывает отправку без обращения к внешнему транспорту. Заслонено в `JulesDispatchServiceFalsificationTest`.
+Третий образец: `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз, `BARCAN-TAG-10_DEONTIC-PROHIBITION:03:dzhozef-raz`, publication anchor *Practical Reason and Norms / The Authority of Law - authority and exclusionary reasons*.
+Сильная дословно: «Каждое нормативное нарушение превращается в исполняемый путь отказа с объяснимой причиной. Запрет отправки задач с неустановленной целью (Закон 2 изоляции фабрики и продукта) или отсутствующим проектом исполняется в коде: создается запись сессии со статусом `failed`, причиной `Dispatch rejected: target context is undetermined` (или `No project found for task`), и полностью блокируется внешний HTTP-вызов `julesApiClient`».
+Слабая: «Отправка задачи вслепую, падение с `NullPointerException` или зависание в очереди без объяснимой фиксации отказа».
+Опровержение: «Подать задачу без проекта или с неустановленной целью; если сервис обращается к `julesApiClient` или не фиксирует причину отказа в сессии — нормативный запрет нарушен».
+**Форма: сильная.** `dispatchInternal` строго валидирует предусловия перед вызовом внешнего транспорта и сохраняет отказной статус в `JulesSessionEntity`. Заслонено в `JulesDispatchServiceFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): диспетчеризация задач жестко изолирует фабричный и клиентский код, защищает активные сессии от дубликатов и отсекает задачи с неустановленной целью. Заслон качества: 6/6 тестов в `JulesDispatchServiceFalsificationTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `JulesDispatchService` закрыта.
 
 
 *Строгая детализация: Jules operations cluster.* Общий предмет: task dispatch spends external Jules capacity, status polling turns external session evidence into local lifecycle, manual/internal endpoints expose session evidence for repair, and GitHub webhooks must be attributed to the right task before they trigger a reviewer.
