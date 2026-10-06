@@ -1,18 +1,18 @@
-# Такт L2: Ведущий инженер (2026-09-30 00:05 UTC)
+# Такт L2: Ведущий инженер (2026-10-06 20:38 UTC)
 
-1. Фиксация Ступени 4: JulesDispatchService (D004 Varzi, D012 Belnap, D006 Raz):
+1. Фиксация Ступени 4: SessionLifecycleService (D004 Gilbert, D006 Raz, D010 Goldman):
    - Исходный код сохранён без изменений («работа замером, не правкой!»).
-   - Образец AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP (D004): форма сильная. Координатор агрегата сессий Jules; дедупликация активных сессий (ACTIVE_SESSION_STATUSES) предотвращает повторный вызов внешнего API.
-   - Образец NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012): форма сильная. Трехзначная таблица TargetContext; неразрешенный контекст детерминированно прерывает диспетчеризацию с отказом.
-   - Образец DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): форма сильная. Отказ отправки при отсутствии проекта/контекста фиксируется в сессии failed с объяснимой причиной без HTTP-вызова.
+   - Образец MARGARET_GILBERT_02_JOINT_COMMITMENT_LOCK (D004): форма сильная. Единственный владелец удаленной жизни сессий; локальная отмена не имитирует удаление при ошибке транспорта (500), подтвержденное удаление блокирует повторные вызовы.
+   - Образец DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): форма сильная. Сетевой I/O изолирован от БД-транзакций через короткие REQUIRES_NEW-прокси; пропущенные сессии (skipped) и отсутствие API-ключа категорически блокируют сетевой вызов.
+   - Образец ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D010): форма сильная. HTTP 404 признается надежным свидетельством отсутствия; свип очищает только терминальные задачи (включая spike_completed) и закрытые проекты, защищая живые задачи.
 2. Замер рантайма (*Живое:*):
-   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 12d): строгая изоляция фабрики и продукта, экономия внешних квот.
+   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 12d): очистка сессий во внешнем API защищает пул БД от тайм-аутов и предотвращает рассинхронизацию.
 3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Создан `JulesDispatchServiceFalsificationTest` (6 тестов: дедупликация, трихотомия TargetContext, отказ без проекта, защита внешнего транспорта).
-   - Прогон: 6/6 green (BUILD SUCCESS).
+   - Создан `SessionLifecycleServiceFalsificationTest` (6 тестов).
+   - Прогон: 14/14 green (SessionLifecycleServiceTest 8/8, FalsificationTest 6/6, BUILD SUCCESS).
 4. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирована каноническая запись `JulesDispatchService`. Ступень 4 закрыта.
+   - В `docs/FACTORY_MECHANISMS.md` зафиксирована каноническая запись `SessionLifecycleService`. Ступень 4 закрыта.
 5. Инварианты хоста:
-   - Диск: 65% (норма <70%), RAM: 461Mi avail + 1.2Gi swap. Сервисы UP (healthy).
+   - Диск: 60% (норма <70%), RAM: 778Mi avail + 921Mi swap. Сервисы UP (healthy).
 6. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, продолжить Семейство III (SessionLifecycleService, PersistentWorkerSessionService, ClaimService).
+   - Проверить `MANAGER_STATE.md`, продолжить Семейство III (PersistentWorkerSessionService, ClaimService).
