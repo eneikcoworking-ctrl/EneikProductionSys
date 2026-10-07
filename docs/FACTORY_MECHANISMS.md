@@ -1632,6 +1632,30 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 
 ---
 
+### DeliveredWorkJudgmentService
+
+**Имена механизма:** `DeliveredWorkJudgmentService`, `TaskRepository`, `JulesSessionRepository`, `GitHubPullRequestService`, `JudgmentAgentClient`, `WishlistRepository`, `CriteriaEvidenceSelector`.
+
+**Философский паттерн:**
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: фальсификация сдачи работы — сопоставление реального diff PR с критериями приёмки (`acceptance_criteria`) закрытой задачи; шаблонные процессные критерии (`PROCESS_ACCEPTANCE_CRITERIA`) отсекаются в `UNDECIDABLE` без сетевого вызова и без траты токенов; задачи без критериев исключаются из знаменателя (`falsifyPopperFalsification_processBoilerplateCriteriaNeverInvokesModel`, `falsifyPopperFalsification_taskWithoutCriteriaIsSkippedFromDenominator`).
+- `LUDVIG_VITGENSHTEYN_01_ANTI_MIRROR_TELEMETRY` [D013, Wittgenstein]: анти-зеркало рантайма и репозитория — проверка физического PR diff в GitHub; отсутствие PR или недоступность diff транслируются в честный статус `NOT_JUDGED_NO_DIFF` без ложного подтверждения; последовательные повторные пропуски ответа (`silenceCount >= maxConsecutiveSilences`) фиксируются как факт об объекте (`UNDECIDABLE`), не превращаясь в бесконечный retry (`falsifyWittgensteinAntiMirror_missingPrOrUnreadableDiffRecordedAsNotJudged`, `falsifyWittgensteinAntiMirror_repeatedSilencesMaterializeAsUndecidable`).
+- `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` [D006, Raz]: деонтическая матрица прав и обязанностей — строгая демаркация уровней `DELIVERY` и `FACTORY`; вердикт `REFUTED` никогда не откатывает и не блокирует уже завершённую задачу, а порождает дедуплицированную заявку вишлиста `delivery_refuted`, привязанную к эпику задачи (`featureId`), обеспечивая автономное исправление без дедлоков потока (`falsifyRazRightsDuties_refutedVerdictProducesDeliveryRefutedWishlist`, `falsifyRazRightsDuties_satisfiedVerdictFilesNothingAndMarksTask`).
+
+**Форма: сильная.** Заслонено в `DeliveredWorkJudgmentServiceTest` (8/8) и `DeliveredWorkJudgmentServiceFalsificationTest` (6/6, итого 14/14 тестов). Доказаны инварианты:
+- Оценка delivery опирается на физический diff PR, отсекая иллюзорную сдачу без кода (`NOT_JUDGED_NO_DIFF`).
+- Процессные заглушки компилятора (`PROCESS_ACCEPTANCE_CRITERIA`) не тратят токены и признаются `UNDECIDABLE`.
+- Нарушение критериев (`REFUTED`) преобразуется в дедуплицированный вишлист с сохранением контекста и связи с фичей.
+- Удовлетворённые критерии (`SATISFIED`) фиксируются в `payload` задачи без генерации избыточных артефактов.
+- Защита очереди от зависаний: повторяющиеся сбои передачи аргументов/таймауты переводят задачу в `UNDECIDABLE`.
+
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 15h, `eneikproductionsys-judgment-proxy-1` UP 3w). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): задачи продукта имеют сохранённые вердикты сдачи (`payload.acceptance_verdict`), механизм вызывается в цикле оркестратора `ContinuousOrchestrationService` под защитой политики `OperationalAction.JUDGE_DELIVERED_WORK`. Заслон качества: 14 тестов (`DeliveredWorkJudgmentServiceTest` 8/8, `DeliveredWorkJudgmentServiceFalsificationTest` 6/6) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `DeliveredWorkJudgmentService` закрыта.
+
+**Текущий статус:** механизм описан канонически, заслонен 14 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
+
+---
+
 # VII. Измерение: Lean, ТОС, Шесть сигм
 
 **Общий суд по разделу.** Здесь живёт самая частая ошибка измеряющих систем — **считать не то, что
