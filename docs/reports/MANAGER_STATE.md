@@ -1,18 +1,19 @@
-# Такт L1/L3: Менеджер-философ (2026-09-17 17:39 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-07 00:25 UTC)
 
 1. Продукт и фабрика:
-- Фабрика: http://localhost:8080/actuator/health -> UP.
-- Продукт: test-fiftieth_backend (healthy, 18080), test-fiftieth_db (healthy, 18081) — UP 3h. Frontend: UP (3000).
+- Фабрика: http://localhost:8080/actuator/health -> UP (13h).
+- Продукт: test-fiftieth_backend (healthy, 18080) — UP 2 недели! test-fiftieth_db (healthy, 18081) — UP 2 недели. Frontend: UP (3000).
 
 2. Обязанность такта: Гигиена ресурсов сервера (инвариант: диск <70%):
-- Диск: 22G/38G (60%, норма <70%). RAM: 2.2Gi/3.7Gi, avail 1.5Gi.
-- Очистка: builder/image prune выполнены (0B, кэш чист).
+- Диск: 22G/38G (60%, норма <70%). Ресурсный зазор достаточен (+15GB).
+- Память: 2.5Gi/3.7Gi (доступно 1.2Gi), swap 1.5Gi. Prune: builder/image чисты.
 
-3. Контроль программиста:
-- Коммит 4be2710: Слой 3 (пп. 9-15) и Слой 4 (пп. 16-20) закрыты в очереди. Тесты слоев green.
-- Инженер переходит к 59 предписаниям Раздела XVI.
+3. Контроль инженера:
+- Коммит 0e26d66 зафиксировал BottleneckAwarePriorityService в Ступени 4 (14/14 green в Docker Maven).
+- L2 переходит к детектору ограничений конвейера Семейства III — BottleneckDetectionService.
 
 4. RAG-образцы из корпуса (docs/philosopher-patterns):
-- ALFRED_TARSKIY_01_FALSIFICATION_HARNESS [D008, BARCAN-TAG-06]: Проверка на пути слияния обязана уметь падать.
-- UILLARD_KUAYN_01_HOLISM_IMPACT_MAP [D003, BARCAN-TAG-09]: Куайновская демаркация: запрет мутации ядра периферией.
-- Директива: пп. 31-32 закрыты 12.09; взять открытое Предписание 33 (куайновская граница на путь слияния).
+- BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman / ELVIN_GOLDMAN_01_RELIABILITY_CHAIN [D010, Goldman]: сбор свидетельств пула аккаунтов за 1 проход; разделение факта и ожидания.
+- BARCAN-TAG-06_DEONTIC-CONSISTENCY:03:nuel-belnap / NUEL_BELNAP_03_TRUTH_STATUS_TABLE [D012, Belnap]: различение причин деградации (daily_limited, api_blocked, disabled) без смешения.
+- BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:05:fred-dretske / FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK [D011, Dretske]: телеосемантическая связь детектора с оператором и очередью задач.
+- Директива L2: Ступень 4 — BottleneckDetectionService (работа замером, не правкой!), покрыть тестом-заслоном и обновить FACTORY_MECHANISMS.md.
