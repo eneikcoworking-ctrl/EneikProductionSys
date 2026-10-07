@@ -1597,13 +1597,14 @@ factory judgment: добавить unjudged transition; `UNAVAILABLE` не до�
 `LeverPromotionService.java:28`, `:56`, `:104`; `LeverStage.java:10`; `LeverAgreement.java:12`;
 `LeverObservation.java`, `LeverPromotionStateEntity.java`, `V88__lever_promotion_ladder.sql`,
 `V108__invariant_judgment_cursor.sql`, `V122__void_verdicts_reached_without_a_readable_reason.sql`;
-tests: `VerdictGateTest`, `VerdictReconciliationTest`, `FactoryJudgmentServiceTest`,
-`DeliveredWorkJudgmentServiceTest`, `JudgmentAgentClientLaw17Test`, `LeverPromotionServiceTest`.
+tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictLayerFalsificationTest` (7/7),
+`FactoryJudgmentServiceTest`, `DeliveredWorkJudgmentServiceTest`, `JudgmentAgentClientLaw17Test`, `LeverPromotionServiceTest`.
 
-**Текущий статус:** идеален по текущим source/test evidence; кодовая правка не требуется. Нужна только
-операционная проверка перед расширением области включения gate.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): боевой эндпоинт `/api/projects/a716e82e-f4e2-4486-93bd-33f1e498386e/verdict` возвращает согласованное суждение решётки: `advance=ABSTAIN`, `debt=4`, `refusals=0`, `constraint=runtime`, `judgements_count=20`. Все 20 суждений поступают от зарегистрированных слоев (`infrastructure`: 3 `PERMIT`, `doctrine`: 12 `PERMIT` и 1 `ABSTAIN` [TAG-10], `runtime`: 2 `PERMIT` и 1 `ABSTAIN`, `six-sigma`: 1 `ABSTAIN`, `acceptance`: 1 `ABSTAIN`). Эпистемический долг $D(P)=4$ честно удерживает продвижение без ложной зелени. Заслон качества: 32 теста в решётке суждения (`VerdictReconciliationTest` 11/11, `VerdictGateTest` 14/14, `VerdictLayerFalsificationTest` 7/7) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `VerdictLayer` и решётки суждения закрыта.
 
-**комментарий для Антигравити:** считаю механизм идеальным.
+**Текущий статус:** механизм описан канонически, заслонен 32 тестами решётки суждения и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
 ---
 

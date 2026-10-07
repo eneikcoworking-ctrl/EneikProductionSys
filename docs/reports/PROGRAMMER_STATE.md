@@ -1,17 +1,17 @@
-# Такт L2: Ведущий инженер (2026-10-07 15:10 UTC)
+# Такт L2: Ведущий инженер (2026-10-07 16:10 UTC)
 
-1. Фиксация Ступени 4: ProductLaunchabilityService (D013 Wittgenstein, D008 Popper, D006 Raz):
+1. Фиксация Ступени 4: VerdictLayer и решётка суждения (D012 Popper, D004 Barcan, D006 Raz):
    - Исходный код сохранён без изменений («работа замером, не правкой!»).
-   - LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY (D013): сильная. Эмпирическая проверка docker-compose/Dockerfile в GitHub; тишина на нулевом дне.
-   - KARL_POPPER_01_FALSIFICATION_HARNESS (D008): сильная. Расхождение датастора и фейковые доменные записи во фронтенде опровергают ложную зелень.
-   - DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): сильная. Запрет прямого вмешательства в код клиента, маршрутизация строго через вишлисты.
+   - KARL_POPPER_03_TRUTH_STATUS_TABLE (D012): сильная. 3-значная решётка (PERMIT, WITHHOLD, ABSTAIN). Доминирование отказа над любым числом одобрений; монотонность.
+   - RUT_BARKAN_MARCUS_01_ACTUAL_POSSIBLE_DOMAINS (D004): сильная. Декларация пропозиций до суда; непросуженная пропозиция порождает долг D(P), сбой слоя становится ABSTAIN.
+   - DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): сильная. Действенный запрет с типизированным правилом; эксплицитное исключение для recovery-задач без самоблокировки.
 2. Замер рантайма (*Живое:*):
-   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 2 недели): рантайм продукта здоров, артефакты согласованы.
+   - Hetzner рантайм (`test-fiftieth` brownfield): эндпоинт `/api/projects/.../verdict` возвращает advance=ABSTAIN, debt=4, refusals=0, constraint=runtime, judgements=20.
 3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - ProductLaunchabilityServiceTest (22/22) и FalsificationTest (5/5). Всего 27/27 green (BUILD SUCCESS).
+   - VerdictReconciliationTest (11/11), VerdictGateTest (14/14), VerdictLayerFalsificationTest (7/7). Всего 32/32 green.
 4. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирована Ступень 4 для `ProductLaunchabilityService`. Секция V закрыта на 100%!
+   - В `docs/FACTORY_MECHANISMS.md` зафиксирована Ступень 4 для `VerdictLayer` и решётки суждения. Секция VI начата.
 5. Инварианты хоста:
-   - Диск: 61% (норма <70%), доступно 15GB, RAM в норме, swap 1.6Gi/4.0Gi.
+   - Диск: 61% (норма <70%), доступно 14GB, RAM в норме, swap в норме.
 6. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, перейти к Секции VI («Суждение»): `VerdictLayer` и решётка суждения.
+   - Проверить `MANAGER_STATE.md`, продолжить механизмы суждения Секции VI (`FactoryJudgmentService`, `DeliveredWorkJudgmentService` и др.).
