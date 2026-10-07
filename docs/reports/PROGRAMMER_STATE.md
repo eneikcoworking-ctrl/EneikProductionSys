@@ -1,17 +1,17 @@
-# Такт L2: Ведущий инженер (2026-10-07 12:18 UTC)
+# Такт L2: Ведущий инженер (2026-10-07 13:08 UTC)
 
-1. Фиксация Ступени 4: BranchGarbageCollectorService (D004 Varzi, D006 Raz, D013 Wittgenstein):
+1. Фиксация Ступени 4: PrReviewPipelineService (D010 Goldman, D012 Popper, D006 Raz):
    - Исходный код сохранён без изменений («работа замером, не правкой!»).
-   - AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP (D004): сильная. Мереологический инвариант N_active_branches(taskId) <= 1; сессии привязаны к задачам проекта (findByTaskIdIn); утилизируется строго связанная сессия.
-   - DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): сильная. Деонтическая утилизация стагнирующих веток/PR (>60 мин); закрытие PR, удаление ветки, конфликт в superseded (99 попыток), рестарт в queued (приоритет 100).
-   - LUDVIG_VITGENSHTEYN_01_ANTI_MIRROR_TELEMETRY (D013): сильная. Эмпирическое состояние GitHub; closeout PR защищены до подтверждения слияния (FeatureThreadEntity.mergedToMainAt); постоянные воркеры защищены.
+   - ALVIN_GOLDMAN_01_RELIABLE_PROCESS_AUDIT (D010): сильная. Каузальный аудит PR в PrReviewEntity; монотонность слияния (review.isMerged()=true никогда не перезаписывается).
+   - KARL_POPPER_03_TRUTH_STATUS_TABLE (D012): сильная. Детерминированная 3-значная матрица риска (RiskLevelCalculator): low (<50 строк + тесты + CI pass), high (>300 или CI fail или critical path), medium.
+   - DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): сильная. Затрагивание критических путей (ClaimService, LeaseWatchdog, GateOrchestrator) или failing CI бескомпромиссно форсирует high risk.
 2. Замер рантайма (*Живое:*):
-   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 2 недели): предотвращение зомби-PR и веток, токеновое сопоставление сессий, чистое перезапускание задач от main.
+   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 2 недели): непрерывный аудит PR-ревью, необратимость merged, защита от недооценки рисков.
 3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Запущены `BranchGarbageCollectorServiceTest` (13/13) и `BranchGarbageCollectorServiceFalsificationTest` (6/6). Всего 19/19 green (BUILD SUCCESS).
+   - Запущены `PrReviewPipelineServiceTest` (3/3) и `PrReviewPipelineServiceFalsificationTest` (6/6). Всего 9/9 green (BUILD SUCCESS).
 4. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирована каноническая запись `BranchGarbageCollectorService` (Семейство IV).
+   - В `docs/FACTORY_MECHANISMS.md` зафиксирована запись `PrReviewPipelineService`. Семейство IV завершено на 100% (13/13)!
 5. Инварианты хоста:
-   - Диск: 61% (норма <70%), RAM 182Mi avail + 1.9Gi swap. Сервисы UP (healthy).
+   - Диск: 61% (норма <70%), RAM 189Mi avail + 1.8Gi swap. Сервисы UP (healthy).
 6. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм Семейства IV (`PrReviewPipelineService`).
+   - Проверить `MANAGER_STATE.md`, перейти к Семейству V («Свидетельство доставки»): `ClientDeliverableReadinessService`.
