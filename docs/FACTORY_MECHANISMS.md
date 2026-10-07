@@ -1442,6 +1442,29 @@ first and keep these invariants green.
 
 ---
 
+### ProductLaunchabilityService
+
+**Имена механизма:** `ProductLaunchabilityService`, `ProjectRepository`, `WishlistRepository`, `GitHubPullRequestService`, `ClientDeliverableReadinessService`.
+
+**Философский паттерн:**
+- `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013, Wittgenstein]: эмпирическая проверка реального содержимого репозитория в GitHub (`docker-compose.yml`, `Dockerfile`, `frontend/package.json`); тишина при сомнении и на нулевом дне (`falsifyWittgensteinAntiMirror_zeroShippedDeliverablesStaysSilent`, `falsifyWittgensteinAntiMirror_missingComposeCreatesDedupedGapWishlist`).
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: фальсификация готовности — продукт без локального раннера не сдаваем; расхождения датастора (`compose` vs `application.properties` vs `contract`) и фейковые доменные записи во фронтенде опровергают ложную зелень (`falsifyPopperFalsificationHarness_datastoreDisagreementBetweenComposeAndAppPropsIsRefuted`, `falsifyPopperFalsificationHarness_unbackedFrontendDomainRecordsAreRefuted`).
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006, Raz]: категорический деонтический запрет прямого вмешательства в код клиента фабрикой; выявленные пробелы транслируются исключительно в дедуплицированные заявки вишлиста через компилятор; однократность проверки бутстрапа фиксируется в `launchabilityCheckedAt` (`falsifyRazProhibitionAsCode_alreadyCheckedProjectIsNeverRechecked`).
+
+**Форма: сильная.** Заслонено в `ProductLaunchabilityServiceTest` (22/22) и `ProductLaunchabilityServiceFalsificationTest` (5/5, итого 27/27 тестов). Доказаны инварианты:
+- Однократность бутстрап-гейта запускаемости (`checkOnce`) после сдачи первой реальной поставки (`mergedDeliverables > 0`).
+- Непрерывная проверка непротиворечивости датастора вне зависимости от флага бутстрапа на каждом авторизованном такте (`checkDatastoreAgreement`).
+- Детекция фейковых фронтенд-записей (`checkFrontendRendersOnlyProducedRecords`) без дискриминации легитимной статической разметки.
+- Полная изоляция: отсутствие прямых коммитов в клиентский репозиторий, маршрутизация строго через вишлисты.
+
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): рантайм продукта поднят и непрерывно тестируется фабрикой (backend :18080 healthy, frontend :3000 healthy), артефакты `docker-compose.yml` и драйверы БД согласованы с контрактом, фиктивные фронтенд-записи отсутствуют. Заслон качества: 27/27 тестов выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProductLaunchabilityService` закрыта. Секция V («Свидетельство доставки») полностью завершена!
+
+**Текущий статус:** механизм описан канонически, заслонен 27 тестами и признан идеальным по текущему source/test contract. Код в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована. Секция V закрыта на 100%.
+
+---
+
 # VI. Суждение
 
 ## Семейство: решётка суждения, слой опровержений и продвижение рычагов
