@@ -1411,10 +1411,16 @@ first and keep these invariants green.
 
 **Свидетельства записи:** `nl -ba src/main/java/com/eneik/production/services/ClientDeliverableReadinessService.java | sed -n "153,205p;309,480p;1350,1425p;1450,1590p"`; `nl -ba src/main/java/com/eneik/production/services/DeliveryRealityProducerService.java | sed -n "136,235p;996,1135p;1136,1240p"`; `nl -ba src/main/java/com/eneik/production/services/runtime/ProductLaunchabilityService.java | sed -n "1,230p;230,390p"`; `nl -ba src/main/java/com/eneik/production/services/ContinuousOrchestrationService.java | sed -n "256,275p"`; `nl -ba src/test/java/com/eneik/production/services/DeliveryPredicateAgreementTest.java | sed -n "1,230p"`; `nl -ba src/test/java/com/eneik/production/services/DeliveryRealityLaw2CarrierChannelTest.java | sed -n "35,180p"`; `nl -ba src/test/java/com/eneik/production/services/runtime/ProductLaunchabilityServiceTest.java | sed -n "100,215p;285,335p;345,415p"`; `grep -nE "FALSIFICATION_HARNESS|TRUTH_STATUS_TABLE|CONVERSATION_MAXIM|CATEGORY_ERROR_SCAN" docs/philosopher-patterns/philosophers/*.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
 
-**Текущий статус:** механизм секции описан цельно и признан идеальным по текущему source/test contract. Код в этом
-такте не менялся.
+**Форма: сильная.** Заслонено в `ClientDeliverableReadinessServiceTest` (49/49 green) и `ClientDeliverableReadinessServiceFalsificationTest` (6/6 green, итого 55/55 тестов). Доказаны инварианты:
+- D002 Austin Category Error Scan: `TaskStatus.done` не равен готовности поставки; завершённая задача не подменяет слияние в `main` с реальным кодом (`falsifyAustinCategoryError_taskDoneWithoutMergeEvidenceIsNotDelivered`, `falsifyAustinCategoryError_unmergedFeatureThreadDoesNotReachMain`).
+- D008 Popper Falsification Harness: запланированный пункт требования клиента не может быть закрыт чужой задачей в том же эпике; замыкание по цепочке ремонта связывает исходный пункт строго через `sourceTaskId` / `originWishlistId` (`falsifyPopperFalsificationHarness_unrelatedMergedTaskInSameEpicCannotFulfillPlannedItem`, `falsifyPopperFalsificationHarness_repairClosureFulfillsFailedPlannedItem`).
+- D012 Popper Truth Status Table: коэффициент готовности рассчитывается на уровне ценности фич (`completeFeatures / totalFeatures`), чётко отделяя полную поставку от частичных задач и вспомогательных спайков/решений (`falsifyPopperTruthStatusTable_featureRatioDistinguishesFullDeliveryFromPartialProgress`, `falsifyPopperTruthStatusTable_auxiliaryOnlyScopeReportsDecompositionWithoutZeroDenominatorError`).
 
-**комментарий для Антигравити:** считаю механизм идеальным.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): предикат готовности `computeForProject` непрерывно считывается оркестратором, исключает ложные завершения без кода, удерживает барьер между завершением таски и поставкой клиенту, корректно ведет учет эпиков и цепочек ремонта. Заслон качества: 49/49 в `ClientDeliverableReadinessServiceTest` и 6/6 в `ClientDeliverableReadinessServiceFalsificationTest` (всего 55/55) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ClientDeliverableReadinessService` закрыта.
+
+**Текущий статус:** механизм описан канонически, заслонен 55 тестами и признан идеальным по текущему source/test contract. Код в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
 ---
 
