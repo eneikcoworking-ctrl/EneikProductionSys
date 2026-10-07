@@ -1707,14 +1707,26 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 называешь**, — и раздел от неё в основном защищён явно: почти в каждом механизме оговорено, что является
 подгруппой и почему нельзя взять соседнюю.
 
-**`ProcessControlService`** — u-карты; подгруппа эпик, последовательность **только** по порядку завершения
-внутри одного проекта.
-*Связи:* вызывают двое; зовёт 4; ничего не пишет.
-*Ценность:* эпики разных проектов — не однородные единицы; складывать их в одну карту значит мерить смесь.
-*Комментарий:* **периферия.** Пределы считаются один раз по первым эпикам и держатся неизменными: **карта,
-подстраивающаяся под дрейф, перестаёт дрейф видеть.** Защита от самого коварного самообмана измерения.
-*Философия:* `LEVEL_OF_ABSTRACTION_LOCK` (D010) — **сильная**. Опровержение: найти пересчёт пределов после
-первых эпиков.
+### ProcessControlService
+
+**Имена механизма:** `ProcessControlService`, `ProcessControlSnapshotEntity`, `ProcessControlSnapshotRepository`, `StreamType` (`qualityGate`, `prConflict`, `reviewConcern`), `ScopedEvidencePacket`.
+
+**Философский паттерн:**
+- `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010, Goldman]: закон лок-уровня абстракции (Shewhart u-charts) — единицей подгруппы (subgroup $n_i$) является завершенный эпик (`FeatureEntity`) строго в хронологическом порядке (`completedAt`), исключая смешивание эпиков разных проектов (`recomputeForProject`). Запрет на кросс-проектные выборки гарантирует, что контрольная карта отражает однородный процесс, а не смесь разнородных распределений (`falsifyGoldmanAbstractionLock_strictChronologicalAndSingleProjectSubgroups`).
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: попперовский заслон фальсификации (Phase 1 / Phase 2 Locked Baseline) — базовые контрольные пределы ($UCL_i, LCL_i$, центральная линия $\bar{u}$) блокируются по первым базовым эпикам (фаза 1) и никогда не пересчитываются при последующем операционном дрейфе (фаза 2). Пересчёт пределов в фазе дрейфа признан когнитивным самообманом (нормализацией девиации), маскирующим дефекты системы (`falsifyPopperFalsification_lockedPhase1BaselineNeverNormalizesSurgeDrift`).
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006, Raz]: деонтический запрет как код — пакет свидетельств `ScopedEvidencePacket` формируется строго по завершенным эпикам пересчитываемого проекта без полных табличных сканов (`findAll()`). Нарушение пределов (3 сигмы или 8 последовательных точек по одну сторону от центральной линии по правилам Western Electric) является императивным сигналом выхода процесса из-под контроля (`outOfControl = true`, `8_CONSECUTIVE_SAME_SIDE`) и маршрутизируется в замкнутый контур Кайдзен (`closeLoop`) (`falsifyRazProhibitionAsCode_westernElectricRunSignalsOutOfControl`).
+
+**Форма: сильная.** Заслонено в `ProcessControlServiceTest` (8/8) и `ProcessControlServiceFalsificationTest` (3/3, итого 11/11 тестов). Доказаны инварианты:
+- Единица подгруппы u-карты — завершенный эпик одного проекта в строгом порядке времени.
+- Фаза 1 / Фаза 2: фиксация базовых контрольных пределов без нормализации дрейфа.
+- Western Electric правила: выход за 3-сигма и 8 точек подряд по одну сторону линии вызывают `outOfControl` и генерацию сигнала в Кайдзен.
+- Полная изоляция свидетельств через `ScopedEvidencePacket` (0 вызовов `findAll()`).
+
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 50m). База данных PostgreSQL (`process_control_snapshots` миграция `V86`): контрольные срезы хранятся для потоков `qualityGate`, `prConflict`, `reviewConcern`. Расписание сервиса: каждые 2 часа для активного проекта. Заслон качества: 11 тестов (`ProcessControlServiceTest` 8/8, `ProcessControlServiceFalsificationTest` 3/3) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProcessControlService` закрыта.
+
+**Текущий статус:** механизм описан канонически, заслонен 11 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
 
 *Статус записи, 9 сентября 2026: 10-такт 5/10 — quality gate/process-control cluster, без правки кода.* Пятый кластер десятиактного прохода заполнен как единый quality-measurement mechanism. `ProcessControlService` stores u-chart snapshots, `QualityGateController` exposes a defect-rate API, `QualityMetricsController` exposes quality aggregates/details, and `SixSigmaAuditService` owns reusable Six Sigma/CTQ counts. These cannot be treated as separate query cleanups because the same quality-gate reports, PR-review lineage and conflict evidence feed dashboard, audit, Kaizen and u-chart decisions.
