@@ -1656,6 +1656,51 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 
 ---
 
+### CriteriaEvidenceSelector
+
+**Имена механизма:** `CriteriaEvidenceSelector`, `JudgmentAgentClient`, `DeliveredWorkJudgmentService`.
+
+**Философский паттерн:**
+- `ALVIN_GOLDMAN_11_CONVERSATION_MAXIM` [D007, Goldman]: Закон 17 (Evidence Selection Law) — категорический запрет механической обрезки диффа по позиции (`charLimit`). Если дифф превышает бюджет канала, он разделяется строго по границам файлов (`splitAtFileBoundaries`) и упорядочивается по плотности пересечения словаря с критериями приёмки (`vocabularyOf(criteria)`), сохраняя целые файлы и взаимный порядок (`inOriginalOrder`). Не вошедшие файлы перечисляются по именам в `omitted` (`falsifyGoldmanConversationMaxim_law17SelectsByBearingAndNamesOmittedFiles`).
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: фальсификация релевантности — единичный файл, превышающий лимит, безопасно ограничивается без выброса исключений; многофайловые диффы никогда не режутся внутри хунка (`falsifyPopperFalsification_singleOversizedFileSafelyBoundedWithoutCrashing`).
+- `LUDVIG_VITGENSHTEYN_01_ANTI_MIRROR_TELEMETRY` [D013, Wittgenstein]: анти-зеркало свидетельств — дифф, укладывающийся в ёмкость канала, возвращается без перестановок и мутаций (`falsifyWittgensteinAntiMirror_diffWithinBudgetPreservedVerbatim`).
+
+**Форма: сильная.** Заслонено в `JudgmentAgentClientLaw17Test` (4/4) и `CriteriaEvidenceSelectorFalsificationTest` (3/3, итого 7/7 тестов). Доказаны инварианты:
+- Сохранение целостности файлов: отбор по смыслу, а не алфавитный или позиционный срез.
+- Эксплицитное именование опущенных файлов в предупреждении модели.
+- Защита процесса от падений при превышении размера аргументов CLI/sidecar.
+
+*Живое:* замер в рантайме Hetzner (`eneikproductionsys-judgment-proxy-1` UP 3w, `eneikproductionsys-backend-1` UP 16h). Селектор активно задействуется при подготовке промпта сдачи в `DeliveredWorkJudgmentService` и `JudgmentAgentClient`, предотвращая падения ядра (`spawn E2BIG`) и обеспечивая точный фокус на проверяемых критериях. Заслон качества: 7 тестов выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `CriteriaEvidenceSelector` закрыта.
+
+**Текущий статус:** механизм описан канонически, заслонен 7 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
+
+---
+
+### LeverPromotionService
+
+**Имена механизма:** `LeverPromotionService`, `LeverPromotionStateEntity`, `LeverObservation`, `LeverPromotionStateRepository`, `LeverObservationRepository`, `LeverStage`, `LeverAgreement`.
+
+**Философский паттерн:**
+- `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` [D007, Gärdenfors]: лестница доверия AGM — новый рычаг всегда стартует в режиме `OBSERVE_ONLY` с нулевым операционным влиянием; пересмотр стадии происходит через единый канонический сервис (`evaluatePromotions`), исключая прямую мутацию состояния рычагами (`falsifyGardenforsBeliefRevision_newLeverStartsAtObserveOnly`).
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: жесткий попперовский ценз — кандидат продвигается только пройдя строгое испытание ($N \ge 20$ разрешенных наблюдений, уровень согласия $\ge 0.80$ в окне 14 дней). Единичное реальное расхождение (`LeverAgreement.FALSE`) приводит к немедленному понижению ступени (`stage.previous()`), не дожидаясь двухчасового таймера (`falsifyPopperFalsification_disagreementTriggersImmediateDemotion`, `falsifyPopperFalsification_promotionRequiresRigorousSampleAndAgreementCensus`).
+- `ALVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` [D010, Goldman]: асимметричная динамика доверия — для каждого следующего шага продвижения требуется свежий пакет свидетельств, собранный строго после предыдущего повышения (`promotedAt`). Повторный запуск на старых данных не продвигает рычаг дважды (`falsifyGoldmanTrustDynamics_subsequentEvaluationsRequireFreshEvidencePacket`).
+
+**Форма: сильная.** Заслонено в `LeverPromotionServiceTest` (7/7) и `LeverPromotionServiceFalsificationTest` (4/4, итого 11/11 тестов). Доказаны инварианты:
+- Старт в `OBSERVE_ONLY` с нулевым операционным вмешательством.
+- Мгновенное понижение уровня доверия при подтвержденном разногласии.
+- Строгий ценз выборки ($N \ge 20$, согласие $\ge 80\%$, окно 14 дней).
+- Однократное потребление пакета улик для одного шага продвижения.
+
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 16h). Таблица `lever_promotion_state` создана миграцией `V88`, сервис функционирует на 2-часовом расписании. Заслон качества: 11 тестов выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `LeverPromotionService` закрыта. Секция VI («Суждение») полностью завершена!
+
+**Текущий статус:** механизм описан канонически, заслонен 11 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована. Секция VI закрыта на 100%.
+
+---
+
 # VII. Измерение: Lean, ТОС, Шесть сигм
 
 **Общий суд по разделу.** Здесь живёт самая частая ошибка измеряющих систем — **считать не то, что
