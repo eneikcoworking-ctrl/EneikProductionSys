@@ -1418,7 +1418,25 @@ first and keep these invariants green.
 
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): предикат готовности `computeForProject` непрерывно считывается оркестратором, исключает ложные завершения без кода, удерживает барьер между завершением таски и поставкой клиенту, корректно ведет учет эпиков и цепочек ремонта. Заслон качества: 49/49 в `ClientDeliverableReadinessServiceTest` и 6/6 в `ClientDeliverableReadinessServiceFalsificationTest` (всего 55/55) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ClientDeliverableReadinessService` закрыта.
 
-**Текущий статус:** механизм описан канонически, заслонен 55 тестами и признан идеальным по текущему source/test contract. Код в этом такте не менялся (работа замером, не правкой).
+---
+
+### DeliveryRealityProducerService
+
+**Имена механизма:** `DeliveryRealityProducerService`, `OperationalRealityFindingRepository`, `EvidenceNodeRepository`, `WishlistRepository`, `DefectJournalRepository`.
+
+**Философский паттерн:**
+- `DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` [D002, Austin]: наблюдение за собственным сбоем доставки — это факт дефекта доставки в `DefectJournalEntity`, а не право плодить бесконечные клиентские заявки (`falsifyAustinCategoryError_repeatedDeliveryFailureCreatesDefectJournalRecordNotWishlist`); несущие задачи фабрики (carrier tasks) никогда не заказывают клиентский скоуп и изолируются в канале `CARRIER_CHANNEL` (`falsifyAustinCategoryError_carrierTaskWithoutMergeNeverOrdersProductScope`).
+- `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013, Wittgenstein]: физические сбои рантайма продукта (`launchSuccess=false`) транслируются из таблицы наблюдений в граф улик `EvidenceNodeEntity` (с отрицательной полярностью), чтобы служить основанием для логического вывода наблюдателя (`falsifyWittgensteinAntiMirror_unhealthyRuntimeObservationProjectsToEvidenceNode`).
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006, Raz]: идемпотентность фиксации фактов — длящееся несоответствие обновляет временную метку существующей улики `EvidenceNodeEntity.createdAt` без размножения строк улик и находок (`falsifyRazProhibitionAsCode_standingFindingRefreshesTimestampWithoutDuplicateRows`); отсутствие сдачи порождает ровно одну заявку на ремонт с наследованием продуктового эпика (`falsifyRazProhibitionAsCode_missingDeliveryCreatesSingleRepairWishlistInheritingProductEpic`).
+
+**Форма: сильная.** Заслонено в `DeliveryRealityLaw2CarrierChannelTest` (6/6), `DeliveryRealityLaw3CategoryErrorTest` (8/8), `DeliveryRealityLaw8SecondOrderRepairTest` (6/6), `DeliveryPredicateAgreementTest` (7/7) и `DeliveryRealityProducerServiceFalsificationTest` (5/5, итого 32/32 тестов). Доказаны инварианты:
+- Ограничение домена ремонта: несущие задачи фабрики не производят продуктовых эпиков и заявок; повторный сбой доставки переходит в поглощающее состояние журнала дефектов (`max_repair_depth`).
+- Трансляция телеметрии рантайма в граф свидетельств для замкнутого контура вывода.
+- Идемпотентность улик: один факт расхождения порождает ровно одну улику с обновлением метки свежести.
+
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): фоновый демонический продюсер непрерывно сопоставляет статус задач с физическим состоянием `main`, сбои рантайма оперативно проецируются в улики, несущие задачи изолированы от продуктового контура. Заслон качества: 32/32 теста выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `DeliveryRealityProducerService` закрыта.
+
+**Текущий статус:** механизм описан канонически, заслонен 32 тестами и признан идеальным по текущему source/test contract. Код в этом такте не менялся (работа замером, не правкой).
 
 **комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
