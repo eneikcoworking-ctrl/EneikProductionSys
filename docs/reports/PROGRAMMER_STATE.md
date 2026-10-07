@@ -1,17 +1,17 @@
-# Такт L2: Ведущий инженер (2026-10-07 00:58 UTC)
+# Такт L2: Ведущий инженер (2026-10-07 01:49 UTC)
 
-1. Фиксация Ступени 4: BottleneckDetectionService (D010 Goldman, D012 Belnap, D011 Dretske):
+1. Фиксация Ступени 4: JulesApiClient (D012 Belnap, D006 Raz, D010 Goldman):
    - Исходный код сохранён без изменений («работа замером, не правкой!»).
-   - Образец ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D010): сильная. Однопроходный опрос пула аккаунтов исключает skew и N-запросы; структурно истощенный пул репортится мгновенно (Law 8).
-   - Образец NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012): сильная. Разделение причин снижения емкости (daily_limited, api_blocked, disabled) без смешения; исключение decommissioned из disabled.
-   - Образец FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK (D011): сильная. Спайки протухания аренды локализуют accountId и величину; проектный опрос изолирует очереди от чужого контекста.
+   - Образец NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012): сильная. 4-значный префлайт SourceAvailability; 6 исходов classifyOutcome без смешения фабричных ошибок с отказами аккаунта.
+   - Образец DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): сильная. Запрет отправки при отключенной интеграции, отсутствии ключа или URL репозитория с ровно 0 сетевых вызовов.
+   - Образец ELVIN_GOLDMAN_01_RELIABILITY_CHAIN (D010): сильная. Refusal naming (promptLength, source, branch) по Закону 12; checkSessionRaw возвращает реальный HTTP 404 как свидетельство отсутствия.
 2. Замер рантайма (*Живое:*):
-   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 2 недели): однопроходный мониторинг очередей защищает БД от спама и мгновенно выявляет заторы.
+   - Рантайм Hetzner (`eneikproductionsys-backend-1` UP 11d, `test-fiftieth` :18080 UP 2 недели): защита от зависаний (таймаут 20с) и префлайт исключают слепые циклы. Семейство III закрыто полностью (8 из 8).
 3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Запущены `BottleneckDetectionServiceTest` (4/4) и `BottleneckDetectionServiceFalsificationTest` (6/6). Всего 10/10 green (BUILD SUCCESS). Слабая форма закрыта.
+   - Запущены `JulesApiClientTest` (5/5) и `JulesApiClientFalsificationTest` (5/5). Всего 10/10 green (BUILD SUCCESS).
 4. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирована каноническая запись `BottleneckDetectionService`. Ступень 4 закрыта.
+   - В `docs/FACTORY_MECHANISMS.md` зафиксирована каноническая запись `JulesApiClient`. Ступень 4 Семейства III завершена.
 5. Инварианты хоста:
-   - Диск: 60% (норма <70%), RAM: 197Mi avail + 1.6Gi swap. Сервисы UP (healthy).
+   - Диск: 60% (норма <70%), RAM: 557Mi avail + 1.4Gi swap. Сервисы UP (healthy).
 6. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, продолжить Семейство III (JulesApiClient).
+   - Проверить `MANAGER_STATE.md`, перейти к Семейству IV (Ревью, гейт, слияние: AutoMergeService).
