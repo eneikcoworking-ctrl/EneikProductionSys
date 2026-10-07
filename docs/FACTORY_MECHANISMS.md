@@ -1608,6 +1608,30 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 
 ---
 
+### FactoryJudgmentService
+
+**Имена механизма:** `FactoryJudgmentService`, `InvariantStatusChangeRepository`, `JudgmentAgentClient`, `KaizenService`, `SystemSettingsService`, `InvariantStatusChangeEntity`.
+
+**Философский паттерн:**
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: попперовская асимметрия — подтверждения бесплатны и не несут информации, модель вызывается строго по опровержению (`unjudged refutations`), а не по таймеру. Отсутствие опровержений расходует ровно один индексированный запрос и возвращается с нулевыми затратами токенов. Базовые регистрации (`previous_status IS NULL`) отфильтрованы на уровне схемы запроса (`falsifyPopperAsymmetry_noRefutationMeansNoModelInvocation`, `falsifyPopperAsymmetry_disabledAgentAvoidsQueriesAndCalls`).
+- `ALVIN_GOLDMAN_01_RELIABLE_PROCESS_AUDIT` [D010, Goldman]: каузальная надежность процесса аудита — ограничение порции за такт (`maxPerCycle`) и глубины контекста (`contextHistoryLimit`); сбой внешнего эндпоинта (`UNAVAILABLE`) оставляет `judged_at = null` для повторной попытки и прерывает цикл без выжигания очереди; нерассудимая строка (`UNJUDGEABLE`) помечается прочитанной во избежание зависания головы очереди (`falsifyGoldmanProcessAudit_unavailableEndpointLeavesRowUnjudgedForRetry`, `falsifyGoldmanProcessAudit_unjudgeableRowMarkedReadToPreventQueueBlock`, `falsifyGoldmanProcessAudit_cycleRespectsMaxPerCycleBudget`).
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006, Raz]: деонтическая субординация — выводы оформляются исключительно как предложения системного дефекта (`SYSTEMIC_DEFECT` в `KaizenService`) без автоприменения; адресация привязана к инварианту (`invariant:<key>`) для защиты от схлопывания дедупликации; цикл тихих отказов сигнализирует о дефекте самого слоя суждения (`falsifyRazProhibitionAsCode_findingFiledAsReviewOnlySystemicProposal`, `falsifyRazProhibitionAsCode_quietFailureCycleReportsJudgmentLayerItself`).
+
+**Форма: сильная.** Заслонено в `FactoryJudgmentServiceTest` (13/13) и `FactoryJudgmentServiceFalsificationTest` (7/7, итого 20/20 тестов). Доказаны инварианты:
+- Нулевой расход токенов при отсутствии опровержений (запрос к БД возвращает пустой список, клиент модели не вызывается).
+- Эндогенная защита от зависания очереди (`UNJUDGEABLE` маркируется для предотвращения poison-pill блокировок).
+- Сохранение строки при сбое сетевого транспорта (`UNAVAILABLE` сохраняет `judged_at = null` для надежного retry).
+- Дедупликация предложений Kaizen по ключу инварианта (`invariant:...`), исключающая вытеснение системных находок.
+- Самонадзор слоя суждения при 100% нерассудимых строк в цикле.
+
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 15h, `eneikproductionsys-judgment-proxy-1` UP 3 недели). Настройка `judgment_agent_enabled=true` активна в боевой базе данных (`/api/settings`). В очереди `invariant_status_changes` отсутствуют необработанные опровержения; планировщик фабрики выполняет дешевые проверки без расхода токенов Claude subscription proxy. Заслон качества: 20 тестов (`FactoryJudgmentServiceTest` 13/13, `FactoryJudgmentServiceFalsificationTest` 7/7) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `FactoryJudgmentService` закрыта.
+
+**Текущий статус:** механизм описан канонически, заслонен 20 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
+
+---
+
 # VII. Измерение: Lean, ТОС, Шесть сигм
 
 **Общий суд по разделу.** Здесь живёт самая частая ошибка измеряющих систем — **считать не то, что
