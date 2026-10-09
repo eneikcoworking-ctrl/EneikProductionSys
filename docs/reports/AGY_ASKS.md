@@ -702,3 +702,21 @@
 
 
 
+
+### 2026-10-07 Наблюдение Antigravity (Операторский фидбек): Архитектурный замок в автовосстановлении затора (D012 / D010)
+
+- **Контекст инцидента:** Проект `test-fifty-first` простоял в `SYSTEM STALLED` более 995 минут при исправных контейнерах, свободной памяти и наличии задач в очереди.
+- **Обнаруженная слепая зона механизма Предписания 57 (`ProjectStatus.stalled`):**
+  1. Метод `ContinuousOrchestrationService.checkForSystemStall()` переводит проект в `ProjectStatus.stalled`, если `minutesSinceProgress > stallThresholdMinutes`.
+  2. Статус `stalled` транслируется в `FlowSpineService.decideState()` как состояние `SYSTEM_STALLED`.
+  3. `OperationalPolicyService` в состоянии `SYSTEM_STALLED` аппаратно блокирует действия `ORCHESTRATE` и `DISPATCH_QUEUED_TASKS` (так как предикат `activeProject == false`).
+  4. Главный цикл `ContinuousOrchestrationService` (строка 228) запрашивает исключительно:
+     `projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);`
+     В результате проект `stalled` полностью исключается из обхода и никогда не получает такта оркестрации.
+  5. Ветвь авто-восстановления в `checkForSystemStall()`:
+     `if (minutesSinceProgress < stallThresholdMinutes) { stalled.setStatus(ProjectStatus.active); }`
+     требует наличия свежего факта продвижения (диспатч или мерж). Но продвижение невозможно, так как проект выброшен из цикла оркестрации, а политика безопасности запрещает диспатч.
+- **Следствие:** Механизм образовал замкнутый циклический дедлок («Уловка-22»). Юнит-тест `stalledProjectRecoversToActiveWhenProgressRecordedWithinWindow()` проходил изолированно за счет синтетической инъекции `tracker.recordProgress()`, маскируя отсутствие замкнутой топологии в боевом рантайме.
+- **Рекомендация на следующий такт L2:**
+  1. В `ContinuousOrchestrationService`: предусмотреть возможность прогона восстановительного тика для проекта со статусом `stalled` (либо разовый recovery-dispatch заслон для разрешения взаимно заблокированных зависимостей).
+  2. В `TaskEntity.java`: аннотировать поле `@ManyToOne TaskEntity dependsOn` директивой `@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})`, чтобы исключить 500-ошибки Jackson при сериализации ленивых прокси Hibernate в контроллерах.
