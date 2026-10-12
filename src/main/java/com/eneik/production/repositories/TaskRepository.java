@@ -159,7 +159,8 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
 
     default boolean hasUnresolvedDependency(TaskEntity candidate) {
         if (candidate.getDependsOn() != null) {
-            return candidate.getDependsOn().getStatus() != TaskStatus.done;
+            TaskStatus status = candidate.getDependsOn().getStatus();
+            return status != TaskStatus.done && status != TaskStatus.failed;
         }
         return false;
     }

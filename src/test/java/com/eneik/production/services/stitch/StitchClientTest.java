@@ -146,7 +146,7 @@ class StitchClientTest {
         server.start();
         try {
             StitchClient client = clientFor(server);
-            StitchClient.GeneratedScreen screen = client.generateScreenFromText("p1", "prompt", "GEMINI_3_FLASH");
+            StitchClient.GeneratedScreen screen = client.generateScreenFromText("p1", "prompt", "GEMINI_3_8_FLASH");
             assertThat(screen.available()).isTrue();
             assertThat(screen.screenId()).isEqualTo("scr-99");
             assertThat(screen.htmlDownloadUrl()).isBlank();

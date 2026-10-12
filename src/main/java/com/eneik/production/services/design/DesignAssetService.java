@@ -500,7 +500,7 @@ public class DesignAssetService {
         var producerTokens = DesignConsistencyAuditService.TokenSet.of(
                 designSystemColors == null ? List.of() : designSystemColors,
                 designSystemFonts == null ? List.of() : designSystemFonts);
-        StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_FLASH", designSystemId);
+        StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_8_FLASH", designSystemId);
         if (!screen.available()) {
             return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message(), "", "", "");
         }

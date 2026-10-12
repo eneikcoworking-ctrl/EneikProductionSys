@@ -98,7 +98,7 @@ public class StitchClient {
         java.util.Map<String, Object> arguments = new java.util.HashMap<>();
         arguments.put("projectId", projectId);
         arguments.put("prompt", prompt == null ? "" : prompt);
-        arguments.put("modelId", modelId == null || modelId.isBlank() ? "GEMINI_3_FLASH" : modelId);
+        arguments.put("modelId", modelId == null || modelId.isBlank() ? "GEMINI_3_8_FLASH" : modelId);
         if (designSystemId != null && !designSystemId.isBlank()) {
             arguments.put("designSystem", designSystemId);
         }
