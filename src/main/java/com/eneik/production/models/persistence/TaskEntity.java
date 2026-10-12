@@ -12,6 +12,7 @@ import com.eneik.production.services.audit.TaskTerminalOverwriteAudit;
 
 @Entity
 @Table(name = "tasks")
+@com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class TaskEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
@@ -74,6 +75,7 @@ public class TaskEntity {
     @Column(name = "file_scope", columnDefinition = "TEXT")
     private String fileScope;
 
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "depends_on")
     private TaskEntity dependsOn;

@@ -138,8 +138,9 @@ public class DesignSystemFalsificationService {
                 continue;
             }
 
-            StitchClient.ApplyDesignSystemResult applied =
-                    stitchClient.applyDesignSystem(project.getId().toString(), created.designSystemId(), List.of());
+            StitchClient.ApplyDesignSystemResult applied = stitchProjectId != null
+                    ? stitchClient.applyDesignSystem(stitchProjectId, created.designSystemId(), List.of())
+                    : new StitchClient.ApplyDesignSystemResult(false, "no_project", "No Stitch project attached yet");
 
             self.recordAuditTrail(project.getId(), epic, created, applied);
         }

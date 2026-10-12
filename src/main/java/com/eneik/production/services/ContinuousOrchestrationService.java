@@ -225,7 +225,11 @@ public class ContinuousOrchestrationService {
             LogScope.clear();
         }
 
-        List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        List<ProjectEntity> activeProjects = new java.util.ArrayList<>(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active));
+        // DZHON_OSTIN_02 / DZHOZEF_RAZ_01: Stalled is a telemetry stall predicate, not an eviction from the universe.
+        // A stalled project must still receive continuous orchestration runs (recoverBlockedWork, recovery-dispatch)
+        // so that the factory autonomously recovers from bottlenecks instead of deadlocking!
+        activeProjects.addAll(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled));
         for (ProjectEntity project : activeProjects) {
             LogScope.project(project.getId());
             try {
