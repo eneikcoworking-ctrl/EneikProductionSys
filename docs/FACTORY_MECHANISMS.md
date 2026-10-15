@@ -2345,10 +2345,11 @@ an ideal mechanism.
 - `GoogleAiResourceService`: типобезопасная граница Google AI interactions и resource matrix, key-gate и fail-closed защита без скрытых мутаций. Заслон качества: 18/18 green (`GoogleAiResourceSecurityIntegrationTest` 12/12, `GoogleAiResourceControllerTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `EmbeddingSimilarityUtil`: чистая детерминированная математическая функция косинусного сходства векторов без побочных эффектов. Заслон качества: 28/28 green в `GeminiContextServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `StitchClient`: JSON-RPC клиент к Stitch MCP сохраняет screenId при отсутствии готового HTML, поддерживает edit/get/download и изоляцию проектов Stitch. Заслон качества: 10/10 green в `StitchClientTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `DesignAssetService`: оркестрация Stitch/Nano Banana, аудит дизайн-токенов, локальные draft-файлы и коммит в репозиторий GitHub. При `requireImplementableHtml=true` исключена подмена на картинки, офф-токен экраны отсекаются без коммита в git. Заслон качества: 12/12 green в `DesignAssetServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `RuntimeLauncherClient`: четкая демаркация сбоя инструмента (`observed=false`) от сбоя продукта клиента (`answered=false`) без прямого управления Docker вне лаунчера. Заслон качества: 32/32 green (`ClientRuntimeObservabilityServiceTest` 29/29, `ObservationHostingDemarcationLaw26Test` 3/3) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `GeminiObserverActionService`: операционные действия наблюдателя строго авторизуются через `OperationalPolicyService` с фиксацией в `GeminiObserverActionEntity` (`success`, `skipped`, `failed`, `denied`) и категорическим запретом на прямой код/коммиты. Заслон качества: 42/42 green (`GeminiObserverActionServiceTest` 17/17, `InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-**Текущий статус:** идеальный (ideal). Внешняя граница AI/RAG/Runtime заслонена 130 тестами в Docker Maven без единой мутации сервисного кода. Ступень 4 закрыта.
+**Текущий статус:** идеальный (ideal). Внешняя граница AI/RAG/Runtime заслонена 142 тестами в Docker Maven без единой мутации сервисного кода. Ступень 4 закрыта.
 
 **комментарий для Антигравити:** считаю механизм идеальным. Замер в рантайме и заслоны качества подтверждают выполнение инвариантов D008, D010, D006.
 
@@ -2509,10 +2510,14 @@ philosopher rows `RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION`,
 - `DesignConsistencyAuditService`: аудит дизайн-токенов проекта, cross-screen сходство и геометрия вьюпортов с честным `CANNOT_JUDGE` при отсутствии базовых токенов. Заслон качества: 28/28 green (`DesignConsistencyAuditServiceTest` 15/15, `LayoutGeometryAuditServiceTest` 13/13) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `DesignSystemFalsificationService`: фальсификация дизайн-систем эпиков с созданием аудит-трейла в виде dismissed wishlist-записи без порождения фоновых pending-задач. Заслон качества: 6/6 green в `DesignSystemFalsificationServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `DesignDriftMonitorService`: мониторинг дрейфа экрана выполняется строго внутри открытого 2xx окна наблюдения `ClientRuntimeObservabilityService` без запуска собственных инстансов. Заслон качества: 7/7 green в `DesignDriftMonitorServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `StrandedDesignCycleSweepService`: периодическое обнаружение брошенных притязаний цикла дизайна по TTL (15 мин) и безопасное освобождение через CAS `compareAndReleaseStrandedClaim` с институциональным аудитом в `DefectJournalService` и проектном журнале. Заслон качества: 4/4 green в `StrandedDesignCycleSweepServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `GitHubPullRequestService` (дизайн-носитель): операции `commitFile`, `deleteFile`, `copyFile` для каталогов черновиков дизайна `design/draft` и `design/approved`. Заслон качества: 18/18 green (`GitHubPullRequestServiceTest` 12/12, `GitHubPullRequestServiceFalsificationTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `JulesDispatchService` (`completeDesignReview`): продвижение утвержденного черновика дизайна строго при вердикте `approve` с сохранением байтового тождества. Заслон качества: 103/103 green в `JulesDispatchServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `DesignExcellenceGate`: строгий фальсификационный гейт качества дизайна с проверкой Playwright-скриншотов и валидацией геометрии без галлюцинаций LLM. Заслон качества: 18/18 green (`DesignExcellenceGateTest` 12/12, `DesignExcellenceGateFalsificationTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-**Текущий статус:** считаю механизм идеальным. Заслон качества: 67/67 green в семействе дизайн-цеха. Ступень 4 закрыта.
+**Текущий статус:** считаю механизм идеальным. Заслон качества: 210/210 green в семействе дизайн-цеха (в сводном прогоне секции 250/250 green). Ступень 4 закрыта.
 
-**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована замером в рантайме и Docker Maven.
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована замером в рантайме и Docker Maven (250/250 green).
 
 ---
 

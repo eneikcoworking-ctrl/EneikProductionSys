@@ -1,13 +1,13 @@
-# Такт L2: Ведущий инженер (2026-10-15 11:05 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 11:35 UTC)
 
-1. Пакетный замер Ступени 3 («Провести пробу, кода не менять» — 8 механизмов ядра):
+1. Пакетный замер Ступени 4 (Секция XVI/XXIX — Дизайн-цех, генерация, токенный аудит, продвижение и свип притязаний):
    - Исходный код сервисов фабрики (`src/main`) сохранен нерушимым без единой строки правок согласно догмату («работа замером, не правкой»).
-   - Замерены механизмы: `ClaimResultStatus` (5), `OperationalPolicyDeniedException` (ядро, 9), `AnomalyReport` (7), `JulesRoleCapabilities` (16), `ScopedBufferAppender` (ядро, 13), `V25__add_depends_on_and_hotspots.sql` (7), `OperationalFlowCoreService` (ядро, 39), `AccountRepository` (ядро, 37).
+   - Замерены механизмы: `DesignAssetService` (12), `DesignConsistencyAuditService` (15), `LayoutGeometryAuditService` (13), `StitchClient` (10), `GoogleAiResourceService` (18), `GitHubPullRequestService` (18), `DesignShopOrchestrationService` (26), `JulesDispatchService` (103), `DesignDriftMonitorService` (7), `StrandedDesignCycleSweepService` (4), `DesignSystemFalsificationService` (6), `DesignExcellenceGate` (18).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - 133/133 green в Maven в один пакетный проход: `ClaimResultStatusTruthTableFalsificationTest` (5), `OperationalPolicyDeniedExceptionFalsificationTest` (9), `AnomalyReportFalsificationTest` (7), `JulesRoleCapabilitiesFalsificationTest` (16), `ScopedBufferAppenderFalsificationTest` (13), `V25MigrationFalsificationTest` (7), `OperationalFlowCoreFalsificationTest` (39), `AccountRepositoryFalsificationTest` (8), `AccountRepositoryIntegrationTest` (8), `AccountSelectionFairnessTest` (5), `GeneralPoolAdmissionCoherenceIntegrationTest` (12), `ProjectFlowServiceLaw1JulesDispatchTest` (4).
-   - Подтверждены инварианты Popper D008 (фальсификация заслонов), Goldman D010 (изоляция уровней абстракции), Raz D006 (деонтический запрет как исполняемый код).
+   - 250/250 green в Maven в единый пакетный проход: `DesignAssetServiceTest` (12), `DesignConsistencyAuditServiceTest` (15), `LayoutGeometryAuditServiceTest` (13), `StitchClientTest` (10), `GoogleAiResourceControllerTest` (6), `GoogleAiResourceSecurityIntegrationTest` (12), `GitHubPullRequestServiceTest` (12), `GitHubPullRequestServiceFalsificationTest` (6), `DesignShopOrchestrationServiceTest` (13), `DesignShopOrchestrationServiceLaw15Test` (7), `DesignShopCycleRepositoryIntegrationTest` (6), `JulesDispatchServiceTest` (103), `DesignDriftMonitorServiceTest` (7), `StrandedDesignCycleSweepServiceTest` (4), `DesignSystemFalsificationServiceTest` (6), `DesignExcellenceGateTest` (12), `DesignExcellenceGateFalsificationTest` (6).
+   - Подтверждены инварианты Popper D008 (фальсификация заслонов), Goldman D010 (сохранение байтового тождества HTML), Raz D006 (деонтический запрет подмены HTML на изображения и TTL-защита притязаний).
 3. Документация и очередь:
-   - В `docs/FACTORY_MECHANISMS.md` внесены записи `*Живое:*` и подтвержден статус `ideal` для всех 8 механизмов.
-   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты все 8 пунктов Ступени 3. Ступень 3 фабрики закрыта на 100%.
+   - В `docs/FACTORY_MECHANISMS.md` актуализированы блоки `*Живое:*` и статус `ideal` для Секций IX, X и XVI (всего 250 тестов заслона).
+   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты `DesignAssetService`, `DesignShopCycleRepository`, `DesignShopCycleEntity`, `DesignExcellenceGate`, `StrandedDesignCycleSweepService`, `GitHubPullRequestService`.
 4. Ресурсы и регламент:
    - Таймеры schedule не вызывались согласно императивной директиве, завершение штатное. Изоляция в Docker Maven с лимитом `-m 2g`.

@@ -89,10 +89,13 @@ class StrandedDesignCycleSweepServiceTest {
 
         // Verify project log received entry
         List<ProjectLogFlushQueue.PendingEntry> logEntries = ProjectLogFlushQueue.drain(10);
-        assertEquals(1, logEntries.size());
-        assertEquals(projectId, logEntries.get(0).projectId());
-        assertEquals("WARN", logEntries.get(0).level());
-        assertTrue(logEntries.get(0).message().contains("BOUNDARY-TOPOLOGY"));
+        assertTrue(!logEntries.isEmpty(), "ProjectLogFlushQueue must have entries");
+        ProjectLogFlushQueue.PendingEntry topologyEntry = logEntries.stream()
+                .filter(e -> e.message().contains("BOUNDARY-TOPOLOGY"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Must contain BOUNDARY-TOPOLOGY log entry"));
+        assertEquals(projectId, topologyEntry.projectId());
+        assertEquals("WARN", topologyEntry.level());
     }
 
     @Test

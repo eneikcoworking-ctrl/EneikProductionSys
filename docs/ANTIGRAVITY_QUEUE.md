@@ -265,7 +265,7 @@
 - `generate_philosopher_patterns.py`  ← ядро
 - `SystemStatusService`  ← ядро
 - `OperationalTruthService`  ← ядро
-- `DesignAssetService`  ← ядро
+- ~~`DesignAssetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
 - `MLPredictionServiceClient`  ← ядро
 - `RepositoryStackAnalyzer`  ← ядро
 - `GitHubProjectFactoryClient`  ← ядро
@@ -284,7 +284,7 @@
 Действие здесь — воспроизвести опровержение, названное в записи. Если воспроизводится — завести задачу и
 чинить. Если нет — записать, что не воспроизводится, и **не трогать код**.
 
-- `DesignShopCycleRepository`  ← ядро
+- ~~`DesignShopCycleRepository`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - `TargetContext`  ← ядро
 - `AccountStatus`  ← ядро
 - `LeanValue`  ← ядро
@@ -446,6 +446,8 @@
 - ~~`V99__task_conflict_preserved_branch.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
 - ~~`audit_pr.py`~~ (Закрыто Ступень 4: замер в pytest 10/10 green, corpus verified 1720, ideal)
 - ~~`VideoAssetService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`StrandedDesignCycleSweepService`~~ (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
+- ~~`GitHubPullRequestService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
 
 ## Ступень 5 — проверить и не трогать (40)
 
@@ -467,7 +469,7 @@
 - `TaskTitleBuilder`
 - `DurableProjectLogAppender`  ← ядро
 - `KaizenProposalEntity`  ← ядро
-- `DesignShopCycleEntity`  ← ядро
+- ~~`DesignShopCycleEntity`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
 - `V82__operational_reality_findings.sql`  ← ядро
 - `V97__jules_session_pr_opened_workflow_claim.sql`  ← ядро
 - `V42__add_pr_review_has_code_and_role_threads.sql`  ← ядро
@@ -492,7 +494,7 @@
 - `FlowSpineService`  ← ядро
 - `GeminiContextService`  ← ядро
 - `TaskRepository`  ← ядро
-- `DesignExcellenceGate`  ← ядро
+- ~~`DesignExcellenceGate`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
 
 ---
 
