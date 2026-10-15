@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-15 13:42 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-15 13:45 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (status: ok, backend-1 UP 42h).
@@ -6,7 +6,7 @@
 - Сайдкары: runtime-launcher, ml-service, judgment-proxy — all UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 25G/38G (69%, норма < 70%), доступно 12GB. Память: 3.1Gi/3.7Gi, swap 2.0Gi/4.0Gi.
+- Диск: 25G/38G (69%, норма < 70%), доступно 12GB. Память: 3.5Gi/3.7Gi, swap 2.1Gi.
 
 3. Контроль инженера (L2):
 - Коммит 7db6458: Ступень 5 (40 механизмов ядра) закрыта в ideal (100% green в Maven, Stage5ProtectedInvariantsFalsificationTest 13/13).
