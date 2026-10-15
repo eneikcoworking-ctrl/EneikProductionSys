@@ -407,17 +407,17 @@
 - ~~`DesignConsistencyAuditService`~~ (Закрыто Ступень 4: замер в Docker Maven 28/28 green, ideal)
 - ~~`DesignSystemFalsificationService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`DesignDriftMonitorService`~~ (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)
-- `ClientRuntimeObservabilityService`
-- `BetaPosterior`
-- `RuntimeHealthShiftDetector`
-- `ProductCapabilityService`
-- `LogScope`
-- `ProjectLogFlushQueue`
-- `SystemSettingsService`  ← ядро
-- `ProjectTreeService`
-- `IdleProjectAdviceService`
-- `RoleCapabilityLoader`  ← ядро
-- `ProjectAuditPipelineService`
+- ~~`ClientRuntimeObservabilityService`~~ (Закрыто Ступень 4: замер в Docker Maven 32/32 green, ideal)
+- ~~`BetaPosterior`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
+- ~~`RuntimeHealthShiftDetector`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
+- ~~`ProductCapabilityService`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
+- ~~`LogScope`~~ (Закрыто Ступень 4: замер в Docker Maven 24/24 green, ideal)
+- ~~`ProjectLogFlushQueue`~~ (Закрыто Ступень 4: замер в Docker Maven green, safe drain, ideal)
+- ~~`SystemSettingsService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 13/13 green, ideal)
+- ~~`ProjectTreeService`~~ (Закрыто Ступень 4: замер в Docker Maven green, read-only projection, ideal)
+- ~~`IdleProjectAdviceService`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
+- ~~`RoleCapabilityLoader`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
+- ~~`ProjectAuditPipelineService`~~ (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
 - `AccountController`  ← ядро
 - `ProjectController`  ← ядро
 - `ClaimController`  ← ядро

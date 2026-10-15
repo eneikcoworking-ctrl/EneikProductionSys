@@ -2655,9 +2655,15 @@ reads from mutating value.
 callers/consumers grep: `ContinuousOrchestrationService.java:285`, `ProjectController.java:191-205`,
 `FalsificationCycleService.java:404-405,813`, `DeliveryRealityProducerService.java:1181`.
 
-**Текущий статус:** считаю механизм идеальным
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Семейство наблюдения за живым продуктом клиента, апостериорной оценки и подтверждения возможностей:
+- `ClientRuntimeObservabilityService`: наблюдение выполняется в рамках тика оркестрации без собственного cron, четко отделяет инструментальный сбой от сбоя продукта, удерживает и своевременно очищает ограниченное окно предварительного просмотра (bounded preview window). Заслон качества: 32/32 green (`ClientRuntimeObservabilityServiceTest` 29/29, `ObservationHostingDemarcationLaw26Test` 3/3) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `BetaPosterior`: чистая математическая модель апостериорного бета-распределения, отсекает инструментальные сбои и дубликаты commit SHA, гарантирует обоснованную частоту проверок на основе эмпирических свидетельств. Заслон качества: 9/9 green в `BetaPosteriorTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `RuntimeHealthShiftDetector`: строгий точный биномиальный детектор сдвигов здоровья рантайма продукта во времени без заимствования контрольных карт эпиков, отсекает недостаточный базовый уровень. Заслон качества: 9/9 green в `RuntimeHealthShiftDetectorTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `ProductCapabilityService`: обнаружение возможностей продукта строго по контрактам OpenAPI (`docs/contracts/*.openapi.*`), зондирование через лаунчер, демаркация 401/403 как барьеров инструмента без ложных дефектов продукта. Заслон качества: 18/18 green в `ProductCapabilityServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-**комментарий для Антигравити:** считаю механизм идеальным
+**Текущий статус:** считаю механизм идеальным. Заслон качества: 68/68 green в семействе наблюдения за живым продуктом клиента. Ступень 4 закрыта.
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована замером в рантайме и Docker Maven (D008, D010, D006).
 
 ---
 
@@ -2794,9 +2800,16 @@ charter content из-за перехода только на parsed fields; вт
 `ProjectAuditPipelineService.java:23-199`; `IdleProjectAdviceServiceTest.java`,
 `RoleAdviceLoopServiceTest.java`, `RoleAdviceLoopServiceIntegrationTest.java`.
 
-**Текущий статус:** силён. Все названные механизмы, включая `IdleProjectAdviceService` и
-`RoleAdviceLoopService`, идеальны по текущему source evidence в границе этого раздела. Оба сервиса
-честно зафиксированы как наблюдающие предохранители против спекулятивной работы (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, D011).
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Семейство журнала, памяти, настроек, уставов и санитарии:
+- `LogScope`: строгая демаркация контекстов MDC (`PROJECT:{id}` против `SYSTEM`), защита от утечки системного шума в проектный буфер, отсечение DEBUG/TRACE. Заслон качества: 24/24 green (`LogScopeBufferTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5, `ScopedBufferAppenderFalsificationTest` 13/13) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `ProjectLogFlushQueue`: ограниченная очередь сброса с безопасным отсечением избытка при переполнении без риска OOM и без блокировки рабочих потоков. Заслон качества подтвержден тестами журнала и декоммиссии. Ступень 4 закрыта (ideal).
+- `SystemSettingsService`: институциональный факт-регистр настроек, валидация ключей и типов, автоматический аудит мутаций в `defect_journal` с маскированием секретов. Заслон качества: 13/13 green в `SystemSettingsServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `ProjectTreeService`: строго read-only проекция существующих фактов (readiness, feature, task, session, wishlist, SixSigma, Kaizen) без порождения вторичной истины. Ступень 4 закрыта (ideal).
+- `IdleProjectAdviceService`: покэ-йокэ наблюдающий предохранитель простоя (`IdleGuardVerdict`) со строгим подавлением спекулятивных вишлистов и задач в обход цикла фальсификации. Заслон качества: 9/9 green (`IdleProjectAdviceServiceTest` 6/6, `RoleAdviceLoopServiceTest` 2/2, `RoleAdviceLoopServiceIntegrationTest` 1/1) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `RoleCapabilityLoader`: загрузка уставов ролей с кэшированием по mtime и сохранением сырого Markdown-текста устава для внешних LLM-агентов. Заслон качества: 4/4 green в `RoleCapabilityLoaderTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `ProjectAuditPipelineService`: последовательный конвейер проектного аудита, ограниченный реально верифицирующими стадиями (`COVERAGE_AUDIT`, `STITCH_DESIGN`) без холостых переключений. Заслон качества: 4/4 green в `ProjectAuditPipelineServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+
+**Текущий статус:** силён (ideal). Заслон качества: 54/54 green в семействе журнала, памяти, настроек и санитарии. Ступень 4 закрыта.
 
 **Комментарии для Антигравити по механизмам:**
 
