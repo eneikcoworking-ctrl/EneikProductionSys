@@ -1,17 +1,15 @@
-# Такт L2: Ведущий инженер (2026-10-07 19:46 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 07:45 UTC)
 
-1. Фиксация Ступени 4: ProcessControlService (D010 Goldman, D008 Popper, D006 Raz):
-   - Исходный код сохранён без изменений («работа замером, не правкой!»).
-   - ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK (D010): сильная. Единица подгруппы u-карты — завершенный эпик одного проекта в строгом порядке времени.
-   - KARL_POPPER_01_FALSIFICATION_HARNESS (D008): сильная. Фиксация базовых контрольных пределов Phase 1; запрет нормализации дрейфа в Phase 2.
-   - DZHOZEF_RAZ_01_PROHIBITION_AS_CODE (D006): сильная. Western Electric правила (3-сигма и 8 точек по одну сторону) сигнализируют outOfControl и роутятся в Кайдзен.
-2. Замер рантайма (*Живое:*):
-   - Hetzner рантайм (`eneikproductionsys-backend-1` UP 50m, health UP, PostgreSQL `process_control_snapshots` V86): расписание u-карт активно каждые 2ч.
-3. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - `ProcessControlServiceTest` (8/8) + `ProcessControlServiceFalsificationTest` (3/3) = 11/11 green. 0 вызовов `findAll()`.
-4. Документация фабрики:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирована Ступень 4 для `ProcessControlService`. Секция VII начата.
-5. Инварианты хоста:
-   - Диск: 61% (норма <70%), доступно 14GB, backend UP, ресурсы стабильны.
-6. Следующий такт:
-   - Проверить `MANAGER_STATE.md`, взять следующий механизм из Секции VII (`ConstraintIdentificationService` / `BottleneckDetectionService`).
+1. Фиксация Ступени 4: Пакетный замер Секции VII (TOC) — D008 Popper, D010 Goldman, D006 Raz:
+   - Исходный код сервисов сохранён без изменений («работа замером, не правкой!»).
+   - `ConstraintIdentificationService` (D010 Goldman): проектный барабан и буфер строго изолированы, 0 утечек.
+   - `BottleneckDetectionService` (D010 Goldman): агрегат емкости считывается 1 раз за такт, синхронен с диспетчером.
+   - `LaunchabilityConstraintService` (D006 Varzi/Raz): заслон подвижности (`movable`), кулдаун 45м, маршрутизация в `BARCAN-TAG-00`.
+   - `TocSubordinationLever` (D006 Raz, D012 Belnap): подчинение потока ТОС, истинность по Белнапу (`TocSubordinationTruthTest`).
+2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
+   - 52/52 green: `ConstraintIdentificationServiceTest` (6/6), `BottleneckDetectionServiceTest` (4/4), `BottleneckDetectionServiceFalsificationTest` (6/6), `TocSubordinationLeverTest` (12/12), `TocSubordinationTruthTest` (5/5), `BottleneckAwarePriorityServiceTest` (8/8), `BottleneckAwarePriorityServiceFalsificationTest` (6/6), `LaunchabilityConstraintServiceFalsificationTest` (5/5).
+3. Документация и очередь:
+   - В `docs/FACTORY_MECHANISMS.md` зафиксированы строки `*Живое:*` и статус `ideal` для всей Секции VII.
+   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты механизмы Секции VII TOC.
+4. Инварианты хоста:
+   - Диск: 67% (норма <70%), доступно 12GB. Backend UP 36h, продукт healthy.

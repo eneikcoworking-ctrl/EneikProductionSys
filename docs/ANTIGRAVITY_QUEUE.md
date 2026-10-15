@@ -351,7 +351,7 @@
 - `ClaimService`  ← ядро
 - `LeaseWatchdogService`  ← ядро
 - `AccountHealthService`  ← ядро
-- `BottleneckAwarePriorityService`
+- ~~`BottleneckAwarePriorityService`~~ (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
 - `AutoMergeService`  ← ядро
 - `GitHubPullRequestService`  ← ядро
 - `GitHubApiBudgetService`  ← ядро
@@ -376,9 +376,9 @@
 - `CriteriaEvidenceSelector`  ← ядро
 - `LeverPromotionService`
 - `ProcessControlService`
-- `ConstraintIdentificationService`
-- `LaunchabilityConstraintService`  ← ядро
-- `TocSubordinationLever`  ← ядро
+- ~~`ConstraintIdentificationService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`LaunchabilityConstraintService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
+- ~~`TocSubordinationLever`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
 - `FlowMetricsService`
 - `TaskWaitTimeService`
 - `SixSigmaAuditService`

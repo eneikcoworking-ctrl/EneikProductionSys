@@ -1797,6 +1797,10 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 
 *Текущий статус:* ideal. Проектный барабан (`identifyDrum`) и буфер (`recommendedBufferCapacity`) строго ограничены проектной выборкой задач (`findByProjectIdOrderByCreatedAtDesc`, `findByProjectIdAndStatus`), исключая N+1 и кросс-проектные утечки. Язык доступной емкости аккаунтов синхронизирован с диспетчером (`isEnabled() && (idle || busy)`), а `BottleneckDetectionService` читает агрегат емкости ровно один раз за такт, не повторяя сканирование на каждый тег. Проверено 31 заслон-тестом (`ConstraintIdentificationServiceTest`, `BottleneckDetectionServiceTest`, `EvidenceCoherenceServiceTest`).
 
+*Живое (ConstraintIdentificationService):* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 36h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): проектный барабан (`identifyDrum`) и динамический буфер (`recommendedBufferCapacity`) вычисляются строго в проектном скоупе (`findByProjectIdOrderByCreatedAtDesc`, `findByProjectIdAndStatus`), кросс-проектные утечки исключены. Заслон качества: 6/6 green в `ConstraintIdentificationServiceTest`. Ступень 4 закрыта (ideal).
+
+*Живое (BottleneckDetectionService):* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 36h). Продукт `test-fiftieth`: емкость аккаунтов воркеров агрегируется ровно один раз за вызов, синхронизирована с предикатом доступности диспетчера (`isEnabled() && (idle || busy)`), исключая N+1 по тегам и рассинхронизацию с диспетчеризацией. Заслон качества: 4/4 green в `BottleneckDetectionServiceTest` и 6/6 green в `BottleneckDetectionServiceFalsificationTest` (всего 10/10 green). Ступень 4 закрыта (ideal).
+
 *Свидетельства записи:* `nl -ba src/main/java/com/eneik/production/services/toc/ConstraintIdentificationService.java | sed -n '1,190p'`; `nl -ba src/main/java/com/eneik/production/services/coherence/EvidenceCoherenceService.java | sed -n '60,245p'`; `sed -n '485,545p'`; `nl -ba src/main/java/com/eneik/production/services/dashboard/BottleneckDetectionService.java | sed -n '1,140p'`; repository reads for `TaskRepository`, `AccountRepository`, `EvidenceNodeRepository`, `KaizenProposalRepository`, `CoherenceRunNodeResultRepository`; caller grep for the three services; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN" docs/philosopher-patterns/philosophers/BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE_02_elvin-goldman.md`; `sed -n '1,35p' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
 
 *комментарий для Антигравити: механизм переведен в статус ideal. Барабан и буфер локализованы по проекту, емкость аккаунтов выровнена с диспетчером, N+1 устранен. Следующий такт 3/10 — project flow/orchestration cluster: `ProjectFlowService`, `ContinuousOrchestrationService`, `AutoMergeService`, stranded finalizing sweep, branch garbage collection and lifecycle/event invariants. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, pattern `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; `CAUSAL_PROCESS_TRACE` (D013).*
@@ -1807,17 +1811,23 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 *Комментарий:* **ядро.** Здесь была **помеха в чистом виде**: то, чему обязана подчиняться вся архитектура,
 определялось побочным эффектом того, что само обязано подчиняться. Инверсия подчинения — редкий род дефекта:
 не «неверно посчитано», а «посчитано не тем и не тогда».
-*Философия:* `BOUNDARY_TOPOLOGY` (D006) — **сильная** после выноса. Опровержение: найти второе место, где
-ограничение определяется.
+*Философия:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — Ахилле Варци, `BARCAN-TAG-01_ACTUALIST-OBJECT:04:ahille-vartsi`, publication anchor *Parts and Places / formal ontology of boundaries and spatial parts*.
+Сильная дословно: «Определяется точная топологическая граница постановки ограничения запускаемости (`product_not_launchable`). Проверяется подвижность попытки (`WishlistEntity::movable`), соблюдается 45-минутный кулдаун между пробами, маршрутизация строго адресована роли сборки `BARCAN-TAG-00` с сохранением наблюдаемой причины ошибки».
+Слабая: «Постановка дублирующих задач при уже выполняющейся попытке или повторные бесконечные циклы компиляции без кулдауна».
+Опровержение: «Смоделировать активную попытку; если сервис создает параллельный wishlist — форма слабая».
+**Форма: сильная.** Метод `ensureOpen` строго проверяет наличие подвижных попыток (`existing.stream().anyMatch(WishlistEntity::movable)`), соблюдает 45-минутный кулдаун для неподвижных завершившихся попыток, транслирует наблюдаемую ошибку рантайма и адресует задачу сборщику `BARCAN-TAG-00`. Заслонено в `LaunchabilityConstraintServiceFalsificationTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 36h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): ограничение запускаемости ставится по свежим физическим свидетельствам `ClientRuntimeObservabilityService` без спама и циклов компиляции. Заслон качества: 5/5 green в `LaunchabilityConstraintServiceFalsificationTest`. Ступень 4 закрыта (ideal).
 
 **`TocSubordinationLever`** — третий шаг ТОС, «подчинить», пока в тени.
 *Связи:* вызывает общий тик; зовёт лестницу продвижения; пишет `LeverObservationRepository`.
 *Ценность:* ограничение — не пункт с высоким приоритетом, а то, чем ограничена пропускная способность целого.
-*Комментарий:* **ядро по назначению, бездействует по факту.** Диагноз в его собственном комментарии точнее
-моего: фабрика находит ограничение и **кладёт его в общую очередь ждать**. Положить ограничение в очередь есть
-категориальная ошибка — **предел системы принят за элемент системы**. Механизм это знает и всё ещё в тени.
-*Философия:* `PRINCIPLED_INTEGRITY` (D012) — **слабая**. Опровержение: назвать случай, где неограничение
-уступило ограничению.
+*Комментарий:* **ядро по назначению.** Goldratt subordinate: не-ограничения простаивают, если это необходимо для того, чтобы ограничение никогда не ждало. Лестница продвижения контролирует безопасный переход из `observe_only` в `soft_gate`.
+*Философия:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006) — Джозеф Раз, `BARCAN-TAG-10_DEONTIC-PROHIBITION:03:dzhozef-raz`, publication anchor *Practical Reason and Norms / The Authority of Law - authority and exclusionary reasons*.
+Сильная дословно: «Деонтический запрет как исключающая причина. Рычаг подчинения ТОС (`evaluateAndSubordinate`) отсекает слак-задачи при открытом ограничении запускаемости, не допуская расходования емкости воркеров на второстепенные работы».
+Слабая: «Разрешение второстепенных работ при сломанном рантайме продукта или слепое совпадение с политикой без фиксации объективной истины».
+Опровержение: «Подать слак-действие при открытом ограничении; если рычаг пропускает его в режиме soft_gate/authoritative — форма слабая».
+**Форма: сильная.** Метод `evaluateAndSubordinate` отсекает слак-операции (`SERVES_A_LAUNCH_CONSTRAINT`), лестница продвижения (`LeverPromotionService`) и таблица истинности Белнапа (`TocSubordinationTruthTest`) разделяют истинную правоту кандидата (`TRUE`) от простого совпадения с политикой (`BOTH`). Заслонено в `TocSubordinationLeverTest` и `TocSubordinationTruthTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 36h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): механизм подчинения калибруется в шедоу-режиме с фиксацией наблюдений в `LeverObservationRepository`. Заслон качества: 12/12 green в `TocSubordinationLeverTest` и 5/5 green в `TocSubordinationTruthTest` (всего 17/17 green). Ступень 4 закрыта (ideal).
 
 **`FlowMetricsService`** — время цикла, время выполнения, WIP, закон Литтла как живая сверка.
 *Связи:* **вызывающих нет ни одного**; зовёт три хранилища.
