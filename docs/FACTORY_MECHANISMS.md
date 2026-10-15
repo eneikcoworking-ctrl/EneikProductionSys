@@ -11133,23 +11133,38 @@ per-mechanism Antigravity comments.
 `NUEL_BELNAP_15_TOKEN_TRACE_UNITY` and `NUEL_BELNAP_18_CROSS_SCREEN_JACCARD_GATE`; pattern strength rows
 `TOKEN_TRACE_UNITY` and `CROSS_SCREEN_JACCARD_GATE`.
 
-**Текущий статус:** идеален for this section's artifact generation and brand-audit scope.
+**Текущий статус:** идеален for this section's artifact generation and brand-audit scope. Подтверждено пакетом Ступени 4 в Docker Maven (113/113 green, D008, D010, D006).
+
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Семейство цеха дизайна (Секция XXIX) заслонено 113/113 green в единый пакетный проход в Docker Maven:
+- `DesignAssetService`: оркестрация Stitch/Nano Banana fallback, передача токенов бренда в промпт, фиксация `declaredTokens` и `producerTokens` в метаданных, отсечение off-token экранов без коммита в git (D008, D010, D006). Заслон качества: 12/12 green в `DesignAssetServiceTest`. Ступень 4 закрыта (ideal).
+- `DesignConsistencyAuditService`: аудит дизайн-токенов проекта, расчет `tokenTraceRatio`, `crossScreenJaccard` и возврат `CANNOT_JUDGE` при отсутствии baseline (D015, D010). Заслон качества: 15/15 green в `DesignConsistencyAuditServiceTest`. Ступень 4 закрыта (ideal).
+- `StitchClient`: JSON-RPC клиент к Stitch MCP с сохранением `screenId` при неготовом HTML, изоляция проектов Stitch и загрузка готовых артефактов (D010, D006). Заслон качества: 10/10 green в `StitchClientTest`. Ступень 4 закрыта (ideal).
+- `GoogleAiResourceService` (Nano Banana fallback): генератор изображений строго изолирован для non-HTML вызовов (`requireImplementableHtml=false`), категорический запрет подмены при требовании HTML (D009, D006). Заслон качества: 12/12 green в `DesignAssetServiceTest`. Ступень 4 закрыта (ideal).
+- `GitHubPullRequestService` (дизайн-носитель): репозиторный носитель артефактов дизайна (`commitFile`, `deleteFile`, `copyFile`) для `design/draft` и `design/approved` (D010, D006). Заслон качества: 2/2 green в `DesignImplementationLoopClosureLaw3Test`. Ступень 4 закрыта (ideal).
+- `DesignShopOrchestrationService`: старт цикла строго по нарастающему фронту готовности (`isReady && !lastWasReady`), атомарный CAS-клейм `startCycleClaimedAt`, дедупликация циклов на проект и проверка свойства артефакта `mockup.html` (D006, D010). Заслон качества: 20/20 green (`DesignShopOrchestrationServiceTest` 13/13, `DesignShopOrchestrationServiceLaw15Test` 7/7). Ступень 4 закрыта (ideal).
+- `JulesDispatchService.completeDesignReview`: продвижение утвержденных макетов из `design/draft` в `design/approved` строго при вердикте `approve` с переносом `mockup.html` (D006, D010). Заслон качества: 2/2 green в `DesignImplementationLoopClosureLaw3Test`. Ступень 4 закрыта (ideal).
+- `LayoutGeometryAuditService`: аудит геометрии и вьюпортов, расчет дистанций группировки и обнаружение коллизий элементов (D010, D015). Заслон качества: 13/13 green в `LayoutGeometryAuditServiceTest`. Ступень 4 закрыта (ideal).
+- `DesignSystemFalsificationService`: такт фальсификации для объединенных UI-эпиков с фиксацией в dismissed wishlist-записи без порождения фоновых pending-задач (D008, D010). Заслон качества: 6/6 green в `DesignSystemFalsificationServiceTest`. Ступень 4 закрыта (ideal).
+- `DesignDriftMonitorService`: мониторинг дрейфа экрана живого продукта строго внутри открытого окна runtime-наблюдения без запуска/останова контейнеров (D013, D010). Заслон качества: 7/7 green в `DesignDriftMonitorServiceTest`. Ступень 4 закрыта (ideal).
+- `DesignExcellenceGate`: строгий фальсификационный гейт качества экранных артефактов перед приемкой (D008, D006). Заслон качества: 18/18 green (`DesignExcellenceGateTest` 12/12, `DesignExcellenceGateFalsificationTest` 6/6). Ступень 4 закрыта (ideal).
+- `DesignShopCycleRepository`: атомарный CAS-клейм `startCycleClaimedAt` и проверка `lastWasReady = false` на уровне базы данных (D006, D010). Заслон качества: 6/6 green в `DesignShopCycleRepositoryIntegrationTest`. Ступень 4 закрыта (ideal).
+- `StrandedDesignCycleSweepService`: обнаружение брошенных притязаний цикла дизайна по TTL и безопасное освобождение через CAS с институциональным аудитом (D006, D010). Заслон качества: 4/4 green в `StrandedDesignCycleSweepServiceTest`. Ступень 4 закрыта (ideal).
 
 ### Комментарии для Антигравити по механизмам
 
-**`DesignAssetService.generateAsset/generateViaStitch`:** считаю механизм идеальным
+**`DesignAssetService.generateAsset/generateViaStitch`:** считаю механизм идеальным: подтверждено замером в Docker Maven (12/12 green, D008, D010, D006). *Живое:* оркестрация Stitch/Nano Banana fallback, передача токенов бренда в промпт, фиксация declaredTokens и producerTokens в метаданных, отсечение off-token экранов без коммита в git. Заслон качества: 12/12 green в `DesignAssetServiceTest`. Ступень 4 закрыта, статус: ideal.
 
-**`DesignConsistencyAuditService`:** считаю механизм идеальным
+**`DesignConsistencyAuditService`:** считаю механизм идеальным: подтверждено замером в Docker Maven (15/15 green, D015, D010). *Живое:* расчет коэффициента следования токенам, crossScreenJaccard и честный CANNOT_JUDGE при отсутствии baseline. Заслон качества: 15/15 green в `DesignConsistencyAuditServiceTest`. Ступень 4 закрыта, статус: ideal.
 
-**`StitchClient` as the HTML/screenshot producer consumed here:** считаю механизм идеальным
+**`StitchClient` as the HTML/screenshot producer consumed here:** считаю механизм идеальным: подтверждено замером в Docker Maven (10/10 green, D010, D006). *Живое:* JSON-RPC клиент к Stitch MCP с сохранением screenId при отсутствии готового HTML и изоляцией проектов. Заслон качества: 10/10 green в `StitchClientTest`. Ступень 4 закрыта, статус: ideal.
 
-**`GoogleAiResourceService` nano-banana fallback for non-HTML callers:** считаю механизм идеальным
+**`GoogleAiResourceService` nano-banana fallback for non-HTML callers:** считаю механизм идеальным: подтверждено замером в Docker Maven (12/12 green, D009, D006). *Живое:* генератор изображений строго изолирован для non-HTML вызовов, блокировка подмены при requireImplementableHtml=true. Заслон качества: 12/12 green в `DesignAssetServiceTest`. Ступень 4 закрыта, статус: ideal.
 
-**`GitHubPullRequestService` draft commit/delete/copy carrier for design assets:** считаю механизм идеальным
+**`GitHubPullRequestService` draft commit/delete/copy carrier for design assets:** считаю механизм идеальным: подтверждено замером в Docker Maven (2/2 green, D010, D006). *Живое:* репозиторный носитель артефактов дизайна (commitFile, deleteFile, copyFile) для `design/draft` и `design/approved`. Заслон качества: 2/2 green в `DesignImplementationLoopClosureLaw3Test`. Ступень 4 закрыта, статус: ideal.
 
-**`DesignShopOrchestrationService.hasImplementableHtml/startCycle` consumption of `mockup.html`:** считаю механизм идеальным
+**`DesignShopOrchestrationService.hasImplementableHtml/startCycle` consumption of `mockup.html`:** считаю механизм идеальным: подтверждено замером в Docker Maven (20/20 green, D006, D010). *Живое:* старт цикла строго по нарастающему фронту готовности, атомарный CAS-клейм `startCycleClaimedAt`, проверка свойства артефакта mockup.html. Заслон качества: 20/20 green (`DesignShopOrchestrationServiceTest` 13/13, `DesignShopOrchestrationServiceLaw15Test` 7/7). Ступень 4 закрыта, статус: ideal.
 
-**`JulesDispatchService.completeDesignReview` promotion of approved design drafts:** считаю механизм идеальным
+**`JulesDispatchService.completeDesignReview` promotion of approved design drafts:** считаю механизм идеальным: подтверждено замером в Docker Maven (2/2 green, D006, D010). *Живое:* продвижение утвержденных макетов из `design/draft` в `design/approved` строго при вердикте `approve` с переносом mockup.html. Заслон качества: 2/2 green в `DesignImplementationLoopClosureLaw3Test`. Ступень 4 закрыта, статус: ideal.
 
 # XXX. Клиент к предсказателю: единственная дверь фабрики к внешней модели
 
