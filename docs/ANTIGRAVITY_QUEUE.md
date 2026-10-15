@@ -270,7 +270,7 @@
 - ~~`DesignAssetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
 - `MLPredictionServiceClient`  ← ядро
 - ~~`RepositoryStackAnalyzer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
-- `GitHubProjectFactoryClient`  ← ядро
+- ~~`GitHubProjectFactoryClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
 - `CommandDashboardService`  ← ядро
 - ~~`InternalGeminiObserverController`~~ (Закрыто Ступень 4: замер в Docker Maven 42/42 green, ideal)
 - `TocSentinelService`  ← ядро
