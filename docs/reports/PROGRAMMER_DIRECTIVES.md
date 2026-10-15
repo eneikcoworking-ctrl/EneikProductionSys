@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция VII (TOC)
+# Пакетная директива L1/L3 -> L2: Секция VIII (Flow, Lean & Six Sigma Metrics)
 
-**Дата:** 2026-10-15 09:00 UTC  
+**Дата:** 2026-10-15 09:08 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,11 +10,12 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, согласований и пауз.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю незакрытую секцию механизмов целиком. Для Секции VII (TOC) наряд охватывает неразрывный контур:
-   - `ConstraintIdentificationService`
-   - `BottleneckDetectionService`
-   - `LaunchabilityConstraintService`
-   - `TocSubordinationLever`
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю незакрытую секцию механизмов целиком. Секция VIII (Flow, Lean & Six Sigma Metrics) охватывает полный контур метрик потока и качества:
+   - `FlowMetricsService`
+   - `TaskWaitTimeService`
+   - `SixSigmaAuditService`
+   - `EmsMetricsService`
+   - `ProjectOperationalContextService`
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ:** Запрещено модифицировать рабочий код сервисов при проходящих тестах!
@@ -25,40 +26,45 @@
 
 ## 2. Философский базис RAG-корпуса (D008, D010, D006)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:** Принцип фальсификации. Не искать подтверждений мнимого благополучия, а создавать строгие тесты-заслоны против ложно-зеленых состояний (`False green`). Любая гипотеза идеальности обязана быть эмпирически опровержимой.
-- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:** Лок уровней абстракции и надежность эпистемической цепочки. Проектный барабан (`identifyDrum`) и буфер (`recommendedBufferCapacity`) жестко залочены в проектной границе (`project-scoped`), а емкость пула аккаунтов (`factory capacity`) выровнена по семантике диспетчера. Смешивание контекстов проекта и фабрики без явного моста признается категориальной ошибкой и дефектом D010.
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:** Принцип фальсификации. Не искать подтверждений мнимого благополучия, а проверять эмпирическую опровержимость метрик. Закон Литтла (`WIP ≈ Throughput × CycleTime`), DPMO и время ожидания обязаны регистрировать отклонения и аномалии, а не выдавать ложно-зеленые отчеты.
+- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:** Лок уровней абстракции и надежность эпистемической цепочки. Проектные метрики потока жестко изолированы по `projectId` (`TaskWaitTimeService`, `FlowMetricsService`), а системные/мета-задачи оркестратора (`BARCAN-TAG-09`) отделены от продуктовой готовности (`EmsMetricsService`), предотвращая потерю lineage и категориальные ошибки.
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:** Деонтический запрет как исключающая причина (`exclusionary reason`) и исполняемый код. Императивный запрет инженеру переписывать функционирующий код на Ступени 4 при отсутствии падающего теста-заслона.
 
 ---
 
-## 3. Пакетный наряд по механизмам Секции VII (Ступени 3–4: «Замер в рантайме, не правка кода»)
+## 3. Пакетный наряд по механизмам Секции VIII (Ступени 3–4: «Замер в рантайме, не правка кода»)
 
-### А. `ConstraintIdentificationService`
-- **Действие:** Замерить рантайм-поведение проектного барабана и буфера Литтла.
-- **Инвариант:** Строгая изоляция задач по `projectId` (`findByProjectId...`), 0 кросс-проектных утечек (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`).
-- **Заслон:** Проверить `ConstraintIdentificationServiceTest` (6/6 green) в изолированном Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
+### А. `FlowMetricsService`
+- **Действие:** Замерить расчет WIP, Cycle Time, Lead Time и проверку Закона Литтла.
+- **Инвариант:** Арифметическая проверка консистентности (`WIP ≈ Throughput × Cycle Time`) без субъективных нарративов; учет потерь исключительно по реальным свидетельствам отклоненных wishlist-заявок (`TERMINAL_STATUSES`).
+- **Заслон:** Проверить `FlowMetricsServiceTest` (4/4 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
 
-### Б. `BottleneckDetectionService`
-- **Действие:** Замерить детекцию заторов и чтение емкости пула аккаунтов.
-- **Инвариант:** Единое обращение к емкости за такт, синхронность с диспетчером (`isEnabled && (idle || busy)`), отсутствие N+1 запросов к хранилищу аккаунтов.
-- **Заслон:** Проверить `BottleneckDetectionServiceTest` (4/4 green) и `BottleneckDetectionServiceFalsificationTest` (6/6 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
+### Б. `TaskWaitTimeService`
+- **Действие:** Замерить классификацию времени ожидания задач в очереди.
+- **Инвариант:** Разделение доверенного времени в сессии Jules (не является потерями) и времени простоя в очереди (Lean-потери). Синхронность предикатов с `ProjectFlowService.dispatchQueuedTasks`.
+- **Заслон:** Проверить `DashboardControllerTest` (2/2 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
 
-### В. `LaunchabilityConstraintService`
-- **Действие:** Замерить постановку топологического ограничения запускаемости (`product_not_launchable` в `WishlistEntity`).
-- **Инвариант:** Единственный эмитент ограничения (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006). Проверка подвижности попытки (`WishlistEntity::movable`), соблюдение кулдауна (45 минут) между пробами, маршрутизация строго сборщику `BARCAN-TAG-00`.
-- **Заслон:** Закрепить тестом-заслоном `LaunchabilityConstraintServiceFalsificationTest` (5/5 green). Исходный код сервиса НЕ ТРОГАТЬ.
+### В. `SixSigmaAuditService`
+- **Действие:** Замерить расчет DPMO, FTY, Sigma Level и аудит качества.
+- **Инвариант:** Строгое разделение проектного скоупа (`single project`) и общефабричного агрегата (`FACTORY_WIDE_ALL_PROJECTS`), исключение нерелевантных задач-носителей.
+- **Заслон:** Проверить `SixSigmaAuditServiceTest` (26/26 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
 
-### Г. `TocSubordinationLever`
-- **Действие:** Замерить отсечение слак-задач при активном ограничении запускаемости (`evaluateAndSubordinate`).
-- **Инвариант:** Разделение ранжирования и подчинения (`DZHOZEF_RAZ_04_PRINCIPLED_INTEGRITY` / D012). Ограничение системы не маскируется под элемент общей очереди; 4-значная логика Белнапа разделяет истинное подчинение (`TRUE`) и совпадение с политикой (`BOTH`).
-- **Заслон:** Проверить `TocSubordinationLeverTest` (12/12 green) и `TocSubordinationTruthTest` (5/5 green). Исходный код сервиса НЕ ТРОГАТЬ.
+### Г. `EmsMetricsService`
+- **Действие:** Замерить сбор дашборда EMS и доктрин ролей (`BARCAN-TAG-00`...`12`).
+- **Инвариант:** Исключение мета-задач компилятора и ревью из продуктовой готовности ролей, предотвращение раздувания готовности на пустом проекте.
+- **Заслон:** Проверить `EmsMetricsServiceTest` (6/6 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
+
+### Д. `ProjectOperationalContextService`
+- **Действие:** Замерить агрегацию операционного контекста и блокеров потока.
+- **Инвариант:** Отсутствие независимых токенов одобрения (`APPROVAL_TOKEN`), делегирование сущностям `PrReviewEntity`, согласованность с `BottleneckDetectionService` и `EmsMetricsService`.
+- **Заслон:** Проверить тесты контекста (`PrReviewApprovalLaw1Test`, `AutoMergeServiceTest`) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
 
 ---
 
-## 4. Регламент верификации и фиксации
+## 4. Регламент верификации и фиксации для инженера L2
 
-1. Запуск заслонов исключительно в изолированном Docker-контейнере:  
-   `docker run --rm -m 2g -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`
-2. Обновление записей Ступени 4 в `docs/FACTORY_MECHANISMS.md` (секции `*Живое:*` и статус `ideal`) и `docs/ANTIGRAVITY_QUEUE.md`.
-3. Фиксация семантическим коммитом L2.
-4. Отчет в `docs/reports/PROGRAMMER_STATE.md` (до 15–20 строк).
+1. Пакетный запуск заслонов в изолированном Docker-контейнере:  
+   `docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=FlowMetricsServiceTest,EmsMetricsServiceTest,SixSigmaAuditServiceTest,DashboardControllerTest -DfailIfNoTests=false`
+2. Обновление записей Ступени 4 в `docs/FACTORY_MECHANISMS.md` (секции `*Живое:*` и статус `ideal`) и `docs/ANTIGRAVITY_QUEUE.md` для механизмов Секции VIII.
+3. Фиксация семантическим коммитом L2: `feat(metrics): complete Stage 4 batch verification for Section VIII (D008, D010, D006)`.
+4. Краткий отчет в `docs/reports/PROGRAMMER_STATE.md` (до 15–20 строк).
