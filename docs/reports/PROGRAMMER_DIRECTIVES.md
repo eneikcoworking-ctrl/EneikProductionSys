@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция VI (Суждение: решётка суждения, слой опровержений и продвижение рычагов)
+# Пакетная директива L1/L3 -> L2: Секция I (Приём требования: рыночный корпус, уставный гейт и полевое исследование)
 
-**Дата:** 2026-10-15 17:42 UTC  
+**Дата:** 2026-10-15 17:56 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,52 +10,54 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция IX («Внешние системы: AI/RAG/Runtime-граница») полностью подтверждена и закрыта инженером (142/142 green в коммите `04fed6b`). Настоящая директива охватывает целиком следующий фундаментальный массив фабрики — **Секцию VI («Суждение: решётка суждения, слой опровержений и продвижение рычагов»)**:
-   - **Контур VI.1. Решётка суждения и 5 слоёв истины (Popper D012, Goldman D010, Raz D006):**
-     * `VerdictLayer`, `Verdict`, `Judgement`, `VerdictReconciliation`, `VerdictGate`, `VerdictController`, `AutonomousVerdictObservationService` — трёхзначная решётка Белнапа/Поппера (`PERMIT`, `WITHHOLD`, `ABSTAIN`), монотонное сужение (`WITHHOLD` доминирует, `ABSTAIN` блокирует продвижение), запрет на преобразование эпистемического долга в разрешение (`advance=ABSTAIN` при $D(P)>0$), строгая типизация кодов отказа `reasonCode` (`KARL_POPPER_03_TRUTH_STATUS_TABLE` / D012, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
-     * Специализированные слои: `AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer` — изоляция предметов суждения без смешивания уровней абстракции (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
-   - **Контур VI.2. Фабричный суд и асимметрия фальсификации (Popper D008, Goldman D010, Raz D006):**
-     * `FactoryJudgmentService` & `JudgmentAgentClient` — модель суждения вызывается строго по опровержению (`unjudged refutations`), а не по расписанию; сетевой сбой (`UNAVAILABLE`) сохраняет `judged_at = null` для повторной попытки; нерассудимая строка (`UNJUDGEABLE`) помечается прочитанной для защиты от зависания очереди (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ALVIN_GOLDMAN_01_RELIABLE_PROCESS_AUDIT` / D010).
-   - **Контур VI.3. Суд сданной работы и Закон 17 отбора свидетельств (Goldman D007, Popper D008, Raz D006, Wittgenstein D013):**
-     * `DeliveredWorkJudgmentService` & `CriteriaEvidenceSelector` — сопоставление физического diff PR в GitHub с критериями приёмки задачи; категорический запрет механической обрезки диффа по чарам (Закон 17, `splitAtFileBoundaries` с именованием опущенных файлов); вердикт `REFUTED` порождает дедуплицированный review-only wishlist `delivery_refuted`, не ломая завершённую задачу (`ELVIN_GOLDMAN_11_CONVERSATION_MAXIM` / D007, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006).
-   - **Контур VI.4. Лестница доверия рычагов (Gärdenfors D007, Popper D008, Goldman D010):**
-     * `LeverPromotionService`, `LeverStage`, `LeverAgreement`, `LeverObservation` — AGM-лестница пересмотра убеждений: старт нового рычага строго в `OBSERVE_ONLY`; жесткий попперовский ценз продвижения ($N \ge 20$ наблюдений, согласие $\ge 80\%$, окно 14 дней); однократное потребление пакета улик; немедленное понижение (`demote`) при единичном реальном расхождении (`PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` / D007, `ALVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010).
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция VI («Суждение: решётка суждения, слой опровержений, рычаги») полностью замерена и закрыта инженером (139/139 green в коммите `3480f81`). Настоящая директива охватывает целиком следующий фундаментальный массив фабрики — **Секцию I («Приём требования: рыночный корпус, уставный гейт и полевое исследование»)**:
+   - **Контур I.1. `ProjectFlowService` (Shaffer D004, Goldman D010, Raz D006):**
+     * Мерологическое владение Шаффера (`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` / D004): приоритет целого над частями, явное закрепление владельцев переходов состояний задач и заявок вишлиста, защита терминальных статусов через атомарные CAS (`writeStatusUnlessTerminalAt`, `compareAndSetStatusAt`), лимит попыток декомпозиции (`WISHLIST_COMPILE_ATTEMPT_BUDGET = 3`).
+     * Изоляция проектных границ и надежность выборок Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): ликвидация N+1 и смешивания данных чужих проектов через `findByTaskIdIn`, детерминированное упорядочение проектного каталога `listProjects` (`findAllByOrderByCreatedAtDesc`).
+   - **Контур I.2. `ProjectFactoryService`, `GitHubProjectFactoryClient`, `LinearProjectFactoryClient` (Belnap D009, Goldman D010, Varzi D006):**
+     * Многозначный оракул подстановок Белнапа (`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009): при отсутствии или сбое провижининга фабрика строго возвращает `null` и передает `null` в Linear, исключая генерацию фантомных URL (`phantom URL`).
+     * Демаркация онбординга Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): строгое разграничение greenfield (выброс `name_conflict` при существующем удаленном репозитории) и brownfield (сохранение подтвержденного URL), автоматическая регистрация 4 стандартных хотспотов (`ProjectHotspotFileEntity`), валидированный `factoryReport`.
+     * Топология границ Варци (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006): отсутствие внешних сетевых клиентов в транзакционном графе приёма требования.
+   - **Контур I.3. `ProjectWorkspaceFactoryService` (Varzi D006):**
+     * Топология файловых границ Варци (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006): безопасная генерация базовых артефактов (`README.md`, `.env.example`, `.github/workflows/ci.yml`, `docs/PROJECT_BRIEF.md`) со строгим удержанием границы корня проекта `workspaceRoot`.
+   - **Контур I.4. `OnboardingAuditService`, `RepositoryStackAnalyzer` (Belnap D012, Ryle D002, Goldman D010):**
+     * Трёхзначная таблица истинности Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): статусы аудита представлены в системе типов `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) с выводом «не проверено» вместо ложного булева false.
+     * Защита от категориальной ошибки Райла (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002): категорический запрет конвертации проблем сетевого доступа фабрики в дефекты или находки о коде клиента (`assertThat(savedFindings).isEmpty()` при `isUnchecked()`).
+     * Цепочка надежности Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): атомарная очистка устаревших находок (`deleteAll`) перед записью свежих данных.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено трогать рабочий код сервисов (`src/main/java`) при проходящих тестах!
-   - Механизмы Секции VI уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
+   - Механизмы Секции I уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D007, D012, D013)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D004, D009, D012, D002)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` & `KARL_POPPER_03_TRUTH_STATUS_TABLE` [D008 False green & D012 Multivalued truth, Popper]:**
-  * Попперовская асимметрия фальсификации: модель зовётся к суду исключительно при наличии опровержения; подтверждения бесплатны и не требуют сетевых затрат;
-  * Трёхзначная логика: `PERMIT`, `WITHHOLD`, `ABSTAIN` строго различимы; отсутствие свидетельства есть эпистемический долг (`debt`), а не разрешение.
-- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ALVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` [D010 Data lineage loss, Goldman]:**
-  * Строгий лок уровней абстракции: factory judgment и delivery judgment никогда не смешиваются;
-  * Асимметрия доверия: для каждого следующего шага продвижения рычага требуется свежий пакет свидетельств.
-- **`ELVIN_GOLDMAN_11_CONVERSATION_MAXIM` [D007 Conversation maxim / Law 17, Goldman]:**
-  * Закон отбора свидетельств: запрет механической резки диффа по символам; разделение строго по границам файлов с явным перечислением опущенных сущностей.
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` & `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции VI при проходящих тестах;**
-  * `VerdictGate` монотонно вычитает права и запрещает действия по типизированным `reasonCode`.
-- **`PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` [D007 Belief revision, Gärdenfors]:**
-  * AGM-модель ревизии убеждений: нулевое влияние кандидата до накопления доказательной базы (`OBSERVE_ONLY`).
-- **`LUDVIG_VITGENSHTEYN_01_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift, Wittgenstein]:**
-  * Анти-зеркало рантайма: оценка delivery опирается на физический diff PR в GitHub; отсутствие diff фиксируется как `NOT_JUDGED_NO_DIFF`.
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
+  * Попперовская фальсификация: тесты-заслоны обязаны падать при попытке подсунуть чужой проект, нарушить DBR Rope или подменить статус без правки в БД;
+- **`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
+  * Каузальная надежность процесса: четкое разделение greenfield/brownfield, устранение N+1 через `findByTaskIdIn`, атомарное удаление старых находок аудита;
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
+  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции I при проходящих тестах;**
+  * Деонтические исключающие основания: запрет сетевых вызовов в транзакции приёма, запрет перезаписи терминальных статусов задач;
+- **`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` [D004 Boundary drift, Shaffer]:**
+  * Мерологический приоритет целого над частями: `ProjectFlowService` как координатор жизненного цикла проектов удерживает согласованность 15 хранилищ;
+- **`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` & `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D009 & D012 Many-valued diagnostics, Belnap]:**
+  * Честный `null` при сбое провижининга вместо фантомных URL;
+  * Трёхзначная решётка `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) с отображением «не проверено»;
+- **`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` [D002 Category mistake, Ryle]:**
+  * Категориальная граница: сбой доступа фабрики не является дефектом кода заказчика.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. Провести строгий пакетный замер механизмов Секции VI в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
-2. Подтвердить 100% green статус по ключевым классам-заслонам Секции VI:
-   - Решётка суждения и слои: `VerdictGateTest`, `VerdictReconciliationTest`, `VerdictLayerFalsificationTest`, `AcceptanceVerdictLayerTest`, `RuntimeVerdictLayerTest`, `InfrastructureVerdictLayerTest`, `AutonomousVerdictObservationServiceTest`;
-   - Фабричный суд: `FactoryJudgmentServiceTest`, `FactoryJudgmentServiceFalsificationTest`, `JudgmentAgentClientTest`;
-   - Суд сданной работы: `DeliveredWorkJudgmentServiceTest`, `DeliveredWorkJudgmentServiceFalsificationTest`, `JudgmentAgentClientLaw17Test`, `CriteriaEvidenceSelectorFalsificationTest`, `EvidenceSelectedByCriteriaTest`;
-   - Рычаги доверия: `LeverPromotionServiceTest`, `LeverPromotionServiceFalsificationTest`, `TocSubordinationLeverTest`.
-3. Зафиксировать форму образца и актуализировать статус Секции VI в `docs/FACTORY_MECHANISMS.md` (добавить итоговую секцию `### Итог Секции VI`, подтверждающую Ступень 4 closed, ideal, 100% green).
+1. Провести строгий пакетный замер механизмов Секции I в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
+2. Подтвердить 100% green статус по ключевым классам-заслонам Секции I:
+   - Приём проектов и жизненный цикл: `ProjectFlowServiceTest`, `ProjectFlowServiceFalsificationTest`, `ProjectFlowServiceLaw1JulesDispatchTest`, `ProjectFlowServiceResetTest`, `ProjectFlowServiceDbrRopeTest`, `ProjectFlowIntegrationTest`;
+   - Провижининг: `ProjectFactoryServiceTest`, `ProjectFactoryServiceFalsificationTest`, `GitHubProjectFactoryClientTest`, `LinearProjectFactoryClientTest`;
+   - Онбординг и стек: `OnboardingAuditServiceTest`, `OnboardingAuditServiceFalsificationTest`, `RepositoryStackAnalyzerTest`.
+3. Зафиксировать форму образца и актуализировать статус Секции I в `docs/FACTORY_MECHANISMS.md` (добавить итоговую секцию `### Итог Секции I`, подтверждающую Ступень 4 closed, ideal, 100% green).
 4. Синхронизировать `docs/ANTIGRAVITY_QUEUE.md`.
 5. Оформить лаконичный семантический коммит фабрики.
