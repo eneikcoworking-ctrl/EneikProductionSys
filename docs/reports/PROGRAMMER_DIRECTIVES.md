@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Ступень 4 (Секции V и VI: Свидетельство доставки, решётка суждения, опровержения, рычаги и контроль процессов)
+# Пакетная директива L1/L3 -> L2: Секция VIII (Самопроверка: суточные циклы фальсификации, связность свидетельств, аудит операций, Кайдзен, восстановление работ и непрерывная оркестрация)
 
-**Дата:** 2026-10-15 12:12 UTC  
+**Дата:** 2026-10-15 12:30 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,28 +10,21 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Настоящая директива охватывает 15 механизмов Ступени 4 `docs/ANTIGRAVITY_QUEUE.md` (Секции V и VI `docs/FACTORY_MECHANISMS.md`), финализируя Ступень 4:
-   - **Секция V: Свидетельство доставки (Delivery Reality & Launchability):**
-     * `ClientDeliverableReadinessService` (ядро)
-     * `DeliveryRealityProducerService` (ядро)
-     * `ProductLaunchabilityService` (ядро)
-   - **Секция VI: Решётка суждения, слой опровержений, продвижение рычагов и контроль процессов:**
-     * `VerdictLayer` (ядро)
-     * `AcceptanceVerdictLayer` (ядро)
-     * `RuntimeVerdictLayer` (ядро)
-     * `DoctrineVerdictLayer` (ядро)
-     * `InfrastructureVerdictLayer` (ядро)
-     * `SixSigmaVerdictLayer`
-     * `JudgmentAgentClient`
-     * `FactoryJudgmentService`
-     * `DeliveredWorkJudgmentService` (ядро)
-     * `CriteriaEvidenceSelector` (ядро)
-     * `LeverPromotionService`
-     * `ProcessControlService`
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция VII (TOC & Metrics) полностью заверена и закрыта. Настоящая директива охватывает целиком следующую открытую секцию фабрики — **Секцию VIII (Самопроверка)**:
+   - `FalsificationCycleService` (ядро) — суточный цикл фальсификации дефектов, порождение замен провалившимся задачам;
+   - `EvidenceCoherenceService` — объяснительная связность ECHO Тагарда на собственном графе свидетельств;
+   - `OpsAuditorService` (ядро) — автономный аудит операций, диагноз по независимым свидетельствам и доказательное исправление;
+   - `PlatformSelfReferenceDetector` (ядро) — отсечение внутризаводского шума от продуктового бэклога заказчика (защита от D002);
+   - `FactorySelfHealthService` (ядро) — непрерывный мониторинг собственного здоровья фабрики (БД, пулы соединений, очереди);
+   - `KaizenService` — замкнутый цикл непрерывных улучшений PDCA и журнал дефектов;
+   - `PlannedWorkRecoveryService` (ядро) — сохранение идентичности задачи рубеж за рубежом с нулевым размножением задач;
+   - `ContinuousOrchestrationService` (ядро) — единый детерминированный тик оркестрации фабрики без сторонних кронов;
+   - `OperationalPolicyService`, `OperationalFlowCoreService`, `OperationalTruthService`, `OperationalAction`, `FlowSpineService` (ядро) — деонтические заслоны переходов политики и хребет потока;
+   - `TrustSnapshotService` — долговечные снимки входных сигналов доверия с отложенным дозаполнением исхода.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
-   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ:** Запрещено трогать рабочий код при проходящих тестах!
-   - Любая модификация рабочего кода допустима исключительно при наличии воспроизводимого падающего теста, фальсифицирующего системный инвариант. Если тесты зеленые — код признается нерушимым и фиксируется замером.
+   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено трогать рабочий код сервисов при проходящих тестах!
+   - Любая модификация рабочего кода допустима исключительно при наличии воспроизводимого падающего теста, фальсифицирующего системный инвариант. Если тесты зеленые (158/158 green) — рабочий код признается нерушимым и фиксируется замером.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми.
 
 ---
@@ -39,57 +32,59 @@
 ## 2. Философский базис RAG-корпуса (D008, D010, D006)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` / `KARL_POPPER_03_TRUTH_STATUS_TABLE` [D008 False green, D012 Policy contradiction, Popper]:**
-  * Трехзначная решетка истины: `PERMIT`, `WITHHOLD`, `ABSTAIN`. Отсутствие свидетельств переводится строго в воздержание (`ABSTAIN`) или удержание (`WITHHOLD`), но никогда в ложное разрешение (`PERMIT`).
-  * `VerdictReconciliation`: монотонное сведение слоев суждения — добавление нового слоя может только сохранить или сузить разрешение, но не расширить его поверх отказов.
-  * `ProductLaunchabilityService` и `ClientDeliverableReadinessService`: фальсификационный заслон доставки исключает подмену реальной ценности формальным прохождением тестов или фиктивными фронтенд-записями.
+  * `FalsificationCycleService`: порождение замены только для окончательно опровергнутых задач; запрет на скрытие дефектов.
+  * `ContinuousOrchestrationService` и `FlowSpineService`: отказ от самообмана — механизм честно публикует свидетельства против собственного благополучия (нарушение `done_is_not_delivery` выводится варнингом).
+  * `EvidenceCoherenceService`: релаксация графа по модели Тагарда исключает ложную уверенность на пустых данных.
 - **`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:**
-  * Надежная цепочка происхождения: доверие к готовности поставки опирается на верифицируемую цепочку PR, сессий и гейтов качества.
-  * Лок уровней абстракции: независимость пяти слоев суждения (`AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`). Ни один слой не подменяет факты другого.
-  * `CriteriaEvidenceSelector`: изоляция контекста суждения внешнего агента — доставка только релевантных критериев и доказательств без шума и информационного переполнения.
-  * `LeverPromotionService` и `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER`: лестница доверия рычагов продвигается строго на основании подтвержденного согласия с эмпирическим исходом.
+  * `OpsAuditorService`: строгий принцип релайабилизма — действие предпринимается исключительно на независимо проверенных фактах (`independently-verified facts gathered by this class itself`), а не на галлюцинациях модели. Предусловия перепроверяются непосредственно перед записью.
+  * `TrustSnapshotService` и `KaizenService`: надежная цепочка происхождения данных — снимки доверия и предложения улучшений привязаны к конкретному скоупу `(projectId, category, targetComponent)` с отложенным дозаполнением реального исхода.
+  * Лок уровней абстракции: фабричные метрики здоровья (`FactorySelfHealthService`) изолированы от продуктовых метрик клиента.
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный запрет инженеру L2 на модификацию рабочего кода сервисов доставки, суждения и контроля процессов при проходящих тестах;**
-  * Деонтический запрет прямого вмешательства в код клиента фабрикой: выявленные пробелы транслируются исключительно в дедуплицированные заявки вишлиста через компилятор;
-  * Запрет `VerdictGate` на выдачу разрешений на действия (`ActionProhibition`), если реконсиляция выявила удержание или критический долг;
-  * Запрет `ProcessControlService` на смешение разнородных метрик процессов и нарушение границ фаз контроля (Phase-1 vs Phase-2).
+  * **Императивный запрет инженеру L2 на изменение рабочего кода при проходящих тестах;**
+  * `OperationalPolicyService` и `OperationalAction`: деонтический запрет неразрешенных переходов жизненного цикла проектов и задач;
+  * `PlannedWorkRecoveryService`: строгий запрет на порождение новых задач/заявок/сессий при восстановлении упавших воркеров (гарантия стабильной идентичности задачи);
+  * `PlatformSelfReferenceDetector`: категориальный запрет на проникновение заводских находок в пользовательские списки задач.
 
 ---
 
-## 3. Пакетный наряд по механизмам Секций V и VI
+## 3. Пакетный наряд по механизмам Секции VIII (Самопроверка)
 
-### Группа 1. Секция V: Свидетельство доставки и запускаемость
-1. **`ClientDeliverableReadinessService` (ядро):**
-   - **Проба:** Замерить предикаты ценности клиента, `hasRequiredMergeEvidence`, `reachedMain`, отсутствие подмены реальных поставок вспомогательными задачами (`isAuxiliaryTask`).
-   - **Инвариант:** Рабочий код не трогать. Заслоны `ClientDeliverableReadinessServiceTest`, `ClientDeliverableReadinessServiceFalsificationTest`, `DeliveryPredicateAgreementTest`.
-2. **`DeliveryRealityProducerService` (ядро):**
-   - **Проба:** Замерить фиксацию несоответствий доставки в долговечные свидетельства (`EvidenceNodeEntity`), ограничение глубины починки (`max_repair_depth`) и изоляцию каналов.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `DeliveryRealityLaw2CarrierChannelTest`, `DeliveryRealityLaw3CategoryErrorTest`, `DeliveryRealityLaw8SecondOrderRepairTest`, `DeliveryRealityProducerServiceFalsificationTest`.
-3. **`ProductLaunchabilityService` (ядро):**
-   - **Проба:** Замерить однократность бутстрап-проверки запускаемости (`launchabilityCheckedAt`), непрерывную валидацию датастора (`checkDatastoreAgreement`) и дедупликацию вишлистов.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `ProductLaunchabilityServiceTest`, `ProductLaunchabilityServiceFalsificationTest`.
-
-### Группа 2. Секция VI: Решётка суждения, слой опровержений, рычаги и контроль процессов
-4. **`VerdictLayer` и специализированные слои (`AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`) (ядро):**
-   - **Проба:** Замерить изоляцию пяти слоев, трехзначную решетку вердиктов (`PERMIT`, `WITHHOLD`, `ABSTAIN`), монотонную реконсиляцию в `VerdictReconciliation` и заслоны в `VerdictGate`.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `AcceptanceVerdictLayerTest`, `RuntimeVerdictLayerTest`, `InfrastructureVerdictLayerTest`, `VerdictLayerFalsificationTest`, `VerdictReconciliationTest`, `VerdictGateTest`, `AutonomousVerdictObservationServiceTest`.
-5. **`JudgmentAgentClient` и `CriteriaEvidenceSelector`:**
-   - **Проба:** Замерить селекцию доказательств по критериям приемки задач и изоляцию вызова прокси суждения (`judgment-proxy :8093`) без переполнения промпта.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `JudgmentAgentClientTest`, `JudgmentAgentClientLaw17Test`.
-6. **`FactoryJudgmentService` и `DeliveredWorkJudgmentService` (ядро):**
-   - **Проба:** Замерить аудит переходов инвариантов фабрики и суждение по сданным задачам (diff, PR, acceptance criteria) с созданием `delivery_refuted` вишлистов при опровержении.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `FactoryJudgmentServiceTest`, `FactoryJudgmentServiceFalsificationTest`, `DeliveredWorkJudgmentServiceTest`, `DeliveredWorkJudgmentServiceFalsificationTest`.
-7. **`LeverPromotionService`:**
-   - **Проба:** Замерить сбор наблюдений от TOC, аккаунтов, Six Sigma и Kaizen, лестницу стадий рычагов (`OBSERVE`, `SHADOW`, `CANARY`, `ACTIVE`) и откат при расхождениях.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `LeverPromotionServiceTest`, `LeverPromotionServiceFalsificationTest`.
-8. **`ProcessControlService`:**
-   - **Проба:** Замерить контрольные карты процессов, границы Western Electric rules, изоляцию фаз мониторинга и запрет на произвольные сигналы вне установленных пределов.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `ProcessControlServiceTest`, `ProcessControlServiceFalsificationTest`.
+1. **`FalsificationCycleService` (ядро):**
+   - **Проба:** Замерить суточный цикл фальсификации, владение агрегатами `falsification_runs` и `code_integrity_findings`, запрет несанкционированных мутаций.
+   - **Инвариант:** Рабочий код не трогать. Заслон `FalsificationCycleServiceTest`.
+2. **`EvidenceCoherenceService`:**
+   - **Проба:** Замерить релаксацию графа свидетельств Тагарда, отсутствие бесконечных циклов (`termination`) и изоляцию хранилищ связности.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `EvidenceCoherenceServiceTest`, `EvidenceCoherenceV80TerminationFalsificationTest`.
+3. **`OpsAuditorService` (ядро):**
+   - **Проба:** Замерить независимый сбор фактов, троекратную проверку предусловий перед записью действий, обязательное воздержание (`abstain`) при отсутствии полномочий.
+   - **Инвариант:** Рабочий код не трогать. Заслон `OpsAuditorServiceTest`.
+4. **`PlatformSelfReferenceDetector` (ядро):**
+   - **Проба:** Замерить фильтрацию внутризаводских сигналов фабрики и изоляцию продуктового скоупа клиента от фабричных артефактов.
+   - **Инвариант:** Рабочий код не трогать. Заслон `PlatformSelfReferenceDetectorTest`.
+5. **`FactorySelfHealthService` (ядро):**
+   - **Проба:** Замерить телеметрию пула соединений БД, размера очередей и времени отклика бэкенда с эскалацией в Кайдзен.
+   - **Инвариант:** Рабочий код не трогать. Заслон `FactorySelfHealthServiceTest`.
+6. **`KaizenService`:**
+   - **Проба:** Замерить 2-часовой агрегированный цикл улучшений PDCA, дедупликацию предложений по `(projectId, category, targetComponent)` и фиксацию в журнале дефектов.
+   - **Инвариант:** Рабочий код не трогать. Заслон `KaizenServiceTest`.
+7. **`PlannedWorkRecoveryService` (ядро):**
+   - **Проба:** Замерить восстановление брошенных сессий с сохранением стабильной идентичности задачи и гарантией нулевого создания новых задач.
+   - **Инвариант:** Рабочий код не трогать. Заслон `PlannedWorkRecoveryServiceTest`.
+8. **`ContinuousOrchestrationService` (ядро):**
+   - **Проба:** Замерить централизованный детерминированный тик оркестрации, отсутствие параллельных кронов и управление циклом жизни проектов.
+   - **Инвариант:** Рабочий код не трогать. Заслон `ContinuousOrchestrationServiceTest`.
+9. **`OperationalPolicyService`, `OperationalFlowCoreService`, `OperationalTruthService`, `OperationalAction`, `FlowSpineService` (ядро):**
+   - **Проба:** Замерить деонтические проверки `authorize`, генерацию объяснимых причин отказа (`OperationalPolicyDeniedException`), и целостность хребта потока.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `OperationalPolicyServiceTest`, `OperationalPolicyReasonTest`, `OperationalPolicyDeniedExceptionFalsificationTest`.
+10. **`TrustSnapshotService`:**
+    - **Проба:** Замерить фиксацию снимков входных сигналов доверия для активных проектов с отложенным дозаполнением исходов.
+    - **Инвариант:** Рабочий код не трогать. Заслон `TrustSnapshotServiceTest`.
 
 ---
 
 ## 4. Регламент отчета инженера L2
 
 1. Провести единый пакетный прогон тестовых заслонов в Docker Maven (`-m 2g`).
-2. Внести отметки `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md`.
+2. Внести отметки `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` (Секция VIII) и `docs/ANTIGRAVITY_QUEUE.md`.
 3. Сформировать лаконичный отчет в `docs/reports/PROGRAMMER_STATE.md` (до 20 строк).
-4. Зафиксировать результат семантическим коммитом `feat(judgment-delivery): complete Stage 4 batch verification (D008, D010, D006)`.
+4. Зафиксировать результат семантическим коммитом `feat(self-verification): complete Section VIII batch verification (D008, D010, D006)`.
