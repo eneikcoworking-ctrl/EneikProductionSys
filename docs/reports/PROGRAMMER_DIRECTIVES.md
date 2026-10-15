@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция XXIX (Цех дизайна: порождение экранов и сверка их с маркой)
+# Пакетная директива L1/L3 -> L2: Ступень 5 («Проверить и не трогать» — 40 механизмов ядра и инвариантов базы)
 
-**Дата:** 2026-10-15 12:45 UTC  
+**Дата:** 2026-10-15 13:02 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,23 +10,16 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция VIII (Самопроверка) полностью заверена и закрыта инженером (коммит `05c9768`, 158/158 green). Настоящая директива охватывает целиком следующую открытую секцию фабрики — **Секцию XXIX (Цех дизайна: порождение экранов и сверка их с маркой)** и связанное семейство дизайн-цеха:
-   - `DesignAssetService` (`generateAsset`, `generateViaStitch`, `auditExistingDrafts`) — оркестрация порождения экранных артефактов, Stitch vs fallback, аудит черновиков;
-   - `DesignConsistencyAuditService` — расчет trace ratio, cross-screen Jaccard, исключение aesthetic drift (D015);
-   - `StitchClient` — JSON-RPC клиент к Stitch MCP, сохранение screenId при неготовом HTML;
-   - `GoogleAiResourceService` (nano-banana fallback) — генератор изображений, строго изолированный для non-HTML вызовов;
-   - `GitHubPullRequestService.commitFile/deleteFile/copyFile` — репозиторный носитель артефактов дизайна (`design/draft` -> `design/approved`);
-   - `DesignShopOrchestrationService` (`hasImplementableHtml`, `startCycle`) — планировщик дизайн-цикла, атомарная аренда старта;
-   - `JulesDispatchService.completeDesignReview` — продвижение утвержденных макетов при вердикте `approve`;
-   - `LayoutGeometryAuditService` — аудит геометрии, коллизий и viewport;
-   - `DesignSystemFalsificationService` — фальсификация дизайн-системы с фиксацией в dismissed audit-trail;
-   - `DesignDriftMonitorService` — наблюдение за live drift работающего продукта через окно runtime-наблюдения;
-   - `DesignExcellenceGate` — заслон качества экранов;
-   - `DesignShopCycleRepository` — атомарный CAS-клейм старта цикла (`claimStartCycle`).
-3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
-   - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
-   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено трогать рабочий код сервисов при проходящих тестах!
-   - Любая модификация рабочего кода допустима исключительно при наличии воспроизводимого падающего теста, фальсифицирующего системный инвариант. Если тесты зеленые — рабочий код признается нерушимым и фиксируется замером.
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Ступени 3 и 4 очереди `ANTIGRAVITY_QUEUE.md` (все 126 механизмов) успешно пройдены и закрыты на 100%. Настоящая директива охватывает целиком следующий завершающий рубеж очереди — **Ступень 5 («Проверить и не трогать» — 40 механизмов ядра и инвариантов базы)**:
+   - **Репозитории и агрегаты ядра:** `ClaimRepository`, `ProjectEventLogRepository`, `TaskRepository`;
+   - **Пространства состояний и сущности:** `WishlistEntity`, `WishlistStatus`, `WishlistSource`, `TaskTitleBuilder`, `DurableProjectLogAppender`, `KaizenProposal`, `KaizenProposalEntity`, `PersistentWorkerPurpose`, `DesignShopCycleEntity`;
+   - **Алгебра вердиктов и лестница доверия:** `Verdict`, `DbrStatus`, `LeverAgreement`, `LeverStage`;
+   - **Базовые службы потока и контекста:** `FlowSpineService`, `GeminiContextService`, `DesignExcellenceGate`;
+   - **Нерушимые инварианты миграций Flyway:** `V30` (activity responses), `V42` (PR review code/threads), `V44` (features), `V45` (feature threads), `V55` (context chunks), `V59` (observer journal), `V61` (project event log), `V68` (action verification), `V69` (file claims), `V72` (process control snapshots), `V79` (Kaizen & evidence nodes), `V81` (coherence confidence), `V82` (operational reality findings), `V85` (metric label), `V90` (trust signal snapshots), `V92` (client runtime observations), `V97` (workflow claim), `V104` (instrument failure), `V121` (drop needs human review), `V123` (drop orphan conflicts), `V126` (brief budget recovery).
+3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступень 5):**
+   - **СТРОГО ЗАМЕР В РАНТАЙМЕ И ЗАЩИТА СИЛЬНЫХ ФОРМ, А НЕ ПРАВКА КОДА.**
+   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено трогать рабочий код сервисов и сущностей при проходящих тестах!
+   - Механизмы Ступени 5 обладают сильной формой. Любая попытка «улучшить» или «отрефакторить» сильный механизм признается порчей архитектуры и дефектом D006.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми.
 
 ---
@@ -34,65 +27,49 @@
 ## 2. Философский базис RAG-корпуса (D008, D010, D006)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
-  * `DesignSystemFalsificationService` и `DesignExcellenceGate`: фальсифицирующие заслоны качества макетов и дизайн-систем;
-  * Категорический отказ от фальшивых подтверждений: статус `CANNOT_JUDGE` при пустых SPA-оболочках или отсутствии baseline вместо ложного green/red;
-  * Строгая выбраковка off-token артефактов до их фиксации в репозитории клиента.
+  * Верификация через опровержения, сформулированные в описи каждого механизма Ступени 5;
+  * Заслон `Stage5ProtectedInvariantsFalsificationTest` проверяет невозможность ложных разрешений: `WITHHOLD` невозможно переголосовать (`withholdCannotBeOutvoted`), `ABSTAIN` блокирует продвижение (`abstainBlocksAdvancement`), `null` редуцируется в воздержание;
+  * Лестница доверия `LeverAgreement.compare` честно возвращает `NEITHER` при отсутствии объективной истины, а `MLPredictionServiceClient` возвращает `null` (fail-closed) при отключенном Gemini.
 - **`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:**
-  * Непрерывная цепочка свидетельств: удаленный экран Stitch -> локальный черновик на диске -> репозиторный артефакт в GitHub (`design/draft/.../mockup.html`) -> продвижение в `design/approved`;
-  * Лок уровней абстракции: визуальные токены проекта извлекаются из реального baseline репозитория клиента, а не из глобальных заводских констант;
-  * Геометрический аудит (`LayoutGeometryAuditService`) строго изолирован от бизнес-приемки.
+  * Защита репозиторных и схемных границ: цепочка надежности Flyway-миграций от V30 до V126 гарантирует целостность схемы PostgreSQL без дрейфа типов;
+  * Лок уровней абстракции: проекции `TaskEntity`, `WishlistEntity`, `EvidenceNodeEntity` сохраняют строгую типизацию без неконтролируемого кросс-модульного загрязнения;
+  * Хребет потока `FlowSpineService` обеспечивает надежную передачу контекста без потери истории происхождения данных.
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный запрет инженеру L2 на изменение рабочего кода сервисов при проходящих тестах;**
-  * Запрет подмены артефакта: когда вызывающему требуется исполняемый HTML (`requireImplementableHtml=true`), категорически запрещено подменять HTML картинкой Nano Banana;
-  * Запрет коммита: off-token экраны категорически запрещено коммитить в репозиторий клиента;
-  * Запрет продвижения: продвижение макета из `draft` в `approved` допустимо исключительно при явном вердикте `approve`.
+  * **Императивный запрет инженеру L2 на изменение рабочего кода защищенных механизмов;**
+  * Неизменяемость терминальных состояний задачи (Law 20 / Invariant S2): запрет перезаписи статусов `done`, `failed` и `spike_completed` (`taskEntityRefusesOverwritingDoneStatus`);
+  * Деонтический запрет на обход лестницы продвижения рычагов ТОС (`LeverStage Ladder is bounded`).
 
 ---
 
-## 3. Пакетный наряд по механизмам Секции XXIX (Цех дизайна)
+## 3. Пакетный наряд по механизмам Ступени 5 («Проверить и не трогать»)
 
-1. **`DesignAssetService` (ядро):**
-   - **Проба:** Замерить генерацию через Stitch, передачу токенов бренда в промпт, фиксацию `declaredTokens` и `producerTokens` в метаданных, отсечение off-token экранов без коммита.
-   - **Инвариант:** Рабочий код не трогать. Заслон `DesignAssetServiceTest`.
-2. **`DesignConsistencyAuditService`:**
-   - **Проба:** Замерить расчет коэффициента следования токенам (`tokenTraceRatio`), Jaccard-сходство между экранами (`crossScreenJaccard`) и возврат `CANNOT_JUDGE` при отсутствии baseline.
-   - **Инвариант:** Рабочий код не трогать. Заслон `DesignConsistencyAuditServiceTest`.
-3. **`StitchClient` (ядро):**
-   - **Проба:** Замерить сохранение `screenId` при отсутствии готового HTML, JSON-RPC взаимодействие с MCP и загрузку готовых артефактов.
-   - **Инвариант:** Рабочий код не трогать. Заслон `StitchClientTest`.
-4. **`GoogleAiResourceService` (Nano Banana fallback):**
-   - **Проба:** Замерить вызов генератора изображений строго при `requireImplementableHtml=false` и блокировку при требовании HTML.
-   - **Инвариант:** Рабочий код не трогать. Заслон в `DesignAssetServiceTest`.
-5. **`GitHubPullRequestService` (дизайн-носитель):**
-   - **Проба:** Замерить коммит черновиков в `design/draft`, удаление отклоненных черновиков и копирование в `design/approved`.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `DesignAssetServiceTest`, `DesignImplementationLoopClosureLaw3Test`.
-6. **`DesignShopOrchestrationService` (ядро):**
-   - **Проба:** Замерить запуск цикла только по фронту готовности (false-to-true edge), атомарный CAS-клейм `startCycleClaimedAt`, дедупликацию циклов на проект.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `DesignShopOrchestrationServiceTest`, `DesignShopOrchestrationServiceLaw15Test`, `StrandedDesignCycleSweepServiceTest`.
-7. **`JulesDispatchService.completeDesignReview`:**
-   - **Проба:** Замерить продвижение утвержденных макетов строго при вердикте `approve` с переносом `mockup.html`.
-   - **Инвариант:** Рабочий код не трогать. Заслон `DesignImplementationLoopClosureLaw3Test`.
-8. **`LayoutGeometryAuditService`:**
-   - **Проба:** Замерить аудит viewport, обнаружение коллизий элементов и дистанций группировки.
-   - **Инвариант:** Рабочий код не трогать. Заслон `LayoutGeometryAuditServiceTest`.
-9. **`DesignSystemFalsificationService`:**
-   - **Проба:** Замерить отдельный такт фальсификации для объединенных UI-эпиков и запись аудит-трейла в виде dismissed wishlist.
-   - **Инвариант:** Рабочий код не трогать. Заслон `DesignSystemFalsificationServiceTest`.
-10. **`DesignDriftMonitorService`:**
-    - **Проба:** Замерить мониторинг дрейфа живого продукта исключительно внутри уже открытого окна observability без перезапуска контейнеров.
-    - **Инвариант:** Рабочий код не трогать. Заслон `DesignDriftMonitorServiceTest`.
-11. **`DesignExcellenceGate`:**
-    - **Проба:** Замерить заслон качества артефактов экрана перед отправкой в приемку.
-    - **Инвариант:** Рабочий код не трогать. Заслоны `DesignExcellenceGateTest`, `DesignExcellenceGateFalsificationTest`.
-12. **`DesignShopCycleRepository`:**
-    - **Проба:** Замерить атомарность `claimStartCycle` и проверку `lastWasReady = false` на уровне БД.
-    - **Инвариант:** Рабочий код не трогать. Заслон `DesignShopCycleRepositoryIntegrationTest`.
+1. **Репозитории ядра (`ClaimRepository`, `ProjectEventLogRepository`, `TaskRepository`):**
+   - **Проба:** Замерить сохранение проектных границ, изоляцию SQL-запросов и атомарность операций слияния/выборки.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `TaskRepositoryIntegrationTest`, `ClaimServiceTest`.
+2. **Пространства состояний и сущности ядра (`TaskStatus`, `TaskEntity`, `WishlistEntity`, `WishlistStatus`):**
+   - **Проба:** Замерить закон неизменяемости терминального статуса задачи (Terminal Immutability Law 20), проверку `isTerminal()` и запрет перехода `done -> queued`.
+   - **Инвариант:** Рабочий код не трогать. Заслон `Stage5ProtectedInvariantsFalsificationTest`.
+3. **Алгебра вердиктов и суждений (`Verdict`, `Judgement`):**
+   - **Проба:** Замерить трёхзначную конъюнкцию Клини/Тарского: `WITHHOLD` доминирует над любым числом `PERMIT`, `ABSTAIN` блокирует продвижение, `null` редуцируется в `ABSTAIN`.
+   - **Инвариант:** Рабочий код не трогать. Заслон `Stage5ProtectedInvariantsFalsificationTest`.
+4. **Лестница доверия рычагов ТОС (`LeverStage`, `LeverAgreement`):**
+   - **Проба:** Замерить четырёхзначную логику Белнапа (`TRUE`, `FALSE`, `BOTH`, `NEITHER`), асимметричное продвижение рычагов и строгие границы лестницы `[OBSERVE_ONLY, AUTO_REMEDIATE]`.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `Stage5ProtectedInvariantsFalsificationTest`, `TocSubordinationTruthTest`.
+5. **Клиент предсказателя (`MLPredictionServiceClient`):**
+   - **Проба:** Замерить строгое fail-closed поведение: возврат `null` при отключенном флаге `gemini_enabled` или пустом API ключе без падения процесса.
+   - **Инвариант:** Рабочий код не трогать. Заслон `Stage5ProtectedInvariantsFalsificationTest`.
+6. **Хребет потока (`FlowSpineService`):**
+   - **Проба:** Замерить детерминированное сохранение пульса потока и трансляцию статусов.
+   - **Инвариант:** Рабочий код не трогать. Заслон `FlowSpineServiceTest`.
+7. **Инварианты миграций Flyway (V30–V126):**
+   - **Проба:** Замерить валидность структуры БД в работающем контейнере PostgreSQL, отсутствие дрейфа схемы и целостность внешних ключей.
+   - **Инвариант:** Миграции не менять. Заслон качества схемы БД.
 
 ---
 
 ## 4. Регламент отчета инженера L2
 
-1. Провести единый пакетный прогон тестовых заслонов дизайн-цеха в Docker Maven (`-m 2g`).
-2. Внести отметку `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` (Секция XXIX) и `docs/ANTIGRAVITY_QUEUE.md`.
+1. Провести единый пакетный прогон тестовых заслонов Ступени 5 в Docker Maven (`-m 2g`).
+2. Внести отметку `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md` (Ступень 5).
 3. Сформировать лаконичный отчет в `docs/reports/PROGRAMMER_STATE.md` (до 20 строк).
-4. Зафиксировать результат семантическим коммитом `feat(design-shop): complete Section XXIX batch verification (D008, D010, D006)`.
+4. Зафиксировать результат семантическим коммитом `feat(stage5): complete Stage 5 batch verification (D008, D010, D006)`.
