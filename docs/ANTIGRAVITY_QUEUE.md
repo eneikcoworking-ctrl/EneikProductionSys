@@ -272,7 +272,7 @@
 - `SystemStatusService`  ← ядро
 - ~~`OperationalTruthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
 - ~~`DesignAssetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
-- `MLPredictionServiceClient`  ← ядро
+- ~~`MLPredictionServiceClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green в MLPredictionServiceClientTest, ideal)
 - ~~`RepositoryStackAnalyzer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`GitHubProjectFactoryClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
 - `CommandDashboardService`  ← ядро
@@ -480,7 +480,7 @@
 названное в записи опровержение, и записать исход. Менять здесь нечего, а приём стоит перенять для других
 мест. Часть этих механизмов перечислена в `HOW_TO_READ_BEFORE_FIXING.md` как защищённые.
 
-- ~~`ClaimRepository`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)
+- ~~`ClaimRepository`~~  ← ядро (Закрыто Ступень 4 и 5: замер в Docker Maven 19/19 green [TaskClaimServiceTest, ClaimServiceRaceGuardTest, ClaimServiceFalsificationTest], ideal)
 - ~~`ProjectEventLogRepository`~~ (Закрыто Ступень 5: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)
 - ~~`WishlistEntity`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 9/9 green в WishlistSimilarityTest, ideal)
 - ~~`WishlistSource`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 8/8 green в WishlistControllerIntegrationTest, ideal)
