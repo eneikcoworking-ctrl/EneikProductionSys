@@ -375,7 +375,7 @@
 - ~~`JudgmentAgentClient`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green [6 client, 4 law17], ideal)
 - ~~`FactoryJudgmentService`~~ (Закрыто Ступень 4: замер в Docker Maven 20/20 green [13 unit, 7 falsification], ideal)
 - ~~`DeliveredWorkJudgmentService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 14/14 green [8 unit, 6 falsification], ideal)
-- ~~`CriteriaEvidenceSelector`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green [4 law17, 3 falsification], ideal)
+- ~~`CriteriaEvidenceSelector`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green [4 law17, 3 selector falsification, 3 criteria selection], ideal)
 - ~~`LeverPromotionService`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green [7 unit, 4 falsification], ideal)
 - ~~`ProcessControlService`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green [8 unit, 3 falsification], ideal)
 - ~~`ConstraintIdentificationService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)

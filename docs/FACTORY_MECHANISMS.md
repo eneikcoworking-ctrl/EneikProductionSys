@@ -1698,14 +1698,14 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 - `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: фальсификация релевантности — единичный файл, превышающий лимит, безопасно ограничивается без выброса исключений; многофайловые диффы никогда не режутся внутри хунка (`falsifyPopperFalsification_singleOversizedFileSafelyBoundedWithoutCrashing`).
 - `LUDVIG_VITGENSHTEYN_01_ANTI_MIRROR_TELEMETRY` [D013, Wittgenstein]: анти-зеркало свидетельств — дифф, укладывающийся в ёмкость канала, возвращается без перестановок и мутаций (`falsifyWittgensteinAntiMirror_diffWithinBudgetPreservedVerbatim`).
 
-**Форма: сильная.** Заслонено в `JudgmentAgentClientLaw17Test` (4/4) и `CriteriaEvidenceSelectorFalsificationTest` (3/3, итого 7/7 тестов). Доказаны инварианты:
+**Форма: сильная.** Заслонено в `JudgmentAgentClientLaw17Test` (4/4), `CriteriaEvidenceSelectorFalsificationTest` (3/3) и `EvidenceSelectedByCriteriaTest` (3/3, итого 10/10 тестов). Доказаны инварианты:
 - Сохранение целостности файлов: отбор по смыслу, а не алфавитный или позиционный срез.
 - Эксплицитное именование опущенных файлов в предупреждении модели.
 - Защита процесса от падений при превышении размера аргументов CLI/sidecar.
 
-*Живое:* замер в рантайме Hetzner (`eneikproductionsys-judgment-proxy-1` UP 3w, `eneikproductionsys-backend-1` UP 16h). Селектор активно задействуется при подготовке промпта сдачи в `DeliveredWorkJudgmentService` и `JudgmentAgentClient`, предотвращая падения ядра (`spawn E2BIG`) и обеспечивая точный фокус на проверяемых критериях. Заслон качества: 7 тестов выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `CriteriaEvidenceSelector` закрыта.
+*Живое:* замер в рантайме Hetzner (`eneikproductionsys-judgment-proxy-1` UP 3w, `eneikproductionsys-backend-1` UP 16h). Селектор активно задействуется при подготовке промпта сдачи в `DeliveredWorkJudgmentService` и `JudgmentAgentClient`, предотвращая падения ядра (`spawn E2BIG`) и обеспечивая точный фокус на проверяемых критериях. Заслон качества: 10 тестов выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `CriteriaEvidenceSelector` закрыта.
 
-**Текущий статус:** механизм описан канонически, заслонен 7 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+**Текущий статус:** механизм описан канонически, заслонен 10 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
 
 **комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
@@ -1731,6 +1731,12 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 **Текущий статус:** механизм описан канонически, заслонен 11 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
 
 **комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована. Секция VI закрыта на 100%.
+
+### Итог Секции VI
+
+Все механизмы Секции VI («Суждение: решётка суждения, слой опровержений и продвижение рычагов»: `VerdictLayer`, `Verdict`, `Judgement`, `VerdictReconciliation`, `VerdictGate`, `VerdictController`, `AutonomousVerdictObservationService`, `AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`, `FactoryJudgmentService`, `JudgmentAgentClient`, `DeliveredWorkJudgmentService`, `CriteriaEvidenceSelector`, `LeverPromotionService`, `LeverStage`, `LeverAgreement`, `LeverObservation`, `TocSubordinationLever`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (139/139 green в едином пакетном прогоне). Трёхзначная решётка истинности Поппера/Белнапа (Popper D012, Belnap D012), фальсификационные заслоны Поппера (Popper D008), каузальные цепочки надежности и лок уровней абстракции Голдмана (Goldman D010), закон отбора свидетельств (Goldman D007 Law 17), деонтические запреты Раза (Raz D006), модель ревизии убеждений Герденфорса (Gärdenfors D007) и анти-зеркало телеметрии Витгенштейна (Wittgenstein D013) полностью соблюдены. Не изменено ни одной строки рабочего кода сервисов фабрики (работа строгим замером).
+
+**Текущий статус:** считаю механизмы Секции VI идеальными. Заслон качества: 139/139 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz / D007 Goldman & Gärdenfors / D012 Popper & Belnap / D013 Wittgenstein). Ступень 4 закрыта (ideal).
 
 ---
 
