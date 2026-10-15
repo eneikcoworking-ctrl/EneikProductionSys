@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секции X и XXIX (Дизайн-цех, порождение экранов, токенизация бренда, дизайн-система и live drift)
+# Пакетная директива L1/L3 -> L2: Секция XI (Наблюдение за живым продуктом клиента, апостериорный каданс и подтверждение возможностей)
 
-**Дата:** 2026-10-15 18:42 UTC  
+**Дата:** 2026-10-15 18:53 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,69 +10,68 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция VIII («Flow & Metrics, Самопроверка, Операционная Правда, Кайдзен, Фальсификация и Оркестрация») полностью замерена и закрыта инженером (281/281 green в коммите `8fe70e7`). Настоящая директива охватывает целиком связанное семейство экранного конвейера фабрики — **Секции X и XXIX («Дизайн-цех, порождение экранов, токенизация бренда, дизайн-система и live drift»)**:
-   - **Контур X/XXIX.1. `DesignShopOrchestrationService` & `DesignShopCycleRepository` (Barkan Marcus D002, Raz D006, Goldman D010):**
-     * Суть до опций (`RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION` / D002): старт цикла строго по нарастающему фронту готовности (`isReady && !lastWasReady`), готовность вычисляется строго как декомпозиция + пропорции (`decompositionComplete`), а не голый счетчик задач;
-     * Атомарный CAS-клейм на уровне базы данных (`claimStartCycle`: `startCycleClaimedAt IS NULL` и `lastWasReady = false`), исключающий гонки конкурентных тиков;
-     * Деонтический запрет деградации: при требовании имплементируемого HTML категорически запрещена подмена на картинки (`mockup.html` обязателен).
-   - **Контур X/XXIX.2. `DesignConsistencyAuditService` & `LayoutGeometryAuditService` (Belnap D015, Wittgenstein D015, Goldman D011):**
-     * Единство трассировки токенов (`NUEL_BELNAP_15_TOKEN_TRACE_UNITY` / D015): экстракция hex/rgb/font, строгий расчет коэффициента покрытия токенов бренда и немедленное отклонение off-token экранов до коммита в git;
-     * Межэкранная согласованность Витгенштейна (`LYUDVIG_VITGENSHTEYN_15_CROSS_SCREEN_JACCARD_GATE` / D015): расчет Jaccard-сходства словарного запаса соседних экранов одного проекта;
-     * Геометрия и группировка Голдмана (`ELVIN_GOLDMAN_20_GROUPING_PROXIMITY_GATE` / D011): аудит масштабируемости вьюпортов, отсутствие коллизий и соблюдение дистанций близости;
-     * Анти-зеркало Витгенштейна: возврат честного статуса `CANNOT_JUDGE` при пустых SPA-оболочках или отсутствии базовой линии вместо ложных green/red.
-   - **Контур X/XXIX.3. `DesignSystemFalsificationService` (Popper D008, Goldman D010):**
-     * Попперовская фальсификация дизайн-систем (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008): обработка объединенных UI-эпиков с созданием аудит-трейла строго в виде отклоненной записи (`dismissed` `WishlistEntity`), категорический запрет порождения фоновых незапланированных `pending`-задач.
-   - **Контур X/XXIX.4. `DesignDriftMonitorService` (Wittgenstein D013, Raz D006):**
-     * Анти-зеркало телеметрии рантайма (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013): мониторинг дрейфа экрана выполняется строго внутри уже открытого 2xx окна наблюдения `ClientRuntimeObservabilityService`; категорический запрет на самостоятельный запуск или останов контейнеров продукта.
-   - **Контур X/XXIX.5. `DesignAssetService` & `StitchClient` (Goldman D010, Belnap D009, Raz D006):**
-     * Оркестрация MCP Stitch и генерации артефактов: сквозная передача токенов бренда в промпт, фиксация `declaredTokens` и `producerTokens` в метаданных;
-     * Демаркация Nano Banana fallback: модель изображений допускается исключительно для non-HTML вызовов (`requireImplementableHtml=false`);
-     * Сохранение `screenId` в `StitchClient` при ожидании генерации и строгая изоляция контекста проектов Stitch.
-   - **Контур X/XXIX.6. `StrandedDesignCycleSweepService` & `DesignExcellenceGate` & `GitHubPullRequestService` & `JulesDispatchService` (Raz D006, Popper D008, Goldman D010):**
-     * Санитарный выметающий обход брошенных притязаний цикла дизайна по TTL (15 мин) через CAS `compareAndReleaseStrandedClaim` с институциональной записью в `DefectJournalService`;
-     * Заслон качества дизайна `DesignExcellenceGate`: строгая фальсификационная проверка артефактов перед сдачей;
-     * Продвижение макетов (`JulesDispatchService.completeDesignReview`): перенос `mockup.html` из `design/draft` в `design/approved` только при явном вердикте `approve`.
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секции X и XXIX («Дизайн-цех, порождение экранов, токенизация бренда, дизайн-система и live drift») полностью замерены и закрыты инженером (113/113 green в коммите `d691c59`). Настоящая директива охватывает целиком следующее фундаментальное семейство конвейера фабрики — **Секцию XI («Наблюдение за живым продуктом клиента, апостериорный каданс и доказательства возможностей продукта» / Live runtime observation, posterior cadence and product capability evidence)**:
+   - **Контур XI.1. `ClientRuntimeObservabilityService` & `ClientRuntimeObservationRepository` (Goldman D013, Goldman D012, Raz D006):**
+     * Модель самосознания рантайма (`ELVIN_GOLDMAN_07_SELF_MODEL_SANITY` / D013): запуск реального контейнера только при наступлении срока проверки по апостериорным свидетельствам;
+     * Наблюдение строго на тике оркестрации `ContinuousOrchestrationService` (деонтический запрет на отдельный runtime-cron);
+     * Таблица статусов истинности Голдмана (`ELVIN_GOLDMAN_13_TRUTH_STATUS_TABLE` / D012): строгое разделение инструментального сбоя (`instrumentFailure=true`) и дефекта продукта; инструментальный сбой никогда не открывает клиентских ограничений запускаемости и не ухудшает здоровье продукта;
+     * Ограниченное окно превью (bounded preview window): успешный запуск оставляет временный стек для зондирования и дашборда, просроченный или провалившийся стек немедленно демонтируется (`teardown`);
+     * Мониторинг дрейфа дизайна (`DesignDriftMonitorService`) и проверка возможностей (`ProductCapabilityService`) запускаются строго внутри уже оплаченного живого окна наблюдения.
+   - **Контур XI.2. `BetaPosterior` (Goldman D010, Goldman D003):**
+     * Журнал обновления убеждений Голдмана (`ELVIN_GOLDMAN_03_BELIEF_UPDATE_LEDGER` / D010): строгая математическая модель апостериорного бета-распределения;
+     * Лок артефакта: один неизменный артефакт (`commitSha`) дает ровно одно наблюдение в апостериорную выборку (дедупликация повторных тиков);
+     * Инструментальные сбои исключаются из апостериорной выборки; неопределенность порождает учащенный замер, доказанное здоровье увеличивает интервал тишины, повторяющиеся отказы удерживаются на минимальном пороге частоты.
+   - **Контур XI.3. `RuntimeHealthShiftDetector` (Wittgenstein D002, Popper D008):**
+     * Отсечение категориальных ошибок Витгенштейна (`LYUDVIG_VITGENSHTEYN_02_CATEGORY_ERROR_SCAN` / D002): точный биномиальный критерий сдвигов здоровья рантайма продукта во времени, категорический запрет заимствования аппарата u-карт эпиков для временных рядов контейнеров;
+     * Отказ от суждения при недостаточном базовом уровне (insufficient baseline), строгая детекция как ухудшения, так и относительного улучшения.
+   - **Контур XI.4. `ProductCapabilityService` & `CapabilityObservationRepository` (Goldman D010, Goldman D001):**
+     * Каузальная цепочка надёжности (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): заявленные возможности продукта извлекаются строго из спецификаций OpenAPI (`docs/contracts/*.openapi.{yaml,yml,json}`) в GitHub-репозитории;
+     * Категорический запрет на вывод возможностей из фабричных задач или фич;
+     * Маршруты с шаблонами пропускаются без генерации вымышленных ID;
+     * Ошибки 401/403/null классифицируются строго как барьеры инструмента (`instrumentFailure`) и исключаются из возможностей/дефектов;
+     * Расчет ценности продукта (`ProductValue`) ведется строго по подтвержденным свидетельствам с нижней доверительной границей.
+   - **Контур XI.5. Заслоны демаркации (`ObservationHostingDemarcationLaw26Test`, `FailureDemarcationLaw22Test`, `RuntimeVerdictLayer`):**
+     * Заслон закона 26: демаркация хостинга и временных наблюдательных окон;
+     * Заслон закона 22: демаркация сбоев инструмента и изоляция фабричных дефектов лаунчера от продуктовых сбоев;
+     * Слой продуктовых вердиктов рантайма (`RuntimeVerdictLayer`).
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено модифицировать рабочий код сервисов (`src/main/java`) при проходящих тестах!
-   - Механизмы Секций X и XXIX уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
+   - Механизмы Секции XI уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D002, D015, D013, D011, D009)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D013, D012, D002)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` & `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS` [D008 False green, Popper / Williamson]:**
-  * Попперовская фальсификация: тесты-заслоны гейта качества дизайна (`DesignExcellenceGate`), фальсификации дизайн-системы (`DesignSystemFalsificationService`) и инвариантов нарастающего фронта (`DesignShopOrchestrationServiceLaw15Test`) обязаны падать при нарушении спецификаций артефактов;
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
+  * Попперовская фальсификация: тесты-заслоны демаркации сбоев (`FailureDemarcationLaw22Test`), хостинга (`ObservationHostingDemarcationLaw26Test`) и апостериорного распределения (`BetaPosteriorTest`) обязаны фальсифицировать ложноположительные суждения; инфраструктурный сбой не признается отказом продукта.
 - **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
-  * Лок уровней абстракции и каузальная надежность: разделение артефактов на черновики `design/draft`, утвержденные макеты `design/approved`, метаданные токенов, идентификаторы Stitch (`stitchProjectId`, `stitchScreenId`) и факты готовности `ClientDeliverableReadinessService`;
+  * Лок уровней абстракции и каузальная надежность: строгое разграничение уровней попытки запуска (`attempt`), наблюдения продукта (`product observation`), артефакта (`commitSha`) и возможностей (`declared capability`);
+  * Источник возможностей продукта — только контракты OpenAPI репозитория, а не фабричный граф задач.
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секций X и XXIX при проходящих тестах;**
-  * Программные деонтические запреты: запрет деградации до картинок при требовании HTML, запрет коммита off-token экранов, запрет запуска runtime-контейнеров из монитора дрейфа;
-- **`RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION` [D002 Invalid state, Barkan Marcus]:**
-  * Суть до опций: обязательный валидный HTML до любой параметризации; нарастающий фронт готовности исключает паразитные повторные циклы;
-- **`NUEL_BELNAP_15_TOKEN_TRACE_UNITY` & `LYUDVIG_VITGENSHTEYN_15_CROSS_SCREEN_JACCARD_GATE` [D015 Aesthetic drift, Belnap / Wittgenstein]:**
-  * Единство трассировки токенов бренда и Jaccard-сходство экранов одного проекта;
-- **`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift, Wittgenstein]:**
-  * Запрет субъективных нарративов: честный `CANNOT_JUDGE` для SPA-оболочек без базовой линии, замер дрейфа только в живом 2xx окне;
-- **`ELVIN_GOLDMAN_20_GROUPING_PROXIMITY_GATE` [D011 Perception failure, Goldman]:**
-  * Аудит геометрии, масштабируемости вьюпортов и проверка коллизий элементов;
-- **`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` [D009 Substitution failure, Belnap]:**
-  * Категорический запрет подмены типа артефакта: картинка не заменяет реализуемый HTML-макет.
+  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции XI при проходящих тестах;**
+  * Программные деонтические запреты: запрет отдельного cron-шедулера для наблюдения; запрет наблюдения до проверки запускаемости; запрет открытия ограничений запускаемости при инструментальных сбоях лаунчера; запрет зондирования маршрутов вне открытого окна превью.
+- **`ELVIN_GOLDMAN_07_SELF_MODEL_SANITY` & `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift, Goldman / Wittgenstein]:**
+  * Анти-зеркало рантайма: решение о жизнеспособности продукта опирается на физическую телеметрию портов и ответов, а не словесный нарратив; демаркация инструмента и продукта.
+- **`ELVIN_GOLDMAN_13_TRUTH_STATUS_TABLE` [D012 Belnap 4-valued / Goldman]:**
+  * Четкое разведение статусов: инструментальный сбой (`instrumentFailure`) не равен дефекту продукта (`product failure`).
+- **`LYUDVIG_VITGENSHTEYN_02_CATEGORY_ERROR_SCAN` [D002 Category error, Wittgenstein]:**
+  * Недопустимость смешения категорий: временные ряды контейнеров анализируются точным биномиальным критерием, а не контрольными картами эпиков Шеwharta.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. Провести строгий пакетный замер механизмов Секций X и XXIX в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
-2. Подтвердить 100% green статус по ключевым классам-заслонам Секций X и XXIX (113 тестов):
-   - Оркестрация и база цикла: `DesignShopOrchestrationServiceTest` (13/13), `DesignShopOrchestrationServiceLaw15Test` (7/7), `DesignShopCycleRepositoryIntegrationTest` (6/6);
-   - Аудит токенов и геометрия: `DesignConsistencyAuditServiceTest` (15/15), `LayoutGeometryAuditServiceTest` (13/13);
-   - Фальсификация и мониторинг дрейфа: `DesignSystemFalsificationServiceTest` (6/6), `DesignDriftMonitorServiceTest` (7/7);
-   - Санитарная очистка брошенных циклов: `StrandedDesignCycleSweepServiceTest` (4/4);
-   - Продвижение и носитель артефактов: `DesignImplementationLoopClosureLaw3Test` (2/2);
-   - Гейт качества дизайна: `DesignExcellenceGateTest` (12/12), `DesignExcellenceGateFalsificationTest` (6/6);
-   - MCP Stitch и генератор: `StitchClientTest` (10/10), `DesignAssetServiceTest` (12/12).
-3. Зафиксировать форму образца, актуализировать `### Итог Секции X` и `### Итог Секции XXIX` в `docs/FACTORY_MECHANISMS.md` (подтверждающие Ступень 4 closed, ideal, 113/113 green).
+1. Провести строгий пакетный замер механизмов Секции XI в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ClientRuntimeObservabilityServiceTest,ObservationHostingDemarcationLaw26Test,FailureDemarcationLaw22Test,BetaPosteriorTest,RuntimeHealthShiftDetectorTest,ProductCapabilityServiceTest,RuntimeVerdictLayerTest`).
+2. Подтвердить 100% green статус по ключевым классам-заслонам Секции XI (79 тестов):
+   - Наблюдение за рантаймом: `ClientRuntimeObservabilityServiceTest` (29/29);
+   - Демаркация хостинга: `ObservationHostingDemarcationLaw26Test` (3/3);
+   - Демаркация инструментальных сбоев: `FailureDemarcationLaw22Test` (6/6);
+   - Математика апостериорного распределения: `BetaPosteriorTest` (9/9);
+   - Детекция сдвигов здоровья рантайма: `RuntimeHealthShiftDetectorTest` (9/9);
+   - Обнаружение и зондирование возможностей: `ProductCapabilityServiceTest` (17/17);
+   - Слой продуктовых вердиктов рантайма: `RuntimeVerdictLayerTest` (6/6).
+3. Добавить канонический блок `### Итог Секции XI` в `docs/FACTORY_MECHANISMS.md` (подтверждающий Ступень 4 closed, ideal, 79/79 green).
 4. Синхронизировать `docs/ANTIGRAVITY_QUEUE.md`.
 5. Оформить лаконичный семантический коммит фабрики.
