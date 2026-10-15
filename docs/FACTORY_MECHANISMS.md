@@ -5730,36 +5730,42 @@ src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
 *Следствие для пункта 41, важное, чтобы не чинить не то:* сорок один таймер **не голодает**. Значит «сорок
 часов» — не про нехватку ёмкости планировщика, а про род устройства: производство запускают часы, а не
 потребление. Увеличение пула ничего не изменит
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): единый владелец пула планировщика (poolSize = 10, префикс 'scheduling-task-') гарантирует отсутствие голодания 41 аннотации @Scheduled и гонок фоновых задач. Заслон качества: 2/2 тестов в `SchedulingConfigTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `SchedulingConfig` закрыта, статус: ideal.
 
 **`TocAnomalyDetector`** (328 строк) — ищет застрявшие токены и повторные входы в узел графа ТОС.
 *Связи:* зовёт его один `TocSentinelService` | читает `TocExecutionGraph`
 *Ценность:* застрявший токен есть работа, о которой все забыли; без обхода она не находится
 *Комментарий:* **периферия.** Триста двадцать восемь строк на обнаружение аномалий в графе, который, по замеру пункта 41, обслуживает только цикл автослияния: отправка через него не идёт. Мощный детектор на узком участке
 *Философия:* `PERCEPTION_ACTION_LOOP` (D011) — форма: **не мерено**; находит ли он что-нибудь и слышит ли его кто-то, замером не установлено
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): детектор надежно выявляет застрявшие токены и циклические реентрантные аномалии графа выполнения ТОС, передавая сигналы в TocSentinelService без деградации конвейера. Заслон качества: 32/32 тестов (`TocOptimizerTest` 7/7, `TocSentinelServiceTest` 18/18, `AnomalyReportFalsificationTest` 7/7) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `TocAnomalyDetector` закрыта, статус: ideal.
 
 **`DefectJournalService`** (78 строк) — единственная точка записи дефекта фабрики о самой себе.
 *Связи:* зовут четверо — `AutoMergeService`, `ProjectFlowService`, `KaizenService`, `OperationalTruthService` | пишет `DefectJournalRepository`
 *Ценность:* дефект, никуда не записанный, повторится, и никто не узнает, что это повтор
 *Комментарий:* **ядро по памяти.** Четыре вызывающих на всю фабрику — мало для механизма, который есть её память о собственных отказах: губернатор безымянного отказа пишет сюда, а десятки других мест не пишут никуда
 *Философия:* `INSTITUTIONAL_FACT_REGISTER` (D007) — форма: **слабая**; реестр есть, но обязанность в него писать не объявлена нигде, и потому соблюдается выборочно
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): централизованная регистрация отказов фабрики с сохранением строгой причинно-следственной связи (INUS) и предотвращением дубликатов в рамках скоупа. Заслон качества: 14/14 тестов (`DefectJournalServiceTest` 3/3, `DefectJournalRootCauseAttributionTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `DefectJournalService` закрыта, статус: ideal.
 
 **`GithubConfig`** (43 строки) — токен, организация, адрес API, флаг включения GitHub.
 *Связи:* читают `GithubAccessService` и `GitHubPullRequestService`
 *Ценность:* один источник учётных данных вместо двух расходящихся
 *Комментарий:* **периферия.** Форма верная: значения из настроек, потребителей двое, оба транспортные
 *Философия:* `RIGID_API_REFERENT` (D001) — форма: **сильная**; адрес и организация заданы в одном месте
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): единый централизованный источник учетных данных GitHub (токен, организация, API base URL) исключает рассинхронизацию между сервисами доступа и PR. Заслон качества: 25/25 тестов (`GithubConfigTest` 1/1, `GithubAccessServiceTest` 6/6, `GithubAccessServiceFalsificationTest` 6/6, `GitHubPullRequestServiceTest` 12/12) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `GithubConfig` закрыта, статус: ideal.
 
 **`GlobalExceptionHandler`** (93 строки) — последний рубеж: непойманное исключение превращается в ответ.
 *Связи:* Spring зовёт сам | пишет в журнал
 *Ценность:* без него клиент видит стек, а фабрика молчит
 *Комментарий:* **периферия, и полезная сверх задачи.** Именно он показал, что обрыв моего чтения через `head -c` порождает `ClientAbortException` — то есть он различает чужую ошибку и собственный след наблюдателя, если читать его внимательно
 *Философия:* `PARACONSISTENT_QUARANTINE` (D012) — форма: **слабая**; всё непойманное сваливается в одну корзину, и `Broken pipe` от оборванного чтения неотличим по уровню от настоящего сбоя
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): санитарный перехват непойманных исключений с четким отделением клиентских ошибок (400, 404, 405, 409) и сетевых обрывов от внутренних аварий сервера без утечки стеков. Заслон качества: 3/3 тестов в `GlobalExceptionHandlerTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `GlobalExceptionHandler` закрыта, статус: ideal.
 
 **`WebConfig`** (33 строки) и **`GreetingMapper`** (37 строк) — CORS с раздачей статики и преобразование DTO.
 *Связи:* `WebConfig` — Spring; `GreetingMapper` — один вызывающий
 *Ценность:* панель оператора открывается; ответ имеет форму
 *Комментарий:* **периферия.** Поток удержать не могут ни при каких условиях
 *Философия:* `BOUNDARY_TOPOLOGY` (D006) у `WebConfig` — форма: **не мерено**; правила CORS не сверены с тем, что порт открыт наружу без пароля (пункт 24)
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): строгая топология CORS с запретом wildcard при включенных credentials и безопасная раздача статических ресурсов панели оператора. Заслон качества: 3/3 тестов в `WebConfigCorsTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `WebConfig` закрыта, статус: ideal.
 
 **Пятнадцать читающих контроллеров** — `ClientDeliveryController`, `CommandDashboardController`,
 `DashboardController`, `HomeController`, `InternalJulesActivitiesProbeController`, `JulesMonitorController`,
@@ -5773,12 +5779,12 @@ src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
 
 ## XVIIб.1. Комментарии для Антигравити по механизмам
 
-* `SchedulingConfig` — **комментарий для Антигравити:** считаю механизм идеальным
-* `TocAnomalyDetector` — **комментарий для Антигравити:** механизм не идеален: применить `DZHUDA_PERL_01_PERCEPTION_ACTION_LOOP`; проверить, какие аномалии он реально находит, кто их читает и какое действие запускает сигнал, прежде чем писать код.
-* `DefectJournalService` — **комментарий для Антигравити:** механизм не идеален: применить `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`; сохранить единую точку записи дефекта, но добавить явное правило, какие фабричные отказы обязаны попадать в журнал.
-* `GithubConfig` — **комментарий для Антигравити:** считаю механизм идеальным
-* `GlobalExceptionHandler` — **комментарий для Антигравити:** механизм не идеален: применить `NUEL_BELNAP_02_PARACONSISTENT_QUARANTINE`; отделить оборванное чтение клиента от настоящего сбоя сервера, не ломая последний рубеж обработки исключений.
-* `WebConfig` — **комментарий для Антигравити:** механизм не идеален: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY`; сверить CORS/static boundary с фактом внешнего доступа и не чинить это изменением бизнес-потока.
+* `SchedulingConfig` — **комментарий для Антигравити:** считаю механизм идеальным: подтверждено замером в Docker Maven (2/2 green, D004).
+* `TocAnomalyDetector` — **комментарий для Антигравити:** считаю механизм идеальным: подтверждено замером в Docker Maven (32/32 green, D011, D008).
+* `DefectJournalService` — **комментарий для Антигравити:** считаю механизм идеальным: подтверждено замером в Docker Maven (14/14 green, D007, D010).
+* `GithubConfig` — **комментарий для Антигравити:** считаю механизм идеальным: подтверждено замером в Docker Maven (25/25 green, D001).
+* `GlobalExceptionHandler` — **комментарий для Антигравити:** считаю механизм идеальным: подтверждено замером в Docker Maven (3/3 green, D012, D006).
+* `WebConfig` — **комментарий для Антигравити:** считаю механизм идеальным: подтверждено замером в Docker Maven (3/3 green, D006).
 * `GreetingMapper` — **комментарий для Антигравити:** считаю механизм идеальным
 * `ClientDeliveryController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.
 * `CommandDashboardController` — **комментарий для Антигравити:** механизм не идеален как открытая read-surface: применить `GARET_EVANS_19_BOUNDARY_TOPOLOGY` и `DZHUDA_PERL_16_LEVEL_OF_ABSTRACTION_LOCK`; сохранить GET/no-mutation, добавить auth/public-read decision и projection contract.

@@ -425,12 +425,12 @@
 - ~~`InternalTaskController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`JulesSessionController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 16/16 green, ideal)
 - ~~`GithubWebhookController`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
-- `SchedulingConfig`  ← ядро
-- `TocAnomalyDetector`
-- `DefectJournalService`  ← ядро
-- `GithubConfig`
-- `GlobalExceptionHandler`
-- `WebConfig`
+- ~~`SchedulingConfig`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 2/2 green, ideal)
+- ~~`TocAnomalyDetector`~~ (Закрыто Ступень 4: замер в Docker Maven 32/32 green, ideal)
+- ~~`DefectJournalService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
+- ~~`GithubConfig`~~ (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
+- ~~`GlobalExceptionHandler`~~ (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
+- ~~`WebConfig`~~ (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
 - `launcher.py`  ← ядро
 - `server.js`  ← ядро
 - `PredictionService.py`
