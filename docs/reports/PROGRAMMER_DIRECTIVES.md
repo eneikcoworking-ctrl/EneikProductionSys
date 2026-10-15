@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция VIII (Flow, Lean & Six Sigma Metrics)
+# Пакетная директива L1/L3 -> L2: Секция IX (Самопроверка, оркестрация и операционная истина)
 
-**Дата:** 2026-10-15 09:08 UTC  
+**Дата:** 2026-10-15 09:14 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,12 +10,20 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, согласований и пауз.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю незакрытую секцию механизмов целиком. Секция VIII (Flow, Lean & Six Sigma Metrics) охватывает полный контур метрик потока и качества:
-   - `FlowMetricsService`
-   - `TaskWaitTimeService`
-   - `SixSigmaAuditService`
-   - `EmsMetricsService`
-   - `ProjectOperationalContextService`
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция IX (Самопроверка, оркестрация и операционная истина / Раздел VIII `docs/FACTORY_MECHANISMS.md`) охватывает полный контур самодиагностики, фальсификации и непрерывной оркестрации:
+   - `SystemProgressTracker` (ядро)
+   - `AiHealthTracker`
+   - `RiskLevelCalculator`
+   - `FalsificationCycleService` (ядро)
+   - `EvidenceCoherenceService`
+   - `OpsAuditorService` (ядро)
+   - `PlatformSelfReferenceDetector` (ядро)
+   - `FactorySelfHealthService` (ядро)
+   - `KaizenService`
+   - `PlannedWorkRecoveryService` (ядро)
+   - `ContinuousOrchestrationService` (ядро)
+   - `OperationalPolicyService` / `OperationalAction` (ядро)
+   - `TrustSnapshotService`
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ:** Запрещено модифицировать рабочий код сервисов при проходящих тестах!
@@ -26,45 +34,40 @@
 
 ## 2. Философский базис RAG-корпуса (D008, D010, D006)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:** Принцип фальсификации. Не искать подтверждений мнимого благополучия, а проверять эмпирическую опровержимость метрик. Закон Литтла (`WIP ≈ Throughput × CycleTime`), DPMO и время ожидания обязаны регистрировать отклонения и аномалии, а не выдавать ложно-зеленые отчеты.
-- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:** Лок уровней абстракции и надежность эпистемической цепочки. Проектные метрики потока жестко изолированы по `projectId` (`TaskWaitTimeService`, `FlowMetricsService`), а системные/мета-задачи оркестратора (`BARCAN-TAG-09`) отделены от продуктовой готовности (`EmsMetricsService`), предотвращая потерю lineage и категориальные ошибки.
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:** Деонтический запрет как исключающая причина (`exclusionary reason`) и исполняемый код. Императивный запрет инженеру переписывать функционирующий код на Ступени 4 при отсутствии падающего теста-заслона.
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:** Принцип фальсификации. Сердцебиение фабрики (`SystemProgressTracker`), здоровье моделей (`AiHealthTracker`), суточный цикл (`FalsificationCycleService`) и предложения улучшений (`KaizenService`) обязаны опираться на эмпирически опровержимые свидетельства, а не на самоподтверждающиеся холостые тики («фабрика занята ≠ фабрика движется»).
+- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:** Лок уровней абстракции и надежность эпистемической цепочки. Строгое разделение уровней «продукт — фабрика — внешняя модель» (`PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `TrustSnapshotService`), исключающее категориальные ошибки попадания заводского шума в клиентский скоуп или потерю происхождения снимков доверия.
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:** Деонтический запрет как исключающая причина (`exclusionary reason`) и исполняемый код. Императивный запрет инженеру трогать работающий код сервисов на Ступени 4 при проходящих тестах; запрет `PlannedWorkRecoveryService` и `ContinuousOrchestrationService` порождать неконтролируемые сторонние кроны или дублирующие задачи.
 
 ---
 
-## 3. Пакетный наряд по механизмам Секции VIII (Ступени 3–4: «Замер в рантайме, не правка кода»)
+## 3. Пакетный наряд по механизмам Секции IX (Ступени 3–4: «Замер в рантайме, не правка кода»)
 
-### А. `FlowMetricsService`
-- **Действие:** Замерить расчет WIP, Cycle Time, Lead Time и проверку Закона Литтла.
-- **Инвариант:** Арифметическая проверка консистентности (`WIP ≈ Throughput × Cycle Time`) без субъективных нарративов; учет потерь исключительно по реальным свидетельствам отклоненных wishlist-заявок (`TERMINAL_STATUSES`).
-- **Заслон:** Проверить `FlowMetricsServiceTest` (4/4 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
+### А. `SystemProgressTracker`, `AiHealthTracker`, `RiskLevelCalculator`
+- **Действие:** Замерить сердцебиение реального прогресса фабрики, регистрацию вызовов моделей и расчет уровня риска.
+- **Инварианты:** Запись прогресса фиксируется исключительно при наличии реального продвижения (слияние PR, успешная отправка); здоровье моделей отслеживает реальные отказы без подмены заглушками; предсказания риска не действуют в обход лестницы доверия.
+- **Заслон:** `SystemProgressTrackerTest`, `RiskLevelCalculatorTest`, `MLPredictionServiceClientTest`, `Stage5ProtectedInvariantsFalsificationTest`. Исходный код сервисов НЕ ТРОГАТЬ.
 
-### Б. `TaskWaitTimeService`
-- **Действие:** Замерить классификацию времени ожидания задач в очереди.
-- **Инвариант:** Разделение доверенного времени в сессии Jules (не является потерями) и времени простоя в очереди (Lean-потери). Синхронность предикатов с `ProjectFlowService.dispatchQueuedTasks`.
-- **Заслон:** Проверить `DashboardControllerTest` (2/2 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
+### Б. `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`
+- **Действие:** Замерить суточный цикл фальсификации, расчет когерентности свидетельств ECHO и аудитор операций.
+- **Инварианты:** Владение агрегатами `falsification_runs` и `code_integrity_findings` строго объявлено; когерентность свидетельств не фальсифицирует уверенность на пустых данных; аудитор воздерживается при отсутствии независимых доказательств и повторно валидирует предусловия перед действием.
+- **Заслон:** `FalsificationCycleServiceTest`, `EvidenceCoherenceServiceTest`, `EvidenceCoherenceV80TerminationFalsificationTest`, `OpsAuditorServiceTest`. Исходный код сервисов НЕ ТРОГАТЬ.
 
-### В. `SixSigmaAuditService`
-- **Действие:** Замерить расчет DPMO, FTY, Sigma Level и аудит качества.
-- **Инвариант:** Строгое разделение проектного скоупа (`single project`) и общефабричного агрегата (`FACTORY_WIDE_ALL_PROJECTS`), исключение нерелевантных задач-носителей.
-- **Заслон:** Проверить `SixSigmaAuditServiceTest` (26/26 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
+### В. `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`
+- **Действие:** Замерить детектор самореференции фабрики, монитор собственного здоровья и жизненный цикл Кайдзен.
+- **Инварианты:** Отсечение внутренних заводских находок от продуктового бэклога клиента (`D002 Category error`); мониторинг размера БД и пулов фабрики; дедупликация предложений Кайдзен строго в рамках `(projectId, category, targetComponent)`.
+- **Заслон:** `PlatformSelfReferenceDetectorTest`, `FactorySelfHealthServiceTest`, `KaizenServiceTest`. Исходный код сервисов НЕ ТРОГАТЬ.
 
-### Г. `EmsMetricsService`
-- **Действие:** Замерить сбор дашборда EMS и доктрин ролей (`BARCAN-TAG-00`...`12`).
-- **Инвариант:** Исключение мета-задач компилятора и ревью из продуктовой готовности ролей, предотвращение раздувания готовности на пустом проекте.
-- **Заслон:** Проверить `EmsMetricsServiceTest` (6/6 green) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
-
-### Д. `ProjectOperationalContextService`
-- **Действие:** Замерить агрегацию операционного контекста и блокеров потока.
-- **Инвариант:** Отсутствие независимых токенов одобрения (`APPROVAL_TOKEN`), делегирование сущностям `PrReviewEntity`, согласованность с `BottleneckDetectionService` и `EmsMetricsService`.
-- **Заслон:** Проверить тесты контекста (`PrReviewApprovalLaw1Test`, `AutoMergeServiceTest`) в Docker Maven. Исходный код сервиса НЕ ТРОГАТЬ.
+### Г. `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalPolicyService`, `TrustSnapshotService`
+- **Действие:** Замерить восстановление задач без дублирования, единый цикл оркестрации, детерминированные переходы политики и фиксацию снимков доверия.
+- **Инварианты:** `PlannedWorkRecoveryService` гарантирует сохранение идентичности задачи и исключает каскадное размножение задач; `ContinuousOrchestrationService` выступает единственным диспетчерским тиком фабрики; `OperationalPolicyService` применяет исполняемые правила переходов; `TrustSnapshotService` связывает входы доверия с отложенными результатами.
+- **Заслон:** `PlannedWorkRecoveryServiceTest`, `ContinuousOrchestrationServiceTest`, `OperationalPolicyServiceTest`, `OperationalPolicyReasonTest`, `OperationalPolicyDeniedExceptionFalsificationTest`, `TrustSnapshotServiceTest`. Исходный код сервисов НЕ ТРОГАТЬ.
 
 ---
 
 ## 4. Регламент верификации и фиксации для инженера L2
 
-1. Пакетный запуск заслонов в изолированном Docker-контейнере:  
-   `docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=FlowMetricsServiceTest,EmsMetricsServiceTest,SixSigmaAuditServiceTest,DashboardControllerTest -DfailIfNoTests=false`
-2. Обновление записей Ступени 4 в `docs/FACTORY_MECHANISMS.md` (секции `*Живое:*` и статус `ideal`) и `docs/ANTIGRAVITY_QUEUE.md` для механизмов Секции VIII.
-3. Фиксация семантическим коммитом L2: `feat(metrics): complete Stage 4 batch verification for Section VIII (D008, D010, D006)`.
+1. Пакетный запуск заслонов в изолированном Docker-контейнере Maven:  
+   `docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=SystemProgressTrackerTest,RiskLevelCalculatorTest,FalsificationCycleServiceTest,EvidenceCoherenceServiceTest,OpsAuditorServiceTest,PlatformSelfReferenceDetectorTest,FactorySelfHealthServiceTest,KaizenServiceTest,PlannedWorkRecoveryServiceTest,ContinuousOrchestrationServiceTest,OperationalPolicyServiceTest,TrustSnapshotServiceTest -DfailIfNoTests=false`
+2. Обновление записей Ступени 4 в `docs/FACTORY_MECHANISMS.md` (секции `*Живое:*` и статус `ideal`) и закрытие пунктов Секции IX в `docs/ANTIGRAVITY_QUEUE.md`.
+3. Фиксация семантическим коммитом L2: `feat(orchestration): complete Stage 4 batch verification for Section IX (D008, D010, D006)`.
 4. Краткий отчет в `docs/reports/PROGRAMMER_STATE.md` (до 15–20 строк).
