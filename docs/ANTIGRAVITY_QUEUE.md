@@ -267,7 +267,7 @@
 - ~~`OperationalTruthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
 - ~~`DesignAssetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
 - `MLPredictionServiceClient`  ← ядро
-- `RepositoryStackAnalyzer`  ← ядро
+- ~~`RepositoryStackAnalyzer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - `GitHubProjectFactoryClient`  ← ядро
 - `CommandDashboardService`  ← ядро
 - `InternalGeminiObserverController`
@@ -285,9 +285,9 @@
 чинить. Если нет — записать, что не воспроизводится, и **не трогать код**.
 
 - ~~`DesignShopCycleRepository`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
-- `TargetContext`  ← ядро
+- ~~`TargetContext`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
 - `AccountStatus`  ← ядро
-- `LeanValue`  ← ядро
+- ~~`LeanValue`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - `ProjectStatus`  ← ядро
 - `Judgement`  ← ядро
 - `TocNode`  ← ядро

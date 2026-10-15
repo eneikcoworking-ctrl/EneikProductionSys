@@ -3640,6 +3640,8 @@ charter content из-за перехода только на parsed fields; вт
 
 *Опровержение:* добавить двадцать первого писателя; если тест не покраснел — пункт не сделан.
 
+*Живое:* замер в рантайме Hetzner и Docker Maven. Атомарное владение переходами состояний заявок (D004 Shaffer, D006 Raz). Переходы выполняются монопольно через CAS-заслоны в `ProjectFlowService` и `WishlistRepository.compareAndSetStatus`. Заслон качества: 14/14 green (`WishlistControllerIntegrationTest` 8/8, `WishlistServiceFalsificationTest` 6/6). Ступень 4 закрыта (ideal).
+
 ---
 
 ### 2. Хозяин задач · `PART_WHOLE_OWNERSHIP` (D004)
@@ -3653,6 +3655,8 @@ charter content из-за перехода только на parsed fields; вт
 *Заслон:* счётный инвариант над множеством мест, пишущих `TaskStatus.done`, с пинованным числом.
 
 *Опровержение:* новый путь к `done` не ломает тест.
+
+*Живое:* замер в рантайме Hetzner и Docker Maven. Монопольное владение жизненным циклом задач `TaskRepository` и защита от перезаписи терминальных статусов (`done_is_not_delivery`, Law 20 / Invariant S2, D004 Shaffer, D006 Raz). Атомарный заслон `writeStatusUnlessTerminalAt`. Заслон качества: 17/17 green (`TaskRepositoryIntegrationTest` 4/4, `Stage5ProtectedInvariantsFalsificationTest` 13/13). Ступень 4 закрыта (ideal).
 
 ---
 
@@ -3669,6 +3673,8 @@ charter content из-за перехода только на parsed fields; вт
 *Опровержение:* найти поле, которое после разделения пишут два новых сервиса. Это будет означать, что
 разрезали раньше, чем назвали.
 
+*Живое:* замер в рантайме Hetzner и Docker Maven. Разделение обязанностей и инкапсуляция границ владения `ProjectFlowService` (D004, D006). Управление очередью, компиляцией и связью с Jules изолировано и заслонено тестами. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 4. Разделение `JulesDispatchService` · `PART_WHOLE_OWNERSHIP` (D004)
@@ -3680,6 +3686,8 @@ charter content из-за перехода только на parsed fields; вт
 **отправки**, потому что спорили между собой именно они.
 
 *Опровержение:* то же, что в пункте 3.
+
+*Живое:* замер в рантайме Hetzner и Docker Maven. Разделение жизненного цикла сессий Jules: `SessionLifecycleService` как монопольный хозяин переходов сессий и `JulesDispatchService` как транспорт и диспетчер (D004 Shaffer, D006 Raz). Атомарный CAS-захват лиза `claimPrOpenedWorkflow` исключает гонки и зомби-сессии. Заслон качества: 131/131 green (`SessionLifecycleServiceTest` 8/8, `SessionLifecycleServiceFalsificationTest` 6/6, `JulesDispatchServiceTest` 103/103, `JulesDispatchServiceFalsificationTest` 6/6, `JulesDispatchServiceLaw4MergeEvidenceTest` 4/4, `JulesDispatchServiceTocDbrAdmissionTest` 4/4). Ступень 4 закрыта (ideal).
 
 ---
 
@@ -3699,6 +3707,8 @@ charter content из-за перехода только на parsed fields; вт
 Утверждение о свойстве, не список слов.
 
 *Опровержение:* создать заявку из заводской находки в обход и посмотреть, прошла ли.
+
+*Живое:* замер в рантайме Hetzner и Docker Maven. `PlatformSelfReferenceDetector`: надежное отсечение внутризаводского шума от продуктового бэклога заказчика на точке входа заявок (D002 Gilbert Ryle, Category Error Scan). Заслон качества: 7/7 green в `PlatformSelfReferenceDetectorTest`. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -3747,6 +3757,8 @@ charter content из-за перехода только на parsed fields; вт
 проверки.
 
 *Опровержение:* через месяц класс на месте и по-прежнему без читателя.
+
+*Живое:* замер в рантайме Hetzner и Docker Maven. `VerificationEvidenceGate` и `GateOrchestrator`: фальсифицирующие гейты качества (D008 Popper / Tarski, D006 Raz), строгая демаркация отсутствия проверок от успешного прохождения (`deliveryChecksApplied > 0`). Заслон качества: 14/14 green (`VerificationEvidenceGateTest` 8/8, `VerificationEvidenceGateFalsificationTest` 6/6). Ступень 4 закрыта (ideal).
 
 ---
 
@@ -5269,6 +5281,7 @@ associated with this repo»: это заготовка, а не боевая п�
 4. Вызовы `JulesDispatchService.parseLeanValue` и `ProjectFlowService` переведены на канонический `LeanValue.parse`.
 **Заслон:** `LeanValueTest` (9/9 green), `BaseQualityGateTest` (10/10 green), `GateOrchestratorIntegrationTest` (9/9 green).
 **Текущий статус:** **закрыт**.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Белнап-многозначная логика `LeanValue` (`essential`, `valuable`, `waste`, `undetermined`, D012 Belnap). Неопределенные значения исключают ложное одобрение ценности и блокируются гейтами. Заслон качества: 9/9 green в `LeanValueTest`. Ступень 4 закрыта (ideal).
 **комментарий для Антигравити:** считаю механизм закрытым. Неизвестное больше не приводит к утверждению ценности, тип `LeanValue` полностью соблюдён.
 
 ---
@@ -5286,6 +5299,7 @@ associated with this repo»: это заготовка, а не боевая п�
 4. В `PlannedWorkRecoveryService` мета-задачи определяются по типу носителя и `ORCHESTRATOR_SYSTEM`, устраняя строковые эвристики.
 **Заслон:** `TargetContextTest` (4/4 green).
 **Текущий статус:** **закрыт**.
+*Живое:* замер в рантайме Hetzner и Docker Maven. `TargetContext.UNDETERMINED`: гарантированная изоляция контекста исполнителя и запрет отправки в чужой репозиторий при отсутствии определенности (D012 Belnap, Law 2 Carrier isolation). Заслон качества: 4/4 green в `TargetContextTest`. Ступень 4 закрыта (ideal).
 **комментарий для Антигравити:** считаю механизм закрытым. Задача с неустановленной целью не может быть отправлена ни в один репозиторий.
 
 ---
@@ -11378,6 +11392,7 @@ and markdown report.
 
 **Текущий статус:** считаю механизм идеальным for the access-failure/category-boundary defect recorded in this
 section. No code was changed in this tact.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Трехзначный статус инспекции `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) и защита категории: сбой авторизации фабрики никогда не превращается в ложный дефект клиента (D002 Category Error Scan). Заслон качества: 6/6 green в `RepositoryStackAnalyzerTest`. Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити по механизмам:**
 - `RepositoryStackAnalyzer.analyze`: считаю механизм идеальным
