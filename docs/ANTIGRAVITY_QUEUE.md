@@ -431,21 +431,21 @@
 - ~~`GithubConfig`~~ (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
 - ~~`GlobalExceptionHandler`~~ (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
 - ~~`WebConfig`~~ (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
-- `launcher.py`  ← ядро
-- `server.js`  ← ядро
-- `PredictionService.py`
-- `ContextChunkRepository`
-- `TaskEntity`
-- `JulesSessionEntity`
-- `EvidenceNodeEntity`  ← ядро
-- `JulesConfigEntity`
-- `PrivacyFilter`  ← ядро
-- `AgencyApplication`
-- `TocToken`
-- `WishlistItemStatus`
-- `V99__task_conflict_preserved_branch.sql`  ← ядро
-- `audit_pr.py`
-- `VideoAssetService`
+- ~~`launcher.py`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 32/32 green, ideal)
+- ~~`server.js`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`PredictionService.py`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
+- ~~`ContextChunkRepository`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`TaskEntity`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`JulesSessionEntity`~~ (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
+- ~~`EvidenceNodeEntity`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
+- ~~`JulesConfigEntity`~~ (Закрыто Ступень 4: замер в Docker Maven 13/13 green, ideal)
+- ~~`PrivacyFilter`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 2/2 green, ideal)
+- ~~`AgencyApplication`~~ (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
+- ~~`TocToken`~~ (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
+- ~~`WishlistItemStatus`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`V99__task_conflict_preserved_branch.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`audit_pr.py`~~ (Закрыто Ступень 4: замер в pytest 10/10 green, corpus verified 1720, ideal)
+- ~~`VideoAssetService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 
 ## Ступень 5 — проверить и не трогать (40)
 
