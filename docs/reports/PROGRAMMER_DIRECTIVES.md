@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция VIII (Flow & Metrics / Самопроверка: измерение потока, циклы фальсификации, связность свидетельств, аудит операций и непрерывная оркестрация)
+# Пакетная директива L1/L3 -> L2: Секция XVI/XXIX (Архитектурные предписания инвариантов владения и Цех дизайна: экранные артефакты, токены и продвижение mockup)
 
-**Дата:** 2026-10-15 13:42 UTC  
+**Дата:** 2026-10-15 13:58 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,20 +10,22 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция VII (TOC) и Ступень 5 очереди `ANTIGRAVITY_QUEUE.md` полностью заверены и закрыты инженером в статусе ideal (коммит `7db6458`). Настоящая директива охватывает целиком следующую открытую секцию фабрики — **Секцию VIII (Flow & Metrics / Самопроверка)**:
-   - `FlowMetricsService` — проектно-изолированное измерение потока по закону Литтла (`WIP ≈ Throughput × CycleTime`), согласованность расчетов без подъема чужих задач;
-   - `MarketResearchService` — сбор рыночных измерений строго через контекст оркестратора `TargetContext.ORCHESTRATOR_SYSTEM` с детерминированным выбором проекта-носителя;
-   - `KaizenService` — дедупликация и замкнутый цикл непрерывных улучшений PDCA по `(projectId, category, targetComponent)` с фиксацией в журнале дефектов;
-   - `LeverPromotionService` — повышение/понижение кандидатов рычагов ТОС по лестнице доверия (`observe_only` -> `auto_remediate`) на основе пар наблюдений Белнапа;
-   - `FalsificationCycleService` (ядро) — суточный цикл фальсификации дефектов, монопольное владение `falsification_runs` и `code_integrity_findings`, порождение замен провалившимся задачам;
-   - `EvidenceCoherenceService` — объяснительная связность ECHO Тагарда на собственном графе свидетельств без ложной уверенности на разреженных данных;
-   - `OpsAuditorService` (ядро) — автономный аудит операций, диагноз по независимо проверенным свидетельствам и повторная валидация предусловий перед действием;
-   - `PlatformSelfReferenceDetector` (ядро) — надежная демаркация и отсечение внутризаводского шума от продуктового бэклога заказчика (D002 Category Error);
-   - `FactorySelfHealthService` (ядро) — непрерывный санитарный мониторинг фабрики (размер БД, пулы соединений, очереди) с эскалацией в Кайдзен;
-   - `PlannedWorkRecoveryService` (ядро) — восстановление работ с сохранением личностной идентичности задачи рубеж за рубежом без паразитного каскадного размножения;
-   - `ContinuousOrchestrationService` (ядро) — единый детерминированный тик оркестрации фабрики без сторонних неконтролируемых кронов;
-   - `OperationalPolicyService`, `OperationalFlowCoreService`, `OperationalTruthService`, `OperationalAction`, `FlowSpineService` (ядро) — деонтические барьеры переходов политики и инвариант `done_is_not_delivery`;
-   - `TrustSnapshotService` — снимки сигналов доверия с отложенным дозаполнением фактических исходов сдачи.
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция VIII (Flow & Metrics / Самопроверка) полностью замерена и зафиксирована инженером в статусе ideal (коммит `6c5ef27`, 270/270 green в Docker Maven). Настоящая директива охватывает целиком следующий открытый комплекс фабрики — **Секцию XVI (Архитектурные предписания инвариантов владения, тянущий контур и гейты качества)** и **Секцию XXIX (Цех дизайна: экранные артефакты, аудит дизайн-токенов и продвижение mockup)**:
+   - **Архитектурные границы и владение состоянием (Предписания 1–4, D004 Shaffer):**
+     * `WishlistRepository` / `ProjectFlowService` — детерминированный хозяин переходов заявок, атомарный CAS `compareAndSetStatus`, исключение гонок `pending`/`compiling`;
+     * `TaskRepository` — монопольный хозяин переходов задач, инвариант `done_is_not_delivery`, атомарный заслон `writeStatusUnlessTerminalAt`;
+     * `JulesSessionRepository` / `SessionLifecycleService` — единый хозяин жизни сессий Jules, атомарный захват лиза `claimPrOpenedWorkflow`, исключение зомби-сессий.
+   - **Тянущий контур и доменные гейты (Предписания 5–7, 38–41, D008 Popper, D002 Ryle):**
+     * `PlatformSelfReferenceDetector` — надежное отсечение внутризаводского шума от продуктового бэклога заказчика (D002 Category Error);
+     * `GateOrchestrator` / `VerificationEvidenceGate` — демаркация отсутствия проверок от успешного прохождения, фальсифицирующие гейты качества;
+     * `LeanValue`, `RepositoryStackAnalyzer`, `TargetContext` — Белнап-многозначная логика, нулевой шум о заказчике при отказе авторизации, изоляция контекста исполнителя.
+   - **Цех дизайна, артефакты экранов и марка (Секция XXIX, D015 Belnap, D009 Belnap):**
+     * `DesignAssetService` (`generateAsset`, `generateViaStitch`, `auditExistingDrafts`) — запрет деградации до картинок при `requireImplementableHtml=true`, отсечение off-token HTML до коммита в GitHub;
+     * `DesignConsistencyAuditService` — вычисление коэффициента трассировки токенов `tokenTraceRatio` и Jaccard-сходства экранов, честный `CANNOT_JUDGE` при отсутствии базовых токенов;
+     * `StitchClient` — JSON-RPC клиент к Stitch MCP, сохранение `screenId`, изоляция проектов;
+     * `LayoutGeometryAuditService` — заслон коллизий, масштабируемости вьюпортов и близости элементов;
+     * `DesignShopOrchestrationService` — старт цикла строго по нарастающему фронту готовности (`isReady && !lastWasReady`), атомарный `claimStartCycle`;
+     * `JulesDispatchService.completeDesignReview` — продвижение утвержденного черновика из `design/draft` в `design/approved` strictly по вердикту `approve` с байтовым тождеством.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено трогать рабочий код сервисов и сущностей при проходящих тестах!
@@ -35,46 +37,43 @@
 ## 2. Философский базис RAG-корпуса (D008, D010, D006)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
-  * Верификация через фальсифицирующие заслоны: при несогласованности величин потока по Литтлу фабрика обязана фиксировать расхождение, а не молчать;
-  * Заслон `OpsAuditorService` проверяет отказ при нарушении предусловия к моменту исполнения действия («precondition no longer holds»);
-  * Заслон `EvidenceCoherenceService` доказывает релаксацию графа без вырождения в единичную достоверность на пустых данных.
+  * Верификация через фальсифицирующие заслоны: тест падает, если попытка перевести терминальную задачу в работу принимается хранилищем;
+  * Заслон `DesignAssetService` падает, если генератор пытается вернуть картинку вместо затребованного `mockup.html`;
+  * Заслон `DesignConsistencyAuditService` отвергает офф-токен экраны и фиксирует `CANNOT_JUDGE` на пустых SPA-оболочках вместо фальшивого `green`.
 - **`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:**
-  * Защита родословной данных: `MarketResearchService` порождает задачи строго с детерминированным контекстом `TargetContext.ORCHESTRATOR_SYSTEM` без прямого искажения продуктового кода;
-  * Лок уровней абстракции: `FlowMetricsService` вычисляет WIP, Throughput и Lead Time строго внутри границ одного проекта, исключая кросс-проектные подъемы таблиц;
-  * Снимки `TrustSnapshotService` разделяют входы доверия от ретроспективного дозаполнения исходов.
+  * Защита родословной данных: артефакты дизайна трассируются до объявленных токенов бренда и коммитятся в целевой репозиторий заказчика, а не оседают локально;
+  * Лок уровней абстракции: факт наличия черновика на диске бэкенда не подменяет статус утвержденного артефакта в ветке `design/approved`;
+  * Детерминированное владение переходами состояний: четкое разделение роли регистратора фактов и владельца жизненного цикла (Шаффер D004).
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный запрет инженеру L2 на изменение рабочего кода сервисов Секции VIII;**
-  * Деонтический запрет на обход лестницы доверия `LeverPromotionService` и прямое порождение сторонних фоновых шедулеров вне `ContinuousOrchestrationService`;
-  * Монопольное владение `FalsificationCycleService` агрегатами `falsification_runs` и `code_integrity_findings` (Варци D004).
+  * **Императивный запрет инженеру L2 на изменение рабочего кода сервисов Секций XVI и XXIX;**
+  * Деонтический запрет на обход атомарных CAS-переходов `TaskRepository.writeStatusUnlessTerminalAt` и `WishlistRepository.compareAndSetStatus`;
+  * Запрет на неавторизованные мутации состояний вне объявленного сервиса-хозяина.
 
 ---
 
-## 3. Пакетный наряд по механизмам Секции VIII (Flow & Metrics / Самопроверка)
+## 3. Пакетный наряд по механизмам Секции XVI/XXIX
 
-1. **Метрики потока и внешние исследования (`FlowMetricsService`, `MarketResearchService`):**
-   - **Проба:** Замерить проектную изоляцию вычислений Литтла и детерминированный выбор carrier-проекта.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `FlowMetricsServiceTest`, `MarketResearchServiceTest`.
-2. **Кайдзен и лестница доверия рычагов (`KaizenService`, `LeverPromotionService`):**
-   - **Проба:** Замерить дедупликацию предложений по `(projectId, category, targetComponent)` и асимметричное продвижение рычагов по наблюдениям Белнапа.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `KaizenServiceTest`, `LeverPromotionServiceTest`.
-3. **Циклы фальсификации и связность свидетельств (`FalsificationCycleService`, `EvidenceCoherenceService`):**
-   - **Проба:** Замерить суточный цикл, исключительное владение агрегатами и ECHO-релаксацию графа.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `FalsificationCycleServiceTest`, `EvidenceCoherenceServiceTest`.
-4. **Аудитор операций и детектор автореференции (`OpsAuditorService`, `PlatformSelfReferenceDetector`):**
-   - **Проба:** Замерить аудит по независимым фактам с проверкой предусловий и отсечение внутризаводского шума от бэклога заказчика.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `OpsAuditorServiceTest`, `PlatformSelfReferenceDetectorTest`.
-5. **Здоровье фабрики, восстановление работ и оркестрация (`FactorySelfHealthService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`):**
-   - **Проба:** Замерить телеметрию пулов/БД, сохранение идентичности задачи при сбое и единый оркестрационный тик.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `FactorySelfHealthServiceTest`, `PlannedWorkRecoveryServiceTest`, `ContinuousOrchestrationServiceTest`.
-6. **Операционная политика, хребет потока и снимки доверия (`OperationalPolicyService`, `FlowSpineService`, `TrustSnapshotService`):**
-   - **Проба:** Замерить деонтическую чистоту отказов политики, инвариант `done_is_not_delivery` и отложенный бэкфилл исходов доверия.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `OperationalPolicyServiceTest`, `FlowSpineServiceTest`, `TrustSnapshotServiceTest`.
+1. **Владение состоянием и жизненным циклом (`WishlistRepository`, `TaskRepository`, `JulesSessionRepository`, `SessionLifecycleService`):**
+   - **Проба:** Замерить атомарность переходов состояний, CAS-заслоны и неизменность терминальных статусов.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `TaskRepositoryTest`, `WishlistRepositoryTest`, `SessionLifecycleServiceTest`.
+2. **Тянущий контур и доменная демаркация (`PlatformSelfReferenceDetector`, `VerificationEvidenceGate`, `TargetContext`):**
+   - **Проба:** Замерить отсечение заводских находок от бэклога заказчика, фальсифицируемость гейтов и многозначность Белнапа.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `PlatformSelfReferenceDetectorTest`, `VerificationEvidenceGateTest`, `TargetContextTest`.
+3. **Цех дизайна и генерация артефактов (`DesignAssetService`, `StitchClient`, `GoogleAiResourceService`):**
+   - **Проба:** Замерить генерацию с `requireImplementableHtml=true`, запрет отката на image-only модели и передачу токенов в prompt.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `DesignAssetServiceTest`, `StitchClientTest`.
+4. **Аудит консистентности и геометрия вьюпортов (`DesignConsistencyAuditService`, `LayoutGeometryAuditService`):**
+   - **Проба:** Замерить подсчет `tokenTraceRatio`, кросс-экранный Jaccard и статус `CANNOT_JUDGE` при нехватке базовых токенов.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `DesignConsistencyAuditServiceTest`, `LayoutGeometryAuditServiceTest`.
+5. **Оркестрация цикла дизайна и продвижение утвержденных экранов (`DesignShopOrchestrationService`, `JulesDispatchService.completeDesignReview`, `DesignExcellenceGate`):**
+   - **Проба:** Замерить атомарный захват цикла `claimStartCycle`, строгий вердикт `approve` для переноса в `design/approved` и проверку Playwright-скриншотов.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `DesignShopOrchestrationServiceTest`, `JulesDispatchServiceTest`, `DesignExcellenceGateTest`.
 
 ---
 
 ## 4. Регламент отчета инженера L2
 
-1. Провести единый пакетный прогон тестовых заслонов Секции VIII в Docker Maven (`-m 2g`).
+1. Провести единый пакетный прогон тестовых заслонов Секции XVI/XXIX в Docker Maven (`-m 2g`).
 2. Внести отметку `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md`.
 3. Сформировать лаконичный отчет в `docs/reports/PROGRAMMER_STATE.md` (до 20 строк).
-4. Зафиксировать результат семантическим коммитом `feat(flow-metrics): complete Section VIII batch verification (D008, D010, D006)`.
+4. Зафиксировать результат семантическим коммитом `feat(design-shop): complete Section XVI/XXIX batch verification (D008, D010, D006)`.
