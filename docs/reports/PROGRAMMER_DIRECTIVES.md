@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция III (Отправка: задача уходит в работу)
+# Пакетная директива L1/L3 -> L2: Секция VIII (Flow & Metrics, Самопроверка, Операционная Правда, Кайдзен, Фальсификация и Оркестрация)
 
-**Дата:** 2026-10-15 18:17 UTC  
+**Дата:** 2026-10-15 18:30 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,78 +10,75 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция II («Компиляция: требование становится задачами») полностью замерена и закрыта инженером (159/159 green в коммите `4c9a2f1`). Настоящая директива охватывает целиком следующий фундаментальный массив конвейера фабрики — **Секцию III («Отправка: задача уходит в работу»)**:
-   - **Контур III.1. `JulesDispatchService` (Varzi D004, Belnap D012, Raz D006):**
-     * Мереологическое разделение владения Варци (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004): единое владение агрегатом сессий Jules, отсечение дублирующей диспетчеризации (`already dispatched, skipping duplicate`) при наличии активной сессии.
-     * Решётка истинности Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): трёхзначный статус цели `TargetContext` (`PRODUCT_CODEBASE`, `ORCHESTRATOR_SYSTEM`, `UNDETERMINED`). Неизвестный контекст никогда не угадывается и детерминированно прерывает отправку.
-     * Деонтические исключающие основания Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006): Закон 2 изоляции фабрики и продукта — запрет отправки задач с неустановленной целью или отсутствующим проектом с фиксацией отказного статуса в `JulesSessionEntity`.
-   - **Контур III.2. `JulesApiClient` (Belnap D012, Raz D006, Goldman D010):**
-     * Многозначная логика Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): четырёхзначный префлайт источников `SourceAvailability` (`VISIBLE`, `MISSING`, `UNKNOWN`) и шестизначная классификация отказов API (`CONCURRENT_CAPACITY_EXHAUSTED`, `DAILY_LIMIT`, `REQUEST_REJECTED`, `PRECONDITION_BLOCKED`, `PRECONDITION_UNSPECIFIED`, `UNCLASSIFIED`).
-     * Деонтический запрет Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006): категорический запрет сетевого вызова при выключенном `jules_enabled`, отсутствии API-ключа или пустом URL репозитория.
-     * Каузальная цепочка Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): Закон 12 (Ground of denial names what it is about) — фиксация длины промпта, источника и стартовой ветки при отказе; сохранение эмпирического HTTP 404 в `checkSessionRaw`.
-   - **Контур III.3. `SessionLifecycleService` (Gilbert D004, Raz D006, Goldman D010):**
-     * Совместное обязательство Гилберт (`MARGARET_GILBERT_02_JOINT_COMMITMENT_LOCK` / D004): категорический отказ от локальных фикций cancel — статус отмены связывается с реальным подтверждением удаления во внешнем Jules API, сбой HTTP 500 оставляет `remoteDeletedAt == null`.
-     * Деонтический запрет Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006): разрыв длинных DB-транзакций через короткие `REQUIRES_NEW`-транзакции proxy `self` вокруг внешнего сетевого HTTP-вызова.
-     * Надежность свидетельств Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): регламентная очистка затрагивает исключительно сессии терминальных задач или закрытых проектов, гарантируя неприкосновенность активных задач.
-   - **Контур III.4. `PersistentWorkerSessionService` (Varzi D004, Raz D006, Goldman D010):**
-     * Топологическая граница Варци (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004): чистый сервис учета (bookkeeping) со строго нулевой зависимостью от сетевого транспорта `JulesApiClient`.
-     * Деонтический запрет Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006): предикат `isIdleAndFresh` категорически блокирует отправку работы при активном пакете (`isBatchInFlight`), исчерпании лимита циклов (`cycleCount >= maxCycles`) или возраста сессии (`maxAgeHours`).
-     * Каузальная надежность Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): неразрушающая инспекция пакета (`peekCurrentBatch`) предотвращает утерю задач при авариях воркера.
-   - **Контур III.5. `ClaimService` (Hohfeld D006, Belnap D012, Gilbert D007):**
-     * Матрица прав и обязанностей Хофельда (`UESLI_HOHFELD_03_RIGHTS_DUTIES_MATRIX` / D006): притязание строго ограничено сроком аренды (`leaseExpiresAt`), атомарный захват строки (`SKIP LOCKED`) исключает двойной захват задачи.
-     * Решётка истинности Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): трёхзначная логика допуска на ревью `evaluateReviewAdmission` (`ADMIT`, `DEFER`, `REJECT`), где отсутствие кода откладывает ревью (`DEFER`), а не бракует задачу.
-     * Институциональный регистр Гилберт (`MARGARET_GILBERT_04_INSTITUTIONAL_FACT_REGISTER` / D007): фиксация институциональных фактов в едином журнале дефектов при исчерпании бюджета отправки и восстановлении емкости.
-   - **Контур III.6. `LeaseWatchdogService` (Hohfeld D012, D006):**
-     * Дефектируемое исключение Хофельда (`UESLI_HOHFELD_02_DEFEASIBLE_EXCEPTION_LEDGER` / D012): ежеминутная санитарная жатва просроченных аренд (`@Scheduled(fixedRate = 60000)`), продление аренды при активной сессии Jules, неприкосновенность терминальных задач (`done`) без их воскрешения в очередь.
-   - **Контур III.7. `AccountHealthService` (Varzi D004, Belnap D012, Goldman D010):**
-     * Агрегатное владение Варци (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004): единственный владелец статусов здоровья аккаунтов (`idle`, `api_blocked`, `daily_limited`), строгий запрет на вмешательство в статус занятости `busy` (принадлежащий `ClaimService`).
-     * Решётка Белнапа / закон Эшби (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): дефект фабричного промпта (`REQUEST_REJECTED`) категорически не вменяется в вину аккаунту и не блокирует его.
-     * Каузальная надежность Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): эмпирический расчет времени кулдауна по выборке журнала дефектов (`median + z * stdDev`) без эвристических констант и меж-аккаунтного смешения.
-   - **Контур III.8. `BottleneckAwarePriorityService` & `BottleneckDetectionService` (Dretske D011, Ramsey D005, Goldman D010):**
-     * Телеосемантическая обратная связь Дрецке (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011): прямая связь между сигналами ограничений конвейера и приоритетом задач; алерты об аномалиях аренды несут адрес конкретного аккаунта.
-     * Ожидаемые потери Рамсея (`FRENK_RAMSEY_01_DECISION_EXPECTED_LOSS` / D005): приоритизация переупорядочивает очередь, но строго не порождает решений об остановке, отказе или блокировке задач.
-     * Закон различия факта и ожидания Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): однопроходный сбор статуса пула аккаунтов, немедленная фиксация структурного истощения пула без ожидания таймаута.
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция III («Отправка: задача уходит в работу») замерена и закрыта инженером (299/299 green в коммите `abe23e8`), Секция VII замерена. Настоящая директива охватывает целиком следующий фундаментальный массив конвейера фабрики — **Секцию VIII («Flow & Metrics, Самопроверка, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»)**:
+   - **Контур VIII.1. `FalsificationCycleService` (Varzi D004, Popper D008):**
+     * Мереологическое владение Варци (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004): суточный цикл фальсификации кода и философский цикл; исключительное владение агрегатами `falsification_runs` и `code_integrity_findings`;
+     * Попперовская фальсификация (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008): генерация задач-замен взамен терминально провалившихся без порождения неконтролируемых дубликатов.
+   - **Контур VIII.2. `EvidenceCoherenceService` (Gilbert D007 / Thagard INUS, Goldman D010):**
+     * Релаксация графа свидетельств ECHO Тагарда: независимая калибровка источников свидетельств без завышения уверенности на пустых данных;
+     * Каузальная цепочка Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): строгая изоляция контекста источников и сходимость весов доверия.
+   - **Контур VIII.3. `OpsAuditorService` (Goldman D006, Popper D008):**
+     * Доказательное действие Голдмана (`ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` / D006): аудит операций действует только на независимо подтверждённых фактах рантайма, а не на непроверенных утверждениях LLM;
+     * Трёхкратная валидация предусловий перед выполнением корректирующих действий; отказ при нарушении любого предусловия.
+   - **Контур VIII.4. `PlatformSelfReferenceDetector` (Ryle D002):**
+     * Категориальная демаркация Райла (`DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` / D002): немедленное отсечение внутренних заводских находок и фабричного шума от клиентского продуктового бэклога.
+   - **Контур VIII.5. `FactorySelfHealthService` (Wittgenstein D013):**
+     * Анти-зеркало телеметрии Витгенштейна (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013): непрерывный мониторинг собственного здоровья фабрики (размер базы данных, пулы соединений, очереди, память) с прямой эскалацией в Кайдзен.
+   - **Контур VIII.6. `KaizenService` & `DefectJournalService` (Gilbert D007, Goldman D010):**
+     * Институциональный регистр дефектов: непрерывная фиксация отказов в журнале дефектов (`DefectJournalEntity`);
+     * Жизненный цикл улучшений PDCA со строгой дедупликацией по `(projectId, category, targetComponent)` в окне 2 часов, запрет межпроектных мутаций при стандартизации.
+   - **Контур VIII.7. `FlowMetricsService` & `TaskWaitTimeService` (Popper D008, Goldman D010):**
+     * Фальсификационный баланс закона Литтла (`WIP ≈ Throughput × CycleTime`): выявление расхождений замеров без искажения сырых данных;
+     * Лок уровня абстракции Голдмана (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010): метрики рассчитываются строго в границах `projectId`; время в сессии воркера отделено от времени простоя в очереди.
+   - **Контур VIII.8. `LeverPromotionService` & `MarketResearchService` (Goldman D010, Raz D006):**
+     * Лестница продвижения ТОС: переход из `observe_only` в `soft_gate` только по подтвержденным эмпирическим наблюдениям в `LeverObservationRepository`; немедленное понижение при расхождении;
+     * Исследования рынка: детерминированный выбор несущего проекта без произвольного захвата случайных записей БД.
+   - **Контур VIII.9. `PlannedWorkRecoveryService` (Ryle D002):**
+     * Сохранение идентичности задачи: восстановление упавших задач возвращает ту же самую личность задачи и никогда не создаёт вторичных дубликатов, заявок или веток.
+   - **Контур VIII.10. `ContinuousOrchestrationService` & `OperationalFlowCoreService` & `FlowSpineService` & `OperationalPolicyService` (Wittgenstein D013, Raz D006):**
+     * Деонтический позвоночник потока (`FlowSpineService`): непрерывный контроль инварианта `done_is_not_delivery`;
+     * Деонтические запреты Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006): детерминированный отказ политик `OperationalPolicyService` с регистрацией точной причины отказа (`OperationalPolicyDeniedException`).
+   - **Контур VIII.11. `TrustSnapshotService` (Goldman D010):**
+     * Персистентные снимки доверия: сохранение входных сигналов до момента получения физического подтверждения сдачи/отклонения.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено модифицировать рабочий код сервисов (`src/main/java`) при проходящих тестах!
-   - Механизмы Секции III уже полностью реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
+   - Механизмы Секции VIII уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D012, D004, D007, D011, D005)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D013, D004, D002, D007)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
-  * Попперовская фальсификация: тесты-заслоны обязаны падать при попытке двойного захвата задачи, отправки задачи без проекта, игнорирования истечения аренды или ложного списания здорового аккаунта;
+  * Попперовская фальсификация: арифметическая сверка закона Литтла (`FlowMetricsService`), проверка сходимости базовых контрольных пределов, тесты-заслоны обязаны падать при нарушении инвариантов потока;
 - **`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` & `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:**
-  * Каузальная надежность: сохранение точного контекста отправки (длина промпта, ветка, репозиторий), однопроходный сбор свидетельств об аккаунтах, эмпирический расчет кулдауна по формуле `median + z * stdDev`;
+  * Каузальная надежность: расчет метрик потока и времени ожидания строго в границах `projectId`, персистентные снимки доверия `TrustSnapshotService`, лестница продвижения рычагов `LeverPromotionService`;
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции III при проходящих тестах;**
-  * Программные запреты: запрет холостых HTTP-вызовов при выключенном Jules или отсутствии ключа, запрет отправки занятому воркеру, запрет остановки задач сервисом приоритетов;
-- **`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D012 Truth status ambiguity, Belnap]:**
-  * Многозначные решётки истинности: четырёхзначный префлайт доступности репозиториев, шестизначная классификация ответов API, трёхзначный допуск на ревью (`ADMIT`, `DEFER`, `REJECT`), четырёхзначный статус притязания;
+  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции VIII при проходящих тестах;**
+  * Программные запреты: деонтические отказы `OperationalPolicyService`, блокировка непроверенных действий `OpsAuditorService`;
 - **`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` [D004 Boundary drift, Varzi]:**
-  * Агрегатное владение: `AccountHealthService` не трогает статус занятости `busy`, `PersistentWorkerSessionService` не содержит сетевого транспорта, `BottleneckAwarePriorityService` не пишет в `TaskRepository`;
-- **`UESLI_HOHFELD_03_RIGHTS_DUTIES_MATRIX` & `UESLI_HOHFELD_02_DEFEASIBLE_EXCEPTION_LEDGER` [D006, D012 Hohfeld]:**
-  * Притязание строго ограничено сроком аренды, активная сессия выступает оправданным основанием продления, терминальные задачи защищены от воскрешения в очередь;
-- **`MARGARET_GILBERT_02_JOINT_COMMITMENT_LOCK` [D004 Joint commitment, Gilbert]:**
-  * Запрет локальных фикций cancel: статус отмены синхронизирован с доказанным удалением на стороне внешнего API;
-- **`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` [D011 Teleosemantic drift, Dretske]:**
-  * Сигналы ограничений и аномалий несут точный адрес и семантику возмущения конвейера;
-- **`FRENK_RAMSEY_01_DECISION_EXPECTED_LOSS` [D005 Decision loss, Ramsey]:**
-  * Переупорядочивание очереди минимизирует системные заторы без искусственного голодания и остановок работы.
+  * Мереологическое владение: исключительное право `FalsificationCycleService` на агрегаты прогонов фальсификации, четкие границы оркестрации `ContinuousOrchestrationService`;
+- **`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift, Wittgenstein]:**
+  * Запрет субъективных нарративов: состояние системы оценивается исключительно по физическим метрикам, логам контейнеров и данным БД; публикация свидетельств против собственного мнимого благополучия (`done_is_not_delivery`);
+- **`DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` [D002 Category error, Austin / Ryle]:**
+  * Отсечение фабричного шума от клиентских требований (`PlatformSelfReferenceDetector`), сохранение стабильной личности задачи при восстановлении (`PlannedWorkRecoveryService`);
+- **`MARGARET_GILBERT_04_INSTITUTIONAL_FACT_REGISTER` [D007 Institutional fact, Gilbert]:**
+  * Фиксация институциональных фактов сбоев конвейера в `DefectJournalService` с дедупликацией PDCA в `KaizenService`.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. Провести строгий пакетный замер механизмов Секции III в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
-2. Подтвердить 100% green статус по ключевым классам-заслонам Секции III:
-   - Диспетчеризация и сессии: `JulesDispatchServiceTest`, `JulesDispatchServiceFalsificationTest`, `JulesDispatchServiceLaw4MergeEvidenceTest`, `JulesDispatchServiceTocDbrAdmissionTest`, `ProjectFlowServiceLaw1JulesDispatchTest`, `DispatchAttemptBudgetTest`, `DispatchRefusalObservabilityLaw8Law12Test`;
-   - Внешний API-клиент и жизнь сессий: `JulesApiClientTest`, `JulesApiClientFalsificationTest`, `SessionLifecycleServiceTest`, `SessionLifecycleServiceFalsificationTest`, `PersistentWorkerSessionServiceTest`, `PersistentWorkerSessionServiceFalsificationTest`;
-   - Притязания, аренда и санитария: `ClaimServiceRaceGuardTest`, `ClaimServiceFalsificationTest`, `ClaimResultStatusTruthTableFalsificationTest`, `ClaimRightsDutiesMatrixTest`, `TaskClaimServiceTest`, `TocPriorityClaimTest`, `LeaseWatchdogServiceTest`, `LeaseWatchdogServiceFalsificationTest`;
-   - Здоровье аккаунтов: `AccountHealthServiceTest`, `AccountHealthServiceFalsificationTest`, `AccountHealthServiceLaw14Test`;
-   - Приоритеты и узкие места: `BottleneckAwarePriorityServiceTest`, `BottleneckAwarePriorityServiceFalsificationTest`, `BottleneckDetectionServiceTest`, `BottleneckDetectionServiceFalsificationTest`.
-3. Зафиксировать форму образца и актуализировать статус Секции III в `docs/FACTORY_MECHANISMS.md` (добавить итоговую секцию `### Итог Секции III`, подтверждающую Ступень 4 closed, ideal, 100% green).
+1. Провести строгий пакетный замер механизмов Секции VIII в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
+2. Подтвердить 100% green статус по ключевым классам-заслонам Секции VIII (281 тест):
+   - Фальсификация и когерентность: `FalsificationCycleServiceTest` (28/28), `EvidenceCoherenceServiceTest` (21/21), `EvidenceCoherenceV80TerminationFalsificationTest` (5/5);
+   - Аудит операций и самодиагностика: `OpsAuditorServiceTest` (11/11), `PlatformSelfReferenceDetectorTest` (7/7), `FactorySelfHealthServiceTest` (5/5);
+   - Кайдзен и журнал дефектов: `KaizenServiceTest` (10/10), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5);
+   - Метрики потока и рычаги: `FlowMetricsServiceTest` (4/4), `LeverPromotionServiceTest` (7/7), `LeverPromotionServiceFalsificationTest` (4/4);
+   - Восстановление и оркестрация: `PlannedWorkRecoveryServiceTest` (15/15), `ContinuousOrchestrationServiceTest` (16/16);
+   - Операционный контур и политика: `OperationalFlowCoreServiceTest` (6/6), `OperationalFlowCoreFalsificationTest` (39/39), `OperationalPolicyServiceTest` (17/17), `OperationalPolicyReasonTest` (5/5), `OperationalPolicyDeniedExceptionFalsificationTest` (9/9);
+   - Доверие, правда и позвоночник: `TrustSnapshotServiceTest` (9/9), `OperationalTruthServiceTest` (17/17), `FlowSpineServiceTest` (32/32).
+3. Зафиксировать форму образца и актуализировать статус Секции VIII в `docs/FACTORY_MECHANISMS.md` (подтверждающую Ступень 4 closed, ideal, 281/281 green).
 4. Синхронизировать `docs/ANTIGRAVITY_QUEUE.md`.
 5. Оформить лаконичный семантический коммит фабрики.
