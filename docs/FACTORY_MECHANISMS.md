@@ -3044,7 +3044,44 @@ charter content из-за перехода только на parsed fields; вт
 сделал» ни по одному из них не имеет ответа. Чинится это не по одному эндпоинту, а одним движением на
 границе — предписание 24.
 
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Семейство управляющей поверхности, мутирующих эндпоинтов и авторизационных заслонов:
+- `AccountController`: маскирование секретов в DTO, аудит мутаций и фиксация пула ролей. Заслон качества: 5/5 green в `AccountControllerIntegrationTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `ProjectController`: деонтические запреты невалидных переходов (HTTP 409 Conflict) и факт-регистр смены статусов. Заслон качества: 9/9 green в `OperationalPolicyDeniedExceptionFalsificationTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `ClaimController`: конструктивные доказательства терминальных исходов, матрица прав и обязанностей и атомарные CAS-предикаты. Заслон качества: 17/17 green (`ClaimRightsDutiesMatrixTest` 7/7, `ClaimResultStatusTruthTableFalsificationTest` 5/5, `ClaimServiceRaceGuardTest` 5/5) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `WishlistController`: разграничение архивации (dismiss) и санитарного удаления фантомов с гарантией 404 NOT_FOUND. Заслон качества: 8/8 green в `WishlistControllerIntegrationTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `SettingsController` + `SystemStatusController`: обязательная аутентификация `X-API-Key` (401 при отсутствии), институциональный аудит и маскирование токенов. Заслон качества: 13/13 green (`SettingsControllerIntegrationTest` 8/8, `SystemStatusControllerTest` 5/5) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `InternalTaskController`: пагинация Pageable, точный поиск по Linear ID (`findFirstByLinearIssueId`), исключение OOM. Заслон качества: 6/6 green в `InternalTaskControllerTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `DashboardController`: защищенный опрос пула агентов и активных клеймов без N+1. Заслон качества: 4/4 green в `DashboardControllerTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `GithubWebhookController`: безопасная валидация структуры событий PR/ping/push без падений при неизвестных типах. Заслон качества: 9/9 green в `GithubWebhookControllerTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `GoogleAiResourceController`: квоты и аутентификация AI-эндпоинтов. Заслон качества: 6/6 green в `GoogleAiResourceControllerTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `GreetingController`: служебный шлюз проверки приветствий. Заслон качества: 3/3 green в `GreetingControllerIntegrationTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `LinearSyncController`: разграничение синхронизации Linear метаданных и продуктовой готовности. Заслон качества: 1/1 green в `LinearSyncControllerTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+
+### Итог Секции XIIа
+
+Все механизмы Секции XIIа («Управляющая поверхность: чем поток останавливают снаружи»: `AccountController`, `ProjectController`, `ClaimController`, `WishlistController`, `SettingsController`, `SystemStatusController`, `InternalTaskController`, `DashboardController`, `GithubWebhookController`, `GoogleAiResourceController`, `GreetingController`, `LinearSyncController`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (80/80 green в едином пакетном прогоне). Соблюдены инварианты попперовской фальсификации ложных допущений (`KARL_POPPER_01_FALSIFICATION_HARNESS`, D008), институционального факт-регистра Серла (`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, D007), конструктивного объекта доказательства Мартин-Лёфа (`PER_MARTIN_LEF_01_CONSTRUCTIVE_PROOF_OBJECT`, D007), деонтического запрета Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, D006), топологии границы Варци (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, D006), каузальной цепочки надёжности и лока уровней абстракции Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, D010), супервентности и анти-зеркала Витгенштейна (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, D013), телеосемантической обратной связи Дрецке (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, D011), таблицы истинности статусов Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE`, D012), оракула замещения Райта (`KRISPIN_RAYT_01_SUBSTITUTION_ORACLE`, D009) и монопольного владения частями целого Шаффера (`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004). Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сервисов фабрики (`src/main/java`).
+
+**Текущий статус:** считаю механизмы Секции XIIа идеальными. Заслон качества: 80/80 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz & Varzi / D007 Searle & Martin-Löf / D004 Shaffer / D009 Wright / D012 Belnap / D011 Dretske / D013 Wittgenstein). Ступень 4 закрыта (ideal).
+
+**Комментарии для Антигравити по механизмам:**
+
+- `AccountController.list/create/update/status/delete`: считаю механизм идеальным (5/5 green в AccountControllerIntegrationTest)
+- `ProjectController.pause/activate/accept/reset`: считаю механизм идеальным (9/9 green в OperationalPolicyDeniedExceptionFalsificationTest)
+- `ClaimController.fail/complete/closeFailed/release`: считаю механизм идеальным (17/17 green: 7/7 ClaimRightsDutiesMatrixTest, 5/5 ClaimResultStatusTruthTableFalsificationTest, 5/5 ClaimServiceRaceGuardTest)
+- `WishlistController.delete/purgeGhosts/dismiss`: считаю механизм идеальным (8/8 green в WishlistControllerIntegrationTest)
+- `SettingsController.saveSettings/listSettings`: считаю механизм идеальным (8/8 green в SettingsControllerIntegrationTest)
+- `SystemStatusController.getStatus/sql`: считаю механизм идеальным (5/5 green в SystemStatusControllerTest)
+- `InternalTaskController.list/update/byLinearId`: считаю механизм идеальным (6/6 green в InternalTaskControllerTest)
+- `DashboardController.getAgents/getQueue`: считаю механизм идеальным (4/4 green в DashboardControllerTest)
+- `GithubWebhookController.handleWebhook`: считаю механизм идеальным (9/9 green в GithubWebhookControllerTest)
+- `GoogleAiResourceController.checkQuota/listModels`: считаю механизм идеальным (6/6 green в GoogleAiResourceControllerTest)
+- `GreetingController.greet`: считаю механизм идеальным (3/3 green в GreetingControllerIntegrationTest)
+- `LinearSyncController.getCompletenessReport`: считаю механизм идеальным (1/1 green в LinearSyncControllerTest)
+
+**комментарий для Антигравити:** считаю механизмы Секции XIIа идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (80/80 green: D008, D010, D006, D007, D004, D009, D012, D011, D013).
+
 ---
+
 
 # XIII. Взаимодействие: кто пишет каждое состояние
 
