@@ -361,21 +361,21 @@
 - ~~`VerificationEvidenceGate`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 73/73 green [14/14 gate, 59/59 quality suite], ideal)
 - ~~`BranchGarbageCollectorService`~~ (Закрыто Ступень 4: замер в Docker Maven 19/19 green, ideal)
 - ~~`PrReviewPipelineService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
-- `ClientDeliverableReadinessService`  ← ядро
-- `DeliveryRealityProducerService`  ← ядро
-- `ProductLaunchabilityService`  ← ядро
-- `VerdictLayer`  ← ядро
-- `AcceptanceVerdictLayer`  ← ядро
-- `RuntimeVerdictLayer`  ← ядро
-- `DoctrineVerdictLayer`  ← ядро
-- `InfrastructureVerdictLayer`  ← ядро
-- `SixSigmaVerdictLayer`
-- `JudgmentAgentClient`
-- `FactoryJudgmentService`
-- `DeliveredWorkJudgmentService`  ← ядро
-- `CriteriaEvidenceSelector`  ← ядро
-- `LeverPromotionService`
-- `ProcessControlService`
+- ~~`ClientDeliverableReadinessService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 62/62 green [49 unit, 6 falsification, 7 predicate agreement], ideal)
+- ~~`DeliveryRealityProducerService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 25/25 green [10 carrier channel, 4 category error, 6 2nd order repair, 5 falsification], ideal)
+- ~~`ProductLaunchabilityService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 27/27 green [22 unit, 5 falsification], ideal)
+- ~~`VerdictLayer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 32/32 green [11 reconciliation, 14 gate, 7 falsification], ideal)
+- ~~`AcceptanceVerdictLayer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)
+- ~~`RuntimeVerdictLayer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`DoctrineVerdictLayer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 13/13 green [7 falsification, 6 autonomous observation], ideal)
+- ~~`InfrastructureVerdictLayer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 8/8 green, ideal)
+- ~~`SixSigmaVerdictLayer`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green [7 layer falsification, 11 reconciliation], ideal)
+- ~~`JudgmentAgentClient`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green [6 client, 4 law17], ideal)
+- ~~`FactoryJudgmentService`~~ (Закрыто Ступень 4: замер в Docker Maven 20/20 green [13 unit, 7 falsification], ideal)
+- ~~`DeliveredWorkJudgmentService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 14/14 green [8 unit, 6 falsification], ideal)
+- ~~`CriteriaEvidenceSelector`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green [4 law17, 3 falsification], ideal)
+- ~~`LeverPromotionService`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green [7 unit, 4 falsification], ideal)
+- ~~`ProcessControlService`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green [8 unit, 3 falsification], ideal)
 - ~~`ConstraintIdentificationService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`LaunchabilityConstraintService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
 - ~~`TocSubordinationLever`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)

@@ -1411,12 +1411,12 @@ first and keep these invariants green.
 
 **Свидетельства записи:** `nl -ba src/main/java/com/eneik/production/services/ClientDeliverableReadinessService.java | sed -n "153,205p;309,480p;1350,1425p;1450,1590p"`; `nl -ba src/main/java/com/eneik/production/services/DeliveryRealityProducerService.java | sed -n "136,235p;996,1135p;1136,1240p"`; `nl -ba src/main/java/com/eneik/production/services/runtime/ProductLaunchabilityService.java | sed -n "1,230p;230,390p"`; `nl -ba src/main/java/com/eneik/production/services/ContinuousOrchestrationService.java | sed -n "256,275p"`; `nl -ba src/test/java/com/eneik/production/services/DeliveryPredicateAgreementTest.java | sed -n "1,230p"`; `nl -ba src/test/java/com/eneik/production/services/DeliveryRealityLaw2CarrierChannelTest.java | sed -n "35,180p"`; `nl -ba src/test/java/com/eneik/production/services/runtime/ProductLaunchabilityServiceTest.java | sed -n "100,215p;285,335p;345,415p"`; `grep -nE "FALSIFICATION_HARNESS|TRUTH_STATUS_TABLE|CONVERSATION_MAXIM|CATEGORY_ERROR_SCAN" docs/philosopher-patterns/philosophers/*.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
 
-**Форма: сильная.** Заслонено в `ClientDeliverableReadinessServiceTest` (49/49 green) и `ClientDeliverableReadinessServiceFalsificationTest` (6/6 green, итого 55/55 тестов). Доказаны инварианты:
+**Форма: сильная.** Заслонено в `ClientDeliverableReadinessServiceTest` (49/49 green), `ClientDeliverableReadinessServiceFalsificationTest` (6/6 green) и `DeliveryPredicateAgreementTest` (7/7 green, итого 62/62 тестов). Доказаны инварианты:
 - D002 Austin Category Error Scan: `TaskStatus.done` не равен готовности поставки; завершённая задача не подменяет слияние в `main` с реальным кодом (`falsifyAustinCategoryError_taskDoneWithoutMergeEvidenceIsNotDelivered`, `falsifyAustinCategoryError_unmergedFeatureThreadDoesNotReachMain`).
 - D008 Popper Falsification Harness: запланированный пункт требования клиента не может быть закрыт чужой задачей в том же эпике; замыкание по цепочке ремонта связывает исходный пункт строго через `sourceTaskId` / `originWishlistId` (`falsifyPopperFalsificationHarness_unrelatedMergedTaskInSameEpicCannotFulfillPlannedItem`, `falsifyPopperFalsificationHarness_repairClosureFulfillsFailedPlannedItem`).
 - D012 Popper Truth Status Table: коэффициент готовности рассчитывается на уровне ценности фич (`completeFeatures / totalFeatures`), чётко отделяя полную поставку от частичных задач и вспомогательных спайков/решений (`falsifyPopperTruthStatusTable_featureRatioDistinguishesFullDeliveryFromPartialProgress`, `falsifyPopperTruthStatusTable_auxiliaryOnlyScopeReportsDecompositionWithoutZeroDenominatorError`).
 
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): предикат готовности `computeForProject` непрерывно считывается оркестратором, исключает ложные завершения без кода, удерживает барьер между завершением таски и поставкой клиенту, корректно ведет учет эпиков и цепочек ремонта. Заслон качества: 49/49 в `ClientDeliverableReadinessServiceTest` и 6/6 в `ClientDeliverableReadinessServiceFalsificationTest` (всего 55/55) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ClientDeliverableReadinessService` закрыта.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): предикат готовности `computeForProject` непрерывно считывается оркестратором, исключает ложные завершения без кода, удерживает барьер между завершением таски и поставкой клиенту, корректно ведет учет эпиков и цепочек ремонта. Заслон качества: 49/49 в `ClientDeliverableReadinessServiceTest`, 6/6 в `ClientDeliverableReadinessServiceFalsificationTest` и 7/7 в `DeliveryPredicateAgreementTest` (всего 62/62) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ClientDeliverableReadinessService` закрыта.
 
 ---
 
@@ -1598,11 +1598,13 @@ factory judgment: добавить unjudged transition; `UNAVAILABLE` не до�
 `LeverObservation.java`, `LeverPromotionStateEntity.java`, `V88__lever_promotion_ladder.sql`,
 `V108__invariant_judgment_cursor.sql`, `V122__void_verdicts_reached_without_a_readable_reason.sql`;
 tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictLayerFalsificationTest` (7/7),
-`FactoryJudgmentServiceTest`, `DeliveredWorkJudgmentServiceTest`, `JudgmentAgentClientLaw17Test`, `LeverPromotionServiceTest`.
+`AcceptanceVerdictLayerTest` (7/7), `RuntimeVerdictLayerTest` (6/6), `InfrastructureVerdictLayerTest` (8/8),
+`AutonomousVerdictObservationServiceTest` (6/6), `FactoryJudgmentServiceTest`, `DeliveredWorkJudgmentServiceTest`,
+`JudgmentAgentClientLaw17Test`, `LeverPromotionServiceTest`.
 
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): боевой эндпоинт `/api/projects/a716e82e-f4e2-4486-93bd-33f1e498386e/verdict` возвращает согласованное суждение решётки: `advance=ABSTAIN`, `debt=4`, `refusals=0`, `constraint=runtime`, `judgements_count=20`. Все 20 суждений поступают от зарегистрированных слоев (`infrastructure`: 3 `PERMIT`, `doctrine`: 12 `PERMIT` и 1 `ABSTAIN` [TAG-10], `runtime`: 2 `PERMIT` и 1 `ABSTAIN`, `six-sigma`: 1 `ABSTAIN`, `acceptance`: 1 `ABSTAIN`). Эпистемический долг $D(P)=4$ честно удерживает продвижение без ложной зелени. Заслон качества: 32 теста в решётке суждения (`VerdictReconciliationTest` 11/11, `VerdictGateTest` 14/14, `VerdictLayerFalsificationTest` 7/7) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `VerdictLayer` и решётки суждения закрыта.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): боевой эндпоинт `/api/projects/a716e82e-f4e2-4486-93bd-33f1e498386e/verdict` возвращает согласованное суждение решётки: `advance=ABSTAIN`, `debt=4`, `refusals=0`, `constraint=runtime`, `judgements_count=20`. Все 20 суждений поступают от зарегистрированных слоев (`infrastructure`: 3 `PERMIT`, `doctrine`: 12 `PERMIT` и 1 `ABSTAIN` [TAG-10], `runtime`: 2 `PERMIT` и 1 `ABSTAIN`, `six-sigma`: 1 `ABSTAIN`, `acceptance`: 1 `ABSTAIN`). Эпистемический долг $D(P)=4$ честно удерживает продвижение без ложной зелени. Заслон качества: 59 тестов в решётке и слоях суждения (`VerdictReconciliationTest` 11/11, `VerdictGateTest` 14/14, `VerdictLayerFalsificationTest` 7/7, `AcceptanceVerdictLayerTest` 7/7, `RuntimeVerdictLayerTest` 6/6, `InfrastructureVerdictLayerTest` 8/8, `AutonomousVerdictObservationServiceTest` 6/6) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `VerdictLayer`, `AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer` закрыта.
 
-**Текущий статус:** механизм описан канонически, заслонен 32 тестами решётки суждения и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+**Текущий статус:** семейство описано канонически, заслонено 59 тестами решётки и специализированных слоёв суждения и признано идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
 
 **комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
@@ -1651,6 +1653,25 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 15h, `eneikproductionsys-judgment-proxy-1` UP 3w). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): задачи продукта имеют сохранённые вердикты сдачи (`payload.acceptance_verdict`), механизм вызывается в цикле оркестратора `ContinuousOrchestrationService` под защитой политики `OperationalAction.JUDGE_DELIVERED_WORK`. Заслон качества: 14 тестов (`DeliveredWorkJudgmentServiceTest` 8/8, `DeliveredWorkJudgmentServiceFalsificationTest` 6/6) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `DeliveredWorkJudgmentService` закрыта.
 
 **Текущий статус:** механизм описан канонически, заслонен 14 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
+
+---
+
+### JudgmentAgentClient
+
+**Имена механизма:** `JudgmentAgentClient`, `DeliveredWorkJudgmentService`, `FactoryJudgmentService`, `CriteriaEvidenceSelector`.
+
+**Философский паттерн:**
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` [D008, Popper]: клиент суждения обращается к прокси (`judgment-proxy:8093`) строго для фальсификационных проверок артефактов доставки и перехода инвариантов, не производя холостых запросов.
+- `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010, Goldman]: строгая изоляция сетевого взаимодействия — таймауты, валидация JSON-схемы ответов и демаркация вердиктов без смешения уровней абстракции.
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006, Raz]: отказ прокси транслируется в безопасный часовой откат или статус `UNAVAILABLE` без падения фабрики и без фиктивного подтверждения.
+
+**Форма: сильная.** Заслонено в `JudgmentAgentClientTest` (6/6) и `JudgmentAgentClientLaw17Test` (4/4, итого 10/10 тестов).
+
+*Живое:* замер в рантайме Hetzner (контейнер `judgment-proxy`, UP 11d; `eneikproductionsys-backend-1`, UP 16h). Прокси суждения на порту 8093 детерминированно валидирует запросы, поддерживает теневой аудит (`/shadow/inbox`, `/shadow/verdicts`) и безопасный graceful fallback без смешения уровней абстракции (D009, D017). Заслон качества: 10/10 green в `JudgmentAgentClientTest` (6) и `JudgmentAgentClientLaw17Test` (4) в Docker Maven. Ступень 4 для `JudgmentAgentClient` закрыта, статус: ideal.
+
+**Текущий статус:** механизм описан канонически, заслонен 10 тестами и признан идеальным по текущему source/test contract. Код ядра в этом такте не менялся (работа замером, не правкой).
 
 **комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
