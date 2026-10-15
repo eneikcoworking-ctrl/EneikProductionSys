@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секции X и XXIX (Цех дизайна, дизайн-система, генерация экранов, Stitch и аудит дрифта)
+# Пакетная директива L1/L3 -> L2: Секция XVI (Предписания для L2: архитектурное владение, заслоны истинности, тянущий контур и деонтические запреты)
 
-**Дата:** 2026-10-15 16:15 UTC  
+**Дата:** 2026-10-15 16:26 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,53 +10,58 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секции VII, VIII, XIV и XV (включая коммит `85bbb6b` с 65 тестами green) полностью замерены и закрыты. Настоящая директива охватывает целиком следующий стратегический кластер фабрики — **Секции X и XXIX (Цех дизайна, дизайн-система, генерация экранных артефактов, Stitch и аудит дрифта)**:
-   - **Секция X. Семейство: дизайн-цех, дизайн-система и live drift:**
-     * `DesignShopOrchestrationService` — оркестратор жизненного цикла дизайн-цеха, CAS-захват старта цикла (`V98__design_shop_start_cycle_claim.sql`), координация baseline и review;
-     * `DesignShopCycleRepository` & `DesignShopCycleEntity` — персистентное состояние цикла, хранение `declared_colors` и `declared_fonts`, защита от гонок старта;
-     * `DesignConsistencyAuditService` & `LayoutGeometryAuditService` — кросс-экранная консистентность Жаккара, аудит геометрии и близости элементов (D011, D015);
-     * `DesignSystemFalsificationService` — фальсификатор проектной дизайн-системы, строгая сверка декларированных токенов против сгенерированного DOM (D008, D015);
-     * `DesignDriftMonitorService` — детектор эстетического дрифта живого экрана относительно зафиксированного baseline (D015, D013);
-     * `StrandedDesignCycleSweepService` — уборочный контур зависших дизайн-циклов без блокировки потока;
-     * `VideoAssetService` — генерация и учет видео-артефактов дизайн-цеха.
-   - **Секция XXIX. Цех дизайна: порождение экранов и сверка их с маркой:**
-     * `DesignAssetService` (`generateAsset`, `generateViaStitch`, `auditExistingDrafts`) — синтез экранных артефактов, строгий отбор `mockup.html` с валидным DOM;
-     * `StitchClient` — интеграционный адаптер к сервису генерации экранов Stitch с верификацией контрактов и отсечением ложных артефактов;
-     * Заслоны от подмены (`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009): запрет подмены имплементируемого HTML картинками-заглушками при наличии требования `requireImplementableHtml=true`.
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Предыдущие кластеры (включая Секции X и XXIX с 113 тестами green в коммите `2b655ed`) успешно заверены и закрыты. Настоящая директива охватывает целиком следующий фундаментальный массив фабрики — **Секцию XVI (Предписания для L2: что и как чинить — 59 предписаний: архитектурное владение, заслоны истинности, тянущий контур ТОС, деонтические запреты и заслоны от тихих сбоев)**:
+   - **Контур XVI.1. Архитектурное владение и разделение ответственности (Shaffer D004):**
+     * Пункты 1, 2, 3, 4: монопольное владение переходами состояний заявок (`ProjectFlowService`) и задач (`TechnicalLeadCompiler`, `AutoMergeService`), CAS-заслоны в хранилищах (`compareAndSetStatus`), демаркация ответственности `ProjectFlowService` и `JulesDispatchService`;
+     * Пункт 22: носитель ревью без сессии и защита ёмкости пула аккаунтов.
+   - **Контур XVI.2. Заслоны истинности, категориальные демаркации и защита от ложных находок (Belnap D012, Ryle D002, Austin D002):**
+     * Пункты 9, 14, 42, 43, 44: четырехзначные таблицы истинности Belnap (`LeanValue.undetermined`, `TargetContext.UNDETERMINED`, конъюнкция доступности аккаунтов), защита от подмены «не установлено» утверждением «работа ценна»;
+     * Пункты 10, 16: отсечение ошибок категории (Ryle D002) — неудача фабрики в `RepositoryStackAnalyzer` не становится фактом о заказчике; запрет круга самозаказа (Austin D002, закон 3);
+     * Пункты 18, 19, 20: детекция дубликатов задач (`TaskDuplicateDetector`, `SemanticDuplicateVeto`), отсечение фальшивых причин отказа выбора аккаунта.
+   - **Контур XVI.3. Тянущий контур ТОС, адаптивный сторож и защита связности (Popper D008, Goldman D010, Dretske D011, Pearl D013):**
+     * Пункты 4, 6, 34, 35, 38, 39, 40, 41: адаптивный динамический сторож `TocSentinelService` (чтение кэшированного снимка `getDbrStatus` без паразитных записей, триггер частоты по времени шагов), выметающий обход и верёвка ТОС;
+     * Пункт 11: асимметричный рост доверия в `OperationalTruthService` (Goldman D010, старт с `0.0`/`UNDETERMINED`, рост строго по подтвержденным свидетельствам);
+     * Пункты 12, 13: метрики качества, разделение исходов (passed/failed/undetermined).
+   - **Контур XVI.4. Деонтические запреты и изоляция границ (Raz D006, Varzi D006):**
+     * Пункты 24, 27, 59: императивная проверка полномочий на изменяющих входах `InternalGeminiObserverController` и `GoogleAiResourceController`, исключение предположения «internal значит авторизован»;
+     * Пункт 15: строгая валидация Flyway-миграций (`validate-on-migrate=true`, отмена `repair()` на старте).
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено трогать рабочий код сервисов и тестов при проходящих тестах!
-   - Механизмы обладают сильной формой. Любая попытка несанкционированного «рефакторинга» работающего сервисного кода признается нарушением регламента автономии.
+   - Все 59 предписаний Секции XVI уже материализованы в коде и архитектуре фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D015)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D012, D002)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
-  * Фальсификация экранных артефактов в `DesignSystemFalsificationServiceTest` и `DesignExcellenceGateFalsificationTest`: экраны фальсифицируются против заявленных маркеров марки (`declared_colors`, `declared_fonts`). При наличии незадекларированных стилей или отсутствии чистого HTML артефакт безусловно отклоняется без ложной зелени.
+  * Фальсификация архитектурных инвариантов и схемы БД: `FlywayMigrationValidationTest`, `WishlistServiceFalsificationTest`, `WishlistContentSimilarityMatcherFalsificationTest`. Заслоны обязаны падать при нарушении целостности контрактов или семантическом дрифте.
 - **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
-  * Лок уровней абстракции между токенами дизайн-системы и материализованными элементами разметки: цвет и типографика сохраняют неразрывную цепочку от `DesignShopCycleEntity` до скоммиченного в GitHub файла `mockup.html`.
-  * Надежность цепочки прогона в `DesignImplementationLoopClosureLaw3Test`: переход от дизайн-артефакта к реализации в ветке строго прослеживается.
+  * Лок уровней абстракции между намерениями, задачами и персистентными снимками (`contentKey`, `TaskEntity`, `WishlistItemEntity`);
+  * Асимметричная динамика доверия (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`): `OperationalTruthService` начинает с `UNDETERMINED` и прирастает только по цепочке валидированных свидетельств.
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный запрет инженеру L2 на модификацию рабочего кода сервисов Секций X и XXIX при проходящих тестах;**
-  * Исключающий деонтический запрет подмены: `mockup.png` не может подменять `mockup.html` (`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009);
-  * CAS-блокировка старта цикла (`start_cycle_claimed_at`): запрет конкурентного захвата одного и того же дизайн-цикла параллельными воркерами.
-- **`RUT_BARKAN_MARKUS_10_TOKEN_TRACE_UNITY` & `LYUDVIG_VITGENSHTEYN_15_CROSS_SCREEN_JACCARD_GATE` [D015 Aesthetic drift]:**
-  * Единство следа токенов: вычисление отношения покрытия заявленных токенов над фактическими стилями;
-  * Кросс-экранная консистентность Жаккара: генерация соседних экранов одного проекта обязана оставаться в метрическом ядре дизайн-системы проекта.
+  * **Императивный запрет инженеру L2 на модификацию рабочего кода сервисов Секции XVI при проходящих тестах;**
+  * Деонтический запрет несанкционированного доступа: изменяющие операции `InternalGeminiObserverController` и `GoogleAiResourceController` защищены структурными авторизационными барьерами;
+  * CAS-запрет гонок: исключение множественных параллельных писателей в состояние задач и заявок.
+- **`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D012 Belnap] & `GILBERT_RAYL_02_CATEGORY_ERROR_SCAN` [D002 Ryle]:**
+  * Многозначная логика: отсечение ложного бинаризма через явный статус `undetermined` в `LeanValue` и `TargetContext`;
+  * Устранение категориальных ошибок: недоступность инструмента не приравнивается к дефекту заказчика.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
 1. Провести строгий замер целостности механизмов в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
-2. Подтвердить 100% green статус по всем 12 классам-заслонам Секций X и XXIX (100 тестов):
-   - `DesignShopOrchestrationServiceTest`, `DesignShopOrchestrationServiceLaw15Test`;
-   - `DesignAssetServiceTest`, `DesignConsistencyAuditServiceTest`, `DesignSystemFalsificationServiceTest`;
-   - `DesignDriftMonitorServiceTest`, `StrandedDesignCycleSweepServiceTest`, `StitchClientTest`;
-   - `DesignImplementationLoopClosureLaw3Test`, `DesignExcellenceGateTest`, `DesignExcellenceGateFalsificationTest`;
-   - `DesignShopCycleRepositoryIntegrationTest`.
-3. Зафиксировать форму образца и актуализировать строки `*Живое:*` для Секций X и XXIX в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal).
+2. Подтвердить 100% green статус по ключевым классам-заслонам Секции XVI:
+   - `TocSentinelServiceTest`, `TocSentinelControllerTest`;
+   - `LeanValueTest`, `TargetContextTest`;
+   - `RepositoryStackAnalyzerTest`, `OperationalTruthServiceTest`;
+   - `TaskDuplicateDetectorTest`, `SemanticDuplicateVetoTest`;
+   - `WishlistControllerIntegrationTest`, `WishlistServiceFalsificationTest`;
+   - `WishlistContentSimilarityMatcherTest`, `WishlistSimilarityTest`;
+   - `InternalGeminiObserverControllerTest`, `InternalGeminiObserverSecurityIntegrationTest`, `GeminiObserverActionServiceTest`;
+   - `SettingsControllerIntegrationTest`, `SystemSettingsServiceTest`.
+3. Зафиксировать форму образца и актуализировать статус Секции XVI в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal).
 4. Оформить лаконичный семантический коммит фабрики.
 5. Обновить `docs/reports/PROGRAMMER_STATE.md` (до 20 строк).
