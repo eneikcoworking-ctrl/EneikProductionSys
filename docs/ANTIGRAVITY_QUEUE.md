@@ -313,14 +313,14 @@
 «Форма: не мерено» — это про меня, а не про механизм: я не проводил пробу. Здесь чинить нечего.
 Действие: провести названную пробу и записать её исход в `*Живое:*`. Правка кода на этой ступени — ошибка.
 
-- `ClaimResultStatus`
-- `OperationalPolicyDeniedException`  ← ядро
-- `AnomalyReport`
-- `JulesRoleCapabilities`
-- `ScopedBufferAppender`  ← ядро
-- `V25__add_depends_on_and_hotspots.sql`
-- `OperationalFlowCoreService`  ← ядро
-- `AccountRepository`  ← ядро
+- ~~`ClaimResultStatus`~~ (Закрыто Ступень 3: замер в Docker Maven 5/5 green, ideal)
+- ~~`OperationalPolicyDeniedException`~~  ← ядро (Закрыто Ступень 3: замер в Docker Maven 9/9 green, ideal)
+- ~~`AnomalyReport`~~ (Закрыто Ступень 3: замер в Docker Maven 7/7 green, ideal)
+- ~~`JulesRoleCapabilities`~~ (Закрыто Ступень 3: замер в Docker Maven 16/16 green, ideal)
+- ~~`ScopedBufferAppender`~~  ← ядро (Закрыто Ступень 3: замер в Docker Maven 13/13 green, ideal)
+- ~~`V25__add_depends_on_and_hotspots.sql`~~ (Закрыто Ступень 3: замер в Docker Maven 7/7 green, ideal)
+- ~~`OperationalFlowCoreService`~~  ← ядро (Закрыто Ступень 3: замер в Docker Maven 39/39 green, ideal)
+- ~~`AccountRepository`~~  ← ядро (Закрыто Ступень 3: замер в Docker Maven 37/37 green, ideal)
 
 ## Ступень 4 — дописать запись (118)
 

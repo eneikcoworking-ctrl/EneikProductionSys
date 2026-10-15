@@ -1,13 +1,13 @@
-# Такт L2: Ведущий инженер (2026-10-15 10:47 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 11:05 UTC)
 
-1. Фиксация Ступени 4 (ФИНАЛ): Пакетный замер Секций XIX, XX, XXI, XXIб, XXIIв, XXIV, XXXVIII (пункты 434–448) — D008 Popper, D010 Goldman, D006 Raz. Ступень 4 фабрики завершена на 100%:
-   - Исходный код сервисов фабрики (`src/main`) сохранен нерушимым без единой строки правок согласно догмату Ступени 4 («работа замером, не правкой»).
-   - Замерены механизмы: `launcher.py` (ядро, 434), `server.js` (ядро, 435), `PredictionService.py` (436), `ContextChunkRepository` (437), `TaskEntity` (438), `JulesSessionEntity` (439), `EvidenceNodeEntity` (ядро, 440), `JulesConfigEntity` (441), `PrivacyFilter` (ядро, 442), `AgencyApplication` (443), `TocToken` (444), `WishlistItemStatus` (445), `V99__task_conflict_preserved_branch.sql` (ядро, 446), `audit_pr.py` (447), `VideoAssetService` (448).
-2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g и pytest):
-   - 186/186 green в Maven в один проход: `ClientRuntimeObservabilityServiceTest` (29), `ObservationHostingDemarcationLaw26Test` (3), `ProductCapabilityServiceTest` (18), `JudgmentAgentClientTest` (6), `JudgmentAgentClientLaw17Test` (4), `MLPredictionServiceClientTest` (9), `ContextChunkHashAndFileScopeConflictFalsificationTest` (10), `TaskEntityLaw20Test` (6), `TaskEntityLaw1CarrierTest` (5), `JulesDispatchServiceFalsificationTest` (6), `SessionLifecycleServiceTest` (8), `EvidenceCoherenceServiceTest` (21), `EvidenceCoherenceV80TerminationFalsificationTest` (5), `SystemSettingsServiceTest` (13), `TocOptimizerTest` (7), `TocSentinelServiceTest` (18), `WishlistServiceFalsificationTest` (6), `PrivacyFilterTest` (2), `RoleCapabilityLoaderTest` (4), `GoogleAiResourceControllerTest` (6).
-   - Python: 10/10 green в `tests/test_append_role_logic.py`, 1720 паттернов и 13 хартий верифицировано в `generate_philosopher_patterns.py --verify`.
+1. Пакетный замер Ступени 3 («Провести пробу, кода не менять» — 8 механизмов ядра):
+   - Исходный код сервисов фабрики (`src/main`) сохранен нерушимым без единой строки правок согласно догмату («работа замером, не правкой»).
+   - Замерены механизмы: `ClaimResultStatus` (5), `OperationalPolicyDeniedException` (ядро, 9), `AnomalyReport` (7), `JulesRoleCapabilities` (16), `ScopedBufferAppender` (ядро, 13), `V25__add_depends_on_and_hotspots.sql` (7), `OperationalFlowCoreService` (ядро, 39), `AccountRepository` (ядро, 37).
+2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
+   - 133/133 green в Maven в один пакетный проход: `ClaimResultStatusTruthTableFalsificationTest` (5), `OperationalPolicyDeniedExceptionFalsificationTest` (9), `AnomalyReportFalsificationTest` (7), `JulesRoleCapabilitiesFalsificationTest` (16), `ScopedBufferAppenderFalsificationTest` (13), `V25MigrationFalsificationTest` (7), `OperationalFlowCoreFalsificationTest` (39), `AccountRepositoryFalsificationTest` (8), `AccountRepositoryIntegrationTest` (8), `AccountSelectionFairnessTest` (5), `GeneralPoolAdmissionCoherenceIntegrationTest` (12), `ProjectFlowServiceLaw1JulesDispatchTest` (4).
+   - Подтверждены инварианты Popper D008 (фальсификация заслонов), Goldman D010 (изоляция уровней абстракции), Raz D006 (деонтический запрет как исполняемый код).
 3. Документация и очередь:
-   - В `docs/FACTORY_MECHANISMS.md` внесены записи `*Живое:*` и подтверждение статуса `ideal` для всех 15 механизмов (пункты 434–448).
-   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты пункты 434–448. Ступень 4 фабрики полностью закрыта.
+   - В `docs/FACTORY_MECHANISMS.md` внесены записи `*Живое:*` и подтвержден статус `ideal` для всех 8 механизмов.
+   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты все 8 пунктов Ступени 3. Ступень 3 фабрики закрыта на 100%.
 4. Ресурсы и регламент:
    - Таймеры schedule не вызывались согласно императивной директиве, завершение штатное. Изоляция в Docker Maven с лимитом `-m 2g`.
