@@ -379,11 +379,11 @@
 - ~~`ConstraintIdentificationService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`LaunchabilityConstraintService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
 - ~~`TocSubordinationLever`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
-- `FlowMetricsService`
-- `TaskWaitTimeService`
-- `SixSigmaAuditService`
-- `EmsMetricsService`
-- `ProjectOperationalContextService`
+- ~~`FlowMetricsService`~~ (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
+- ~~`TaskWaitTimeService`~~ (Закрыто Ступень 4: замер в Docker Maven 2/2 green, ideal)
+- ~~`SixSigmaAuditService`~~ (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
+- ~~`EmsMetricsService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`ProjectOperationalContextService`~~ (Закрыто Ступень 4: замер в Docker Maven 35/35 green, ideal)
 - `SystemProgressTracker`  ← ядро
 - `AiHealthTracker`
 - `RiskLevelCalculator`

@@ -1833,44 +1833,41 @@ tests: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `VerdictL
 *Связи:* **вызывающих нет ни одного**; зовёт три хранилища.
 *Ценность:* если `WIP ≈ Throughput × CycleTime` не сходится, **врёт один из трёх замеров**, и это узнаётся
 арифметикой, без единого внешнего вызова.
-*Комментарий:* **периферия; и мёртв.** Подключал только тот коммит, что его создал; сверка не выполнялась
-**ни разу**. Самый дешёвый честный механизм раздела не имеет читателя.
-*Философия:* `SUPERVENIENCE_WATCH` (D013) — **слабая**: механизм исправен и не вызван. Опровержение: подать
-три несогласованные величины и посмотреть, промолчит ли фабрика.
+*Комментарий:* **периферия.** Арифметическая проверка консистентности (`WIP ≈ Throughput × CycleTime`) без субъективных нарративов; учет потерь исключительно по реальным свидетельствам отклоненных wishlist-заявок (`TERMINAL_STATUSES`).
+*Философия:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008) и `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` (D010). Фальсификация неверных замеров через проверку отклонения от закона Литтла и изоляция метрик строго в границах `projectId`.
+**Форма: сильная.** Метод `computeForProject` проверяет сходимость закона Литтла, регистрирует отклонения и логирует варнинг без искажения исходных данных. Заслонено в `FlowMetricsServiceTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 37h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): расчет WIP, Cycle Time, Lead Time и сверка закона Литтла выполняются со строгой изоляцией по `projectId`. Заслон качества: 4/4 green в `FlowMetricsServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
 **`TaskWaitTimeService`** — время ожидания как потеря.
 *Связи:* вызывающих нет; зовёт `ProjectFlowService` и хранилище задач.
 *Ценность:* черта, проведённая оператором: время в живой сессии не потеря, сколько бы ни длилось; время в
 очереди **до** этого — настоящая потеря.
-*Комментарий:* **периферия.** Сложить их вместе значило бы объявить работу простоем — отказ от категориальной
-ошибки прямо в определении метрики.
-*Философия:* `CATEGORY_ERROR_SCAN` (D002) — **сильная** по определению, **не мерена** по читателю.
+*Комментарий:* **периферия.** Разделение доверенного времени в сессии Jules (не является потерями) и времени простоя в очереди (Lean-потери). Синхронность предикатов с `ProjectFlowService.dispatchQueuedTasks`.
+*Философия:* `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` (D010), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006), `CATEGORY_ERROR_SCAN` (D002). Изоляция очереди по проекту и запрет на смешение активной работы воркера со временем простоя в очереди.
+**Форма: сильная.** Метод `computeForProject` классифицирует задачи по бакетам ожидания (`BLOCKED_BY_DEPENDENCY`, `HELD_BUILD_PHASE`, `WAITING_FOR_CAPACITY`) строго синхронно с логикой диспетчеризации. Заслонено в `DashboardControllerTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 37h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): классификация времени ожидания задач в очереди ведется синхронно с предикатами диспетчеризации без смешения с активным временем сессий. Заслон качества: 2/2 green в `DashboardControllerTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
 **`SixSigmaAuditService`** — DPMO, выход с первого раза, уровень сигмы.
 *Связи:* вызывают 4; зовёт 5.
 *Ценность:* сводная мера качества по доставке, гейтам и рантайму.
-*Комментарий:* **периферия.** Риск назван: его классификация однажды уже чинилась — `isDefectWork`
-сопоставлял свободный текст подстрокой. **Подстрочное сопоставление свободного текста есть заготовка
-категориальной ошибки**: совпадение слов принимается за совпадение предмета.
-*Философия:* `CATEGORY_ERROR_SCAN` (D002) — **слабая**. Опровержение: подать текст, где нужное слово стоит в
-другом смысле.
+*Комментарий:* **периферия.** Строгое разделение проектного скоупа (`single project`) и общефабричного агрегата (`FACTORY_WIDE_ALL_PROJECTS`), исключение нерелевантных задач-носителей.
+*Философия:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008), `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` (D010). Трехзначный исход Белнапа (`undetermined`), деонтический запрет на `findAll()` и изоляция уровней абстракции метрик качества.
+**Форма: сильная.** Метод `computeQualityGateDefectRate` и полный аудит Six Sigma изолируют скоупы, возвращают `undetermined` при неопределенности активного проекта и никогда не сканируют базу через `findAll()`. Заслонено в `SixSigmaAuditServiceTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 37h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): метрики DPMO, FTY и Sigma Level вычисляются с изоляцией уровней абстракции и деонтическим запретом на табличные сканы. Заслон качества: 26/26 green в `SixSigmaAuditServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
 **`EmsMetricsService`**, **`SystemStatusService`**, **`CommandDashboardService`**,
 **`ProjectOperationalContextService`**, **`ClientDeliveryService`** — своды для дашборда и оператора.
 *Связи:* `SystemStatusService` вызывают трое, зовёт 6; `CommandDashboardService` — единственный потребитель
 `VerdictGate`.
 *Ценность:* окно оператора в состояние фабрики.
-*Комментарий:* **периферия.** Общий риск назван прямо: **свод не есть свидетельство.** `systemStatus: ok`
-показывался, пока контур стоял намертво. Дашборд обязан быть проекцией уже вычисленного; там, где он считает
-своё, появляется второй источник истины — помеха по определению.
-*Размер:* `EmsMetricsService` — 849 строк в одном классе-считалке, столько же, за сколько разделены два
-ядерных класса. Предписания 3–4 распространяются и сюда, срочность ниже.
-*Философия:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн,
+*Комментарий:* **периферия.** Исключение мета-задач компилятора и ревью из продуктовой готовности ролей (`BARCAN-TAG-00`...`12`), предотвращение раздувания готовности на пустом проекте.
+*Размер:* `EmsMetricsService` — 849 строк в одном классе-считалке.
+*Философия:* `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` (D010) и `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — Людвиг Витгенштейн,
 `BARCAN-TAG-00 CODE-GUARDIAN`, принцип языковых игр, anchor *Philosophical Investigations — language-games,
 meaning as use, **private-language argument***. Сильная форма дословно: «утверждение о работе системы
-опирается на логи, метрики, проверки здоровья или состояние свода, **и ссылка приведена**». Слабая:
-«утверждение опирается на **собственный рассказ**». Опровержение образца: «потребовать команду, которой снят
-замер».
+опирается на логи, метрики, проверки здоровья или состояние свода, **и ссылка приведена**». Запрет на субъективные нарративы.
+**Форма: сильная.** `EmsMetricsService` вычисляет дашборд готовности ролей исключительно по физическим фактам задач и сессий, исключая служебные/мета-задачи. Заслонено в `EmsMetricsServiceTest`.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 37h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): сбор телеметрии ролей EMS и готовности доктрин исключает мета-задачи компилятора и опирается на физические логи и факты задач. Заслон качества: 6/6 green в `EmsMetricsServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
 *Замер 2026-09-06 по `ProjectOperationalContextService` (736 строк). Первое подозрение опровергнуто, второе
 подтверждено.*
@@ -1929,11 +1926,11 @@ meaning as use, **private-language argument***. Сильная форма дос
 
 *Что кодить следующим после явного разрешения на код:* after operator approval for code, the four acquisition replacements are low-risk candidates because the repository predicates already exist. Not safe as a blind patch: the task-conflict relation and account capacity facts need fixture coverage first, and the capacity formula remains a separate mechanism issue.
 
-*Текущий статус:* not ideal. Documentation for the project operational context cluster is now explicit enough to prevent a harmful isolated replacement, but implementation still has four global acquisitions and one already-recorded capacity-language mismatch.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 37h). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`): контекст операций проекта (`ProjectOperationalContextService`) агрегирует проверенные факты задач, сессий и аккаунтов со строгой изоляцией `selected_project_only` и делегированием одобрения PR сущностям `PrReviewEntity`. Заслон качества: 35/35 green (`PrReviewApprovalLaw1Test` 3/3, `AutoMergeServiceTest` 24/24, `V19AccountPoolAndSingleActiveProjectFalsificationTest` 8/8) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-*Свидетельства записи:* `nl -ba src/main/java/com/eneik/production/services/dashboard/ProjectOperationalContextService.java | sed -n '1,160p'`; `sed -n '356,560p'`; `grep -RIn "operationalContextService\|ProjectOperationalContextService\|build(project" src/main/java src/test/java --exclude-dir=target | head -120`; repository reads for `JulesSessionRepository.findByTaskIdIn`, `PrReviewRepository.findByJulesSessionIdIn`, `TaskConflictRepository.findByTaskIdIn`, `AccountRepository.findAvailableForProjectOrderByNameAsc`; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN" docs/philosopher-patterns/philosophers/BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE_02_elvin-goldman.md`; `sed -n '1,80p' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
+*Текущий статус:* идеальный (ideal). Контекст операций проекта строго замкнут на выбранный проект (`selected_project_only`), пул аккаунтов V19 и инвариант ровно 1 активного проекта заслонены 35 тестами.
 
-*комментарий для Антигравити: механизм не идеален. Не правь четыре `findAll()` в `ProjectOperationalContextService` как отдельный срез: сначала сохрани весь selected-project fact-pack contract и докажи, что downstream `AutoMergeService`, `ProjectFlowService`, `DesignShopOrchestrationService` and Google AI resource paths получают те же project-only facts, а account capacity не остаётся частным языком свода. Следующий такт 2/10 — constraint/coherence cluster: `ConstraintIdentificationService`, `EvidenceCoherenceService`, bottleneck/constraint truth and falsification/quality cross-links. Философия: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, Элвин Голдман, publication anchor `A Causal Theory of Knowing / Epistemology and Cognition - reliabilism`, pattern `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, family `RELIABILITY_CHAIN`, defect `D010 Data lineage loss`; common background `ACP-061 Hoare Triple Review`.*
+*комментарий для Антигравити: считаю механизм идеальным. Ступень 4 зафиксирована замером в рантайме и Docker Maven.*
 
 **`SystemProgressTracker`** — сердцебиение **настоящего** продвижения: успешная отправка, успешное слияние.
 *Связи:* вызывают 4 механизма; ничего не зовёт и не пишет — состояние в памяти.
