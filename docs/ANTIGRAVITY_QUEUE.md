@@ -258,6 +258,8 @@
 
 **Закрыто (Пакетный замер Секций XXII и XXIII):** Все механизмы Секций XXII и XXIII («Миграции: запреты, которые исполняет база» и «Живой замер фабрики, 7 сентября 2026»: `FlywayMigrationValidationTest`, `V137 CompilerTaskIdentity`, `V132 AgencySchema`, `V25 DependsOnHotspots`, `V19 AccountPool`, `V58/V111 ObserverDecommission`, `V80 CoherenceRuns`, `V21/V62 ContextChunkConflict`, `V15 ProjectFinalReport`, `V100/V92/FlowSpineService ClientAcceptance`, `ClaimServiceRaceGuard`, `ProcessControlService`, `Stage5ProtectedInvariants`, живая телеметрия рантайма и хоста) подтверждены и заверены в едином пакетном прогоне в Docker Maven (111/111 green + 33/33 green aux). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер Секций XXIV и XXV):** Все механизмы Секции XXIV («Скрипты: инструменты, которые запускает рука») и Секции XXV («Позвоночник потока: чем фабрика отвечает, жив ли поток»: `generate_philosopher_patterns.py`, `append_role_logic.py`, `audit_pr.py`, `mock_test_runner.py`, ручная оснастка оператора `deploy.sh`/`linear_sync.py`/`linear_webhook.py`/`check_system_drift.ps1`/`generate_report.py`/`reset_project_data.sql`/`scripts/modules/*`, `FlowSpineService`, `OperationalFlowCoreService`, `SystemStatusService`, `SystemSettingsService`, `SettingsController`, `FlowSpineController`, `OperationalFlowCoreController`, `TocSentinelController`, `TocExecutionGraph`) подтверждены и заверены в едином пакетном прогоне в Docker Maven и Python unittest (169/169 green: 149/149 green в Docker Maven и 20/20 green в Python unittest). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -275,7 +277,7 @@
 
 - ~~`V100__client_acceptance_traversals.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 32/32 green в FlowSpineServiceTest, ideal)
 - ~~`generate_philosopher_patterns.py`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green в PhilosopherPatternCorpusConsistencyTest, ideal)
-- `SystemStatusService`  ← ядро
+- ~~`SystemStatusService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 22/22 green в SystemStatusServiceTest, 5/5 green в SystemStatusControllerTest, ideal)
 - ~~`OperationalTruthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
 - ~~`DesignAssetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
 - ~~`MLPredictionServiceClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green в MLPredictionServiceClientTest, ideal)
