@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Ступень 4 (Семейства III и IV: Диспетчеризация Jules, воркеры, ревью, гейты качества и автослияние)
+# Пакетная директива L1/L3 -> L2: Ступень 4 (Секции V и VI: Свидетельство доставки, решётка суждения, опровержения, рычаги и контроль процессов)
 
-**Дата:** 2026-10-15 11:58 UTC  
+**Дата:** 2026-10-15 12:12 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,25 +10,24 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Настоящая директива охватывает 16 механизмов Ступени 4 `docs/ANTIGRAVITY_QUEUE.md` (Семейства III и IV `docs/FACTORY_MECHANISMS.md`):
-   - **Семейство III (Отправка: задача уходит в работу — Jules, сессии, воркеры, клеймы и здоровье):**
-     * `JulesDispatchService` (ядро)
-     * `JulesApiClient` (ядро)
-     * `SessionLifecycleService` (ядро)
-     * `PersistentWorkerSessionService` (ядро)
-     * `ClaimService` (ядро)
-     * `LeaseWatchdogService` (ядро)
-     * `AccountHealthService` (ядро)
-   - **Семейство IV (Ревью, гейты качества, слияние и очистка веток):**
-     * `AutoMergeService` (ядро)
-     * `GitHubPullRequestService` (ядро)
-     * `GitHubApiBudgetService` (ядро)
-     * `GithubAccessService` (ядро)
-     * `CodeChangeClassifier` (ядро)
-     * `GateOrchestrator` (ядро)
-     * `VerificationEvidenceGate` (ядро) [включая `GateCheck`/`BaseQualityGate.*`, `BackendContractGate`, `DesignExcellenceGate`, `EpistemicLayerInvariantGate`]
-     * `BranchGarbageCollectorService` (ядро)
-     * `PrReviewPipelineService` (ядро)
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Настоящая директива охватывает 15 механизмов Ступени 4 `docs/ANTIGRAVITY_QUEUE.md` (Секции V и VI `docs/FACTORY_MECHANISMS.md`), финализируя Ступень 4:
+   - **Секция V: Свидетельство доставки (Delivery Reality & Launchability):**
+     * `ClientDeliverableReadinessService` (ядро)
+     * `DeliveryRealityProducerService` (ядро)
+     * `ProductLaunchabilityService` (ядро)
+   - **Секция VI: Решётка суждения, слой опровержений, продвижение рычагов и контроль процессов:**
+     * `VerdictLayer` (ядро)
+     * `AcceptanceVerdictLayer` (ядро)
+     * `RuntimeVerdictLayer` (ядро)
+     * `DoctrineVerdictLayer` (ядро)
+     * `InfrastructureVerdictLayer` (ядро)
+     * `SixSigmaVerdictLayer`
+     * `JudgmentAgentClient`
+     * `FactoryJudgmentService`
+     * `DeliveredWorkJudgmentService` (ядро)
+     * `CriteriaEvidenceSelector` (ядро)
+     * `LeverPromotionService`
+     * `ProcessControlService`
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ:** Запрещено трогать рабочий код при проходящих тестах!
@@ -39,79 +38,52 @@
 
 ## 2. Философский базис RAG-корпуса (D008, D010, D006)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:** Принцип фальсификации заслонов качества:
-  * `GateOrchestrator`: исключение порока квантификации над пустым множеством (`allMatch` на 0 проверок); вердикт несет строгий знаменатель `applicableChecksByStage`, а нулевой знаменатель переводит проверку поставки в `isDeliveryVerificationAbsent`;
-  * `AutoMergeService`: слияние требует реального доказательства прохождения гейтов и авторизации политики (`MERGE_PR`); внешне закрытые PR (`closed_unmerged`) терминально гасятся навсегда, исключая 405-ретраи;
-  * `GitHubPullRequestService`: проверка ветки `branchExists` требует физического HTTP 404 для констатации отсутствия; `evaluateCheckRuns` требует реальных завершенных проверок CI;
-  * `JulesApiClient`: четырехзначный префлайт доступности источников (`SourceAvailability: VISIBLE, MISSING, UNKNOWN`), исключающий отправку сессий в невидимые репозитории.
-- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:** Лок уровней абстракции и надежность цепочки происхождения (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`):
-  * Строгое разделение уровней: сервисы сетевого транспорта (`JulesApiClient`, `GitHubPullRequestService`) изолированы от логики агрегатного учета (`PersistentWorkerSessionService`, `AutoMergeService`);
-  * Сервис постоянных воркеров `PersistentWorkerSessionService` не содержит сетевых зависимостей и обращений к `JulesApiClient`;
-  * Расчет кулдауна восстановления аккаунтов `AccountHealthService` (`median + z * stdDev`) выполняется строго по собственной истории без меж-аккаунтного загрязнения;
-  * Сохранение нерушимого институционального следа аудита в `task_gate_logs` и `github_access_status`;
-  * Кеширование снимков PR (`PullRequestSnapshot`, TTL 20с) для устранения внутритактового дрифта.
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:** Деонтический запрет как исключающая причина (`exclusionary reason`) и исполняемый код:
-  * **Императивный запрет инженеру L2 на модификацию рабочего кода сервисов отправки, ревью и слияния при проходящих тестах;**
-  * Запрет отправки задач с неопределенным контекстом (`TargetContext.UNDETERMINED`) в `JulesDispatchService`;
-  * Запрет выполнения исходящих сетевых вызовов при отключенной интеграции (`jules_enabled=false`, `github_enabled=false`) или пустом токене;
-  * Запрет записи служебных артефактов фабрики (`.eneik/*`, `_temp_submit*.sh`) в ветки продукта (`CodeChangeClassifier`, Закон 2);
-  * Запрет слияния PR при отказе операционной политики `OperationalPolicyService.authorize(MERGE_PR)`.
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` / `KARL_POPPER_03_TRUTH_STATUS_TABLE` [D008 False green, D012 Policy contradiction, Popper]:**
+  * Трехзначная решетка истины: `PERMIT`, `WITHHOLD`, `ABSTAIN`. Отсутствие свидетельств переводится строго в воздержание (`ABSTAIN`) или удержание (`WITHHOLD`), но никогда в ложное разрешение (`PERMIT`).
+  * `VerdictReconciliation`: монотонное сведение слоев суждения — добавление нового слоя может только сохранить или сузить разрешение, но не расширить его поверх отказов.
+  * `ProductLaunchabilityService` и `ClientDeliverableReadinessService`: фальсификационный заслон доставки исключает подмену реальной ценности формальным прохождением тестов или фиктивными фронтенд-записями.
+- **`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:**
+  * Надежная цепочка происхождения: доверие к готовности поставки опирается на верифицируемую цепочку PR, сессий и гейтов качества.
+  * Лок уровней абстракции: независимость пяти слоев суждения (`AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`). Ни один слой не подменяет факты другого.
+  * `CriteriaEvidenceSelector`: изоляция контекста суждения внешнего агента — доставка только релевантных критериев и доказательств без шума и информационного переполнения.
+  * `LeverPromotionService` и `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER`: лестница доверия рычагов продвигается строго на основании подтвержденного согласия с эмпирическим исходом.
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
+  * **Императивный запрет инженеру L2 на модификацию рабочего кода сервисов доставки, суждения и контроля процессов при проходящих тестах;**
+  * Деонтический запрет прямого вмешательства в код клиента фабрикой: выявленные пробелы транслируются исключительно в дедуплицированные заявки вишлиста через компилятор;
+  * Запрет `VerdictGate` на выдачу разрешений на действия (`ActionProhibition`), если реконсиляция выявила удержание или критический долг;
+  * Запрет `ProcessControlService` на смешение разнородных метрик процессов и нарушение границ фаз контроля (Phase-1 vs Phase-2).
 
 ---
 
-## 3. Пакетный наряд по механизмам Семейств III и IV
+## 3. Пакетный наряд по механизмам Секций V и VI
 
-### Группа 1. Семейство III: Отправка, диспетчеризация Jules, сессии, воркеры и аренда
-1. **`JulesDispatchService` (ядро):**
-   - **Проба:** Замерить дедупликацию активных сессий, отсечение `UNDETERMINED` контекста и запрет отправки без проекта.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `JulesDispatchServiceTest`, `JulesDispatchServiceFalsificationTest`.
-2. **`JulesApiClient` (ядро):**
-   - **Проба:** Замерить префлайт источников, таймауты (20с), классификацию отказов (Ashby variety) и запрет вызовов без ключа.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `JulesApiClientTest`, `JulesApiClientFalsificationTest`.
-3. **`SessionLifecycleService` (ядро):**
-   - **Проба:** Замерить исключение локальных фикций отмены, признание HTTP 404 за удаление и регламентный свип терминальных сессий.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `SessionLifecycleServiceTest`, `SessionLifecycleServiceFalsificationTest`.
-4. **`PersistentWorkerSessionService` (ядро):**
-   - **Проба:** Замерить нулевую зависимость от транспорта Jules, предикат `isIdleAndFresh` и недеструктивный `peekCurrentBatch`.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `PersistentWorkerSessionServiceTest`, `PersistentWorkerSessionServiceFalsificationTest`.
-5. **`ClaimService` (ядро):**
-   - **Проба:** Замерить атомарный захват задач `SKIP LOCKED`, срок аренды `leaseExpiresAt`, трехзначную решетку допуска `evaluateReviewAdmission` и институциональный журнал.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `ClaimServiceRaceGuardTest`, `ClaimServiceFalsificationTest`, `ClaimResultStatusTruthTableFalsificationTest`.
-6. **`LeaseWatchdogService` (ядро):**
-   - **Проба:** Замерить ежеминутную жатву просроченных клеймов, продление при живой сессии Jules и неприкосновенность терминальных задач.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `LeaseWatchdogServiceTest`, `LeaseWatchdogServiceFalsificationTest`.
-7. **`AccountHealthService` (ядро):**
-   - **Проба:** Замерить единственное владение здоровьем аккаунтов, защиту от ложных обвинений при ошибках промпта (`REQUEST_REJECTED`) и расчет кулдауна.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `AccountHealthServiceTest`, `AccountHealthServiceLaw14Test`, `AccountHealthServiceFalsificationTest`.
+### Группа 1. Секция V: Свидетельство доставки и запускаемость
+1. **`ClientDeliverableReadinessService` (ядро):**
+   - **Проба:** Замерить предикаты ценности клиента, `hasRequiredMergeEvidence`, `reachedMain`, отсутствие подмены реальных поставок вспомогательными задачами (`isAuxiliaryTask`).
+   - **Инвариант:** Рабочий код не трогать. Заслоны `ClientDeliverableReadinessServiceTest`, `ClientDeliverableReadinessServiceFalsificationTest`, `DeliveryPredicateAgreementTest`.
+2. **`DeliveryRealityProducerService` (ядро):**
+   - **Проба:** Замерить фиксацию несоответствий доставки в долговечные свидетельства (`EvidenceNodeEntity`), ограничение глубины починки (`max_repair_depth`) и изоляцию каналов.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `DeliveryRealityLaw2CarrierChannelTest`, `DeliveryRealityLaw3CategoryErrorTest`, `DeliveryRealityLaw8SecondOrderRepairTest`, `DeliveryRealityProducerServiceFalsificationTest`.
+3. **`ProductLaunchabilityService` (ядро):**
+   - **Проба:** Замерить однократность бутстрап-проверки запускаемости (`launchabilityCheckedAt`), непрерывную валидацию датастора (`checkDatastoreAgreement`) и дедупликацию вишлистов.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `ProductLaunchabilityServiceTest`, `ProductLaunchabilityServiceFalsificationTest`.
 
-### Группа 2. Семейство IV: Ревью, гейты качества, автослияние и очистка веток
-8. **`AutoMergeService` (ядро):**
-   - **Проба:** Замерить авторизацию политики `MERGE_PR`, терминальное закрытие `closed_unmerged`, идемпотентное слияние внешне смерженных PR и изоляцию бюджета.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `AutoMergeServiceTest`, `AutoMergeServiceFalsificationTest`, `AutoMergeLaw20InvariantS4Test`.
-9. **`GitHubPullRequestService` (ядро):**
-   - **Проба:** Замерить кеш снимков PR (TTL 20с), fail-closed валидацию CI-чеков, проверку ветки по 404 и запрет записи файлов фабрики.
-   - **Инвариант:** Рабочий код не трогать. Заслоны `GitHubPullRequestServiceTest`, `GitHubPullRequestServiceFalsificationTest`.
-10. **`GitHubApiBudgetService` (ядро):**
-    - **Проба:** Замерить изоляцию бюджета по SHA-256 отпечаткам токенов, превентивный `guard` кулдауна и парсинг заголовков `x-ratelimit-*`.
-    - **Инвариант:** Рабочий код не трогать. Заслоны `GitHubApiBudgetServiceTest`, `GitHubApiBudgetLaw13Test`, `GitHubApiBudgetSpendTest`, `GitHubApiBudgetServiceFalsificationTest`.
-11. **`GithubAccessService` (ядро):**
-    - **Проба:** Замерить эмпирический зонд 5 аспектов репозитория, матрицу прав/обязанностей и расчет Six Sigma DPMO.
-    - **Инвариант:** Рабочий код не трогать. Заслоны `GithubAccessServiceTest`, `GithubAccessControllerTest`, `GithubAccessServiceFalsificationTest`.
-12. **`CodeChangeClassifier` (ядро):**
-    - **Проба:** Замерить deny-list служебных скриптов фабрики (`_temp_submit*.sh`, `.eneik/*`), распознавание произвольных клиентских стеков и fail-closed поведение.
-    - **Инвариант:** Рабочий код не трогать. Заслоны `CodeChangeClassifierTest`, `CodeChangeClassifierFalsificationTest`.
-13. **`GateOrchestrator` (ядро):**
-    - **Проба:** Замерить разделение стадий `TASK_SPEC` и `IMPLEMENTATION_RESULT`, расчет знаменателя `applicableChecksByStage` и персистенцию в `task_gate_logs`.
-    - **Инвариант:** Рабочий код не трогать. Заслоны `GateOrchestratorIntegrationTest`, `GateOrchestratorFalsificationTest`.
-14. **`VerificationEvidenceGate` и специализированные гейты (ядро):**
-    - **Проба:** Замерить чтение реального PR diff через `resolveSessionWithPr` в `EpistemicLayerInvariantGate`, `BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate` и базовые проверки `BaseQualityGate.*`.
-    - **Инвариант:** Рабочий код не трогать. Заслоны `EpistemicLayerInvariantGateTest`, профильные гейт-тесты.
-15. **`BranchGarbageCollectorService` (ядро):**
-    - **Проба:** Замерить безопасную очистку осиротевших веток без кода продукта, учет прогресса сессии и защиту активных задач.
-    - **Инвариант:** Рабочий код не трогать. Заслоны `BranchGarbageCollectorServiceTest`, `BranchGarbageCollectorServiceFalsificationTest`.
-16. **`PrReviewPipelineService` (ядро):**
-    - **Проба:** Замерить пайплайн создания/обновления сущностей ревью PR и расчет уровня риска (`RiskLevelCalculator`).
-    - **Инвариант:** Рабочий код не трогать. Заслоны `PrReviewPipelineServiceTest`, `PrReviewPipelineServiceFalsificationTest`.
+### Группа 2. Секция VI: Решётка суждения, слой опровержений, рычаги и контроль процессов
+4. **`VerdictLayer` и специализированные слои (`AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`) (ядро):**
+   - **Проба:** Замерить изоляцию пяти слоев, трехзначную решетку вердиктов (`PERMIT`, `WITHHOLD`, `ABSTAIN`), монотонную реконсиляцию в `VerdictReconciliation` и заслоны в `VerdictGate`.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `AcceptanceVerdictLayerTest`, `RuntimeVerdictLayerTest`, `InfrastructureVerdictLayerTest`, `VerdictLayerFalsificationTest`, `VerdictReconciliationTest`, `VerdictGateTest`, `AutonomousVerdictObservationServiceTest`.
+5. **`JudgmentAgentClient` и `CriteriaEvidenceSelector`:**
+   - **Проба:** Замерить селекцию доказательств по критериям приемки задач и изоляцию вызова прокси суждения (`judgment-proxy :8093`) без переполнения промпта.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `JudgmentAgentClientTest`, `JudgmentAgentClientLaw17Test`.
+6. **`FactoryJudgmentService` и `DeliveredWorkJudgmentService` (ядро):**
+   - **Проба:** Замерить аудит переходов инвариантов фабрики и суждение по сданным задачам (diff, PR, acceptance criteria) с созданием `delivery_refuted` вишлистов при опровержении.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `FactoryJudgmentServiceTest`, `FactoryJudgmentServiceFalsificationTest`, `DeliveredWorkJudgmentServiceTest`, `DeliveredWorkJudgmentServiceFalsificationTest`.
+7. **`LeverPromotionService`:**
+   - **Проба:** Замерить сбор наблюдений от TOC, аккаунтов, Six Sigma и Kaizen, лестницу стадий рычагов (`OBSERVE`, `SHADOW`, `CANARY`, `ACTIVE`) и откат при расхождениях.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `LeverPromotionServiceTest`, `LeverPromotionServiceFalsificationTest`.
+8. **`ProcessControlService`:**
+   - **Проба:** Замерить контрольные карты процессов, границы Western Electric rules, изоляцию фаз мониторинга и запрет на произвольные сигналы вне установленных пределов.
+   - **Инвариант:** Рабочий код не трогать. Заслоны `ProcessControlServiceTest`, `ProcessControlServiceFalsificationTest`.
 
 ---
 
@@ -120,4 +92,4 @@
 1. Провести единый пакетный прогон тестовых заслонов в Docker Maven (`-m 2g`).
 2. Внести отметки `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md`.
 3. Сформировать лаконичный отчет в `docs/reports/PROGRAMMER_STATE.md` (до 20 строк).
-4. Зафиксировать результат семантическим коммитом `feat(dispatch-merge): complete Stage 4 batch verification (D008, D010, D006)`.
+4. Зафиксировать результат семантическим коммитом `feat(judgment-delivery): complete Stage 4 batch verification (D008, D010, D006)`.

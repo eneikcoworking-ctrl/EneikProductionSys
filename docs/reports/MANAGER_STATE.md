@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-15 11:58 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-15 12:12 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (status: ok, backend-1 UP 40h).
@@ -6,11 +6,11 @@
 - Сайдкары: runtime-launcher (8091), ml-service (8000), judgment-proxy (8093) — all UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 25G/38G (68%, норма < 70%), доступно 12GB. Память: 3.0Gi/3.7Gi, swap 1.9Gi.
+- Диск: 25G/38G (68%, норма < 70%), доступно 12GB. Память: 3.3Gi/3.7Gi, swap 1.8Gi.
 
 3. Контроль инженера (L2):
-- Коммит dfdd826: Ступень 4 Семейства I и II (16 механизмов, 266 тестов) закрыты на 100% green в Docker Maven. Исходный код нерушим.
+- Коммит 6334019: Ступень 4 Семейства III и IV (16 механизмов, 438 тестов) закрыты на 100% green в Docker Maven. Исходный код нерушим.
 
-4. Пакетный Work Order: Ступень 4 (Семейства III и IV: Диспетчеризация Jules, воркеры, ревью, гейты и автослияние — PROGRAMMER_DIRECTIVES.md):
-- 16 механизмов: JulesDispatchService, JulesApiClient, SessionLifecycleService, PersistentWorkerSessionService, ClaimService, LeaseWatchdogService, AccountHealthService, AutoMergeService, GitHubPullRequestService, GitHubApiBudgetService, GithubAccessService, CodeChangeClassifier, GateOrchestrator, VerificationEvidenceGate, BranchGarbageCollectorService, PrReviewPipelineService.
-- Базис: Popper D008 (фальсификация заслонов), Goldman D010 (уровни абстракции), Raz D006 (категорический запрет правок кода при green тестах).
+4. Пакетный Work Order: Ступень 4 (Секции V и VI: Свидетельство доставки, решётка суждения, рычаги, контроль процессов — PROGRAMMER_DIRECTIVES.md):
+- 15 механизмов: ClientDeliverableReadinessService, DeliveryRealityProducerService, ProductLaunchabilityService, VerdictLayer (+ 5 слоев), JudgmentAgentClient, FactoryJudgmentService, DeliveredWorkJudgmentService, CriteriaEvidenceSelector, LeverPromotionService, ProcessControlService.
+- Базис: Popper D008 (трехзначная решетка суждения), Goldman D010 (лок уровней абстракции), Raz D006 (деонтический запрет правок при green тестах).
