@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-15 15:52 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-15 16:04 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (status: ok, backend-1 UP 44h).
@@ -6,12 +6,12 @@
 - Сайдкары: runtime-launcher, ml-service, judgment-proxy — all UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 25G/38G (69%, норма < 70%), доступно 12GB. Память: 2.4Gi/3.7Gi, swap 1.8Gi.
+- Диск: 25G/38G (69%, норма < 70%), доступно 12GB. Память: 2.6Gi/3.7Gi, swap 1.9Gi.
 
 3. Контроль инженера (L2):
-- Коммиты 8b9b454 / f403b7e: Секция VII (TOC), XXVIII, XXX-XLIV полностью замерены и закрыты (Ступень 4 ideal, 150+ тестов green).
-- Суверенитет соблюден: 0 строк изменений кода продукта и сервисов («работа замером, не правкой»).
+- Коммит 0ec3555: Секция VIII (все 4 контура, 279 тестов) закрыта в ideal за 48s в Docker Maven.
+- Суверенитет соблюден: 0 строк изменений сервисов и кода продукта («работа замером, не правкой»).
 
-4. Пакетный Work Order: Секция VIII (Самопроверка, метрики потока, оркестрация и операционная правда):
-- Контур: FalsificationCycle, EvidenceCoherence, PlatformSelfReference, OpsAuditor, FactorySelfHealth, Kaizen, FlowMetrics, LeverPromotion, MarketResearch, PlannedWorkRecovery, ContinuousOrchestration, OperationalPolicy/FlowSpine, TrustSnapshot.
-- Базис: Popper D008 (фальсификация ложной зелени), Goldman D010 (лок уровней абстракции и релайабилизм), Raz D006 (деонтический запрет правок рабочего кода).
+4. Пакетный Work Order: Секции XIV и XV (Философский словарь дефектов и защита от размножения задач):
+- Контур: XIV.1-XIV.3 (Корпус паттернов, маппинг дефектов D001-D015, Grounding guard), XV.1-XV.4 (Доменная подпись размножения задач, Duplicate velocity, Recovery boundary, Compiler work identity).
+- Базис: Popper D008 (фальсификация галлюцинаций паттернов), Goldman D010 (лок тождества задач), Raz D006 (деонтический запрет размножения задач и правок рабочего кода).
