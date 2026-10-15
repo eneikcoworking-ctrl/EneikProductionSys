@@ -344,23 +344,23 @@
 - ~~`SelfFalsificationEpicMatcher`~~ (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
 - ~~`WishlistContentSimilarityMatcher`~~ (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
 - ~~`WishlistService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
-- `JulesDispatchService`  ← ядро
-- `JulesApiClient`  ← ядро
-- `SessionLifecycleService`  ← ядро
-- `PersistentWorkerSessionService`  ← ядро
-- `ClaimService`  ← ядро
-- `LeaseWatchdogService`  ← ядро
-- `AccountHealthService`  ← ядро
+- ~~`JulesDispatchService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 109/109 green, ideal)
+- ~~`JulesApiClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`SessionLifecycleService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
+- ~~`PersistentWorkerSessionService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 15/15 green, ideal)
+- ~~`ClaimService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 16/16 green, ideal)
+- ~~`LeaseWatchdogService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
+- ~~`AccountHealthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 44/44 green, ideal)
 - ~~`BottleneckAwarePriorityService`~~ (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
-- `AutoMergeService`  ← ядро
-- `GitHubPullRequestService`  ← ядро
-- `GitHubApiBudgetService`  ← ядро
-- `GithubAccessService`  ← ядро
-- `CodeChangeClassifier`  ← ядро
-- `GateOrchestrator`
-- `VerificationEvidenceGate`  ← ядро
-- `BranchGarbageCollectorService`
-- `PrReviewPipelineService`  ← ядро
+- ~~`AutoMergeService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 33/33 green, ideal)
+- ~~`GitHubPullRequestService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
+- ~~`GitHubApiBudgetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
+- ~~`GithubAccessService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
+- ~~`CodeChangeClassifier`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 19/19 green, ideal)
+- ~~`GateOrchestrator`~~ (Закрыто Ступень 4: замер в Docker Maven 15/15 green, ideal)
+- ~~`VerificationEvidenceGate`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 73/73 green [14/14 gate, 59/59 quality suite], ideal)
+- ~~`BranchGarbageCollectorService`~~ (Закрыто Ступень 4: замер в Docker Maven 19/19 green, ideal)
+- ~~`PrReviewPipelineService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - `ClientDeliverableReadinessService`  ← ядро
 - `DeliveryRealityProducerService`  ← ядро
 - `ProductLaunchabilityService`  ← ядро
