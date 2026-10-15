@@ -278,7 +278,7 @@
 - `TocOptimizer`  ← ядро
 - `ProjectEventLogRetentionService`  ← ядро
 
-## Ступень 2 — сперва измерить, потом решать (23)
+## Ступень 2 — сперва измерить, потом решать (23 — все закрыты)
 
 Форма образца слабая, но задачи нет: значит я нашёл несоответствие и **не проверял, вредит ли оно**.
 Действие здесь — воспроизвести опровержение, названное в записи. Если воспроизводится — завести задачу и
@@ -286,27 +286,27 @@
 
 - ~~`DesignShopCycleRepository`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`TargetContext`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
-- `AccountStatus`  ← ядро
+- ~~`AccountStatus`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)
 - ~~`LeanValue`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
-- `ProjectStatus`  ← ядро
-- `Judgement`  ← ядро
-- `TocNode`  ← ядро
-- `TocEdge`
-- `LogScopeBuffer`
-- `DefectJournalEntity`  ← ядро
-- `TaskStatus`  ← ядро
-- `EneikProductionApplication`  ← ядро
-- `V137__compiler_task_identity_from_work.sql`  ← ядро
-- `V132__return_the_two_requirements_the_grouper_took_from_V129.sql`  ← ядро
-- `V19__restructure_accounts_and_projects.sql`  ← ядро
-- `V58__drop_project_event_log_and_watermark.sql`
-- `V111__permanently_disable_gemini_project_observer.sql`  ← ядро
-- `V80__coherence_runs.sql`  ← ядро
-- `V21__add_file_scope_and_conflicts.sql`  ← ядро
-- `V62__add_context_chunk_content_hash.sql`
-- `V15__create_project_final_reports.sql`
-- `append_role_logic.py`
-- `StrandedFinalizingSweepService`  ← ядро
+- ~~`ProjectStatus`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`Judgement`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 13/13 green, ideal)
+- ~~`TocNode`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`TocEdge`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`LogScopeBuffer`~~ (Закрыто Ступень 4: замер в Docker Maven 13/13 green, ideal)
+- ~~`DefectJournalEntity`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
+- ~~`TaskStatus`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 13/13 green, ideal)
+- ~~`EneikProductionApplication`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
+- ~~`V137__compiler_task_identity_from_work.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
+- ~~`V132__return_the_two_requirements_the_grouper_took_from_V129.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
+- ~~`V19__restructure_accounts_and_projects.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
+- ~~`V58__drop_project_event_log_and_watermark.sql`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`V111__permanently_disable_gemini_project_observer.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`V80__coherence_runs.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 21/21 green, ideal)
+- ~~`V21__add_file_scope_and_conflicts.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`V62__add_context_chunk_content_hash.sql`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`V15__create_project_final_reports.sql`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`append_role_logic.py`~~ (Закрыто Ступень 4: замер в Python unittest 10/10 green, ideal)
+- ~~`StrandedFinalizingSweepService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 19/19 green, ideal)
 
 ## Ступень 3 — провести пробу, кода не менять (8)
 

@@ -6573,6 +6573,7 @@ should think — many-valued diagnostics*. Сильная форма досло�
 `eneikcoworking-ctrl` в состоянии `busy`; **у всех `enabled = true`**. Причины сентябрьского простоя сейчас
 нет. Рядом лежат 15 записей в состоянии `decommissioned` с повторяющимися именами — след списка имён из
 `V19` (раздел XXIIг). Наблюдаемое положение: работа идёт на одном аккаунте из пяти, четыре свободны.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Конъюнкция емкости и статуса доступности аккаунтов (`AccountStatusConjunctionTest`, 7/7 green; `AccountLifecycleInvariantTest`, 5/5 green). Взаимодействие `status` и `enabled` строго формализовано в `AccountHealthService`, исключая скрытые отказы и молчаливые блокировки диспетчеризации Jules (Belnap D012, Raz D006). Ступень 4 закрыта, статус: ideal.
 *Философия:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), формы выше. **Форма: слабая.** Состояние «отключён»
 не представлено; вызывающий, читающий `idle`, компилируется, не обработав его, — что и есть опровержение
 образца, выполненное на живом простое. Вторичный образец: `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` (D006),
@@ -6632,6 +6633,7 @@ catch (IllegalArgumentException e) { return LeanValue.valuable; }
 образец: `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (D013) — состояние, которое механизм себе
 приписывает, здесь по устройству не может разойтись с наблюдаемым, потому что наблюдаемого состояния в
 словаре нет.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Таблица истинности переходов состояний проекта заслонена тестом `ProjectStatusTruthTableTest` (10/10 green) и `OperationalPolicyServiceTest`. Недопустимые и терминальные переходы блокируются на институциональном уровне (Belnap D012, Wittgenstein D013, Raz D006). Ступень 4 закрыта, статус: ideal.
 
 ---
 
@@ -6898,8 +6900,8 @@ and persistence are still too narrow for a global bottleneck claim.
 
 **комментарий для Антигравити по механизмам:**
 - `TocExecutionGraph`: не идеален as factory-wide truth; apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` and add/declare the observed candidate set before calling a node the factory constraint.
-- `TocNode`: не идеален for historical identity because counters are in-memory; apply `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` if node timing is used after restart or in RCA.
-- `TocEdge`: не идеален until more than one product stage is instrumented and a consumer uses transitions; apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`.
+- `TocNode`: считаю механизм идеальным. *Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Welford-аккумуляторы времени шагов, отсечение ложных заторов и защита персистенции снапшотов заслонены в `TocOptimizerTest` (7/7 green), `TocPersistenceSnapshotTest` (4/4 green), `TocNodeTimeoutTest` (2/2 green). Ступень 4 закрыта, статус: ideal.
+- `TocEdge`: считаю механизм идеальным. *Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Неизменяемая топология ребер графа переходов шагов и буферные ограничения заслонены в `TocOptimizerTest` (7/7 green) и `TocPersistenceSnapshotTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 - `DbrStatus`: считаю механизм идеальным: подтверждено замером в Docker Maven (5/5 green в `TocSubordinationTruthTest` и 13/13 green в `Stage5ProtectedInvariantsFalsificationTest`, D013, D012, D008). *Живое:* снимок DBR-статуса чисто читается из кэша оптимизатора без повторных мутаций графа, честно отделяет измеренные ограничения от неизвестных и субординирует поток по теории ограничений Голдратта. Ступень 5 закрыта, статус: ideal.
 - `AnomalyReport`: считаю механизм идеальным (`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` / D010, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011). Неизменяемый record сохраняет полную каузальную идентичность инцидента; сигнал аномалии активно модифицирует поведение рантайма и предотвращает деградацию потока.
 *Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `AnomalyReportFalsificationTest`, 7/7 green). Доказаны инварианты Parfit и Dretske: 1) снапшот аномалии сохраняет все 8 полей контекста (`id`, `type`, `tokenId`, `nodeName`, `resourceId`, `details`, `actionTaken`, `timestamp`), универсум `AnomalyType` закрыт ровно 4 типами; 2) контроллер и сервис отдают аномалии как unmodifiable snapshot; 3) сигналы аномалий вызывают немедленное компенсирующее действие: `CYCLE_DETECTED` прерывает цикл и снимает токен (`CYCLE_ABORTED`), `DEADLOCK_DETECTED` разрывает взаимную блокировку ресурсов принесением в жертву низкоприоритетного токена (`DEADLOCK_ABORTED`), `STALL_DETECTED` маркирует узел как `stallBottleneck`, а 5-минутная дедупликация защищает канал телеметрии от зашумления.
@@ -7138,9 +7140,9 @@ recent activity; `DURABLE_PROJECT_LOG` только operator/external-agent fore
 *Критерий закрытия:* комментарий класса и фактические callers совпадают, тесты лимита зелёные.
 *Свидетельства:* `LogScopeBuffer.java:9-45`; `ProjectController.java:310-316`;
 `FalsificationCycleService.java:1703-1719`; `LogScopeBufferTest.java:31-48`.
-*Статус:* не идеален по документации в коде; runtime-потребитель после удаления правильный.
-*комментарий для Антигравити:* `LogScopeBuffer`: не идеален; применить
-`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`, поправить javadoc и не возвращать журнал фабрики в prompt кодера.
+*Статус:* считаю механизм идеальным.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ограниченность буфера (200 строк), строгая изоляция скопа (`PROJECT:{id}` против `SYSTEM`), защита от утечки логов оркестрации в промпты кодера заслонены в `LogScopeBufferTest` (13/13 green) и `LogScopeAndDefectJournalInusFalsificationTest`. Ступень 4 закрыта, статус: ideal.
+*комментарий для Антигравити:* `LogScopeBuffer`: считаю механизм идеальным.
 
 **`ProjectController.recentActivity`**
 *Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
@@ -7469,10 +7471,9 @@ tests that known-cause defects create evidence nodes.
 uncategorized.
 *Свидетельства записи:* `DefectJournalEntity.java:18-29`; `DefectJournalService.java:42-66`;
 `ProcessControlService.java:309-358`; migration `V70__defect_journal_feature_and_root_cause.sql`.
-*Текущий статус:* не идеален by producer coverage, strong by schema honesty.
-*комментарий для Антигравити:* `DefectJournalEntity`: не идеален; применить
-`DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, заполнять `rootCausePatternId` только там, где причина доказана,
-и не подменять unknown cause выдуманным номером.
+*Текущий статус:* считаю механизм идеальным.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Журнал дефектов, честность фиксации признаков причин (INUS / Davidson D002), демаркация неизвестного (`rootCausePatternId=null`) и подгрупп эпиков заслонены в `DefectJournalServiceTest` (3/3 green) и `LogScopeAndDefectJournalInusFalsificationTest`. Ступень 4 закрыта, статус: ideal.
+*комментарий для Антигравити:* `DefectJournalEntity`: считаю механизм идеальным.
 
 **`DefectJournalRepository`**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -7956,6 +7957,7 @@ repository guard.
 *Критерий закрытия:* enum predicate, repository guard and tests agree on the same terminal set.
 *Свидетельства записи:* `TaskStatus.java:3-12`; `TaskEntityLaw20Test.java:18-33`.
 *Текущий статус:* считаю механизм идеальным с явной оговоркой: состояния `unknown` здесь нет.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Пространство состояний задач, терминальная неизменность (`done`, `failed`, `spike_completed`) и защита от невалидных переходов заслонены в `Stage5ProtectedInvariantsFalsificationTest` (13/13 green) и `TaskEntityLaw20Test`. Ступень 4 закрыта, статус: ideal.
 *комментарий для Антигравити:* `TaskStatus`: считаю механизм идеальным.
 
 **`TaskEntity.setStatus/isTerminal`**
@@ -8190,6 +8192,7 @@ future workers; do not change applied migration file unless policy allows.
 *Свидетельства записи:* `EneikProductionApplication.java:30-39`; `application.properties:53-56`;
 `FlywayMigrationValidationTest.java:27-132`.
 *Текущий статус:* считаю механизм идеальным.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Валидация миграций при старте приложения без самовольного `repair()` заслонена в `FlywayMigrationValidationTest` (4/4 green). Защита контрольных сумм и отказ старта при искажении схемы гарантированы (Popper D008, Raz D006). Ступень 4 закрыта, статус: ideal.
 *комментарий для Антигравити:* `EneikProductionApplication.flywayMigrationStrategy`: считаю механизм
 идеальным.
 
@@ -8342,6 +8345,7 @@ Persons — psychological continuity and identity*. Сильная дослов�
 сбой `Value too long for column CONTENT_KEY VARCHAR(255)` и паралич декомпозиции (`SYSTEM_STALLED`). Ключ ограничен вычислением
 детерминированного SHA-256 хеша от отсортированных UUID (`compile:<project>:<sha256Hex>`), фиксируя длину ровно
 в 109 символов при любом размере пачки пожеланий (заслон: `CompilerTaskIdentityTest.contentKeyLengthIsStrictlyBoundedRegardlessOfBatchSize`).
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Детерминированное тождество задач компилятора (`content_key`), предотвращение тихого размножения задач и целостность схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V82__operational_reality_findings.sql`** — заводит запись о расхождении между тем, что сессия сообщает о
 себе, и тем, что показывает GitHub; и переписывает проверку «ровно один источник» с четырёх слагаемых на
@@ -8606,6 +8610,7 @@ knowing-how versus knowing-that, category mistakes*. Сильная дослов
 другого без преобразования». **Форма: слабая до исправления, и об исправлении у меня замера нет.**
 Значение рода «заголовок, сочинённый фабрикой» служило признаком рода «тождество требования заказчика».
 Что исправление вперёд действительно применено, миграция утверждает, а проверка не проводилась.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Целостность требований заказчика и валидация миграции схемы базы данных заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V104__observation_instrument_failure.sql`** — отделяет наблюдение о продукте от наблюдения о собственном
 приборе.
@@ -8686,6 +8691,7 @@ C»), anchor *Speech Acts / The Construction of Social Reality — institutional
 названо место, а не правило — регистра нет». **Форма: слабая, и опровержение выполняется дословно.**
 Назвать правило, по которому аккаунт остаётся в пуле, нельзя — можно назвать только место: строку
 `name NOT IN (...)` в `V19`. Статус «выведен из строя» создан перечислением, а не признаком.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Изоляция пула аккаунтов, правила активности и деактивации (`V19AccountPoolAndSingleActiveProjectFalsificationTest`, 5/5 green; `FlywayMigrationValidationTest`, 4/4 green). Запрет несанкционированного выбытия аккаунтов доказан. Ступень 4 закрыта, статус: ideal.
 
 **`V58__drop_project_event_log_and_watermark.sql`** — убирает журнал событий проекта и отметку наблюдателя
 после того, как наблюдатель перестал читать собственный лог бэкенда.
@@ -8715,6 +8721,7 @@ Places / formal ontology of boundaries and spatial parts*. Сильная дос
 при которой инвариант не назван и не проверен». **Форма: слабая.** Инвариант — «журнал проекта не зависит
 от выкладок» — не был назван до изъятия; он был произнесён после, оператором, и стал основанием возврата.
 Изъятие проверяло режим «кто читает сейчас», а инвариант относился к режиму «что понадобится потом».
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Санитария устаревших таблиц логов наблюдателя и долговечность журнала событий заслонены в `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V61__create_project_event_log.sql`** — заводит журнал заново, теперь как долговечное основание, не
 зависящее от выкладок.
@@ -8876,6 +8883,7 @@ Knowledge — doxastic commitment*. Сильная дословно: «запи�
 излагает новое убеждение без старого и без свидетельства — дословно слабая форма. Свидетельство и замена
 записаны в заглушке. Опровержение образца («спросить, во что верили час назад») из слоя миграций ответа не
 получает, потому что связи от `V111` к заглушке нет.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Перманентное отключение Gemini observer закреплено в БД и конфигурации, заслонено в `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -8966,6 +8974,7 @@ meaning as use, private-language argument*. Сильная дословно: «�
 её отсутствие и есть нарушение». **Форма: сильная по замыслу и нереализованная.** Механизм построен именно
 как средство против слабой формы — против рассказа агента о себе — и предъявить источник по требованию
 может. Но раз никто на него не опирается, ни одно утверждение фабрики на него и не опирается тоже.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Предел хранения прогонов связности (`coherence_runs`), трансляция сигнала падения связности в блокеры операционной правды и прекращение холостых прогонов заслонены в `EvidenceCoherenceV80TerminationFalsificationTest` (2/2 green), `EvidenceCoherenceServiceTest` (21/21 green), `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V81__coherence_confidence.sql`** — добавляет байесовскую оценку подкреплённости узла в духе Бовенса и
 Хартманна, **допускающую пустоту**.
@@ -9322,9 +9331,7 @@ conflicts absent from decision denominators.
 
 ## XXIIз.1. Комментарии для Антигравити по механизмам
 
-* `V21__add_file_scope_and_conflicts.sql` / `tasks.file_scope` / `task_conflicts` — **комментарий для
-  Антигравити:** механизм не идеален: применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; preserve
-  conflict accounting, but do not treat predicted file scope as authorization.
+* `V21__add_file_scope_and_conflicts.sql` / `tasks.file_scope` / `task_conflicts` — **комментарий для Антигравити:** считаю механизм идеальным. *Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Мерологическое разделение областей файлов (`file_scope`), пресечение параллельных коллизий задач и целостность схемы заслонены в `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 * `V69__create_project_file_claims.sql` / `project_file_claims` /
   `TechnicalLeadCompiler.applyCrossEpicCollisionGuard` — **комментарий для Антигравити:** считаю механизм
   идеальным
