@@ -264,7 +264,7 @@
 - `V100__client_acceptance_traversals.sql`  ← ядро
 - `generate_philosopher_patterns.py`  ← ядро
 - `SystemStatusService`  ← ядро
-- `OperationalTruthService`  ← ядро
+- ~~`OperationalTruthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
 - ~~`DesignAssetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
 - `MLPredictionServiceClient`  ← ядро
 - `RepositoryStackAnalyzer`  ← ядро
