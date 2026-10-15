@@ -328,22 +328,22 @@
 дочитать механизм, назвать образец и форму, добавить `*Живое:*`. Это работа замером, не правкой.
 Дефекты, если найдутся, заводить задачей и переносить на первую ступень.
 
-- `ProjectFlowService`  ← ядро
-- `ProjectFactoryService`
-- `ProjectWorkspaceFactoryService`  ← ядро
-- `RequirementGroundingService`
-- `MarketCorpusService`
-- `MarketComplianceGate`
-- `MarketResearchService`
-- `OnboardingAuditService`  ← ядро
-- `TechnicalLeadCompiler`  ← ядро
-- `FeatureService`  ← ядро
-- `EpistemicMetadataClassifier`
-- `KanoClass`  ← ядро
-- `EmsFlowStage`  ← ядро
-- `SelfFalsificationEpicMatcher`
-- `WishlistContentSimilarityMatcher`
-- `WishlistService`  ← ядро
+- ~~`ProjectFlowService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 61/61 green, ideal)
+- ~~`ProjectFactoryService`~~ (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
+- ~~`ProjectWorkspaceFactoryService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
+- ~~`RequirementGroundingService`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`MarketCorpusService`~~ (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
+- ~~`MarketComplianceGate`~~ (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
+- ~~`MarketResearchService`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
+- ~~`OnboardingAuditService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 15/15 green, ideal)
+- ~~`TechnicalLeadCompiler`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
+- ~~`FeatureService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`EpistemicMetadataClassifier`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`KanoClass`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`EmsFlowStage`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`SelfFalsificationEpicMatcher`~~ (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
+- ~~`WishlistContentSimilarityMatcher`~~ (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
+- ~~`WishlistService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - `JulesDispatchService`  ← ядро
 - `JulesApiClient`  ← ядро
 - `SessionLifecycleService`  ← ядро

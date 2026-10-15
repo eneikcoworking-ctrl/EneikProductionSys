@@ -1632,24 +1632,13 @@ public class ProjectFlowService {
      * retired to `failed` by recoverBlockedWork, so parking here would trade a stuck queue for lost work.
      */
     TargetContext deriveTargetContextFromSourceWishlist(TaskEntity task) {
-        if (task == null) {
+        if (task == null || task.getSourceWishlistId() == null) {
             return null;
         }
-        if (task.getSourceWishlistId() != null) {
-            java.util.Optional<com.eneik.production.models.persistence.WishlistEntity> wOpt =
-                    wishlistRepository.findById(task.getSourceWishlistId());
-            if (wOpt.isPresent()) {
-                com.eneik.production.models.persistence.WishlistEntity wishlist = wOpt.get();
-                if (wishlist.getSource() == WishlistSource.coverage_gap
-                        || wishlist.getSource() == WishlistSource.client) {
-                    return TargetContext.PRODUCT_CODEBASE;
-                }
-            }
-        }
-        if (task.getProject() != null) {
-            return TargetContext.PRODUCT_CODEBASE;
-        }
-        return null;
+        return wishlistRepository.findById(task.getSourceWishlistId())
+                .filter(wishlist -> wishlist.getSource() == WishlistSource.coverage_gap)
+                .map(wishlist -> TargetContext.PRODUCT_CODEBASE)
+                .orElse(null);
     }
 
     /**
