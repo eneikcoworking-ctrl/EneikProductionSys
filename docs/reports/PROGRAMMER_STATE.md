@@ -1,15 +1,17 @@
-# Такт L2: Ведущий инженер (2026-10-15 18:24 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 18:35 UTC)
 
-1. Пакетная верификация Секции III («Отправка: задача уходит в работу»):
-   - Диспетчеризация и сессии Jules: `JulesDispatchServiceTest` (103/103), `JulesDispatchServiceFalsificationTest` (6/6), `JulesDispatchServiceLaw4MergeEvidenceTest` (4/4), `JulesDispatchServiceTocDbrAdmissionTest` (4/4), `ProjectFlowServiceLaw1JulesDispatchTest` (4/4), `DispatchAttemptBudgetTest` (17/17), `DispatchRefusalObservabilityLaw8Law12Test` (4/4), `JulesRefusalKindsTest` (9/9) — 151/151 green;
-   - API-клиент и жизнь сессий: `JulesApiClientTest` (5/5), `JulesApiClientFalsificationTest` (5/5), `SessionLifecycleServiceTest` (8/8), `SessionLifecycleServiceFalsificationTest` (6/6), `PersistentWorkerSessionServiceTest` (8/8), `PersistentWorkerSessionServiceFalsificationTest` (7/7) — 39/39 green;
-   - Притязания, аренда и санитария: `ClaimServiceRaceGuardTest` (5/5), `ClaimServiceFalsificationTest` (6/6), `ClaimResultStatusTruthTableFalsificationTest` (5/5), `ClaimRightsDutiesMatrixTest` (7/7), `TaskClaimServiceTest` (8/8), `TocPriorityClaimTest` (1/1), `LeaseWatchdogServiceTest` (3/3), `LeaseWatchdogServiceFalsificationTest` (6/6) — 41/41 green;
-   - Здоровье аккаунтов: `AccountHealthServiceTest` (31/31), `AccountHealthServiceLaw14Test` (7/7), `AccountHealthServiceFalsificationTest` (6/6) — 44/44 green;
-   - Приоритеты и узкие места: `BottleneckAwarePriorityServiceTest` (8/8), `BottleneckAwarePriorityServiceFalsificationTest` (6/6), `BottleneckDetectionServiceTest` (4/4), `BottleneckDetectionServiceFalsificationTest` (6/6) — 24/24 green.
+1. Пакетная верификация Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»):
+   - Фальсификация и когерентность: `FalsificationCycleServiceTest` (28/28), `EvidenceCoherenceServiceTest` (21/21), `EvidenceCoherenceV80TerminationFalsificationTest` (5/5) — 54/54 green;
+   - Аудит операций и самодиагностика: `OpsAuditorServiceTest` (11/11), `PlatformSelfReferenceDetectorTest` (7/7), `FactorySelfHealthServiceTest` (5/5) — 23/23 green;
+   - Кайдзен и журнал дефектов: `KaizenServiceTest` (10/10), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5) — 24/24 green;
+   - Метрики потока и рычаги: `FlowMetricsServiceTest` (4/4), `LeverPromotionServiceTest` (7/7), `LeverPromotionServiceFalsificationTest` (4/4) — 15/15 green;
+   - Восстановление и оркестрация: `PlannedWorkRecoveryServiceTest` (15/15), `ContinuousOrchestrationServiceTest` (16/16) — 31/31 green;
+   - Операционный контур и политика: `OperationalFlowCoreServiceTest` (6/6), `OperationalFlowCoreFalsificationTest` (39/39), `OperationalPolicyServiceTest` (17/17), `OperationalPolicyReasonTest` (5/5), `OperationalPolicyDeniedExceptionFalsificationTest` (9/9) — 76/76 green;
+   - Доверие, правда и позвоночник: `TrustSnapshotServiceTest` (9/9), `OperationalTruthServiceTest` (17/17), `FlowSpineServiceTest` (32/32) — 58/58 green.
 2. Заслон качества (100% green в едином прогоне в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Все 299 тестов Секции III пройдены за один проход: 299 runs, 0 failures, 0 errors, 0 skipped.
+   - Все 281 тест Секции VIII пройдены за один проход: 281 runs, 0 failures, 0 errors, 0 skipped.
    - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде сервисов (`src/main/java`).
-   - RAG-базис удержан: D004 Varzi & Gilbert, D012 Belnap & Hohfeld, D006 Raz & Hohfeld, D010 Goldman, D007 Gilbert, D011 Dretske, D005 Ramsey, D008 Popper.
+   - RAG-базис удержан: D008 Popper, D010 Goldman, D006 Raz, D013 Wittgenstein, D004 Varzi, D002 Ryle, D007 Gilbert.
 3. Документация и фиксация:
-   - Добавлен `### Итог Секции III` и актуализировано *Живое:* в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 299/299 green).
+   - Актуализировано *Живое:* и `### Итог Секции VIII` в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 281/281 green).
    - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md`.

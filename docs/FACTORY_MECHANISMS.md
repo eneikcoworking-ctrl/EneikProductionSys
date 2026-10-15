@@ -2133,7 +2133,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 *Комментарий:* **периферия.** Молча прекратившееся требование — та самая потеря, против которой написан
 закон 3.
 *Философия:* `BELIEF_UPDATE_LEDGER` (D007) — **сильная**. Опровержение: исчерпать предел и не найти записи.
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Дедупликация и жизненный цикл микро-улучшений PDCA строго изолированы по `(projectId, category, targetComponent)` с фиксацией в журнале дефектов. Заслон качества: 13/13 green (`KaizenServiceTest` 10/10, `DefectJournalServiceTest` 3/3) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Дедупликация и жизненный цикл микро-улучшений PDCA строго изолированы по `(projectId, category, targetComponent)` с фиксацией в журнале дефектов. Заслон качества: 24/24 green (`KaizenServiceTest` 10/10, `DefectJournalServiceTest` 3/3, `DefectJournalRootCauseAttributionTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
 
 
@@ -2214,11 +2214,11 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 
 ### Итог Секции VIII
 
-Все механизмы Секции VIII (Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven. Архитектурное владение агрегатами (Varzi D004), релаксация графа свидетельств Тагарда и цепочки надежности Голдмана (D010), деонтические заслоны переходов Раза (D006), анти-зеркало Витгенштейна (D013), отсечение категориальных ошибок Райла (D002) и фальсификационные заслоны Поппера (D008) полностью соблюдены (281/281 green).
+Все механизмы Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»: `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`, `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`, `DefectJournalService`, `FlowMetricsService`, `LeverPromotionService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalFlowCoreService`, `OperationalPolicyService`, `TrustSnapshotService`, `OperationalTruthService`, `FlowSpineService`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (281/281 green в едином пакетном прогоне). Архитектурное владение агрегатами Варци (Varzi D004), релаксация графа свидетельств ECHO Тагарда и каузальная цепочка надёжности Голдмана (Goldman D010), деонтические заслоны переходов и запреты Раза (Raz D006), анти-зеркало Витгенштейна (Wittgenstein D013), отсечение категориальных ошибок Райла (Ryle D002), институциональный регистр дефектов Гилберт (Gilbert D007) и фальсификационный заслон Поппера (Popper D008) полностью соблюдены. Не изменено ни одной строки рабочего кода сервисов фабрики (работа строгим замером).
 
-**Текущий статус:** считаю механизмы Секции VIII идеальными. Заслон качества: 281/281 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein / D004 Varzi / D002 Ryle). Ступень 4 закрыта (ideal).
+**Текущий статус:** считаю механизмы Секции VIII идеальными. Заслон качества: 281/281 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein / D004 Varzi / D002 Ryle / D007 Gilbert). Ступень 4 закрыта (ideal).
 
-**комментарий для Антигравити:** считаю механизмы Секции VIII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (281/281 green, D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein / D004 Varzi / D002 Ryle).
+**комментарий для Антигравити:** считаю механизмы Секции VIII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (281/281 green: D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein / D004 Varzi / D002 Ryle / D007 Gilbert).
 
 ---
 

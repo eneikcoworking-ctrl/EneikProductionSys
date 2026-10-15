@@ -248,6 +248,8 @@
 ~~Пункты 21 и далее — пятьдесят девять пронумерованных предписаний в разделе XVI того же файла.~~
 **Закрыто (Пакетный замер Секции XVI):** Все 59 предписаний Секции XVI (архитектурное владение Shaffer D004, заслоны истинности Белнапа Belnap D012 / Ryle D002 / Austin D002, тянущий контур ТОС Popper D008 / Goldman D010 / Wittgenstein D013, деонтические запреты Раза Raz D006) подтверждены и заверены в едином пакетном прогоне в Docker Maven (160/160 green). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер Секции VIII):** Все механизмы Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»: `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`, `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`, `DefectJournalService`, `FlowMetricsService`, `LeverPromotionService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalFlowCoreService`, `OperationalPolicyService`, `TrustSnapshotService`, `OperationalTruthService`, `FlowSpineService`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (281/281 green в едином прогоне). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -395,7 +397,7 @@
 - ~~`OpsAuditorService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
 - ~~`PlatformSelfReferenceDetector`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)
 - ~~`FactorySelfHealthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
-- ~~`KaizenService`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`KaizenService`~~ & `DefectJournalService` (Закрыто Ступень 4: замер в Docker Maven 24/24 green [10 unit, 3 defect-journal, 6 attribution, 5 inus], ideal)
 - ~~`PlannedWorkRecoveryService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 15/15 green, ideal)
 - ~~`ContinuousOrchestrationService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 16/16 green, ideal)
 - ~~`OperationalPolicyService`~~ (Закрыто Ступень 4: замер в Docker Maven 31/31 green, ideal)
