@@ -1,15 +1,14 @@
-# Такт L2: Ведущий инженер (2026-10-15 18:02 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 18:12 UTC)
 
-1. Пакетная верификация Секции I («Приём требования: рыночный корпус, уставный гейт и полевое исследование»):
-   - Жизненный цикл и приём проектов: `ProjectFlowServiceTest` (44/44), `ProjectFlowServiceFalsificationTest` (6/6), `ProjectFlowServiceLaw1JulesDispatchTest` (4/4), `ProjectFlowServiceResetTest` (3/3), `ProjectFlowServiceDbrRopeTest` (4/4), `ProjectFlowIntegrationTest` (5/5) — 66/66 green;
-   - Провижининг и рабочее пространство: `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6), `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4), `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5) — 22/22 green;
-   - Заземление требований: `RequirementGroundingServiceTest` (6/6), `RequirementGroundingServiceFalsificationTest` (5/5) — 11/11 green;
-   - Рыночный корпус, уставный гейт, полевые исследования: `MarketCorpusServiceTest` (19/19), `MarketCorpusServiceFalsificationTest` (6/6), `MarketComplianceGateTest` (12/12), `MarketComplianceGateFalsificationTest` (5/5), `MarketResearchServiceTest` (3/3), `MarketResearchServiceFalsificationTest` (6/6) — 51/51 green;
-   - Аудит онбординга и стек: `OnboardingAuditServiceTest` (5/5), `OnboardingAuditServiceFalsificationTest` (4/4), `RepositoryStackAnalyzerTest` (6/6) — 15/15 green.
+1. Пакетная верификация Секции II («Компиляция: требование становится задачами»):
+   - Компиляция и аудит пространств имен: `ProductNamespaceLaw26Test` (16/16), `TechnicalLeadCompilerTest` (4/4), `TechnicalLeadCompilerFalsificationTest` (6/6), `TechnicalLeadCompilerIntegrationTest` (11/11), `CompilerTaskIdentityTest` (3/3), `WishlistCompileBudgetLaw9Test` (6/6) — 46/46 green;
+   - Эпики и классификация: `FeatureServiceTest` (5/5), `FeatureServiceFalsificationTest` (6/6), `EpistemicMetadataClassifierTest` (5/5), `EpistemicMetadataClassifierFalsificationTest` (5/5), `KanoClassTest` (5/5), `KanoClassFalsificationTest` (6/6), `EmsFlowStageTest` (5/5), `EmsFlowStageFalsificationTest` (6/6) — 44/44 green;
+   - Сличение и подобие: `SelfFalsificationEpicMatcherTest` (6/6), `SelfFalsificationEpicMatcherFalsificationTest` (6/6), `WishlistContentSimilarityMatcherTest` (8/8), `WishlistContentSimilarityMatcherFalsificationTest` (6/6), `WishlistSimilarityTest` (6/6), `WishlistSimilarityKripkeIntensionFalsificationTest` (5/5) — 37/37 green;
+   - Заявки и освобождение застрявших состояний: `WishlistServiceFalsificationTest` (6/6), `WishlistControllerIntegrationTest` (8/8), `StrandedFinalizingSweepServiceTest` (8/8), `StrandedFinalizingSweepServiceFalsificationTest` (6/6), `StrandedFinalizingDynamicTimeoutFalsificationTest` (5/5) — 33/33 green.
 2. Заслон качества (100% green в едином прогоне в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Все 165 тестов Секции I пройдены за один проход: 165 runs, 0 failures, 0 errors, 0 skipped.
+   - Все 159 тестов Секции II пройдены за один проход: 159 runs, 0 failures, 0 errors, 0 skipped.
    - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде сервисов (`src/main/java`).
-   - RAG-базис удержан: D004 Shaffer, D010 Goldman, D009/D012 Belnap, D006 Raz & Varzi, D002 Ryle, D008 Popper, D013 Wittgenstein.
+   - RAG-базис удержан: D007 Searle & Gärdenfors, D002 Varzi, D006 Raz, D009 Frege & Belnap, D001 Kripke & Wittgenstein, D010 Goldman & Floridi, D013 Salmon, D012 Dworkin, D008 Popper.
 3. Документация и фиксация:
-   - Добавлен `### Итог Секции I` и актуализировано *Живое:* в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 165/165 green).
-   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md` (закрыт `GitHubProjectFactoryClient`).
+   - Добавлен `### Итог Секции II` и актуализировано *Живое:* в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 159/159 green).
+   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md`.
