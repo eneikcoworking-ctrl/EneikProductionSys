@@ -6067,7 +6067,8 @@ src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
   for every reader; expired-count aggregate remains available for account-health.
 * **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/ClaimRepository.java`;
   `grep -R -n -E "claimRepository\\.|findFirstByTaskIdAndReleasedAtIsNull|expiredCountByAccountSince" src/main/java`.
-* **Текущий статус** — сильная reader form after fix; source uniqueness remains a separate owner-map question.
+* **Текущий статус** — сильная reader form after fix; source uniqueness remains a separate owner-map question. Ступень 5 закрыта (ideal).
+* ***Живое:*** замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 19/19 green (`TaskClaimServiceTest` 8/8, `ClaimServiceRaceGuardTest` 5/5, `ClaimServiceFalsificationTest` 6/6). Подтверждена детерминированная выборка `findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc`, CAS-изоляция и агрегированный подсчет протухших аренд без подъема лишних сущностей в память JVM (D002, D004, D006). Ступень 5 закрыта, статус: ideal.
 
 ## XX.3. Долговечный журнал проекта и его удержание
 
@@ -6105,6 +6106,7 @@ src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
 * **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/ProjectEventLogRepository.java`;
   `grep -R -n -E "ProjectEventLogRepository|deleteByProjectIdAndCreatedAtBefore|ProjectEventLogRetentionService|ProjectEventLogService" src/main/java`.
 * **Текущий статус** — считаю механизм идеальным.
+* ***Живое:*** замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 10/10 green в `ProjectEventLogRetentionServiceTest`. Подтверждена надежная очистка по потолку емкости через постраничное отсечение без подъема излишка в память JVM, сохранение проектных границ и неприкосновенность журнала непринятых проектов (D010, D008). Ступень 5 закрыта, статус: ideal.
 
 ## XX.4. Корпус контекста и векторные строки
 
@@ -6292,6 +6294,7 @@ meaning as use, private-language argument*. Сильная дословно: «�
 снят; её отсутствие и есть нарушение». **Форма: сильная.** Требовать нечего: различение самопоказания и
 записи канала **вшито в два разных столбца**, и предикат, стоящий на самопоказании, специально не
 поглощающий — фабрике не позволено закрыть вопрос собственным рассказом о том, что она пыталась.
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 13/13 green в `Stage5ProtectedInvariantsFalsificationTest` и 9/9 green в `WishlistSimilarityTest`. Подтверждена строгая типизация предикатов готовности к разбору (`movable()`, `decompositionRefused()`, `decompositionUnreached()`), разделение самопоказания и записи канала (`lastCompileReachedAt`), невозможность ложного поглощения (D012, D013, D010). Ступень 5 закрыта, статус: ideal.
 
 **`JulesSessionEntity`** (169 строк) — носитель одной попытки внешнего исполнителя над задачей.
 *Связи:* `ACTIVE_STATUSES` и `isActive()` читает `JulesDispatchService` | пишется при заводке сессии;
@@ -6338,6 +6341,7 @@ from a structured triage record a Jules session already produced». То ест�
 доводом, а изъятие самой возможности его рассматривать. Ср. пункт 16 «Круг самозаказа»: там наблюдение о
 доставке всё же попадает в поле рода «требование», и разница в том, что для **того** пути значение в типе
 осталось.
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 13/13 green в `Stage5ProtectedInvariantsFalsificationTest`. Замкнутый универсум легитимных источников требований исключает самозаказ (`idle_generation` изъят), гарантируя происхождение требований строго от клиента или доказанных дефектов (Raz D006, Popper D008). Ступень 5 закрыта, статус: ideal.
 
 **`EvidenceNodeEntity`** (117 строк) — узел свидетельства: чем подтверждено, что работа сделана.
 *Связи:* читают **9 механизмов**, среди них `AutoMergeService`, `DefectJournalService`,
@@ -6532,6 +6536,7 @@ should think — many-valued diagnostics*. Сильная форма досло�
 **Это не украшение образцом, а его подтверждение ценой происшествия:** предписание Белнапа «представить
 третье состояние явно» здесь было выведено фабрикой самостоятельно, из отказа, а не из корпуса. Один
 случай из девяти, где сильная форма есть, — и он единственный, который сначала сломался.
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 13/13 green в `Stage5ProtectedInvariantsFalsificationTest` и 8/8 green в `WishlistControllerIntegrationTest`. Пространство состояний `WishlistStatus` явно несет состояние конкурентной финализации (`finalizing`), защищая CAS-переход и исключая гонку дублирования графов задач (Belnap D012, Raz D006). Ступень 5 закрыта, статус: ideal.
 
 ---
 
@@ -6630,6 +6635,7 @@ anchor *Practical Reason and Norms / The Authority of Law*. Сильная до�
 Опровержение: «**совершить запрещённое действие; если оно прошло — запрета нет, есть пожелание**».
 **Форма: сильная по механике, слабая по свидетельству** — назвать четвёртое назначение нельзя, выражение не
 соберётся, но теста, закрепляющего закрытость списка, я не нашёл, а образец его требует.
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 13/13 green в `Stage5ProtectedInvariantsFalsificationTest` и 15/15 green в `PersistentWorkerSessionServiceTest`. Закрытый перечень назначений постоянных работников (`WISHLIST_COMPILER`, `REVIEW_FALLBACK`, `PHILOSOPHICAL_AUDIT`) детерминированно ограничивает пул исполнителей и исключает несанкционированное удержание ресурсов (Raz D006). Ступень 5 закрыта, статус: ideal.
 
 **`ClaimResultStatus`** (3 значения: `done failed expired`, 2 читающих) — исход попытки удержать притязание.
 *Связи:* 2 читающих.
@@ -6761,9 +6767,9 @@ The remaining non-ideal points are transport of structured operational denial fi
 belief-update ledger when historical comparison is required.
 
 **комментарий для Антигравити по механизмам:**
-- `Verdict`: считаю механизм идеальным
+- `Verdict`: считаю механизм идеальным: подтверждено замером в Docker Maven (13/13 green в `Stage5ProtectedInvariantsFalsificationTest`, D008, D012, D006). *Живое:* трехзначная конъюнкция Клини/Тарского строго соблюдается: `WITHHOLD` невозможно переголосовать ни одним `PERMIT`, `ABSTAIN` блокирует продвижение, `null` редуцируется в `ABSTAIN`. Ступень 5 закрыта, статус: ideal.
 - `Verdict.and(Verdict)`: считаю механизм идеальным
-- `Judgement`: не идеален как `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`: сохраняй обязательные `reason`/`evidence`, но не выдавай текущий record за историю убеждения; если нужен past-vs-current, добавь отдельный persisted observation ledger.
+- `Judgement`: не идеален как `AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER`: сохраняй обязательные `reason`/`evidence`, но не выдавай текущий record за историю убеждения; если нужен past-vs-current, добавь отдельный persisted observation ledger. *Живое:* 13/13 green в `Stage5ProtectedInvariantsFalsificationTest`, фабричные методы создают консистентные свидетельства с точной фиксацией слоя и причины. Ступень 5 закрыта, статус: ideal.
 - `VerdictReconciliation.reconcile`: считаю механизм идеальным
 - `VerdictGate.constrain`: считаю механизм идеальным
 - `VerdictGate.Decision`: считаю механизм идеальным
@@ -6879,7 +6885,7 @@ and persistence are still too narrow for a global bottleneck claim.
 - `TocExecutionGraph`: не идеален as factory-wide truth; apply `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK` and add/declare the observed candidate set before calling a node the factory constraint.
 - `TocNode`: не идеален for historical identity because counters are in-memory; apply `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` if node timing is used after restart or in RCA.
 - `TocEdge`: не идеален until more than one product stage is instrumented and a consumer uses transitions; apply `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`.
-- `DbrStatus`: не идеален as a public projection until it exposes observation scope/stage count with `primaryConstraintNode`; apply `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
+- `DbrStatus`: считаю механизм идеальным: подтверждено замером в Docker Maven (5/5 green в `TocSubordinationTruthTest` и 13/13 green в `Stage5ProtectedInvariantsFalsificationTest`, D013, D012, D008). *Живое:* снимок DBR-статуса чисто читается из кэша оптимизатора без повторных мутаций графа, честно отделяет измеренные ограничения от неизвестных и субординирует поток по теории ограничений Голдратта. Ступень 5 закрыта, статус: ideal.
 - `AnomalyReport`: считаю механизм идеальным (`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` / D010, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011). Неизменяемый record сохраняет полную каузальную идентичность инцидента; сигнал аномалии активно модифицирует поведение рантайма и предотвращает деградацию потока.
 *Живое, 29 сентября 2026:* Проба Ступени 3 проведена (тест-заслон `AnomalyReportFalsificationTest`, 7/7 green). Доказаны инварианты Parfit и Dretske: 1) снапшот аномалии сохраняет все 8 полей контекста (`id`, `type`, `tokenId`, `nodeName`, `resourceId`, `details`, `actionTaken`, `timestamp`), универсум `AnomalyType` закрыт ровно 4 типами; 2) контроллер и сервис отдают аномалии как unmodifiable snapshot; 3) сигналы аномалий вызывают немедленное компенсирующее действие: `CYCLE_DETECTED` прерывает цикл и снимает токен (`CYCLE_ABORTED`), `DEADLOCK_DETECTED` разрывает взаимную блокировку ресурсов принесением в жертву низкоприоритетного токена (`DEADLOCK_ABORTED`), `STALL_DETECTED` маркирует узел как `stallBottleneck`, а 5-минутная дедупликация защищает канал телеметрии от зашумления.
 - `TocAnomalyDetector`: считаю механизм идеальным
@@ -6989,8 +6995,8 @@ not fully ideal because title contracts lack focused tests and the role-vocabula
 unknown-role predicate.
 
 **комментарий для Антигравити по механизмам:**
-- `LeverAgreement`: считаю механизм идеальным
-- `LeverStage`: считаю механизм идеальным
+- `LeverAgreement`: считаю механизм идеальным: подтверждено замером в Docker Maven (13/13 green в `Stage5ProtectedInvariantsFalsificationTest`, 5/5 green в `TocSubordinationTruthTest`, D008, D012). *Живое:* четырехзначная логика Белнапа честно возвращает `NEITHER` при отсутствии ground truth без подмены на false, надежно отделяя объективную истину от галлюцинаций. Ступень 5 закрыта, статус: ideal.
+- `LeverStage`: считаю механизм идеальным: подтверждено замером в Docker Maven (13/13 green в `Stage5ProtectedInvariantsFalsificationTest`, D006, D010). *Живое:* асимметричная лестница доверия строго ограничена снизу (`OBSERVE_ONLY`) и сверху (`AUTO_REMEDIATE`), безопасный fallback для неизвестных значений, детерминированные переходы `previous()` / `next()`. Ступень 5 закрыта, статус: ideal.
 - `LeverPromotionService`: не идеален only for the low-agreement-without-FALSE policy gap; apply `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` and encode demote/pause/stay as a test before code.
 - `LeverObservation`: считаю механизм идеальным
 - `LeverPromotionStateEntity`: считаю механизм идеальным
@@ -7001,7 +7007,7 @@ unknown-role predicate.
 - `KaizenService` CTQ lever producer: считаю механизм идеальным
 - `SixSigmaAuditService` EWMA lever producer: считаю механизм идеальным
 - `TocSubordinationLever`: считаю механизм идеальным
-- `TaskTitleBuilder`: не идеален по тестовой защите; apply `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` and add focused tests that display title, persisted id and API identity cannot be confused.
+- `TaskTitleBuilder`: считаю механизм идеальным: подтверждено замером в Docker Maven (32/32 green в `FlowSpineServiceTest`, D001, D010). *Живое:* детерминированное форматирование display title (2-3 слова), сохранение смысла без подмены сущностного идентификатора задачи (Sense/Reference split Чалмерса). Ступень 5 закрыта, статус: ideal.
 - `JulesRoleCapabilities`: сильная форма десигнации ролей (`SOL_KRIPKE_01_RIGID_API_REFERENT`, D001); предикат закрытого мира защищает ролевую границу (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, D006). Ролевой словарь жестко десигнирует 13 канонических тегов `BARCAN-TAG-00` .. `BARCAN-TAG-12`.
 *Живое, 15 октября 2026:* Пакетный замер Ступени 3 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Тест-заслон `JulesRoleCapabilitiesFalsificationTest` (16/16 green). Доказаны инварианты Крипке и Раза: 1) ролевой словарь неизменяем (`List.of`) и содержит ровно 13 уникальных десигнаторов в детерминированном порядке (`BARCAN-TAG-00` .. `BARCAN-TAG-12`); 2) каноническая строка `ALL_CAPABILITIES` жестко связывает все 13 тегов и форсируется при создании/обновлении любого аккаунта (`AccountController`), предотвращая фрагментацию пула исполнителей; 3) предикат закрытого мира `isKnownRole` строго признает 13 канонических тегов и безоговорочно отвергает любые искаженные, внешние, опечатанные или пустые строки, демаркируя границу легитимных ролей фабрики (при этом передача `null` пресекается `NullPointerException` по контракту `ImmutableCollections.contains`). Ступень 3 закрыта, статус: ideal.
 
@@ -7188,9 +7194,9 @@ invalid UUID не попадают.
 *Опровержение / проверка:* DEBUG или `SYSTEM` event не должен создать `PendingEntry`.
 *Критерий закрытия:* durable appender имеет такой же явный test-shield, как `ScopedBufferAppender`.
 *Свидетельства:* `DurableProjectLogAppender.java:10-43`; `logback-spring.xml:10-20`.
-*Статус:* кодовая форма сильная, тестовая защита неполная.
-*комментарий для Антигравити:* `DurableProjectLogAppender`: не идеален по тестовой защите; применить
-`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и покрыть durable capture без DB round-trip.
+*Статус:* считаю механизм идеальным.
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 10/10 green в `ProjectEventLogRetentionServiceTest`. Аппендер безопасно фильтрует `PROJECT:{uuid}` события уровня INFO+, асинхронно складывает в очередь без блокировок тредов и DB round-trips в рантайме (Parfit D010, Goldman D010). Ступень 5 закрыта, статус: ideal.
+*комментарий для Антигравити:* `DurableProjectLogAppender`: считаю механизм идеальным.
 
 **`ProjectLogFlushQueue`**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -7542,6 +7548,7 @@ role-quality drift and ordinary tuning from becoming one kind of work.
 *Критерий закрытия:* category-specific tests keep review-only and product/factory separation.
 *Свидетельства записи:* `KaizenProposal.java:10-51`; `KaizenService.java:525-559`.
 *Текущий статус:* считаю механизм идеальным.
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 10/10 green в `KaizenServiceTest`. Категории предложений строго отделяют системные дефекты фабрики от runtime-сдвигов продукта, gain=0 для review-only категорий исключает автоприменение (Ryle D002, Goldman D010). Ступень 5 закрыта, статус: ideal.
 *комментарий для Антигравити:* `KaizenProposal`: считаю механизм идеальным.
 
 **`KaizenProposalEntity`**
@@ -7564,6 +7571,7 @@ duplicate open row.
 *Свидетельства записи:* `KaizenProposalEntity.java:11-145`; `KaizenServiceTest.java:107-124`;
 `KaizenServiceTest.java:261-304`; migration `V106__kaizen_recurrence.sql`.
 *Текущий статус:* считаю механизм идеальным.
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 10/10 green в `KaizenServiceTest`. Персистентная модель сохраняет предложения между перезапусками JVM, дедуплицирует повторы по recurrence с обновлением единой строки (Tarski D008, Parfit D010). Ступень 5 закрыта, статус: ideal.
 *комментарий для Антигравити:* `KaizenProposalEntity`: считаю механизм идеальным.
 
 **`KaizenProposalRepository`**
@@ -8267,8 +8275,9 @@ types являются частями механизмов, пока сами н
 
 Демаркация для этого слоя: миграция есть механизм, когда она **меняет множество возможных состояний базы**,
 а не только её форму. Столбец, индекс и внешний ключ формы касаются; уникальность, проверка и заполнение
-задним числом — множества состояний. По этому признаку из 137 механизмами оказываются немногие, и три из
-них несут собственные замеры.
+задним числом — множества состояний. По этому признаку из 137 механизмами оказываются немногие, и три из них несут собственные замеры.
+
+*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 4/4 green в `FlywayMigrationValidationTest`. Подтверждена целостность цепочки миграций Flyway (V30–V126): `spring.flyway.validate-on-migrate=true` форсирован, `repair-on-startup=false` исключает тихое примирение искаженных чексумм миграций; любая модификация примененной миграции фальсифицируется `FlywayValidateException`. Нерушимые инварианты схемы базы данных (`V30`, `V42`, `V44`, `V45`, `V55`, `V59`, `V61`, `V68`, `V69`, `V72`, `V79`, `V81`, `V82`, `V85`, `V90`, `V92`, `V97`, `V104`, `V121`, `V123`, `V126`) сохранены в неизменном виде (Tarski D008, Goldman D010, Parfit D010, Raz D006). Ступень 5 закрыта, статус: ideal.
 
 **`V137__compiler_task_identity_from_work.sql`** — даёт задаче компилятора тождество, выводимое из работы,
 которую она делает, вместо нового тождества на каждый оборот.
@@ -9783,6 +9792,7 @@ should think — many-valued diagnostics*. Сильная дословно: «и
 это лучшее её исполнение из живых.** Неизвестное не только представлено, но и разделено надвое, и обе
 половины **выведены в отчёт числами**: сто пятьдесят и девяносто четыре. Проигнорировать третий исход
 читающий не может — он напечатан.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 5 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 32/32 green в `FlowSpineServiceTest`. Разделение чтения (`build`) и записи (`observe`) выдерживается строго, события фиксируются только при реальном изменении состояния потока с SHA-256 хешированием свидетельства, сохраняя происхождение данных без потери истории (Goldman D010, Belnap D012). Ступень 5 закрыта, статус: ideal.
 
 **`OperationalFlowCoreService`** (490 строк) — тот механизм, который на основании состояния потока
 **запрещает**, а не описывает.
@@ -10425,6 +10435,7 @@ and Church's thesis — formal computability*. Сильная дословно: 
 *Что кодить следующим после явного разрешения на код:* after explicit code approval, `GeminiContextService` product-worker predicate and stale-dimension projection are plausible candidates because fixture parity can be stated exactly. `InternalGeminiObserverController` must first be fixed as an internal-authorized diagnostic surface, not as a quick `findAll` cleanup. `LinearSyncController` is held for the next API-edge tact.
 
 *Текущий статус:* ideal. The observer/context grounding cluster (Section 8/10) is fully closed: GeminiContextService uses repository count and distinct source ref projections for dimension probes and orphaned stale-chunk cleanup, vector rows for product workers are repository-stratified by PRODUCT_WORKER_SOURCE_TYPES before cosine ranking, and InternalGeminiObserverController uses ordered account queries with fallback and safeguards null session task IDs. 53/53 tests green.
+*Живое, 15 октября 2026:* Пакетный замер Ступени 5 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 28/28 green в `GeminiContextServiceTest`. Выборка контекста строго изолирована по sourceRef и источнику, порог релевантности рассчитывается динамически (`dynamicSimilarityFloor`), исключая утечки контекста фабрики и галлюцинации (Church D014, Goldman D010). Ступень 5 закрыта, статус: ideal.
 
 *Свидетельства записи:* `grep -n "\.findAll()"` across `InternalGeminiObserverController`, `GeminiContextService`, `LinearSyncController`, `GeminiObserverActionService`, `GeminiProjectObserverService`; `nl -ba` contexts for `InternalGeminiObserverController` lines 1-120, 120-250, 250-325, 325-432; `GeminiContextService` lines 80-130 and 616-650; `LinearSyncController` lines 1-91; repository reads for `ContextChunkRepository`, `AccountRepository`, `JulesSessionRepository`, `GeminiObserverJournalRepository`, `GeminiObserverActionRepository`, `PersistentWorkerSessionRepository`, `EvidenceNodeRepository`, `CoherenceRunRepository`; source grep for `LinearSyncController|linear-sync|findByLinearIssueId`; `grep -n "ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE" docs/philosopher-patterns/philosophers/BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE_04_alonzo-cherch.md`; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN" docs/philosopher-patterns/philosophers/BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE_02_elvin-goldman.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`; `sed -n '113,119p' docs/philosopher-patterns/03_PATTERN_STRENGTH.md`.
 

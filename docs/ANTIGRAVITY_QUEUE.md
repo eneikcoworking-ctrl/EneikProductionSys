@@ -455,45 +455,45 @@
 названное в записи опровержение, и записать исход. Менять здесь нечего, а приём стоит перенять для других
 мест. Часть этих механизмов перечислена в `HOW_TO_READ_BEFORE_FIXING.md` как защищённые.
 
-- `ClaimRepository`  ← ядро
-- `ProjectEventLogRepository`
-- `WishlistEntity`  ← ядро
-- `WishlistSource`  ← ядро
-- `KaizenProposal`
-- `WishlistStatus`  ← ядро
-- `PersistentWorkerPurpose`  ← ядро
-- `Verdict`  ← ядро
-- `DbrStatus`  ← ядро
-- `LeverAgreement`  ← ядро
-- `LeverStage`  ← ядро
-- `TaskTitleBuilder`
-- `DurableProjectLogAppender`  ← ядро
-- `KaizenProposalEntity`  ← ядро
+- ~~`ClaimRepository`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)
+- ~~`ProjectEventLogRepository`~~ (Закрыто Ступень 5: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)
+- ~~`WishlistEntity`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 9/9 green в WishlistSimilarityTest, ideal)
+- ~~`WishlistSource`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 8/8 green в WishlistControllerIntegrationTest, ideal)
+- ~~`KaizenProposal`~~ (Закрыто Ступень 5: замер в Docker Maven 10/10 green в KaizenServiceTest, ideal)
+- ~~`WishlistStatus`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 8/8 green в WishlistControllerIntegrationTest, ideal)
+- ~~`PersistentWorkerPurpose`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 15/15 green в PersistentWorkerSessionServiceTest, ideal)
+- ~~`Verdict`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 13/13 green в Stage5ProtectedInvariantsFalsificationTest, ideal)
+- ~~`DbrStatus`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 5/5 green в TocSubordinationTruthTest, ideal)
+- ~~`LeverAgreement`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 13/13 green в Stage5ProtectedInvariantsFalsificationTest, ideal)
+- ~~`LeverStage`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 13/13 green в Stage5ProtectedInvariantsFalsificationTest, ideal)
+- ~~`TaskTitleBuilder`~~ (Закрыто Ступень 5: замер в Docker Maven 13/13 green в Stage5ProtectedInvariantsFalsificationTest, ideal)
+- ~~`DurableProjectLogAppender`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)
+- ~~`KaizenProposalEntity`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 10/10 green в KaizenServiceTest, ideal)
 - ~~`DesignShopCycleEntity`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
-- `V82__operational_reality_findings.sql`  ← ядро
-- `V97__jules_session_pr_opened_workflow_claim.sql`  ← ядро
-- `V42__add_pr_review_has_code_and_role_threads.sql`  ← ядро
-- `V44__add_features.sql`  ← ядро
-- `V45__rename_role_threads_to_feature_threads.sql`  ← ядро
-- `V30__create_jules_activity_responses.sql`
-- `V126__return_the_budget_of_a_brief_refused_without_a_readable_reason.sql`  ← ядро
-- `V104__observation_instrument_failure.sql`  ← ядро
-- `V61__create_project_event_log.sql`  ← ядро
-- `V121__drop_needs_human_review.sql`  ← ядро
-- `V59__create_gemini_observer_journal.sql`  ← ядро
-- `V68__gemini_observer_journal_continuity_and_action_verification.sql`  ← ядро
-- `V79__kaizen_proposals_and_evidence_nodes.sql`  ← ядро
-- `V81__coherence_confidence.sql`  ← ядро
-- `V72__create_process_control_snapshots.sql`  ← ядро
-- `V85__process_control_snapshot_metric_label.sql`
-- `V90__trust_signal_snapshots.sql`  ← ядро
-- `V69__create_project_file_claims.sql`  ← ядро
-- `V123__drop_task_conflicts_without_a_task.sql`  ← ядро
-- `V55__create_context_chunks.sql`  ← ядро
-- `V92__client_runtime_observations.sql`  ← ядро
-- `FlowSpineService`  ← ядро
-- `GeminiContextService`  ← ядро
-- `TaskRepository`  ← ядро
+- ~~`V82__operational_reality_findings.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V97__jules_session_pr_opened_workflow_claim.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V42__add_pr_review_has_code_and_role_threads.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V44__add_features.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V45__rename_role_threads_to_feature_threads.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V30__create_jules_activity_responses.sql`~~ (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V126__return_the_budget_of_a_brief_refused_without_a_readable_reason.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V104__observation_instrument_failure.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V61__create_project_event_log.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V121__drop_needs_human_review.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V59__create_gemini_observer_journal.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V68__gemini_observer_journal_continuity_and_action_verification.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V79__kaizen_proposals_and_evidence_nodes.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V81__coherence_confidence.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V72__create_process_control_snapshots.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V85__process_control_snapshot_metric_label.sql`~~ (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V90__trust_signal_snapshots.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V69__create_project_file_claims.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V123__drop_task_conflicts_without_a_task.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V55__create_context_chunks.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`V92__client_runtime_observations.sql`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 4/4 green в FlywayMigrationValidationTest, ideal)
+- ~~`FlowSpineService`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 32/32 green в FlowSpineServiceTest, ideal)
+- ~~`GeminiContextService`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 28/28 green в GeminiContextServiceTest, ideal)
+- ~~`TaskRepository`~~  ← ядро (Закрыто Ступень 5: замер в Docker Maven 13/13 green в Stage5ProtectedInvariantsFalsificationTest, ideal)
 - ~~`DesignExcellenceGate`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
 
 ---

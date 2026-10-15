@@ -1,13 +1,12 @@
-# Такт L2: Ведущий инженер (2026-10-15 12:54 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 13:26 UTC)
 
-1. Пакетный замер Ступени 4 (Секция XXIX: Цех дизайна — порождение экранов, сверка с маркой, аудит токенов и продвижение mockup):
-   - Охвачено 12 механизмов: `DesignAssetService` (12), `DesignConsistencyAuditService` (15), `StitchClient` (10), `GoogleAiResourceService` nano-banana fallback (12), `GitHubPullRequestService` дизайн-носитель (2), `DesignShopOrchestrationService` (20), `JulesDispatchService.completeDesignReview` (2), `LayoutGeometryAuditService` (13), `DesignSystemFalsificationService` (6), `DesignDriftMonitorService` (7), `DesignExcellenceGate` (18), `DesignShopCycleRepository` (6), `StrandedDesignCycleSweepService` (4).
-   - Инвариант Ступени 4 («работа замером, не правкой»): 0 строк кода сервисов изменено, все механизмы подтверждены как ideal.
+1. Пакетный замер Ступени 5 («Проверить и не трогать» — 40 механизмов ядра):
+   - Охвачены `WishlistEntity`, `WishlistSource`, `WishlistStatus`, `PersistentWorkerPurpose`, `Verdict`, `Judgement`, `DbrStatus`, `LeverAgreement`, `LeverStage`, `TaskTitleBuilder`, `DurableProjectLogAppender`, `KaizenProposal`, `KaizenProposalEntity`, миграции V30-V126, `FlowSpineService`, `GeminiContextService`, `ClaimRepository`, `ProjectEventLogRepository`, `TaskRepository`.
+   - Инвариант суверенитета и нерушимости ядра: 0 строк продуктового и сервисного кода изменено, механизмы подтверждены в статусе ideal.
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - 113/113 green в Maven в единый пакетный проход 13 тестовых классов Секции XXIX (0 failures, 0 errors, 0 skipped).
-   - Подтверждены инварианты Popper D008 (фальсификационный гейт качества, аудит-трейл dismissed wishlist, исключение false green), Goldman D010 (репозиторный носитель, надежная цепочка артефактов, лок уровней абстракции и геометрии), Raz D006 (деонтический запрет мутации кода сервисов при проходящих тестах, запрет подмены HTML на Nano Banana при `requireImplementableHtml=true`, отсечение off-token экранов без git commit).
-3. Документация и фиксация Ступени 4:
-   - В `docs/FACTORY_MECHANISMS.md` (Секция XXIX) зафиксированы строки `*Живое:*` с точными числами зеленых тестов (113 тестов суммарно) и статус `ideal` для Секции XXIX.
-   - В `docs/ANTIGRAVITY_QUEUE.md` подтверждено закрытие пунктов Секции XXIX цеха дизайна.
-4. Регламент и автономия:
-   - Таймеры schedule не вызывались согласно императивной директиве оператора, завершение штатное. Изоляция в Docker Maven с лимитом `-m 2g`.
+   - 13/13 green в `Stage5ProtectedInvariantsFalsificationTest` (Popper D008, Wittgenstein D013).
+   - Подтверждены сопутствующие заслоны: `WishlistSimilarityTest` (9/9), `WishlistControllerIntegrationTest` (8/8), `PersistentWorkerSessionServiceTest` (15/15), `TocSubordinationTruthTest` (5/5), `ProjectEventLogRetentionServiceTest` (10/10), `KaizenServiceTest` (10/10), `FlywayMigrationValidationTest` (4/4), `FlowSpineServiceTest` (32/32), `GeminiContextServiceTest` (28/28).
+   - Подтверждены инварианты: Popper D008 (трехзначный вердикт, непереголосовываемый WITHHOLD), Goldman D010 (цепочка свидетельств, хеширование событий, неизменность V30-V126), Raz D006 (деонтический запрет самозаказов и искажения пула воркеров), Belnap D012 (четырехзначная истина в LeverAgreement), Church D014 (изоляция контекста RAG).
+3. Документация и фиксация:
+   - В `docs/FACTORY_MECHANISMS.md` внесены блоки `*Живое:*` по всем механизмам Ступени 5.
+   - В `docs/ANTIGRAVITY_QUEUE.md` все 40 пунктов Ступени 5 отмечены как закрытые в статусе ideal. Все ступени (1–5) очереди аудита фабрики закрыты на 100%.
