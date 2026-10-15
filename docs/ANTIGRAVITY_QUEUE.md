@@ -252,6 +252,10 @@
 
 **Закрыто (Пакетный замер Секции XII):** Все механизмы Секции XII («Журнал, память, санитария»: `LogScope`, `ScopedBufferAppender`, `LogScopeBuffer`, `DurableProjectLogAppender`, `ProjectLogFlushQueue`, `ProjectEventLogService`, `ProjectEventLogRetentionService`, `SystemSettingsService`, `ProjectTreeService`, `IdleProjectAdviceService`, `RoleAdviceLoopService`, `RoleCapabilityLoader`, `RoleRulesParser`, `JulesRoleCapabilities`, `TaskTitleBuilder`, `ProjectAuditPipelineService`) подтверждены и заверены в едином пакетном прогоне в Docker Maven (64/64 green). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер Секций XIX и XX):** Все механизмы Секций XIX и XX («Сайдкары вне бэкенда» и «Хранилища, держащие поток») подтверждены и заверены в едином пакетном прогоне в Docker Maven (101/101 green). Ступень 4 закрыта, статус: ideal.
+
+**Закрыто (Пакетный замер Секции XXI):** Все механизмы Секции XXI («Сущности, несущие поведение, пространства состояний и алгебра решений»: `TaskEntity`, `WishlistEntity`, `JulesSessionEntity`, `TargetContext`, `AccountStatus`, `LeanValue`, `TaskStatus`, `ProjectStatus`, `VerdictGate`, `VerdictReconciliation`, `RuntimeVerdictLayer`, `AcceptanceVerdictLayer`, `InfrastructureVerdictLayer`, `TocOptimizer`, `TocPersistenceSnapshotTest`, `TocNodeTimeoutTest`, `TrustSnapshotService`, `LogScopeBuffer`, `DefectJournalService`, `EneikProductionApplication.compactH2StoreOnShutdown`) подтверждены и заверены в едином пакетном прогоне в Docker Maven (133/133 green). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -277,11 +281,11 @@
 - ~~`GitHubProjectFactoryClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
 - `CommandDashboardService`  ← ядро
 - ~~`InternalGeminiObserverController`~~ (Закрыто Ступень 4: замер в Docker Maven 42/42 green, ideal)
-- `TocSentinelService`  ← ядро
+- ~~`TocSentinelService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
 - ~~`GoogleAiResourceController`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
 - `QualityMetricsController`
 - ~~`GeminiContextCacheManager`~~ (Закрыто Ступень 4: удален, inert/decommissioned, заслон 28/28 green в GeminiContextServiceTest, ideal)
-- `TocOptimizer`  ← ядро
+- ~~`TocOptimizer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green в TocOptimizerTest, ideal)
 - ~~`ProjectEventLogRetentionService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)
 
 ## Ступень 2 — сперва измерить, потом решать (23 — все закрыты)

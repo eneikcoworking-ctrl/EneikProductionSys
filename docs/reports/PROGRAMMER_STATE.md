@@ -1,12 +1,14 @@
-# Такт L2: Ведущий инженер (2026-10-15 19:58 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 20:13 UTC)
 
-1. Пакетная верификация Секций XIX и XX («Сайдкары вне бэкенда» и «Хранилища, держащие поток»):
-   - Контур XIX (Сайдкары): `launcher.py` / `RuntimeLauncherClient` (32/32 green: `ClientRuntimeObservabilityServiceTest` 29, `ObservationHostingDemarcationLaw26Test` 3); `server.js` / `JudgmentAgentClient` (10/10 green: `JudgmentAgentClientTest` 6, `JudgmentAgentClientLaw17Test` 4); `PredictionService.py` / `MLPredictionServiceClient` (9/9 green: `MLPredictionServiceClientTest` 9). Итого Секция XIX: 51/51 green.
-   - Контур XX (Хранилища): `DesignShopCycleRepository` (6/6 green: `DesignShopCycleRepositoryIntegrationTest` 6); `ClaimRepository` (19/19 green: `TaskClaimServiceTest` 8, `ClaimServiceRaceGuardTest` 5, `ClaimServiceFalsificationTest` 6); `ProjectEventLogRepository` (10/10 green: `ProjectEventLogRetentionServiceTest` 10); `ContextChunkRepository` (10/10 green: `ContextChunkHashAndFileScopeConflictFalsificationTest` 10); `GreetingRepository` (5/5 green: `GreetingControllerIntegrationTest` 5). Итого Секция XX: 50/50 green.
+1. Пакетная верификация Секции XXI («Сущности, пространства состояний и алгебра решений»):
+   - Сущности и предикаты доставки (Законы 1, 20): `TaskEntityLaw20Test` (6/6), `DeliveryQuestionRecordTest` (3/3), `TaskAcceptanceCriteriaGuardTest` (1/1), `DecompositionVerdictTest` (5/5), `TaskEntityLaw1CarrierTest` (5/5), `DeliveryVerificationPredicateTest` (6/6). Итого: 26/26 green.
+   - Пространства состояний и изоляция: `TargetContextTest` (4/4), `LeanValueTest` (9/9), `AccountStatusConjunctionTest` (7/7). Итого: 20/20 green.
+   - Алгебра решений и слои вердиктов: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `InfrastructureVerdictLayerTest` (8/8), `AcceptanceVerdictLayerTest` (7/7), `RuntimeVerdictLayerTest` (6/6). Итого: 46/46 green.
+   - Граф ТОС, память отказов и останов JVM: `TocOptimizerTest` (7/7), `TocPersistenceSnapshotTest` (4/4), `TocNodeTimeoutTest` (4/4), `LogScopeBufferTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `EneikProductionApplicationShutdownCompactTest` (6/6). Итого: 41/41 green.
 2. Заслон качества (100% green в едином прогоне в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Все 101 тест пройдены за один пакетный проход: 101 runs, 0 failures, 0 errors, 0 skipped (BUILD SUCCESS).
-   - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде сервисов, репозиториев и сайдкаров (`src/main/java`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`).
-   - RAG-базис удержан: D008 Popper, D010 Goldman & DeRose, D006 Raz & Varzi, D004 Varzi & Shaffer, D009 Church, D007 Levi, D002 Ryle.
+   - Все 133 теста Секции XXI пройдены за один пакетный проход: 133 runs, 0 failures, 0 errors, 0 skipped (BUILD SUCCESS).
+   - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде фабрики (`src/main/java`).
+   - RAG-базис удержан: D008 Popper, D010 Goldman & DeRose, D006 Raz, D012 Belnap, D010 Parfit & Shaffer, D002 Ryle.
 3. Документация и фиксация:
-   - Актуализированы *Живое:* и канонические блоки `### Итог Секции XIX` и `### Итог Секции XX` в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 101/101 green).
-   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md` (Секции XIX и XX закрыты, ideal).
+   - Актуализированы *Живое:* и канонический блок `### Итог Секции XXI` в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 133/133 green).
+   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md` (Секция XXI закрыта, ideal; TocSentinelService и TocOptimizer закрыты).
