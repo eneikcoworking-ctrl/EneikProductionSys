@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция XI (Наблюдение за живым продуктом клиента, апостериорный каданс и подтверждение возможностей)
+# Пакетная директива L1/L3 -> L2: Секция XII (Журнал, память, санитария)
 
-**Дата:** 2026-10-15 18:53 UTC  
+**Дата:** 2026-10-15 19:03 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,68 +10,70 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секции X и XXIX («Дизайн-цех, порождение экранов, токенизация бренда, дизайн-система и live drift») полностью замерены и закрыты инженером (113/113 green в коммите `d691c59`). Настоящая директива охватывает целиком следующее фундаментальное семейство конвейера фабрики — **Секцию XI («Наблюдение за живым продуктом клиента, апостериорный каданс и доказательства возможностей продукта» / Live runtime observation, posterior cadence and product capability evidence)**:
-   - **Контур XI.1. `ClientRuntimeObservabilityService` & `ClientRuntimeObservationRepository` (Goldman D013, Goldman D012, Raz D006):**
-     * Модель самосознания рантайма (`ELVIN_GOLDMAN_07_SELF_MODEL_SANITY` / D013): запуск реального контейнера только при наступлении срока проверки по апостериорным свидетельствам;
-     * Наблюдение строго на тике оркестрации `ContinuousOrchestrationService` (деонтический запрет на отдельный runtime-cron);
-     * Таблица статусов истинности Голдмана (`ELVIN_GOLDMAN_13_TRUTH_STATUS_TABLE` / D012): строгое разделение инструментального сбоя (`instrumentFailure=true`) и дефекта продукта; инструментальный сбой никогда не открывает клиентских ограничений запускаемости и не ухудшает здоровье продукта;
-     * Ограниченное окно превью (bounded preview window): успешный запуск оставляет временный стек для зондирования и дашборда, просроченный или провалившийся стек немедленно демонтируется (`teardown`);
-     * Мониторинг дрейфа дизайна (`DesignDriftMonitorService`) и проверка возможностей (`ProductCapabilityService`) запускаются строго внутри уже оплаченного живого окна наблюдения.
-   - **Контур XI.2. `BetaPosterior` (Goldman D010, Goldman D003):**
-     * Журнал обновления убеждений Голдмана (`ELVIN_GOLDMAN_03_BELIEF_UPDATE_LEDGER` / D010): строгая математическая модель апостериорного бета-распределения;
-     * Лок артефакта: один неизменный артефакт (`commitSha`) дает ровно одно наблюдение в апостериорную выборку (дедупликация повторных тиков);
-     * Инструментальные сбои исключаются из апостериорной выборки; неопределенность порождает учащенный замер, доказанное здоровье увеличивает интервал тишины, повторяющиеся отказы удерживаются на минимальном пороге частоты.
-   - **Контур XI.3. `RuntimeHealthShiftDetector` (Wittgenstein D002, Popper D008):**
-     * Отсечение категориальных ошибок Витгенштейна (`LYUDVIG_VITGENSHTEYN_02_CATEGORY_ERROR_SCAN` / D002): точный биномиальный критерий сдвигов здоровья рантайма продукта во времени, категорический запрет заимствования аппарата u-карт эпиков для временных рядов контейнеров;
-     * Отказ от суждения при недостаточном базовом уровне (insufficient baseline), строгая детекция как ухудшения, так и относительного улучшения.
-   - **Контур XI.4. `ProductCapabilityService` & `CapabilityObservationRepository` (Goldman D010, Goldman D001):**
-     * Каузальная цепочка надёжности (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): заявленные возможности продукта извлекаются строго из спецификаций OpenAPI (`docs/contracts/*.openapi.{yaml,yml,json}`) в GitHub-репозитории;
-     * Категорический запрет на вывод возможностей из фабричных задач или фич;
-     * Маршруты с шаблонами пропускаются без генерации вымышленных ID;
-     * Ошибки 401/403/null классифицируются строго как барьеры инструмента (`instrumentFailure`) и исключаются из возможностей/дефектов;
-     * Расчет ценности продукта (`ProductValue`) ведется строго по подтвержденным свидетельствам с нижней доверительной границей.
-   - **Контур XI.5. Заслоны демаркации (`ObservationHostingDemarcationLaw26Test`, `FailureDemarcationLaw22Test`, `RuntimeVerdictLayer`):**
-     * Заслон закона 26: демаркация хостинга и временных наблюдательных окон;
-     * Заслон закона 22: демаркация сбоев инструмента и изоляция фабричных дефектов лаунчера от продуктовых сбоев;
-     * Слой продуктовых вердиктов рантайма (`RuntimeVerdictLayer`).
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция XI («Наблюдение за живым продуктом клиента, апостериорный каданс и доказательства возможностей продукта») полностью замерена и закрыта инженером (79/79 green в коммите `db6a1ee`). Настоящая директива охватывает целиком следующее фундаментальное семейство конвейера фабрики — **Секцию XII («Журнал, память, санитария» / Log scope, durable event log retention, institutional settings, poka-yoke advice guards, role capabilities and audit pipeline)**:
+   - **Контур XII.1. Область лога и изолированные буферы (`LogScope`, `ScopedBufferAppender`, `LogScopeBuffer`):**
+     * Демаркация контекстов по Фон Вригту и Разу (`GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE` / D006): строгое разделение `PROJECT:{id}` и `SYSTEM`;
+     * Строгое отсечение заводского шума и логов уровня DEBUG/TRACE от проектных буферов;
+     * Защита от переполнения памяти циклическим буферированием (`LogScopeBuffer`).
+   - **Контур XII.2. Долговечный журнал проекта и удержание памяти (`ProjectLogFlushQueue`, `ProjectEventLogService`, `ProjectEventLogRetentionService`):**
+     * Каузальная цепочка надёжности Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010): очистка журнала retention удаляет строго по смыслу и жизненному циклу проекта, а не по голому возрасту;
+     * Активные и замороженные проекты сохраняют историю в пределах `per-project ceiling`; принятые (`accepted`) проекты подлежат очистке только по истечении льготного периода (`grace period`);
+     * Безопасное дренирование очереди сброса (`ProjectLogFlushQueue`) при выключенном долговечном логе без блокировки потоков и без риска OOM.
+   - **Контур XII.3. Институциональный факт-регистр настроек (`SystemSettingsService`):**
+     * Институциональный факт-регистр Серла (`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` / D007): значение настройки принимается только для зарегистрированных ключей с валидацией формы;
+     * Любая мутация настроек оставляет обязательный неизгладимый институциональный след в `defect_journal` (`SYSTEM_SETTING_MUTATION_RULE`) с маскированием секретов.
+   - **Контур XII.4. Покэ-йокэ наблюдающие предохранители простоя и ролей (`IdleProjectAdviceService`, `RoleAdviceLoopService`):**
+     * Телеосемантическая обратная связь Дрецке (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011): честное снятие претензии на генеративный совет;
+     * Механизмы формализованы как наблюдающие предохранители (poka-yoke) со строгим подавлением паразитных и спекулятивных вишлистов/задач в обход суточного цикла фальсификации;
+     * Возврат строго типизированных вердиктов (`IdleGuardVerdict`, `RoleAdviceGuardVerdict`). Единственный легитимный источник новой продуктовой работы — суточный цикл фальсификации (`FalsificationCycleService`).
+   - **Контур XII.5. Уставы ролей, канонические capabilities, дерево и конвейер аудита (`RoleCapabilityLoader`, `RoleRulesParser`, `JulesRoleCapabilities`, `TaskTitleBuilder`, `ProjectTreeService`, `ProjectAuditPipelineService`):**
+     * Ригидный API-референт Эванса (`GARET_EVANS_01_RIGID_API_REFERENT` / D003): централизованная нормализация заголовков задач из 2–3 слов (`TaskTitleBuilder`);
+     * Сохранение сырого Markdown-текста устава ролей наряду с распарсенными полями и инвалидация кэша по mtime (`RoleCapabilityLoader`);
+     * Супервентность Перла (`DZHUDA_PERL_13_SUPERVENIENCE_WATCH` / D013): `ProjectTreeService` является строго read-only проекцией существующих фактов без выдумывания вторичной истины;
+     * Конвейер проектного аудита (`ProjectAuditPipelineService`) ограничен реально верифицирующими стадиями (`COVERAGE_AUDIT`, `STITCH_DESIGN`) без холостых переключений.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено модифицировать рабочий код сервисов (`src/main/java`) при проходящих тестах!
-   - Механизмы Секции XI уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
+   - Механизмы Секции XII уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D013, D012, D002)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D007, D011, D013, D003)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
-  * Попперовская фальсификация: тесты-заслоны демаркации сбоев (`FailureDemarcationLaw22Test`), хостинга (`ObservationHostingDemarcationLaw26Test`) и апостериорного распределения (`BetaPosteriorTest`) обязаны фальсифицировать ложноположительные суждения; инфраструктурный сбой не признается отказом продукта.
+  * Попперовская фальсификация: тесты-заслоны изоляции контекста (`LogScopeAndDefectJournalInusFalsificationTest`, `ScopedBufferAppenderFalsificationTest`) обязаны опровергать ложноположительные суждения; попадание системного шума в проектный буфер или стирание незавершенных проектов признается дефектом.
 - **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
-  * Лок уровней абстракции и каузальная надежность: строгое разграничение уровней попытки запуска (`attempt`), наблюдения продукта (`product observation`), артефакта (`commitSha`) и возможностей (`declared capability`);
-  * Источник возможностей продукта — только контракты OpenAPI репозитория, а не фабричный граф задач.
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции XI при проходящих тестах;**
-  * Программные деонтические запреты: запрет отдельного cron-шедулера для наблюдения; запрет наблюдения до проверки запускаемости; запрет открытия ограничений запускаемости при инструментальных сбоях лаунчера; запрет зондирования маршрутов вне открытого окна превью.
-- **`ELVIN_GOLDMAN_07_SELF_MODEL_SANITY` & `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift, Goldman / Wittgenstein]:**
-  * Анти-зеркало рантайма: решение о жизнеспособности продукта опирается на физическую телеметрию портов и ответов, а не словесный нарратив; демаркация инструмента и продукта.
-- **`ELVIN_GOLDMAN_13_TRUTH_STATUS_TABLE` [D012 Belnap 4-valued / Goldman]:**
-  * Четкое разведение статусов: инструментальный сбой (`instrumentFailure`) не равен дефекту продукта (`product failure`).
-- **`LYUDVIG_VITGENSHTEYN_02_CATEGORY_ERROR_SCAN` [D002 Category error, Wittgenstein]:**
-  * Недопустимость смешения категорий: временные ряды контейнеров анализируются точным биномиальным критерием, а не контрольными картами эпиков Шеwharta.
+  * Лок уровней абстракции и каузальная надежность: строгое разделение уровней системного события, проектного лога, институциональной настройки и узла дерева;
+  * Долговечный журнал сохраняет неискаженный след событий; удаление по retention опирается на статус проекта, grace-период и лимит строк на проект.
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` & `GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz / von Wright]:**
+  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции XII при проходящих тестах;**
+  * Программные деонтические запреты: запрет заводского шума в проектных буферах; запрет записи незарегистрированных ключей настроек; запрет порождения спекулятивной работы из простоя.
+- **`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` [D007 Status falsification, Searle]:**
+  * Институциональный факт-регистр: настройка фабрики становится легитимным фактом только через объявленное определение в `DEFINITIONS` и обязательный аудит мутации в `defect_journal`.
+- **`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` [D011 Noise amplification, Dretske]:**
+  * Телеосемантическая обратная связь: совет годен только если предотвращает ошибку или меняет действие; покэ-йокэ предохранители `IdleProjectAdviceService` и `RoleAdviceLoopService` отсекают паразитный шум и спекулятивные вишлисты.
+- **`DZHUDA_PERL_13_SUPERVENIENCE_WATCH` [D013 Runtime drift, Pearl]:**
+  * Супервентность: верхнеуровневый срез дерева `ProjectTreeService` полностью опирается на нижние факты базы данных (readiness, tasks, sessions, wishlist) и не имеет собственного состояния.
+- **`GARET_EVANS_01_RIGID_API_REFERENT` [D003 Contract drift, Evans]:**
+  * Ригидный референт: публичные контракты и теги ролей жестко привязаны к каноническим capabilities; внешние заголовки нормализованы в единой точке `TaskTitleBuilder`.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. Провести строгий пакетный замер механизмов Секции XI в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ClientRuntimeObservabilityServiceTest,ObservationHostingDemarcationLaw26Test,FailureDemarcationLaw22Test,BetaPosteriorTest,RuntimeHealthShiftDetectorTest,ProductCapabilityServiceTest,RuntimeVerdictLayerTest`).
-2. Подтвердить 100% green статус по ключевым классам-заслонам Секции XI (79 тестов):
-   - Наблюдение за рантаймом: `ClientRuntimeObservabilityServiceTest` (29/29);
-   - Демаркация хостинга: `ObservationHostingDemarcationLaw26Test` (3/3);
-   - Демаркация инструментальных сбоев: `FailureDemarcationLaw22Test` (6/6);
-   - Математика апостериорного распределения: `BetaPosteriorTest` (9/9);
-   - Детекция сдвигов здоровья рантайма: `RuntimeHealthShiftDetectorTest` (9/9);
-   - Обнаружение и зондирование возможностей: `ProductCapabilityServiceTest` (17/17);
-   - Слой продуктовых вердиктов рантайма: `RuntimeVerdictLayerTest` (6/6).
-3. Добавить канонический блок `### Итог Секции XI` в `docs/FACTORY_MECHANISMS.md` (подтверждающий Ступень 4 closed, ideal, 79/79 green).
+1. Провести строгий пакетный замер механизмов Секции XII в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=LogScopeBufferTest,LogScopeAndDefectJournalInusFalsificationTest,ScopedBufferAppenderFalsificationTest,ProjectEventLogRetentionServiceTest,SystemSettingsServiceTest,IdleProjectAdviceServiceTest,RoleAdviceLoopServiceTest,RoleAdviceLoopServiceIntegrationTest,RoleCapabilityLoaderTest,ProjectAuditPipelineServiceTest`).
+2. Подтвердить 100% green статус по ключевым классам-заслонам Секции XII (64 теста):
+   - Буфер логов и MDC: `LogScopeBufferTest` (6/6);
+   - Изоляция контекста логов и дефектного журнала: `LogScopeAndDefectJournalInusFalsificationTest` (5/5);
+   - Аппендер изолированного буфера: `ScopedBufferAppenderFalsificationTest` (13/13);
+   - Удержание и очистка долговечного журнала: `ProjectEventLogRetentionServiceTest` (10/10);
+   - Институциональный факт-регистр настроек: `SystemSettingsServiceTest` (13/13);
+   - Предохранитель простоя проекта: `IdleProjectAdviceServiceTest` (6/6);
+   - Предохранитель завершения задач: `RoleAdviceLoopServiceTest` (2/2);
+   - Интеграция предохранителя ролей: `RoleAdviceLoopServiceIntegrationTest` (1/1);
+   - Загрузка уставов ролей: `RoleCapabilityLoaderTest` (4/4);
+   - Конвейер аудита проекта: `ProjectAuditPipelineServiceTest` (4/4).
+3. Добавить канонический блок `### Итог Секции XII` в `docs/FACTORY_MECHANISMS.md` (подтверждающий Ступень 4 closed, ideal, 64/64 green).
 4. Синхронизировать `docs/ANTIGRAVITY_QUEUE.md`.
 5. Оформить лаконичный семантический коммит фабрики.
