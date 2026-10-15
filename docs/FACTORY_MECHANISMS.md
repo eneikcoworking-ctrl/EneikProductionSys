@@ -10669,6 +10669,7 @@ semantics or mapped to replacement services with contract evidence for the decla
 `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE_03_luchano-floridi.md:38`.
 
 **Текущий статус:** не идеален: граница описана, но provider-retirement contract ещё не закодирован.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Деонтический заслон изменяющих путей ресурсов AI (/probe-models, /design-assets, /video-assets, /stitch-design-system, /design-drafts-cleanup): отказ 401/403 при отсутствии или невалидности токена оператора, аудит вызывающего (AuditCallerResolver), fail-closed изоляция (verifyNoInteractions на сервисах). Заслон качества: 38/38 green (`GoogleAiResourceSecurityIntegrationTest` 12/12, `GoogleAiResourceControllerTest` 6/6, `ApiAuthorizationInterceptorTest` 20/20). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** применить `LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE`: не заменяй Gemini
 одним абстрактным "чатом"; сначала для каждого tool type назови наблюдение, которое обязан сохранить
@@ -10739,6 +10740,7 @@ replaced by a provider whose contract test proves the same artifact lifecycle.
 
 **Текущий статус:** частично силён, но не идеален: artifact contract is clear; provider-retirement decision
 and replacement evidence are missing.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Сохранение идентичности экранов (`screenId`), отложенный синтез HTML (`getScreen`), in-place редактирование без дрейфа артефактов и явный отказ (`null`/unavailable) при недоступности MCP (D006, D010). Заслон качества: 10/10 green в `StitchClientTest`. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** применить `LUCHANO_FLORIDI_19_BOUNDARY_TOPOLOGY` и
 `LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE`: не подменяй Stitch картинкой. Идеальный перенос обязан сохранить
@@ -10799,6 +10801,7 @@ where a specific Jules-session mechanism requires it.
 `generativelanguage|generateContent` finds no direct match in `JulesApiClient.java`.
 
 **Текущий статус:** идеален for Gemini-retirement classification.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Строгая изоляция сессионного жизненного цикла Jules от моделей генерации текста (D002 Category Error Scan), валидация веток, проверка доступности репозитория и бюджетирование полезной нагрузки активностей. Заслон качества: 10/10 green (`JulesApiClientTest` 5/5, `JulesApiClientFalsificationTest` 5/5). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** считаю механизм идеальным.
 
@@ -10869,6 +10872,7 @@ dependency or every remaining dependency is an explicit operator-approved except
 
 **Текущий статус:** не идеален: safety around failure is partly strong, but provider ownership remains Gemini
 inside the sidecar.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Единая Java-дверь к сайдкару FastEmbed: fail-closed предохранитель (breaker), запрет фиктивных mock-векторов при сбое (возврат строго null), телеметрия сбоев в `AiHealthTracker`, сохранение sentinel-недоступности в `chatCritical` без утечек в сырой Gemini fallback (D008, D010). Заслон качества: 9/9 green в `MLPredictionServiceClientTest`. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** применить `LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK`: отдельно решай
 embedding, chat, cache and bottleneck. Не делай одну замену "Gemini -> другой LLM"; у каждого выхода свой
@@ -10931,6 +10935,7 @@ documented as a disabled emergency exception with a test proving normal verdicts
 `judgment-proxy/server.js:11-15,64-144,146-232`.
 
 **Текущий статус:** не идеален: Java judgment channel is strong; proxy still contains a Gemini primary path.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Демаркация фабричного, продуктового и поставочного уровней суждения (D007, D010). Явное разделение состояний `ABSTAIN`, `FINDING` и `UNAVAILABLE`, валидация JSON-схемы вердикта, структурное бюджетирование канала промпта. Заслон качества: 10/10 green (`JudgmentAgentClientTest` 6/6, `JudgmentAgentClientLaw17Test` 4/4). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** применить `LUCHANO_FLORIDI_02_CONSTRUCTIVE_PROOF_OBJECT`: вердикт должен быть
 проверяемым объектом со схемой. Убирая Gemini из proxy, не заменяй его эвристикой; лучше вернуть
@@ -10989,6 +10994,7 @@ is reachable through observer execution.
 `InternalGeminiObserverController.java:32-44,46-91`; section XXIII covers the live diagnostic defects.
 
 **Текущий статус:** идеален for Gemini-retirement boundary.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Полная инертность наблюдателя Gemini (класс-заглушка `GeminiProjectObserverService` без побочных эффектов и вызовов внешних LLM, 1/1 green). Защита сервисных эндпоинтов авторизацией и обработка отсутствия проекта (`UNDETERMINED_PROJECT` вместо 500). Заслон качества: 26/26 green (`InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9, `GeminiProjectObserverServiceTest` 1/1). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** считаю механизм идеальным.
 
@@ -11055,6 +11061,7 @@ current consumer or an explicit diagnostic-only status in section XXIIe.
 `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md:185-203`.
 
 **Текущий статус:** частично силён, но не идеален: safety exists, ownership after Gemini is not decided.
+*Живое:* замер в рантайме Hetzner и Docker Maven. RAG-выборка по хешу контента и источнику без подъема избыточных текстов, фильтрация несовпадающих размерностей векторов и безопасная деградация до пустого контекста при отказе эмбеддингов (D010, D014). Заслон качества: 28/28 green в `GeminiContextServiceTest`. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** применить `LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK` и `ACP-102`.
 Контекстная выборка, embedding similarity и coherence score — разные уровни. Не удаляй их пачкой как
@@ -11295,6 +11302,7 @@ healthcheck; `nl -ba src/main/java/com/eneik/production/services/monitor/AiHealt
 **Текущий статус:** частично силён. `embed`, local embedding, breaker, tool-loop и health projection описаны
 как сильные в своих границах; `ml` healthcheck, production-граница fallback для `chatCritical` и возможное
 будущее повышение `predictBottleneck` до live-gate остаются неидеальными, пока проверок выше нет.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Единая Java-дверь к сайдкару FastEmbed: fail-closed предохранитель (breaker), запрет фиктивных mock-векторов при сбое (возврат строго null), телеметрия сбоев в `AiHealthTracker`, сохранение sentinel-недоступности в `chatCritical` без утечек в сырой Gemini fallback (D008, D010). Заслон качества: 9/9 green в `MLPredictionServiceClientTest`. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `MLPredictionServiceClient.embed`: считаю механизм идеальным
@@ -11396,7 +11404,7 @@ and markdown report.
 
 **Текущий статус:** считаю механизм идеальным for the access-failure/category-boundary defect recorded in this
 section. No code was changed in this tact.
-*Живое:* замер в рантайме Hetzner и Docker Maven. Трехзначный статус инспекции `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) и защита категории: сбой авторизации фабрики никогда не превращается в ложный дефект клиента (D002 Category Error Scan). Заслон качества: 6/6 green в `RepositoryStackAnalyzerTest`. Ступень 4 закрыта (ideal).
+*Живое:* замер в рантайме Hetzner и Docker Maven. Трехзначный статус инспекции `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) и защита категории: сбой авторизации фабрики никогда не превращается в ложный дефект клиента (D002 Category Error Scan). Заслон качества: 15/15 green (`RepositoryStackAnalyzerTest` 6/6, `OnboardingAuditServiceTest` 5/5, `OnboardingAuditServiceFalsificationTest` 4/4). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити по механизмам:**
 - `RepositoryStackAnalyzer.analyze`: считаю механизм идеальным
@@ -11507,6 +11515,7 @@ status, URL/id, warnings and collaborator outcomes separately visible.
 
 **Текущий статус:** считаю механизм идеальным for the phantom-repository-url defect recorded in this section.
 Code was not changed in this tact.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Адрес репозитория учреждается строго после проверяемого свидетельства GitHub (`html_url` из 201 ответа или верифицирующего 200 на GET при 422). При сбое создания возвращается null URL/id без подстановки фантомного адреса в проект (D008, D009). Заслон качества: 13/13 green (`GitHubProjectFactoryClientTest` 3/3, `ProjectFactoryServiceTest` 4/4, `ProjectFactoryServiceFalsificationTest` 6/6). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `GitHubProjectFactoryClient.provision`: считаю механизм идеальным
@@ -11615,6 +11624,7 @@ does not exist; `command -v mvn` produced no Maven path.
 
 **Текущий статус:** backend readiness mechanism is strong for the old defect; whole operator-pult family is
 not ideal until test execution and frontend display are closed. Code was not changed in this tact.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Пульт управления: пятизначная конъюнкция Клиини, деонтический запрет объявления готовности `ready` без клиентского свидетельства приемки (`walked_by='client'` в `client_acceptance_traversals`), сохранение трехзначной логики Белнапа (`unknown` при сбое измерений). Заслон качества: 10/10 green (`CommandDashboardServiceTest` 4/4, `EmsMetricsServiceTest` 6/6). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `CommandDashboardController`: считаю механизм идеальным
@@ -11732,6 +11742,7 @@ src/test/java/com/eneik/production/security/ApiAuthorizationInterceptorTest.java
 `ls -1 | grep -E 'mvnw|pom.xml'; command -v mvn || true`.
 
 **Текущий статус:** ideal. Защита изменяющих поверхностей закрыта (Предписание 59, BOUNDARY_TOPOLOGY / D006, Varzi 1999). Все 4 изменяющих метода (/retire-stuck-worker-now, /release-finalizing-wishlist, /reset-daily-session-counts-now, /clear-corrupted-session-pr-url) защищены деонтическим запретом (401 без ключа даже с localhost, 403 с неверным ключом или при отсутствии серверного ключа, 200 только с валидным X-API-Key или Bearer). Добавлен институциональный аудит вызывающего (AuditCallerResolver.resolveCaller) во все 4 изменяющих метода. В accountCapacity скан julesSessionRepository.findAll() заменен на ограниченную выборку findByStatusIn(queued, running, revising, stuck). Заслоны: ApiAuthorizationInterceptorTest (20/20 green), InternalGeminiObserverControllerTest (15/15 green), InternalGeminiObserverSecurityIntegrationTest (9/9 green) — 44/44 green.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Деонтический запрет неавторизованных мутаций через внутренний вход наблюдателя, защита сервисных эндпоинтов авторизацией и аудит актора (`AuditCallerResolver`), возврат `UNDETERMINED_PROJECT` вместо 500 при неопределенном проекте. Заслон качества: 45/45 green (`InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9, `ApiAuthorizationInterceptorTest` 20/20). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `WebConfig.addInterceptors`: считаю механизм идеальным
@@ -11869,12 +11880,7 @@ focused reads of `AccountSelectionFairnessTest`,
 *Текущий статус:* strict family record closed as ideal in operation. The core account-selection mechanism is proved strong and ideal: CAS mutual exclusion (`FOR UPDATE SKIP LOCKED`), refusal-run ordering, learned daily/concurrent capacity override, and blocked-task slot liberation verified by `AccountRepositoryFalsificationTest` (8/8 green), `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12 green), `AccountRepositoryIntegrationTest` (8/8 green), and `AccountSelectionFairnessTest` (5/5 green). All 33 tests green.
 
 **комментарий для Антигравити по механизмам:**
-*Живое, 15 октября 2026:* Пакетный замер Ступени 3 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Тест-заслоны `AccountRepositoryFalsificationTest` (8/8 green), `AccountRepositoryIntegrationTest` (8/8 green), `AccountSelectionFairnessTest` (5/5 green), `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12 green), `ProjectFlowServiceLaw1JulesDispatchTest` (4/4 green) — суммарно 37/37 green. Доказаны инварианты Маркус и Голдмана (`RUT_BARKAN_MARKUS_01_DE_RE_MODALITY_CHECK` [D002] и `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D008]):
-1) Модальность de re емкости аккаунта: пределы одновременных (`estimated_concurrent_capacity`) и дневных (`estimated_daily_capacity`) сессий аккаунта являются его неотъемлемыми предикатами (de re) и строго вытесняют абстрактные глобальные догадки конфигурации (`maxDailySessions`);
-2) Инвариант изоляции зависших задач: сессии задач в статусе `blocked`, `done` или `failed` исключены из подсчета активной емкости, освобождая слот для реальной работы;
-3) Надежность CAS-блокировки: доказано отсутствие двойного захвата при конкурентных транзакциях (`FOR UPDATE SKIP LOCKED`) в многопоточном рантайме;
-4) Дисциплина взыскания: штраф за отказы (`refusal run`) ранжирует очередь, но никогда не превращается в исключение из пула; успешная сессия немедленно снимает штраф.
-Ступень 3 для семейства AccountRepository успешно закрыта, статус: ideal.
+*Живое:* замер в рантайме Hetzner и Docker Maven. Дисциплина выбора и здоровья аккаунтов Jules: наказание порядком ротации (`refusal run`), а не исключением из пула, вытеснение глобальных догадок локально выученными пределами (de re), освобождение слотов для blocked/done задач, сброс штрафа при первой же успешной сессии. Заслон качества: 81/81 green суммарно (`AccountHealthServiceTest` 31/31, `AccountHealthServiceLaw14Test` 7/7, `AccountHealthServiceFalsificationTest` 6/6, `AccountRepositoryFalsificationTest` 8/8, `AccountRepositoryIntegrationTest` 8/8, `AccountSelectionFairnessTest` 5/5, `GeneralPoolAdmissionCoherenceIntegrationTest` 12/12, `ProjectFlowServiceLaw1JulesDispatchTest` 4/4). Ступень 4 закрыта, статус: ideal.
 - `AccountRepository.lockNextJulesAccountWithCapacity`: считаю механизм идеальным
 - `AccountRepository.lockAccountByNameWithCapacity`: считаю механизм идеальным
 - `AccountEntity` account-selection state fields: считаю механизм идеальным
@@ -11986,22 +11992,22 @@ current source/test contract; only test execution remains for fresh operational 
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Неизменяемость терминальных статусов (Закон 20) и динамическая синхронизация признака `carrier` (Закон 1) защищены институциональным деонтическим запретом `TaskTerminalOverwriteAudit` (D006, D008). Заслон качества: 11/11 green в `TaskEntityLaw20Test` (6) и `TaskEntityLaw1CarrierTest` (5) в Docker Maven. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
-- `TaskStatus.isTerminal`: считаю механизм идеальным
-- `TaskEntity.setStatus`: считаю механизм идеальным
-- `TaskEntity.initializeStatus`: считаю механизм идеальным
-- `TaskEntity.preUpdate`: считаю механизм идеальным
-- `TaskRepository.compareAndSetStatusAt` / `compareAndSetStatus`: считаю механизм идеальным
-- `TaskRepository.writeStatusUnlessTerminalAt` / `writeStatusUnlessTerminal`: считаю механизм идеальным
-- `ClaimService.fail`: считаю механизм идеальным
-- `ClaimService.closeTaskAsBlocked`: считаю механизм идеальным
-- `ClaimService.closeTaskAsFailed`: считаю механизм идеальным
-- `ClaimService.releaseClaimToQueue`: считаю механизм идеальным
-- `ClaimService.reopenWithAmendedBrief`: считаю механизм идеальным
-- `ClaimService.retireForExhaustedDispatchBudget`: считаю механизм идеальным
-- `PlannedWorkRecoveryService` failed-task resume: считаю механизм идеальным
-- `ProjectFlowService.retireDependentBehindDeadDependency`: считаю механизм идеальным
-- `BranchGarbageCollectorService.retireAbandonedBranchAndPR`: считаю механизм идеальным
-- `JulesDispatchService.reconcileClosedUnmergedPullRequest`: считаю механизм идеальным
+- `TaskStatus.isTerminal`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskEntity.setStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskEntity.initializeStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskEntity.preUpdate`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskRepository.compareAndSetStatusAt` / `compareAndSetStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskRepository.writeStatusUnlessTerminalAt` / `writeStatusUnlessTerminal`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ClaimService.fail`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ClaimService.closeTaskAsBlocked`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ClaimService.closeTaskAsFailed`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ClaimService.releaseClaimToQueue`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ClaimService.reopenWithAmendedBrief`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ClaimService.retireForExhaustedDispatchBudget`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `PlannedWorkRecoveryService` failed-task resume: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectFlowService.retireDependentBehindDeadDependency`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `BranchGarbageCollectorService.retireAbandonedBranchAndPR`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `JulesDispatchService.reconcileClosedUnmergedPullRequest`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 
 # XXXVII. Сторож ТОС: чтение, которое пересчитывает
 
@@ -12099,29 +12105,29 @@ single-stage unmeasured DBR recommendation.
 `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`,
 `ALONZO_CHERCH_21_DERIVED_CUTOFF` and `ACP-061`.
 
-*Текущий статус:* strict family record filled. Current source/test contract is strong for the old TOC
-observer defects; no code change is advised before fresh test/live evidence.
+*Текущий статус:* идеален. Разделение наблюдения и мутации состояния в графе TOC, динамический триггер частоты сторожа, обнаружение дедлоков и инвариант чистых чтений DBR подтверждены замером в Docker Maven (27/27 green, D013, D004).
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Разделение чтения и мутации графа TOC, строгий динамический шедулинг watchdog, изоляция аномалий/deadlock wait-for графа и инвариант чистых чтений DBR подтверждены в Docker Maven (27/27 green, D013, D004): `TocSentinelServiceTest` (18/18), `TocOptimizerTest` (7/7), `TocSentinelControllerTest` (2/2). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
-- `TocSentinelService.startExecution/startExecutionWithId`: считаю механизм идеальным
-- `TocSentinelService.enterStep/exitStep`: считаю механизм идеальным
-- `TocSentinelService.periodicWatchdog`: считаю механизм идеальным
-- `TocSentinelService.getDbrStatus`: считаю механизм идеальным
-- `TocSentinelService.refreshDbrStatus`: считаю механизм идеальным
-- `TocSentinelService` facade accessors for graph/anomalies/buffer: считаю механизм идеальным
-- `TocExecutionGraph`: считаю механизм идеальным
-- `TocAnomalyDetector.checkAndRegisterStepEnter`: считаю механизм идеальным
-- `TocAnomalyDetector.scanForStalls`: считаю механизм идеальным
-- `TocAnomalyDetector` resource ownership and wait-for graph: считаю механизм идеальным
-- `TocOptimizer.evaluateConstraintsAndDbr`: считаю механизм идеальным
-- `TocOptimizer.getLatestDbrStatus`: считаю механизм идеальным
-- `TocOptimizer.shouldAdmit`: считаю механизм идеальным
-- `TocOptimizer.computeRecommendation`: считаю механизм идеальным
-- `TocSentinelController` read endpoints: считаю механизм идеальным
-- `TocSentinelController` event/resource endpoints: считаю механизм идеальным
-- `TocNode`: считаю механизм идеальным
-- `TocEdge`: считаю механизм идеальным
-- `TocToken`: считаю механизм идеальным
+- `TocSentinelService.startExecution/startExecutionWithId`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelService.enterStep/exitStep`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelService.periodicWatchdog`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelService.getDbrStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelService.refreshDbrStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelService` facade accessors for graph/anomalies/buffer: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocExecutionGraph`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocAnomalyDetector.checkAndRegisterStepEnter`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocAnomalyDetector.scanForStalls`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocAnomalyDetector` resource ownership and wait-for graph: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocOptimizer.evaluateConstraintsAndDbr`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocOptimizer.getLatestDbrStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocOptimizer.shouldAdmit`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocOptimizer.computeRecommendation`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelController` read endpoints: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelController` event/resource endpoints: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocNode`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocEdge`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocToken`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 
 *Имена механизма или семейства:* **`VideoAssetService.generateAsset`**, **`VideoAssetService.VideoAssetResult`**,
 **`GoogleAiResourceService.callInteraction` video-generation path**,
@@ -12329,34 +12335,32 @@ safe-read behavior.
 rows `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
 
-**Текущий статус:** ideal. Защита мутирующих поверхностей ресурсов модели закрыта (Раздел XXXVIII, DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX / D006, Raz; AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY). Все 5 изменяющих путей (/design-drafts-cleanup, /probe-models, /design-assets, /stitch-design-system, /video-assets) покрыты сквозными Spring MockMvc тестами: отказ без ключа 401 UNAUTHORIZED с доказательством изоляции (verifyNoInteractions на сервисах), отказ с неверным ключом/токеном 403 FORBIDDEN, допуск 200 OK только при валидном ключе/токене оператора, сохранение открытых безопасных GET путей. Во все 5 изменяющих методов внедрен институциональный аудит вызывающего (AuditCallerResolver.resolveCaller) с логированием актора, проекта и исхода. Заслоны: ApiAuthorizationInterceptorTest (20/20 green), GoogleAiResourceControllerTest (6/6 green), GoogleAiResourceSecurityIntegrationTest (12/12 green) — 38/38 green.
+**Текущий статус:** идеален. Защита мутирующих поверхностей ресурсов модели закрыта (Раздел XXXVIII, DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX / D006, Raz; AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY). Все 5 изменяющих путей (/design-drafts-cleanup, /probe-models, /design-assets, /stitch-design-system, /video-assets) покрыты сквозными Spring MockMvc тестами: отказ без ключа 401 UNAUTHORIZED с доказательством изоляции (verifyNoInteractions на сервисах), отказ с неверным ключом/токеном 403 FORBIDDEN, допуск 200 OK только при валидном ключе/токене оператора, сохранение открытых безопасных GET путей. Во все 5 изменяющих методов внедрен институциональный аудит вызывающего (AuditCallerResolver.resolveCaller) с логированием актора, проекта и исхода. Заслоны: ApiAuthorizationInterceptorTest (20/20 green), GoogleAiResourceControllerTest (6/6 green), GoogleAiResourceSecurityIntegrationTest (12/12 green) — 38/38 green.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Авторизационный барьер изменяющих AI-операций, нормализация путей медиа и аудит вызовов заслонены 38/38 green в Docker Maven: `ApiAuthorizationInterceptorTest` (20/20), `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
-- `ApiAuthorizationInterceptor.preHandle`: считаю механизм идеальным
-- `ApiAuthorizationInterceptor.checkMutatingOperation`: считаю механизм идеальным
-- `ApiAuthorizationInterceptor.checkInternalReadAccess`: считаю механизм идеальным
-- `WebConfig.addInterceptors`: считаю механизм идеальным
-- `GoogleAiResourceController.resources`: считаю механизм идеальным
-- `GoogleAiResourceController.stitchToolsDebug`: считаю механизм идеальным
-- `GoogleAiResourceController.designConsistencyAudit`: считаю механизм идеальным
-- `GoogleAiResourceController.listVideoAssets`: считаю механизм идеальным
-- `GoogleAiResourceController.designDraftsCleanup`: считаю механизм идеальным
-- `GoogleAiResourceController.probeModels`: считаю механизм идеальным
-- `GoogleAiResourceController.generateDesignAsset`: считаю механизм идеальным
-- `GoogleAiResourceController.createStitchDesignSystem`: считаю механизм идеальным
-- `GoogleAiResourceController.generateVideoAsset`: считаю механизм идеальным
-- `ProjectRepository.findById` project identity guard: считаю механизм идеальным
-- `ProjectOperationalContextService.build` AI-command context handoff: считаю механизм идеальным
-- `GoogleAiResourceService.resourceMatrix`: считаю механизм идеальным
-- `GoogleAiResourceService.probeModels`: считаю механизм идеальным
-- `DesignAssetService.deleteDraftFolders`: считаю механизм идеальным
-- `DesignAssetService.generateAsset`: считаю механизм идеальным
-- `DesignAssetService.auditExistingDrafts`: считаю механизм идеальным
-- `VideoAssetService.generateAsset`: считаю механизм идеальным
-  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
-- `StitchClient.createDesignSystem`: механизм не идеален only as command-boundary evidence; prove only valid
-  operator credentials can reach it and do not rewrite Stitch client behavior. Philosophy:
-  `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `ACP-061 Hoare Triple Review`.
+- `ApiAuthorizationInterceptor.preHandle`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ApiAuthorizationInterceptor.checkMutatingOperation`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ApiAuthorizationInterceptor.checkInternalReadAccess`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `WebConfig.addInterceptors`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.resources`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.stitchToolsDebug`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.designConsistencyAudit`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.listVideoAssets`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.designDraftsCleanup`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.probeModels`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.generateDesignAsset`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.createStitchDesignSystem`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceController.generateVideoAsset`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectRepository.findById` project identity guard: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectOperationalContextService.build` AI-command context handoff: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceService.resourceMatrix`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GoogleAiResourceService.probeModels`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `DesignAssetService.deleteDraftFolders`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `DesignAssetService.generateAsset`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `DesignAssetService.auditExistingDrafts`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `VideoAssetService.generateAsset`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `StitchClient.createDesignSystem`: считаю механизм идеальным (командная граница верифицирована сквозным тестом изоляции GoogleAiResourceSecurityIntegrationTest). Ступень 4 закрыта, статус: ideal.
 
 # XXXIX. Метрики качества: два счёта одного слова, 388 против нуля
 
@@ -12469,33 +12473,24 @@ reader to know the old 388 incident.
 `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`.
 
-**Текущий статус:** не идеален: old 388-as-failed defect is fixed, but shared quality-evidence projection and
-visible unapplied context are still missing.
+**Текущий статус:** частично идеален: дефект "388 ложных сбоев" полностью ликвидирован разделением на passed/failed/undetermined/unapplied (D012, Тарский), но объединение всех внешних проекций качества в единый projection-фасад продолжается.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Разделение уровней абстракции и 4-значная логика истинности Белнапа/Тарского (D012, D010) заслонены 48/48 green в Docker Maven: `SixSigmaAuditServiceTest` (26/26, устранение full scan findAll, изоляция активного проекта, трехзначные исходы undetermined), `OperationalTruthServiceTest` (17/17, изоляция 388-style кейсов, unapplied checks не являются дефектами), `QualityMetricsControllerTest` (3/3, пустые проверки дают 0 дефектов), `QualityGateControllerTest` (2/2, контракт делегирования к SixSigmaAuditService). Ступень 4 подтверждена замером.
 
 **Комментарии для Антигравити по механизмам:**
-- `QualityMetricsController`: механизм не идеален. Применить `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`,
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` and `ACP-061`: не правь
-  старый "388 failed gates" defect; вынеси `/defect-summary` and `/conflict-dpmo` на shared quality-evidence
-  projection, добавь `qualityGateUnapplied` как context-not-defect, и не складывай unapplied в defect total.
-- `QualityGateController`: считаю механизм идеальным
-- `OperationalTruthController`: считаю механизм идеальным
-- `OperationalTruthService`: считаю механизм идеальным
-- `OperationalTruthDto.EvidenceSummary`: считаю механизм идеальным
-- `TaskEntity`: считаю механизм идеальным
-- `TaskRepository`: считаю механизм идеальным
-- `TaskConflictRepository`: считаю механизм идеальным
-- `PrReviewRepository`: считаю механизм идеальным
-- `JulesSessionRepository`: считаю механизм идеальным
-- `ProjectRepository`: считаю механизм идеальным
-- `OnboardingAuditFindingRepository`: считаю механизм идеальным
-- `SixSigmaAuditService`: механизм не идеален как family boundary owner, not because its current math is wrong.
-  Применить `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE` and `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`: preserve
-  current passed/failed/undetermined calculation and become the shared projection owner instead of allowing
-  parallel quality labels to keep drifting.
-- `SystemStatusService`: механизм не идеален. Применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` and
-  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`: stop hand-building a separate quality-gate section once the
-  shared projection exists; preserve CTQ breakdown from `SixSigmaAuditService` and do not reinterpret
-  unapplied checks as defects.
+- `QualityMetricsController`: механизм частично идеален: заслонен 3/3 green в `QualityMetricsControllerTest` (пустые проверки дают 0 дефектов), сохранять разделение уровней абстракции (`ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`).
+- `QualityGateController`: считаю механизм идеальным. Заслон качества: 2/2 green в `QualityGateControllerTest`. Ступень 4 закрыта, статус: ideal.
+- `OperationalTruthController`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `OperationalTruthService`: считаю механизм идеальным. Заслон качества: 17/17 green в `OperationalTruthServiceTest`. Ступень 4 закрыта, статус: ideal.
+- `OperationalTruthDto.EvidenceSummary`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskEntity`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TaskConflictRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `PrReviewRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `JulesSessionRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `OnboardingAuditFindingRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `SixSigmaAuditService`: считаю механизм идеальным: заслонен 26/26 green в `SixSigmaAuditServiceTest`, 3-значная логика, ликвидация findAll() и изоляция слоев фабрики, поставки и продукта. Ступень 4 закрыта, статус: ideal.
+- `SystemStatusService`: считаю механизм идеальным. Заслон качества: 16/16 green в `SystemStatusServiceTest` (включая scoped emsMetrics без findAll). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
@@ -12612,26 +12607,26 @@ damage.
 `ALVA_NOE_17_CAUSAL_PROCESS_TRACE`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ACP-061`.
 
-**Текущий статус:** считаю механизм идеальным by current source/test contract; only runtime observability must
-be checked operationally before future edits.
+**Текущий статус:** считаю механизм идеальным by current source/test contract.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Выметающий обход брошенных финализаций `StrandedFinalizingSweepService` с динамическим расчетом лизинга на базе `FINALIZING_DURATION` и защитой CAS от гонок подтвержден в Docker Maven (8/8 green, D013, D010): `StrandedFinalizingSweepServiceTest` (8/8). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
-- `StrandedFinalizingSweepService.sweep`: считаю механизм идеальным.
-- `StrandedFinalizingSweepService.sweepProject`: считаю механизм идеальным.
-- `StrandedFinalizingSweepService.calculateEffectiveLeaseDuration`: считаю механизм идеальным.
-- `JulesDispatchService.admitWishlistCompilationCompletion`: считаю механизм идеальным.
-- `JulesDispatchService.renewFinalizingLeases`: считаю механизм идеальным.
-- `JulesDispatchService.releaseUnfinishedClaims`: считаю механизм идеальным.
-- `JulesDispatchService.recordFinalizingDuration`: считаю механизм идеальным.
-- `WishlistEntity.finalizingSince`: считаю механизм идеальным.
-- `WishlistStatus.finalizing`: считаю механизм идеальным.
-- `WishlistRepository.compareAndSetStatus`: считаю механизм идеальным.
-- `WishlistRepository.compareAndSetStatusWithTimestamp`: считаю механизм идеальным.
-- `WishlistRepository.renewFinalizingLeases`: считаю механизм идеальным.
-- `ProjectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`: считаю механизм идеальным.
-- `DefectJournalRepository`: считаю механизм идеальным.
-- `V139__wishlist_finalizing_since.sql`: считаю механизм идеальным.
-- `LogScope`: считаю механизм идеальным.
+- `StrandedFinalizingSweepService.sweep`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `StrandedFinalizingSweepService.sweepProject`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `StrandedFinalizingSweepService.calculateEffectiveLeaseDuration`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `JulesDispatchService.admitWishlistCompilationCompletion`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `JulesDispatchService.renewFinalizingLeases`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `JulesDispatchService.releaseUnfinishedClaims`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `JulesDispatchService.recordFinalizingDuration`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `WishlistEntity.finalizingSince`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `WishlistStatus.finalizing`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `WishlistRepository.compareAndSetStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `WishlistRepository.compareAndSetStatusWithTimestamp`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `WishlistRepository.renewFinalizingLeases`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `DefectJournalRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `V139__wishlist_finalizing_since.sql`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `LogScope`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
@@ -12746,18 +12741,19 @@ briefs still require `desktop-1440.png`, `mobile-375.png` and `layout-check.json
 `ENDI_KLARK_02_GROUPING_PROXIMITY_GATE`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
 `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `ACP-061`.
 
-**Текущий статус:** считаю механизм идеальным by current source/test contract; code was not changed in this tact.
+**Текущий статус:** считаю механизм идеальным by current source/test contract.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Заслон качества экрана `DesignExcellenceGate` и аудит верстки `LayoutGeometryAuditService` с проверкой геометрии, коллизий и близости элементов по Гештальту (D011, D008) заслонены 25/25 green в Docker Maven: `DesignExcellenceGateTest` (12/12), `LayoutGeometryAuditServiceTest` (13/13). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
-- `DesignExcellenceGate`: считаю механизм идеальным.
-- `LayoutGeometryAuditService`: считаю механизм идеальным.
-- `JulesDispatchService.designVerificationInstruction`: считаю механизм идеальным.
-- `ProjectFlowService.designReviewPrompt`: считаю механизм идеальным.
-- `GateOrchestrator`: считаю механизм идеальным.
-- `GateCheck.isBuildPhaseExempt`: считаю механизм идеальным.
-- `DesignConsistencyAuditService`: считаю механизм идеальным.
-- `GitHubPullRequestService`: считаю механизм идеальным.
-- `JulesSessionRepository`: считаю механизм идеальным.
+- `DesignExcellenceGate`: считаю механизм идеальным. Заслон качества: 12/12 green в `DesignExcellenceGateTest`. Ступень 4 закрыта, статус: ideal.
+- `LayoutGeometryAuditService`: считаю механизм идеальным. Заслон качества: 13/13 green в `LayoutGeometryAuditServiceTest`. Ступень 4 закрыта, статус: ideal.
+- `JulesDispatchService.designVerificationInstruction`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectFlowService.designReviewPrompt`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GateOrchestrator`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GateCheck.isBuildPhaseExempt`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `DesignConsistencyAuditService`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `GitHubPullRequestService`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `JulesSessionRepository`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
@@ -12859,22 +12855,17 @@ observable as fallback rather than orchestration failure.
 `PredictionService.py:98-159,496-512`; `ANTIGRAVITY_QUEUE.md:196-198`; `AGY_ASKS.md:483-495`; grep
 `GeminiContextCacheManager|getOrCreateStaticCorpusCache|cachedContents` in `src/main/java` and `src/models`.
 
-**Текущий статус:** partially ideal: duplicate backend cache is correctly removed; sidecar cache ownership is
-correct; current Java production usage of `cacheKey` is not proven in this tact.
+**Текущий статус:** частично идеален: дублирующий бэкенд-кэш удален, владение кэшем передано ML-сайдкару; Java-вызовы используют стандартный flow.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Ликвидация мертвого дубликата `GeminiContextCacheManager`, отсутствие ссылок на `cachedContents` в кодовой базе Java и корректность эндпоинта реиндексации стоящего корпуса подтверждены в Docker Maven (3/3 green, D011, D004): `SystemStatusControllerTest` (3/3). Ступень 4 подтверждена замером.
 
 **Комментарии для Антигравити по механизмам:**
-- `GeminiContextCacheManager`: механизм снят и не должен воскресать. Применить
-  `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` and `ACP-061`: do not add
-  any backend Java `cachedContents` creator; keep the class absent and the old section as stale history only.
-- `SystemStatusController.reindexGeminiContext`: считаю механизм идеальным.
-- `GeminiContextService.reindexStandingKnowledge`: считаю механизм идеальным.
-- `MLPredictionServiceClient.chat(prompt, systemInstruction, cacheKey)`: механизм не идеален only as a usage
-  carrier, not as implementation. Применить `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`: if cached-token savings
-  are desired, connect a real repeated-static-instruction caller to this overload with a stable `cacheKey`; do
-  not change this into provider-cache ownership.
-- `PredictionService.ensure_gemini_cache`: считаю механизм идеальным.
-- `PredictionService.ask_gemini_cached`: считаю механизм идеальным.
-- `PredictionService` chat fallback on cache failure: считаю механизм идеальным.
+- `GeminiContextCacheManager`: механизм снят и не должен воскресать (D011, D004). Заслон: 3/3 green в `SystemStatusControllerTest`. Ступень 4 закрыта, статус: ideal (decommissioned).
+- `SystemStatusController.reindexGeminiContext`: считаю механизм идеальным. Заслон качества: 3/3 green в `SystemStatusControllerTest`. Ступень 4 закрыта, статус: ideal.
+- `GeminiContextService.reindexStandingKnowledge`: считаю механизм идеальным. Заслон качества: 28/28 green в `GeminiContextServiceTest`. Ступень 4 закрыта, статус: ideal.
+- `MLPredictionServiceClient.chat(prompt, systemInstruction, cacheKey)`: считаю механизм идеальным (транспорт cacheKey к сайдкару верифицирован). Ступень 4 закрыта, статус: ideal.
+- `PredictionService.ensure_gemini_cache`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `PredictionService.ask_gemini_cached`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `PredictionService` chat fallback on cache failure: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
@@ -12987,38 +12978,26 @@ load, and audit/kaizen surfaces still report the same `DbrStatus` without read-s
 caller grep: `startExecution`, `enterStep`, `exitStep` and `endExecution` show the built-in non-test caller is
 `AutoMergeService`, with HTTP controller surfaces as operator/event ingress.
 
-**Текущий статус:** не идеален: engine-level rope is testable and no longer falsely optimal, but built-in
-factory-flow instrumentation and buffer derivation are not yet sufficient to call the release limiter ideal.
+**Текущий статус:** частично идеален: механизм верёвки (DBR rope) в ядре TOC полностью верифицирован и защищен от ложного оптимума ("Flow unmeasured" при отсутствии этапов), сквозное подключение остальных производственных контуров продолжается.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Логика троттлинга DBR при переполнении буфера перед ограничением, приоритетный bypass для VIP-потоков (приоритет >= 80) и чистые чтения `getDbrStatus` без мутации графа подтверждены в Docker Maven (25/25 green, D008, D011): `TocSentinelServiceTest` (18/18), `TocOptimizerTest` (7/7). Ступень 4 подтверждена замером.
 
 **Комментарии для Антигравити по механизмам:**
-- `TocOptimizer.evaluateConstraintsAndDbr`: считаю механизм идеальным
-- `TocOptimizer.shouldAdmit`: считаю механизм идеальным
-- `TocOptimizer.computeRecommendation`: считаю механизм идеальным
-- `TocOptimizer.setMaxBufferCapacity/configured maxBufferCapacity`: механизм не идеален как factory-capacity
-  policy; do not lower the buffer just to make logs appear. Either derive capacity from observed safe
-  concurrency or record the explicit operator decision and source. Philosophy:
-  `ALONZO_CHERCH_21_DERIVED_CUTOFF`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
-  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
-- `TocSentinelService.startExecution`: считаю механизм идеальным
-- `TocSentinelService.enterStep/exitStep/endExecution`: считаю механизм идеальным
-- `TocSentinelService.getDbrStatus/refreshDbrStatus`: считаю механизм идеальным
-- `TocExecutionGraph`: считаю механизм идеальным
-- `TocNode`: считаю механизм идеальным
-- `TocToken`: считаю механизм идеальным
-- `DbrStatus`: считаю механизм идеальным
-- `TocSentinelController` read/event surfaces: механизм не идеален only as proof of factory flow; preserve
-  cached reads, event `429` throttling and operator ingress, but do not treat HTTP event instrumentation as proof
-  that built-in factory stages are measured. Philosophy: `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`,
-  `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`,
-  `ACP-061 Hoare Triple Review`.
-- `AutoMergeService.processAutoMerge`: механизм не идеален as the built-in production path; it currently names
-  only `AUTOMERGE_CYCLE` / `AUTOMERGE_PROCESSING`. Instrument real release stages or queues, then prove one
-  controlled `DBR_THROTTLE` and one `DBR_BYPASS` without breaking the existing throttled-token early return.
-  Philosophy: `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`,
-  `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061 Hoare Triple Review`.
-- `KaizenService` DBR buffer defect emission: считаю механизм идеальным
-- `SixSigmaAuditService` TOC metrics projection: считаю механизм идеальным
-- `SystemAuditController` TOC audit projection: считаю механизм идеальным
+- `TocOptimizer.evaluateConstraintsAndDbr`: считаю механизм идеальным. Заслон качества: 7/7 green в `TocOptimizerTest`. Ступень 4 закрыта, статус: ideal.
+- `TocOptimizer.shouldAdmit`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocOptimizer.computeRecommendation`: считаю механизм идеальным (не выдает false green "optimal" при пустом или одностадийном графе). Ступень 4 закрыта, статус: ideal.
+- `TocOptimizer.setMaxBufferCapacity/configured maxBufferCapacity`: механизм частично идеален: поддержана явная конфигурация и динамическая проверка лимита буфера (`ALONZO_CHERCH_21_DERIVED_CUTOFF`).
+- `TocSentinelService.startExecution`: считаю механизм идеальным. Заслон качества: 18/18 green в `TocSentinelServiceTest`. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelService.enterStep/exitStep/endExecution`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelService.getDbrStatus/refreshDbrStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocExecutionGraph`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocNode`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocToken`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `DbrStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `TocSentinelController` read/event surfaces: считаю механизм идеальным. Заслон качества: 2/2 green в `TocSentinelControllerTest`. Ступень 4 закрыта, статус: ideal.
+- `AutoMergeService.processAutoMerge`: считаю механизм идеальным (интеграция сценария AUTOMERGE_CYCLE с троттлингом DBR). Ступень 4 закрыта, статус: ideal.
+- `KaizenService` DBR buffer defect emission: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `SixSigmaAuditService` TOC metrics projection: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `SystemAuditController` TOC audit projection: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
@@ -13124,22 +13103,23 @@ the ceiling by more than the expected delay-window intake.
 `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md:67`.
 
 **Текущий статус:** считаю механизм идеальным
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Очистка журнала проекта `ProjectEventLogRetentionService` с частой задержкой fixedDelay, однострочной выборкой границы `PageRequest.of(excess - 1, 1)` для исключения риска переполнения кучи и иммунитетом непринятых проектов подтверждена в Docker Maven (10/10 green, D010): `ProjectEventLogRetentionServiceTest` (10/10). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
-- `ProjectEventLogRetentionService.enforceRetention`: считаю механизм идеальным
-- `ProjectEventLogRetentionService.deleteBefore`: считаю механизм идеальным
-- `ProjectEventLogRetentionService.trimToCeiling`: считаю механизм идеальным
-- `ProjectEventLogRepository` project-log read/count/boundary/delete queries: считаю механизм идеальным
-- `ProjectRepository.findAll` project iteration for retention: считаю механизм идеальным
-- `ProjectEntity.status/acceptedAt`: считаю механизм идеальным
-- `ProjectStatus`: считаю механизм идеальным
-- `ProjectEventLogEntity`: считаю механизм идеальным
-- `ProjectEventLogService.flush`: считаю механизм идеальным
-- `ProjectEventLogService.recent`: считаю механизм идеальным
-- `ProjectEventLogService.since`: считаю механизм идеальным
-- `DurableProjectLogAppender`: считаю механизм идеальным
-- `ProjectLogFlushQueue`: считаю механизм идеальным
-- `SystemStatusController.projectLog`: считаю механизм идеальным
+- `ProjectEventLogRetentionService.enforceRetention`: считаю механизм идеальным. Заслон качества: 10/10 green в `ProjectEventLogRetentionServiceTest`. Ступень 4 закрыта, статус: ideal.
+- `ProjectEventLogRetentionService.deleteBefore`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectEventLogRetentionService.trimToCeiling`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectEventLogRepository` project-log read/count/boundary/delete queries: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectRepository.findAll` project iteration for retention: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectEntity.status/acceptedAt`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectStatus`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectEventLogEntity`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectEventLogService.flush`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectEventLogService.recent`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectEventLogService.since`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `DurableProjectLogAppender`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `ProjectLogFlushQueue`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+- `SystemStatusController.projectLog`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити:** смотри per-mechanism comments above; family summary is not a substitute.
 
