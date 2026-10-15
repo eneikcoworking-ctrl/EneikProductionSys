@@ -1,16 +1,12 @@
-# Такт L2: Ведущий инженер (2026-10-15 09:12 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 09:20 UTC)
 
-1. Фиксация Ступени 4: Пакетный замер Секции VIII (Flow, Lean & Six Sigma Metrics) — D008 Popper, D010 Goldman, D006 Raz:
-   - Исходный код сервисов сохранён без изменений («работа замером, не правкой!»).
-   - `FlowMetricsService` (D008 Popper, D010 Goldman): сверка закона Литтла, строгая изоляция по `projectId`.
-   - `TaskWaitTimeService` (D010 Goldman, D006 Raz): разделение времени сессии воркера и Lean-потерь простоя в очереди.
-   - `SixSigmaAuditService` (D008 Popper, D012 Belnap, D010 Goldman): расчет DPMO/FTY, трехзначная логика, запрет на `findAll()`.
-   - `EmsMetricsService` (D010 Goldman, D013 Wittgenstein): телеметрия готовности ролей без служебных мета-задач.
-   - `ProjectOperationalContextService` (D010 Goldman, D006 Raz): контекст `selected_project_only`, пул V19, Law 1 PR-ревью.
+1. Фиксация Ступени 4: Пакетный замер Секции IX (Самопроверка, оркестрация и операционная истина) — D008 Popper, D010 Goldman, D006 Raz:
+   - Исходный код сервисов фабрики сохранен без единой правки согласно императивному правилу Ступени 4.
+   - Механизмы ядра и периферии: `SystemProgressTracker`, `AiHealthTracker`, `RiskLevelCalculator`, `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`, `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalPolicyService` / `OperationalAction`, `TrustSnapshotService`.
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - 73/73 green: `FlowMetricsServiceTest` (4/4), `DashboardControllerTest` (2/2), `SixSigmaAuditServiceTest` (26/26), `EmsMetricsServiceTest` (6/6), `PrReviewApprovalLaw1Test` (3/3), `AutoMergeServiceTest` (24/24), `V19AccountPoolAndSingleActiveProjectFalsificationTest` (8/8).
+   - 191/191 green: `SystemProgressTrackerTest` (3/3), `MLPredictionServiceClientTest` (9/9), `Stage5ProtectedInvariantsFalsificationTest` (13/13), `RiskLevelCalculatorTest` (8/8), `FalsificationCycleServiceTest` (28/28), `EvidenceCoherenceServiceTest` (21/21), `EvidenceCoherenceV80TerminationFalsificationTest` (5/5), `OpsAuditorServiceTest` (11/11), `PlatformSelfReferenceDetectorTest` (7/7), `FactorySelfHealthServiceTest` (5/5), `KaizenServiceTest` (10/10), `PlannedWorkRecoveryServiceTest` (15/15), `ContinuousOrchestrationServiceTest` (16/16), `OperationalPolicyServiceTest` (17/17), `OperationalPolicyReasonTest` (5/5), `OperationalPolicyDeniedExceptionFalsificationTest` (9/9), `TrustSnapshotServiceTest` (9/9).
 3. Документация и очередь:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксированы строки `*Живое:*` и статус `ideal` для механизмов Секции VIII.
-   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты 5 пунктов Секции VIII.
-4. Инварианты хоста:
-   - Диск: 66% (норма <70%), доступно 13GB. Backend UP 37h, продукт healthy.
+   - В `docs/FACTORY_MECHANISMS.md` внесены записи `*Живое:*` и статус `ideal` для всех 13 механизмов секции.
+   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты 14 пунктов Секции IX (Ступень 4).
+4. Ресурсы и безопасность:
+   - Таймеры schedule не взводились. Прогон выполнен строго в один пакетный проход в изолированном контейнере.

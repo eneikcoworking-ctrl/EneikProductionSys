@@ -384,20 +384,20 @@
 - ~~`SixSigmaAuditService`~~ (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
 - ~~`EmsMetricsService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`ProjectOperationalContextService`~~ (Закрыто Ступень 4: замер в Docker Maven 35/35 green, ideal)
-- `SystemProgressTracker`  ← ядро
-- `AiHealthTracker`
-- `RiskLevelCalculator`
-- `FalsificationCycleService`  ← ядро
-- `EvidenceCoherenceService`
-- `OpsAuditorService`  ← ядро
-- `PlatformSelfReferenceDetector`  ← ядро
-- `FactorySelfHealthService`  ← ядро
-- `KaizenService`
-- `PlannedWorkRecoveryService`  ← ядро
-- `ContinuousOrchestrationService`  ← ядро
-- `OperationalPolicyService`
-- `OperationalAction`  ← ядро
-- `TrustSnapshotService`
+- ~~`SystemProgressTracker`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
+- ~~`AiHealthTracker`~~ (Закрыто Ступень 4: замер в Docker Maven 22/22 green, ideal)
+- ~~`RiskLevelCalculator`~~ (Закрыто Ступень 4: замер в Docker Maven 8/8 green, ideal)
+- ~~`FalsificationCycleService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 28/28 green, ideal)
+- ~~`EvidenceCoherenceService`~~ (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
+- ~~`OpsAuditorService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`PlatformSelfReferenceDetector`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)
+- ~~`FactorySelfHealthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
+- ~~`KaizenService`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`PlannedWorkRecoveryService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 15/15 green, ideal)
+- ~~`ContinuousOrchestrationService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 16/16 green, ideal)
+- ~~`OperationalPolicyService`~~ (Закрыто Ступень 4: замер в Docker Maven 31/31 green, ideal)
+- ~~`OperationalAction`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 31/31 green, ideal)
+- ~~`TrustSnapshotService`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - `GoogleAiResourceService`
 - `EmbeddingSimilarityUtil`
 - `StitchClient`
