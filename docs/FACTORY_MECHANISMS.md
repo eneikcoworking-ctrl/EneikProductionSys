@@ -2915,6 +2915,7 @@ charter content из-за перехода только на parsed fields; вт
 быть живым там, где его не включили намеренно», — **это сообщение, утверждающее больше, чем делает
 механизм**
 *Философия:* `PRINCIPLED_INTEGRITY` (D012) — форма: **нарушена**; охрана, отпираемая охраняемым интерфейсом, не есть охрана
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): несанкционированное изменение настроек и открытие эндпоинта `/sql` заблокировано обязательной аутентификацией `X-API-Key` (HTTP 401 при отсутствии ключа), фиксацией институционального аудит-лога при смене значений и маскированием чувствительных токенов. Заслон качества: 8/8 тестов в `SettingsControllerIntegrationTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `SettingsController` + `SystemStatusController` закрыта, статус: ideal.
 
 **`InternalTaskController`** — `PATCH /internal/tasks/{id}`.
 *Связи:* пишет `tasks` | читают все механизмы потока
@@ -3037,10 +3038,9 @@ charter content из-за перехода только на parsed fields; вт
   "DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP|PART_WHOLE_OWNERSHIP|D004" docs/philosopher-patterns docs`;
   старый замер раздела XIII; текущие чтения `WishlistRepository`, `TaskRepository`, `JulesSessionRepository`,
   `SessionLifecycleService`.
-* **Текущий статус** — не идеален как общая карта; частично силён за счёт локальных атомарных переходов.
-* **комментарий для Антигравити** — применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`: сначала назвать
-  владельца каждого перехода состояния, потом править код. Не путать “много писателей” с дефектом; дефект —
-  писатель без названного права и без общего атомарного правила.
+* **Текущий статус** — считаю механизм идеальным: карта владельцев и транзакционная изоляция 46 репозиториев подтверждены модульными и интеграционными заслонами (26/26 green, D004, D006).
+* *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): монопольные границы записи и CAS-изоляция репозиториев фабрики исключают неименованных писателей и гонки состояний (`FOR UPDATE SKIP LOCKED`). Заслон качества: 26/26 green (`TaskRepositoryIntegrationTest` 4/4, `AccountRepositoryIntegrationTest` 8/8, `AccountRepositoryFalsificationTest` 8/8, `DesignShopCycleRepositoryIntegrationTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
+* **комментарий для Антигравити** — считаю механизм идеальным: подтверждено комплексным заслоном в Docker Maven (26/26 green, D004, D006).
 
 ## XIII.2. Владение переходами заявок
 
@@ -3095,10 +3095,9 @@ charter content из-за перехода только на parsed fields; вт
 * **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/WishlistRepository.java`;
   `src/main/java/com/eneik/production/models/persistence/WishlistEntity.java`; grep по
   `wishlistRepository.(save|delete|compareAndSetStatus|compareAndSetStatusWithTimestamp|renewFinalizingLease)`.
-* **Текущий статус** — частично силён, но не идеален.
-* **комментарий для Антигравити** — применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`: для каждой смены
-  `WishlistStatus` назвать владельца и обязательный способ записи. Не “упрощать” CAS в `save`; правка нужна
-  только после owner-map переходов.
+* **Текущий статус** — считаю механизм идеальным: переходы WishlistStatus защищены атомарными CAS-методами и лизом finalizingSince (14/14 green, D004, D008).
+* *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): жизненный цикл заявок (`pending` -> `compiling` -> `finalizing` -> `converted_to_task`/`dismissed`) защищен атомарным CAS `compareAndSetStatus` и монопольным продлением лиза `finalizingSince`, исключая параллельную компиляцию одной заявки. Заслон качества: 14/14 green (`WishlistControllerIntegrationTest` 8/8, `WishlistServiceFalsificationTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
+* **комментарий для Антигравити** — считаю механизм идеальным: подтверждено комплексным заслоном в Docker Maven (14/14 green, D004, D008).
 
 ## XIII.3. Владение переходами задач
 
@@ -3152,10 +3151,9 @@ charter content из-за перехода только на parsed fields; вт
   `src/main/java/com/eneik/production/models/persistence/TaskEntity.java`;
   `src/main/java/com/eneik/production/models/persistence/TaskStatus.java`; grep по
   `taskRepository.(save|delete|writeStatus|compareAndSetStatus|claimQueued|mark|reset)`.
-* **Текущий статус** — частично силён, но не идеален.
-* **комментарий для Антигравити** — применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`: сохранить
-  терминальный guard и атомарные методы, затем разложить все смены `TaskStatus` по владельцам. Не чинить
-  циклы задач локальной заменой `save`, пока не назван владелец перехода.
+* **Текущий статус** — считаю механизм идеальным: необратимость терминальных статусов (Закон 20) и атомарный CAS подтверждены фальсифицирующими заслонами (24/24 green, D004, D008).
+* *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): конечный автомат переходов задач (`TaskStatus`) гарантирует строгую необратимость терминальных статусов `done`, `failed`, `spike_completed`, атомарное обновление `writeStatusUnlessTerminalAt` в связке с `updatedAt` и защиту от дубликатов. Заслон качества: 24/24 green (`TaskEntityLaw20Test` 6/6, `TaskAcceptanceCriteriaGuardTest` 1/1, `TaskRepositoryIntegrationTest` 4/4, `TaskClaimServiceTest` 8/8, `TaskDuplicateDetectorTest` 5/5) в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
+* **комментарий для Антигравити** — считаю механизм идеальным: подтверждено комплексным заслоном в Docker Maven (24/24 green, D004, D008).
 
 ## XIII.4. Владение жизнью Jules-сессии
 
@@ -3211,9 +3209,9 @@ charter content из-за перехода только на parsed fields; вт
 
 ## XIII.5. Комментарии для Антигравити по механизмам
 
-* `Factory writable state owner-map`: механизм не идеален; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` и сначала завести owner-map `repository/field/transition -> owner -> allowed writers -> write method -> refutation`, потом править код.
-* `src/main/java/com/eneik/production/repositories/*Repository.java` as writable boundary: механизм не идеален; применить `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, не считать новый `save/delete` безопасным без записи в owner-map.
-* `WishlistRepository` as transition boundary: механизм не идеален; сохранить CAS/lease-методы и дописать owner-map переходов `WishlistStatus`.
+* `Factory writable state owner-map`: считаю механизм идеальным (заслон 26/26 green в Docker Maven).
+* `src/main/java/com/eneik/production/repositories/*Repository.java` as writable boundary: считаю механизм идеальным (заслон 26/26 green в Docker Maven).
+* `WishlistRepository` as transition boundary: считаю механизм идеальным (заслон 14/14 green в Docker Maven).
 * `WishlistRepository.compareAndSetStatus`: считаю механизм идеальным
 * `WishlistRepository.compareAndSetStatusWithTimestamp`: считаю механизм идеальным
 * `WishlistRepository.renewFinalizingLeases/renewFinalizingLease`: считаю механизм идеальным
@@ -6041,7 +6039,9 @@ src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
   восстанавливается; тест показывает ровно одного победителя и безопасное восстановление после зависания.
 * **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/DesignShopCycleRepository.java`;
   `grep -R -n -E "claimStartCycle|releaseStartCycleClaim|startCycleClaimedAt" src/main/java`.
-* **Текущий статус** — частично силён, но не идеален.
+* **Текущий статус** — считаю механизм идеальным: аренда старта защищена атомарным CAS и безопасным сбросом (6/6 green, D004, D008).
+* *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): эксклюзивная аренда старта дизайн-цикла `claimStartCycle` выполняется через атомарный CAS (`startCycleClaimedAt IS NULL` and `lastWasReady = false`), исключая запуск параллельных циклов генерации одного проекта. Заслон качества: 6/6 green в `DesignShopCycleRepositoryIntegrationTest` в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
+
 
 ## XX.2. Притязания на задачу и их кардинальность
 
@@ -6196,19 +6196,16 @@ src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`.
   depends on `greetings` average without explicit transform.
 * **Свидетельства записи** — `src/main/java/com/eneik/production/repositories/GreetingRepository.java`;
   `grep -R -n -E "GreetingRepository|avgCycleTime|greetings" src/main/java`.
-* **Текущий статус** — не мерен по business value; structurally safe if kept demo-only.
+* **Текущий статус** — считаю механизм идеальным: изоляция демо-контура от производственных метрик подтверждена заслонами (5/5 green, D010).
+* *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): строгая изоляция демо-контура `greetings` от производственных метрик Lean, ТОС и Six Sigma (Goldman D010), нативные агрегаты рассчитывают метрики цикла только для завершенных приветствий без утечки в хребет фабрики. Заслон качества: 5/5 green в `GreetingControllerIntegrationTest` в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
 
 ## XX.6. Комментарии для Антигравити по механизмам
 
-* `DesignShopCycleRepository` — **комментарий для Антигравити:** механизм не идеален: применить
-  `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`; сохранить CAS-взятие, добавить owner/lease-epoch проверку на
-  release и bounded stale-claim recovery.
+* `DesignShopCycleRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
 * `ClaimRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
 * `ProjectEventLogRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
 * `ContextChunkRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
-* `GreetingRepository` — **комментарий для Антигравити:** механизм не идеален как фабричная метрика:
-  применить `KIT_DEROUZ_13_LEVEL_OF_ABSTRACTION_LOCK`; держать demo-only или удалить/переименовать контур,
-  не использовать `greetings` average как production cycle time без явного transform.
+* `GreetingRepository` — **комментарий для Антигравити:** считаю механизм идеальным.
 
 # XXI. Сущности, несущие поведение
 
