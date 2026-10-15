@@ -418,13 +418,13 @@
 - ~~`IdleProjectAdviceService`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - ~~`RoleCapabilityLoader`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
 - ~~`ProjectAuditPipelineService`~~ (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
-- `AccountController`  ← ядро
-- `ProjectController`  ← ядро
-- `ClaimController`  ← ядро
-- `WishlistController`  ← ядро
-- `InternalTaskController`  ← ядро
-- `JulesSessionController`  ← ядро
-- `GithubWebhookController`
+- ~~`AccountController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
+- ~~`ProjectController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 15/15 green, ideal)
+- ~~`ClaimController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
+- ~~`WishlistController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 8/8 green, ideal)
+- ~~`InternalTaskController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`JulesSessionController`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 16/16 green, ideal)
+- ~~`GithubWebhookController`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - `SchedulingConfig`  ← ядро
 - `TocAnomalyDetector`
 - `DefectJournalService`  ← ядро

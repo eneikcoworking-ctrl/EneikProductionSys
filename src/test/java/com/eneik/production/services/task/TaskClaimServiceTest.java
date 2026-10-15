@@ -163,6 +163,7 @@ public class TaskClaimServiceTest {
         TaskEntity task = createQueuedTask("BARCAN-TAG-11", payload);
         // Fresh project, zero merged client deliverables - still in build phase by default.
         AccountEntity account = createAccount(task.getProject(), "BARCAN-TAG-11");
+        stubRealDiffForTask(task, "src/main/resources/static/app.js");
 
         ClaimDto claim = taskClaimService.claimForProject(task.getProject().getId(), account.getId());
         taskClaimService.complete(claim.taskId());
@@ -340,11 +341,12 @@ public class TaskClaimServiceTest {
         String designCheckDir = com.eneik.production.services.gate.DesignExcellenceGate.designCheckDir(task);
         String desktopPath = designCheckDir + "desktop-1440.png";
         String mobilePath = designCheckDir + "mobile-375.png";
+        String layoutPath = com.eneik.production.services.gate.DesignExcellenceGate.layoutCheckPath(task);
         String headRef = "feature/design-" + task.getId();
 
         when(gitHubPullRequestService.parsePullNumber("https://github.com/example/repo/pull/50")).thenReturn(50);
         when(gitHubPullRequestService.fetchDiffText(any(), eq(50)))
-                .thenReturn(Optional.of("+++ b/" + desktopPath + "\n+++ b/" + mobilePath + "\n"));
+                .thenReturn(Optional.of("+++ b/" + desktopPath + "\n+++ b/" + mobilePath + "\n+++ b/" + layoutPath + "\n"));
         when(gitHubPullRequestService.fetchPullRequestByNumber(any(), eq(50)))
                 .thenReturn(Optional.of(new GitHubPullRequestService.GitHubPullRequest(
                         "https://github.com/example/repo/pull/50", 50, "Design gate fixture PR", headRef,
@@ -353,6 +355,8 @@ public class TaskClaimServiceTest {
                 .thenReturn(Optional.of(new byte[3000]));
         when(gitHubPullRequestService.fetchFileBytes(any(), eq(headRef), eq(mobilePath)))
                 .thenReturn(Optional.of(new byte[1800]));
+        when(gitHubPullRequestService.fetchFileContent(any(), eq(headRef), eq(layoutPath)))
+                .thenReturn(Optional.of("[{\"id\":\"header\",\"left\":0,\"top\":0,\"width\":375,\"height\":60},{\"id\":\"content\",\"left\":0,\"top\":60,\"width\":375,\"height\":400}]"));
     }
 
     private ObjectNode basePayload() {

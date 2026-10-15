@@ -1,12 +1,12 @@
-# Такт L2: Ведущий инженер (2026-10-15 09:45 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 10:15 UTC)
 
-1. Фиксация Ступени 4: Пакетный замер Секций XI и XII (Наблюдение за живым продуктом, журнал, память, настройки, санитария) — D008 Popper, D010 Goldman, D006 Raz:
+1. Фиксация Ступени 4: Пакетный замер Секции XIIа (Управляющая поверхность: чем поток останавливают снаружи) — D008 Popper, D010 Goldman, D006 Raz:
    - Исходный код сервисов фабрики (`src/main`) сохранен нерушимым без единой строки правок согласно правилу Ступени 4 («работа замером, не правкой»).
-   - Замерены механизмы: `ClientRuntimeObservabilityService`, `BetaPosterior`, `RuntimeHealthShiftDetector`, `ProductCapabilityService`, `LogScope`, `ProjectLogFlushQueue`, `SystemSettingsService`, `ProjectTreeService`, `IdleProjectAdviceService`, `RoleCapabilityLoader`, `ProjectAuditPipelineService` (пункты 410–420).
+   - Замерены механизмы: `AccountController` (ядро, 421), `ProjectController` (ядро, 422), `ClaimController` (ядро, 423), `WishlistController` (ядро, 424), `InternalTaskController` (ядро, 425), `JulesSessionController` (ядро, 426), `GithubWebhookController` (427).
 2. Заслон качества (100% green в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - 122/122 green в один проход: `ClientRuntimeObservabilityServiceTest` (29/29), `ObservationHostingDemarcationLaw26Test` (3/3), `BetaPosteriorTest` (9/9), `RuntimeHealthShiftDetectorTest` (9/9), `ProductCapabilityServiceTest` (18/18), `LogScopeBufferTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `ScopedBufferAppenderFalsificationTest` (13/13), `SystemSettingsServiceTest` (13/13), `IdleProjectAdviceServiceTest` (6/6), `RoleAdviceLoopServiceTest` (2/2), `RoleAdviceLoopServiceIntegrationTest` (1/1), `RoleCapabilityLoaderTest` (4/4), `ProjectAuditPipelineServiceTest` (4/4).
+   - 89/89 green в один проход: `AccountLifecycleInvariantTest` (5/5), `AccountControllerIntegrationTest` (5/5), `AccountRepositoryFalsificationTest` (8/8), `OperationalPolicyDeniedExceptionFalsificationTest` (9/9), `LogScopeBufferTest` (6/6), `ClaimRightsDutiesMatrixTest` (7/7), `ClaimResultStatusTruthTableFalsificationTest` (5/5), `ClaimServiceRaceGuardTest` (5/5), `WishlistControllerIntegrationTest` (8/8), `InternalTaskControllerTest` (6/6), `TaskClaimServiceTest` (8/8), `V19AccountPoolAndSingleActiveProjectFalsificationTest` (8/8), `GithubWebhookControllerTest` (9/9).
 3. Документация и очередь:
-   - В `docs/FACTORY_MECHANISMS.md` внесены записи `*Живое:*` и подтверждение статуса `ideal` для механизмов Секций XI и XII (пункты 410–420).
-   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты пункты 410–420 Ступени 4.
+   - В `docs/FACTORY_MECHANISMS.md` внесены записи `*Живое:*` и подтверждение статуса `ideal` для всех 7 механизмов Секции XIIа (пункты 421–427).
+   - В `docs/ANTIGRAVITY_QUEUE.md` закрыты пункты 421–427 Ступени 4.
 4. Ресурсы и регламент:
    - Таймеры schedule не вызывались, завершение штатное. Изоляция в Docker Maven с лимитом памяти `-m 2g`.

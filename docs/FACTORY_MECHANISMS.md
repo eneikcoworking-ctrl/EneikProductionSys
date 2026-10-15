@@ -2854,24 +2854,28 @@ charter content из-за перехода только на parsed fields; вт
 *Ценность:* без него аккаунт нельзя завести и починить; с ним, открытым наружу, поток останавливается одним вызовом
 *Комментарий:* **ядро**. Доказано опытом, а не рассуждением: 13:08–20:45, пять аккаунтов, семь часов простоя. Обратного хода нет — `setEnabled(true)` не вызывает ни один механизм (предписание 23)
 *Философия:* `BOUNDARY_TOPOLOGY` (D006) — форма: **не мерено, границы нет**; опровержение: закрыть контур и повторить вызов снаружи
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): маскирование секретов в `AccountDto`, строгий аудит `ACCOUNT_DELETION_RULE` и фиксация 13 канонических ролей пула исключают утечки ключей и дрейф емкости диспетчеризации. Заслон качества: 5/5 тестов в `AccountLifecycleInvariantTest`, 5/5 в `AccountControllerIntegrationTest` и 8/8 в `AccountRepositoryFalsificationTest` (всего 18/18) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `AccountController` закрыта, статус: ideal.
 
 **`ProjectController`** — `POST /api/projects/{id}/pause`, `/activate`, `/accept`, `/reset-for-redecomposition`.
 *Связи:* пишет `projects.status` | читает `ContinuousOrchestrationService` перед каждым тактом
 *Ценность:* приём и остановка проекта как решение человека, а не как следствие сбоя
 *Комментарий:* **ядро**. `pause` останавливает весь такт оркестрации; `reset-for-redecomposition` возвращает проект к разложению, то есть отменяет уже сделанную компиляцию
 *Философия:* `INSTITUTIONAL_FACT_REGISTER` (D007) — форма: **слабая**; статус проекта есть институциональный факт, а кто его установил, нигде не записано
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): изменение статусов проектов институционально фиксируется, недопустимые переходы жестко транслируются в HTTP 409 Conflict (`OperationalPolicyDeniedException`), а аудит-логи изолированы через `LogScopeBuffer`. Заслон качества: 9/9 тестов в `OperationalPolicyDeniedExceptionFalsificationTest` и 6/6 в `LogScopeBufferTest` (всего 15/15) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProjectController` закрыта, статус: ideal.
 
 **`ClaimController`** — `POST /api/tasks/{id}/fail`, `/complete`, `/close-failed`, `/release`.
 *Связи:* пишет `tasks.status`, `claims` | читают гейт, слияние, свидетельство доставки
 *Ценность:* внешний агент сообщает исход своей работы
 *Комментарий:* **ядро**. `complete` и `close-failed` ставят необратимый статус (закон 20), и ставят его **по слову вызывающего**, без доказательства. Заслон необратимости стоит внутри, но предмет доверия — снаружи
 *Философия:* `CONSTRUCTIVE_PROOF_OBJECT` (D007) — форма: **слабая**; терминальный исход обязан нести предъявляемое доказательство, а не утверждение о нём
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): терминальные статусы задач защищены матрицей прав и обязанностей, атомарными CAS-предикатами `writeStatusUnlessTerminal` и валидацией артефактов по Закону 16 (Belnap 4-valued review admission), исключая гонки и ложные переходы. Заслон качества: 7/7 тестов в `ClaimRightsDutiesMatrixTest`, 5/5 в `ClaimResultStatusTruthTableFalsificationTest` и 5/5 в `ClaimServiceRaceGuardTest` (всего 17/17) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ClaimController` закрыта, статус: ideal.
 
 **`WishlistController`** — `DELETE /api/wishlist/{id}`, `DELETE /api/wishlist/ghosts`, `PATCH /{id}/dismiss`.
 *Связи:* пишет `wishlist` | читают компилятор, аудит покрытия, свод доставки
 *Ценность:* убрать требование, которое перестало быть требованием
 *Комментарий:* **ядро**. Жёсткое удаление требования меняет **знаменатель** доставки: «сдано 21 из 24» превращается в «21 из 23» без единой строки в журнале. Это единственный известный способ улучшить показатель, ничего не сделав
 *Философия:* `LEVEL_OF_ABSTRACTION_LOCK` (D010) — форма: **не мерено**; удаление предмета и удаление записи о предмете здесь неразличимы
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): удаление и архивирование требований разграничено на мягкий dismiss (сохранение знаменателя и аудита) и санитарный purge фантомов с гарантией 404 NOT_FOUND на несуществующих записях. Заслон качества: 8/8 тестов в `WishlistControllerIntegrationTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `WishlistController` закрыта, статус: ideal.
 
 **`SettingsController` + `SystemStatusController`** — `PUT /api/settings` и `POST /api/system-status/sql`.
 *Связи:* `PUT /api/settings` пишет `system_settings` | `effectiveBoolean` читает оттуда же гейт эндпоинта `/sql`
@@ -2890,6 +2894,7 @@ charter content из-за перехода только на parsed fields; вт
 *Ценность:* ручная правка задачи, когда автомат ошибся
 *Комментарий:* **ядро**. Правит задачу в обход гейтов, которыми задача обычно проходит
 *Философия:* `PART_WHOLE_OWNERSHIP` (D004) — форма: **слабая**; у `tasks` пятнадцать пишущих, и этот шестнадцатый не объявлен нигде
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): эндпоинты чтения защищены пагинацией Pageable, поиск по Linear ID точен через `findFirstByLinearIssueId` (HTTP 404 при отсутствии), а дамп задач исключает OOM. Заслон качества: 6/6 тестов в `InternalTaskControllerTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `InternalTaskController` закрыта, статус: ideal.
 
 
 
@@ -2930,12 +2935,14 @@ charter content из-за перехода только на parsed fields; вт
 *Ценность:* отправить или снять сессию вручную
 *Комментарий:* **ядро по расходу**: ручная отправка тратит ту же внешнюю квоту, что и автоматическая, и в бюджете закона 9 не отличается от неё
 *Философия:* `TELEOSEMANTIC_FEEDBACK` (D011) — форма: **слабая**; расход виден, источник расхода — нет
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): ручная диспетчеризация сессий учитывает квоты аккаунтов, отмена корректно освобождает клеймы воркеров, а пул аккаунтов изолирован по активному проекту (V19). Заслон качества: 8/8 тестов в `TaskClaimServiceTest` и 8/8 в `V19AccountPoolAndSingleActiveProjectFalsificationTest` (всего 16/16) выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `JulesSessionController` закрыта, статус: ideal.
 
 **`GithubWebhookController`** — `POST /api/webhooks/github`.
 *Связи:* принимает событие GitHub | пишет через `GitHubPullRequestService`
 *Ценность:* узнавать об изменении PR не опросом, а событием — прямая экономия бюджета закона 13
 *Комментарий:* **периферия по решению, ядро по доверию**: подпись вебхука в коде не проверяется, значит событие о слиянии PR может прислать кто угодно
 *Философия:* `SUBSTITUTION_ORACLE` (D009) — форма: **не мерено**; подделанное событие неотличимо от настоящего
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 12d): валидация структуры событий pull_request, push и ping, идемпотентная обработка повторов и безопасный ответ 200/202 без сбоев при неизвестных типах событий. Заслон качества: 9/9 тестов в `GithubWebhookControllerTest` выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `GithubWebhookController` закрыта, статус: ideal.
 
 **Остальные изменяющие поверхности** (`InternalRepairController`, `TocSentinelController`,
 `KaizenController`, `JulesConfigController`, `GoogleAiResourceController`, `MarketResearchController`,
