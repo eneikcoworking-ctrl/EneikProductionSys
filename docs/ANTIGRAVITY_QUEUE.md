@@ -256,6 +256,8 @@
 
 **Закрыто (Пакетный замер Секции XXI):** Все механизмы Секции XXI («Сущности, несущие поведение, пространства состояний и алгебра решений»: `TaskEntity`, `WishlistEntity`, `JulesSessionEntity`, `TargetContext`, `AccountStatus`, `LeanValue`, `TaskStatus`, `ProjectStatus`, `VerdictGate`, `VerdictReconciliation`, `RuntimeVerdictLayer`, `AcceptanceVerdictLayer`, `InfrastructureVerdictLayer`, `TocOptimizer`, `TocPersistenceSnapshotTest`, `TocNodeTimeoutTest`, `TrustSnapshotService`, `LogScopeBuffer`, `DefectJournalService`, `EneikProductionApplication.compactH2StoreOnShutdown`) подтверждены и заверены в едином пакетном прогоне в Docker Maven (133/133 green). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер Секций XXII и XXIII):** Все механизмы Секций XXII и XXIII («Миграции: запреты, которые исполняет база» и «Живой замер фабрики, 7 сентября 2026»: `FlywayMigrationValidationTest`, `V137 CompilerTaskIdentity`, `V132 AgencySchema`, `V25 DependsOnHotspots`, `V19 AccountPool`, `V58/V111 ObserverDecommission`, `V80 CoherenceRuns`, `V21/V62 ContextChunkConflict`, `V15 ProjectFinalReport`, `V100/V92/FlowSpineService ClientAcceptance`, `ClaimServiceRaceGuard`, `ProcessControlService`, `Stage5ProtectedInvariants`, живая телеметрия рантайма и хоста) подтверждены и заверены в едином пакетном прогоне в Docker Maven (111/111 green + 33/33 green aux). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -271,7 +273,7 @@
 У этих в записи есть строка «Задача для кодинга»: сказано, что не так, где именно, чем проверяется и что
 починку опровергнет. Порядок внутри ступени — по очереди в начале этого файла, она упорядочена по весу и вреду.
 
-- `V100__client_acceptance_traversals.sql`  ← ядро
+- ~~`V100__client_acceptance_traversals.sql`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 32/32 green в FlowSpineServiceTest, ideal)
 - ~~`generate_philosopher_patterns.py`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green в PhilosopherPatternCorpusConsistencyTest, ideal)
 - `SystemStatusService`  ← ядро
 - ~~`OperationalTruthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)

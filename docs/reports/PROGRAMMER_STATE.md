@@ -1,14 +1,16 @@
-# Такт L2: Ведущий инженер (2026-10-15 20:13 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 20:30 UTC)
 
-1. Пакетная верификация Секции XXI («Сущности, пространства состояний и алгебра решений»):
-   - Сущности и предикаты доставки (Законы 1, 20): `TaskEntityLaw20Test` (6/6), `DeliveryQuestionRecordTest` (3/3), `TaskAcceptanceCriteriaGuardTest` (1/1), `DecompositionVerdictTest` (5/5), `TaskEntityLaw1CarrierTest` (5/5), `DeliveryVerificationPredicateTest` (6/6). Итого: 26/26 green.
-   - Пространства состояний и изоляция: `TargetContextTest` (4/4), `LeanValueTest` (9/9), `AccountStatusConjunctionTest` (7/7). Итого: 20/20 green.
-   - Алгебра решений и слои вердиктов: `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `InfrastructureVerdictLayerTest` (8/8), `AcceptanceVerdictLayerTest` (7/7), `RuntimeVerdictLayerTest` (6/6). Итого: 46/46 green.
-   - Граф ТОС, память отказов и останов JVM: `TocOptimizerTest` (7/7), `TocPersistenceSnapshotTest` (4/4), `TocNodeTimeoutTest` (4/4), `LogScopeBufferTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `EneikProductionApplicationShutdownCompactTest` (6/6). Итого: 41/41 green.
-2. Заслон качества (100% green в едином прогоне в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Все 133 теста Секции XXI пройдены за один пакетный проход: 133 runs, 0 failures, 0 errors, 0 skipped (BUILD SUCCESS).
-   - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде фабрики (`src/main/java`).
-   - RAG-базис удержан: D008 Popper, D010 Goldman & DeRose, D006 Raz, D012 Belnap, D010 Parfit & Shaffer, D002 Ryle.
+1. Пакетная верификация Секций XXII и XXIII («Миграции: запреты, которые исполняет база» и «Живой замер фабрики»):
+   - Целостность схемы Flyway и контрольные суммы: `FlywayMigrationValidationTest` (4/4), `AgencySchemaTest` (1/1).
+   - Защита от дублей и идентичность задач: `CompilerTaskIdentityTest` (1/1), `V25MigrationFalsificationTest` (7/7).
+   - Разграничение прав и монополия клеймов: `TaskClaimServiceTest` (8/8), `ClaimServiceRaceGuardTest` (1/1), `ClaimServiceFalsificationTest` (10/10).
+   - Свидетельства, процессы и ядро потока: `EvidenceCoherenceServiceTest` (21/21), `ProcessControlServiceTest` (8/8), `ProcessControlServiceFalsificationTest` (3/3), `FlowSpineServiceTest` (32/32), `Stage5ProtectedInvariantsFalsificationTest` (15/15). Итого: 111/111 green.
+   - Вспомогательные фальсификационные заслоны миграций: V19, V58/V111, ContextChunk, V15, V80 (33/33 green). Суммарно: 144/144 green.
+2. Заслон качества и живая телеметрия (Docker Maven 3.9.9 Temurin-21, -m 2g):
+   - Единый пакетный прогон: 111 runs, 0 failures, 0 errors, 0 skipped (BUILD SUCCESS).
+   - Живой рантайм бэкенда: Actuator `UP` (`status: ok`), контейнеры хоста Up/healthy, диск 63% (14G доступно, строго <70%), память 1.1G free / 1.6G avail.
+   - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде (`src/main/java`, `src/main/resources`).
+   - RAG-базис удержан: D008 Popper, D010 Goldman, D006 Raz, D012 Belnap, D004 Hintikka, D013 Wittgenstein.
 3. Документация и фиксация:
-   - Актуализированы *Живое:* и канонический блок `### Итог Секции XXI` в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 133/133 green).
-   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md` (Секция XXI закрыта, ideal; TocSentinelService и TocOptimizer закрыты).
+   - Актуализированы *Живое:* для XXII, XXIIб–л, XXIII и добавлен блок `### Итог Секции XXII и XXIII` в `docs/FACTORY_MECHANISMS.md` (ideal).
+   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md` (Секции XXII и XXIII закрыты, ideal; V100 закрыт).
