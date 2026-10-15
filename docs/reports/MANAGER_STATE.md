@@ -1,17 +1,17 @@
-# Такт L1/L3: Менеджер-философ (2026-10-15 10:18 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-15 10:35 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
-- Фабрика: http://localhost:8080/actuator/health -> UP (статус ok, backend-1 UP 38h).
-- Продукт: dmitryefremov-frontend-preview UP 39h (порт 18085), dmitryefremov-db UP 34h (healthy).
-- Сайдкары: runtime-launcher, ml-service, judgment-proxy — all UP (healthy).
+- Фабрика: http://localhost:8080/actuator/health -> UP (статус ok, backend-1 UP 39h).
+- Продукт: dmitryefremov-frontend-preview UP 40h (порт 18085), dmitryefremov-db UP 34h (healthy).
+- Сайдкары: runtime-launcher (8091), ml-service (8000), judgment-proxy (8093) — all UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 25G/38G (68%, норма < 70%), доступно 12GB. Память: 3.1Gi/3.7Gi, swap 2.0Gi.
+- Диск: 25G/38G (68%, норма < 70%), доступно 12GB. Память: 3.0Gi/3.7Gi, swap 1.9Gi.
 
 3. Контроль инженера (L2):
-- Секция XIIа (пункты 421–427) замерена и закрыта инженером L2 (89/89 green, ideal).
-- Принцип ANTIGRAVITY_QUEUE: Ступень 4 — строго замер в рантайме, правки кода запрещены!
+- Секция XVIIб (пункты 428–433) замерена и закрыта инженером L2 (коммит 8ae1044, 79/79 green).
+- Принцип ANTIGRAVITY_QUEUE: Ступень 4 — строго замер в рантайме, правка кода запрещена!
 
-4. Пакетный Work Order: Секция XVIIб Инфраструктура и дефекты (PROGRAMMER_DIRECTIVES.md):
-- Механизмы: SchedulingConfig, TocAnomalyDetector, DefectJournalService, GithubConfig, GlobalExceptionHandler, WebConfig (428–433).
-- Базис: Popper D008 (фальсификация сбоев), Goldman D010 (лок абстракций), Raz D006 (запрет правок кода).
+4. Пакетный Work Order: Финал Ступени 4 (PROGRAMMER_DIRECTIVES.md):
+- Механизмы: launcher.py, server.js, PredictionService.py, ContextChunkRepository, TaskEntity, JulesSessionEntity, EvidenceNodeEntity, JulesConfigEntity, PrivacyFilter, AgencyApplication, TocToken, WishlistItemStatus, V99 SQL, audit_pr.py, VideoAssetService (434–448).
+- Базис: Popper D008 (фальсификация заслонов), Goldman D010 (лок уровней абстракции), Raz D006 (запрет правок кода при green тестах).
