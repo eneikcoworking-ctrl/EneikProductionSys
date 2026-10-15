@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция I (Приём требования: рыночный корпус, уставный гейт и полевое исследование)
+# Пакетная директива L1/L3 -> L2: Секция II (Компиляция: требование становится задачами)
 
-**Дата:** 2026-10-15 17:56 UTC  
+**Дата:** 2026-10-15 18:07 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,54 +10,64 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция VI («Суждение: решётка суждения, слой опровержений, рычаги») полностью замерена и закрыта инженером (139/139 green в коммите `3480f81`). Настоящая директива охватывает целиком следующий фундаментальный массив фабрики — **Секцию I («Приём требования: рыночный корпус, уставный гейт и полевое исследование»)**:
-   - **Контур I.1. `ProjectFlowService` (Shaffer D004, Goldman D010, Raz D006):**
-     * Мерологическое владение Шаффера (`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` / D004): приоритет целого над частями, явное закрепление владельцев переходов состояний задач и заявок вишлиста, защита терминальных статусов через атомарные CAS (`writeStatusUnlessTerminalAt`, `compareAndSetStatusAt`), лимит попыток декомпозиции (`WISHLIST_COMPILE_ATTEMPT_BUDGET = 3`).
-     * Изоляция проектных границ и надежность выборок Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): ликвидация N+1 и смешивания данных чужих проектов через `findByTaskIdIn`, детерминированное упорядочение проектного каталога `listProjects` (`findAllByOrderByCreatedAtDesc`).
-   - **Контур I.2. `ProjectFactoryService`, `GitHubProjectFactoryClient`, `LinearProjectFactoryClient` (Belnap D009, Goldman D010, Varzi D006):**
-     * Многозначный оракул подстановок Белнапа (`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009): при отсутствии или сбое провижининга фабрика строго возвращает `null` и передает `null` в Linear, исключая генерацию фантомных URL (`phantom URL`).
-     * Демаркация онбординга Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): строгое разграничение greenfield (выброс `name_conflict` при существующем удаленном репозитории) и brownfield (сохранение подтвержденного URL), автоматическая регистрация 4 стандартных хотспотов (`ProjectHotspotFileEntity`), валидированный `factoryReport`.
-     * Топология границ Варци (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006): отсутствие внешних сетевых клиентов в транзакционном графе приёма требования.
-   - **Контур I.3. `ProjectWorkspaceFactoryService` (Varzi D006):**
-     * Топология файловых границ Варци (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006): безопасная генерация базовых артефактов (`README.md`, `.env.example`, `.github/workflows/ci.yml`, `docs/PROJECT_BRIEF.md`) со строгим удержанием границы корня проекта `workspaceRoot`.
-   - **Контур I.4. `OnboardingAuditService`, `RepositoryStackAnalyzer` (Belnap D012, Ryle D002, Goldman D010):**
-     * Трёхзначная таблица истинности Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012): статусы аудита представлены в системе типов `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) с выводом «не проверено» вместо ложного булева false.
-     * Защита от категориальной ошибки Райла (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002): категорический запрет конвертации проблем сетевого доступа фабрики в дефекты или находки о коде клиента (`assertThat(savedFindings).isEmpty()` при `isUnchecked()`).
-     * Цепочка надежности Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): атомарная очистка устаревших находок (`deleteAll`) перед записью свежих данных.
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция I («Приём требования: рыночный корпус, уставный гейт и полевое исследование») полностью замерена и закрыта инженером (165/165 green в коммите `d492a6c`). Настоящая директива охватывает целиком следующий фундаментальный массив фабрики — **Секцию II («Компиляция: требование становится задачами»)**:
+   - **Контур II.1. `TechnicalLeadCompiler` (Searle D007, Varzi D002, Raz D006):**
+     * Институциональный регистр Серла (`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` / D007): трёхзначный статус аудита области файлов `NamespaceAuditStatus` (`ADMISSIBLE`, `VIOLATION`, `UNKNOWN_NAMESPACE`). Отсутствие неявного пропуска (`no silent pass`): неустановленный namespace (`UNKNOWN_NAMESPACE`) не проходит в отправку и регистрируется в дефектном журнале (`auditPathsAgainstNamespace`).
+     * Реестр объектов и границ Варци (`AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` / D002): разделение задач и притязаний на файлы (`ProjectFileClaimEntity`), защита корня продукта клиента.
+     * Деонтические исключающие основания Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006): бюджет компиляции (`WISHLIST_COMPILE_ATTEMPT_BUDGET = 3`), отсечение нерелевантных путей (`pathsOutsideProductNamespace`).
+   - **Контур II.2. `FeatureService` (Varzi D002, Raz D006):**
+     * Реестр актуальных объектов Варци (`AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` / D002): личность эпика чеканится строго лениво (`resolveOrCreateFeatureId`) — требование, не ставшее работой, эпика не получает.
+   - **Контур II.3. `EpistemicMetadataClassifier`, `KanoClass`, `EmsFlowStage` (Goldman D010, Kripke D001):**
+     * Лок-уровень абстракции Голдмана (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010): классификатор метаданных на пустом входе или тексте без маркеров не выдумывает средних величин (`emptyInputExtractsNothingRatherThanGuessingAMiddleValue`).
+     * Жесткие десигнаторы Крипке (`ANCHOR_BOUND_NAME` / D001): единственные экземпляры правил чтения классов Кано и стадий потока EMS; отсутствующий класс никогда не объявляется дефолтным `must-be` (`anAbsentClassIsNeverInventedAsMustBe`).
+   - **Контур II.4. `SelfFalsificationEpicMatcher`, `WishlistContentSimilarityMatcher` (Belnap D009, Goldman D010):**
+     * Оракул подстановок Белнапа (`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009): при равных весах конкурирующих эпиков возвращается пустой результат (`ambiguousTiedCandidatesReturnEmpty`), исключая ложную привязку.
+     * Каузальная цепочка Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010): бимодальная кластеризация подобия требований без искусственных фиксированных порогов.
+   - **Контур II.5. `WishlistService` (Varzi D002, Goldman D010):**
+     * Чистота реестра требований: метод `purgeGhostWishlists` точно изолирует фантомы, исключая удаление клиентских требований.
+   - **Контур II.6. `StrandedFinalizingSweepService` (Gärdenfors D007, Salmon D013, Dworkin D012):**
+     * Журнал пересмотра убеждений Гэрденфорса (`PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` / D007): динамический расчет предела безопасной аренды `calculateEffectiveLeaseDuration` по медиане выборки дефектного журнала `FINALIZING_DURATION` (с 10x запасом безопасности и порогом >= 30 сек).
+     * Каузальный след Сэлмона (`UESLI_SELMON_02_CAUSAL_PROCESS_TRACE` / D013): возраст заявки в `finalizing` отсчитывается строго от каузальной метки `finalizingSince` (миграция `V139`), а не сторонних меток `createdAt` или `lastCompileDispatchedAt`.
+     * Принципиальная целостность Дворкина (`RONALD_DVORKIN_04_PRINCIPLED_INTEGRITY` / D012): атомарный CAS (`compareAndSetStatus(w.getId(), finalizing, pending)`) защищает активных воркеров от сноса.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
-   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено трогать рабочий код сервисов (`src/main/java`) при проходящих тестах!
-   - Механизмы Секции I уже реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
+   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено модифицировать рабочий код сервисов (`src/main/java`) при проходящих тестах!
+   - Механизмы Секции II уже полностью реализованы в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D004, D009, D012, D002)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D007, D013, D012, D002, D009, D001)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
-  * Попперовская фальсификация: тесты-заслоны обязаны падать при попытке подсунуть чужой проект, нарушить DBR Rope или подменить статус без правки в БД;
-- **`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
-  * Каузальная надежность процесса: четкое разделение greenfield/brownfield, устранение N+1 через `findByTaskIdIn`, атомарное удаление старых находок аудита;
+  * Попперовская фальсификация: тесты-заслоны обязаны падать при попытке silently pass'ить чужой пакет (`UNKNOWN_NAMESPACE`), выдумывать класс Кано или сбрасывать активного воркера в `StrandedFinalizingSweepService`;
+- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
+  * Лок-уровень абстракции: классификатор метаданных на пустом входе выдает пустой результат вместо подгонки под среднее;
+  * Каузальная надежность кластеризации требований без произвольных пороговых констант;
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
-  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции I при проходящих тестах;**
-  * Деонтические исключающие основания: запрет сетевых вызовов в транзакции приёма, запрет перезаписи терминальных статусов задач;
-- **`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` [D004 Boundary drift, Shaffer]:**
-  * Мерологический приоритет целого над частями: `ProjectFlowService` как координатор жизненного цикла проектов удерживает согласованность 15 хранилищ;
-- **`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` & `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D009 & D012 Many-valued diagnostics, Belnap]:**
-  * Честный `null` при сбое провижининга вместо фантомных URL;
-  * Трёхзначная решётка `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) с отображением «не проверено»;
-- **`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` [D002 Category mistake, Ryle]:**
-  * Категориальная граница: сбой доступа фабрики не является дефектом кода заказчика.
+  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода сервисов Секции II при проходящих тестах;**
+  * Деонтические исключающие основания: запрет генерации задач вне доказанного неймспейса, лимит попыток декомпозиции, запрет сноса живых исполнителей;
+- **`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER` [D007 Fact drift, Searle]:**
+  * Трёхзначный институциональный статус аудита `NamespaceAuditStatus` (`ADMISSIBLE`, `VIOLATION`, `UNKNOWN_NAMESPACE`);
+- **`PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` [D007 Belief revision, Gärdenfors]:**
+  * Динамический пересмотр лимита аренды `finalizing` на основе эмпирической выборки дефектного журнала;
+- **`UESLI_SELMON_02_CAUSAL_PROCESS_TRACE` [D013 Runtime drift, Salmon]:**
+  * Отсчет времени аренды по прямой каузальной метке `finalizingSince` (Flyway V139);
+- **`RONALD_DVORKIN_04_PRINCIPLED_INTEGRITY` [D012 Integrity violation, Dworkin]:**
+  * Защита от race condition через атомарный CAS (`compareAndSetStatus`), сохранение целостности системы;
+- **`AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` & `ANCHOR_BOUND_NAME` [D002 & D001 Ontology & Rigid designators, Varzi & Kripke]:**
+  * Ленивая чеканка эпиков, сохранение семантики классов и стадий во всех контекстах вызова.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. Провести строгий пакетный замер механизмов Секции I в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
-2. Подтвердить 100% green статус по ключевым классам-заслонам Секции I:
-   - Приём проектов и жизненный цикл: `ProjectFlowServiceTest`, `ProjectFlowServiceFalsificationTest`, `ProjectFlowServiceLaw1JulesDispatchTest`, `ProjectFlowServiceResetTest`, `ProjectFlowServiceDbrRopeTest`, `ProjectFlowIntegrationTest`;
-   - Провижининг: `ProjectFactoryServiceTest`, `ProjectFactoryServiceFalsificationTest`, `GitHubProjectFactoryClientTest`, `LinearProjectFactoryClientTest`;
-   - Онбординг и стек: `OnboardingAuditServiceTest`, `OnboardingAuditServiceFalsificationTest`, `RepositoryStackAnalyzerTest`.
-3. Зафиксировать форму образца и актуализировать статус Секции I в `docs/FACTORY_MECHANISMS.md` (добавить итоговую секцию `### Итог Секции I`, подтверждающую Ступень 4 closed, ideal, 100% green).
+1. Провести строгий пакетный замер механизмов Секции II в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`).
+2. Подтвердить 100% green статус по ключевым классам-заслонам Секции II:
+   - Компиляция и аудит пространств имен: `TechnicalLeadCompilerTest`, `TechnicalLeadCompilerFalsificationTest`, `TechnicalLeadCompilerIntegrationTest`, `CompilerTaskIdentityTest`, `WishlistCompileBudgetLaw9Test`;
+   - Эпики и классификация: `FeatureServiceTest`, `FeatureServiceFalsificationTest`, `EpistemicMetadataClassifierTest`, `EpistemicMetadataClassifierFalsificationTest`, `KanoClassTest`, `KanoClassFalsificationTest`, `EmsFlowStageTest`, `EmsFlowStageFalsificationTest`;
+   - Сличение и подобие: `SelfFalsificationEpicMatcherTest`, `SelfFalsificationEpicMatcherFalsificationTest`, `WishlistContentSimilarityMatcherTest`, `WishlistContentSimilarityMatcherFalsificationTest`, `WishlistSimilarityTest`, `WishlistSimilarityKripkeIntensionFalsificationTest`;
+   - Заявки и освобождение застрявших состояний: `WishlistServiceFalsificationTest`, `WishlistControllerIntegrationTest`, `StrandedFinalizingSweepServiceTest`, `StrandedFinalizingSweepServiceFalsificationTest`, `StrandedFinalizingDynamicTimeoutFalsificationTest`.
+3. Зафиксировать форму образца и актуализировать статус Секции II в `docs/FACTORY_MECHANISMS.md` (добавить итоговую секцию `### Итог Секции II`, подтверждающую Ступень 4 closed, ideal, 100% green).
 4. Синхронизировать `docs/ANTIGRAVITY_QUEUE.md`.
 5. Оформить лаконичный семантический коммит фабрики.
