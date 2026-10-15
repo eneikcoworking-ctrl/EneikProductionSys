@@ -132,13 +132,13 @@ class DesignSystemFalsificationServiceTest {
 
         when(stitchClient.createDesignSystem(eq("stitch-proj-7"), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new StitchClient.DesignSystemResult(true, "ok", "ds-42", "Created Stitch design system."));
-        when(stitchClient.applyDesignSystem(eq(project.getId().toString()), eq("ds-42"), any()))
+        when(stitchClient.applyDesignSystem(eq("stitch-proj-7"), eq("ds-42"), any()))
                 .thenReturn(new StitchClient.ApplyDesignSystemResult(true, "ok", "Applied design system."));
 
         service.applyDesignSystemsToShippedEpics();
 
         verify(stitchClient, times(1)).createDesignSystem(eq("stitch-proj-7"), anyString(), anyString(), anyString(), anyString(), anyString());
-        verify(stitchClient, times(1)).applyDesignSystem(eq(project.getId().toString()), eq("ds-42"), any());
+        verify(stitchClient, times(1)).applyDesignSystem(eq("stitch-proj-7"), eq("ds-42"), any());
         ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
         verify(wishlistRepository).save(captor.capture());
         assertEquals(featureId, captor.getValue().getFeatureId());

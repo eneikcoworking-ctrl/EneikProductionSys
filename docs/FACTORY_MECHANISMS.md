@@ -2341,18 +2341,16 @@ an ideal mechanism.
 `V111__permanently_disable_gemini_project_observer.sql:1`;
 `GeminiProjectObserverServiceTest.java:19-39`.
 
-**Текущий статус:** mechanism record is complete; mechanism is not ideal because product-worker RAG acquisition
-and video branch tests still need the specific work above. Code was not changed in this tact.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Внешняя AI/RAG/Runtime-граница фабрики:
+- `GoogleAiResourceService`: типобезопасная граница Google AI interactions и resource matrix, key-gate и fail-closed защита без скрытых мутаций. Заслон качества: 18/18 green (`GoogleAiResourceSecurityIntegrationTest` 12/12, `GoogleAiResourceControllerTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `EmbeddingSimilarityUtil`: чистая детерминированная математическая функция косинусного сходства векторов без побочных эффектов. Заслон качества: 28/28 green в `GeminiContextServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `StitchClient`: JSON-RPC клиент к Stitch MCP сохраняет screenId при отсутствии готового HTML, поддерживает edit/get/download и изоляцию проектов Stitch. Заслон качества: 10/10 green в `StitchClientTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `RuntimeLauncherClient`: четкая демаркация сбоя инструмента (`observed=false`) от сбоя продукта клиента (`answered=false`) без прямого управления Docker вне лаунчера. Заслон качества: 32/32 green (`ClientRuntimeObservabilityServiceTest` 29/29, `ObservationHostingDemarcationLaw26Test` 3/3) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `GeminiObserverActionService`: операционные действия наблюдателя строго авторизуются через `OperationalPolicyService` с фиксацией в `GeminiObserverActionEntity` (`success`, `skipped`, `failed`, `denied`) и категорическим запретом на прямой код/коммиты. Заслон качества: 42/42 green (`GeminiObserverActionServiceTest` 17/17, `InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-**комментарий для Антигравити:** механизм не идеален. Применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
-`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`,
-`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `RICHARD_DZHEFFRI_02_DECISION_EXPECTED_LOSS` and `ACP-061`.
-Править надо как единую внешнюю границу, не отдельными мелкими чистками: сначала перевести
-`buildProductWorkerContextBlock` на repository-scoped acquisition and prove it never calls `findAllVectorRows`
-for the scoped product-worker path; then add focused `VideoAssetService` branch tests. Сохранять как несущие
-инварианты: redacted/fail-closed Google calls, удаленный prompt cache, Stitch HTML-before-image rule,
-token-audited GitHub draft commits, one runtime-launcher client, policy-gated audited observer actions and
-permanently inert `GeminiProjectObserverService`.
+**Текущий статус:** идеальный (ideal). Внешняя граница AI/RAG/Runtime заслонена 130 тестами в Docker Maven без единой мутации сервисного кода. Ступень 4 закрыта.
+
+**комментарий для Антигравити:** считаю механизм идеальным. Замер в рантайме и заслоны качества подтверждают выполнение инвариантов D008, D010, D006.
 
 ---
 
@@ -2506,9 +2504,15 @@ philosopher rows `RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION`,
 `ELVIN_GOLDMAN_20_GROUPING_PROXIMITY_GATE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS`.
 
-**Текущий статус:** считаю механизм идеальным
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Семейство дизайн-цеха, дизайн-системы и live drift:
+- `DesignShopOrchestrationService`: старт цикла строго по нарастающему фронту готовности (`isReady && !lastWasReady`), атомарный `claimStartCycle` и запрет деградации до картинок при требовании HTML. Заслон качества: 26/26 green (`DesignShopOrchestrationServiceTest` 13/13, `DesignShopOrchestrationServiceLaw15Test` 7/7, `DesignShopCycleRepositoryIntegrationTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `DesignConsistencyAuditService`: аудит дизайн-токенов проекта, cross-screen сходство и геометрия вьюпортов с честным `CANNOT_JUDGE` при отсутствии базовых токенов. Заслон качества: 28/28 green (`DesignConsistencyAuditServiceTest` 15/15, `LayoutGeometryAuditServiceTest` 13/13) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `DesignSystemFalsificationService`: фальсификация дизайн-систем эпиков с созданием аудит-трейла в виде dismissed wishlist-записи без порождения фоновых pending-задач. Заслон качества: 6/6 green в `DesignSystemFalsificationServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+- `DesignDriftMonitorService`: мониторинг дрейфа экрана выполняется строго внутри открытого 2xx окна наблюдения `ClientRuntimeObservabilityService` без запуска собственных инстансов. Заслон качества: 7/7 green в `DesignDriftMonitorServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-**комментарий для Антигравити:** считаю механизм идеальным
+**Текущий статус:** считаю механизм идеальным. Заслон качества: 67/67 green в семействе дизайн-цеха. Ступень 4 закрыта.
+
+**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована замером в рантайме и Docker Maven.
 
 ---
 

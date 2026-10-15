@@ -398,15 +398,15 @@
 - ~~`OperationalPolicyService`~~ (Закрыто Ступень 4: замер в Docker Maven 31/31 green, ideal)
 - ~~`OperationalAction`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 31/31 green, ideal)
 - ~~`TrustSnapshotService`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
-- `GoogleAiResourceService`
-- `EmbeddingSimilarityUtil`
-- `StitchClient`
-- `RuntimeLauncherClient`
-- `GeminiObserverActionService`
-- `DesignShopOrchestrationService`
-- `DesignConsistencyAuditService`
-- `DesignSystemFalsificationService`
-- `DesignDriftMonitorService`
+- ~~`GoogleAiResourceService`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
+- ~~`EmbeddingSimilarityUtil`~~ (Закрыто Ступень 4: замер в Docker Maven 28/28 green, ideal)
+- ~~`StitchClient`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
+- ~~`RuntimeLauncherClient`~~ (Закрыто Ступень 4: замер в Docker Maven 32/32 green, ideal)
+- ~~`GeminiObserverActionService`~~ (Закрыто Ступень 4: замер в Docker Maven 42/42 green, ideal)
+- ~~`DesignShopOrchestrationService`~~ (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
+- ~~`DesignConsistencyAuditService`~~ (Закрыто Ступень 4: замер в Docker Maven 28/28 green, ideal)
+- ~~`DesignSystemFalsificationService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
+- ~~`DesignDriftMonitorService`~~ (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)
 - `ClientRuntimeObservabilityService`
 - `BetaPosterior`
 - `RuntimeHealthShiftDetector`
