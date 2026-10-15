@@ -228,6 +228,7 @@ class DeliveryBriefZoneBoundaryTest {
         WishlistEntity requirement = new WishlistEntity();
         requirement.setId(UUID.randomUUID());
         requirement.setFeatureId(requirementEpic);
+        requirement.setStatus(com.eneik.production.models.persistence.WishlistStatus.dismissed);
 
         TaskEntity attempt = task(project);
         attempt.setFeatureId(null);

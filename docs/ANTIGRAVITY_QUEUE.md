@@ -364,7 +364,7 @@
 - ~~`BranchGarbageCollectorService`~~ (Закрыто Ступень 4: замер в Docker Maven 19/19 green, ideal)
 - ~~`PrReviewPipelineService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - ~~`ClientDeliverableReadinessService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 62/62 green [49 unit, 6 falsification, 7 predicate agreement], ideal)
-- ~~`DeliveryRealityProducerService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 25/25 green [10 carrier channel, 4 category error, 6 2nd order repair, 5 falsification], ideal)
+- ~~`DeliveryRealityProducerService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 36/36 green [10 carrier channel, 4 category error, 6 2nd order repair, 5 falsification, 11 zone boundary], ideal)
 - ~~`ProductLaunchabilityService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 27/27 green [22 unit, 5 falsification], ideal)
 - ~~`VerdictLayer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 32/32 green [11 reconciliation, 14 gate, 7 falsification], ideal)
 - ~~`AcceptanceVerdictLayer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)

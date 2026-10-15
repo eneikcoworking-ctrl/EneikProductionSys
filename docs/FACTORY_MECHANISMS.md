@@ -1437,14 +1437,14 @@ first and keep these invariants green.
 - `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013, Wittgenstein]: физические сбои рантайма продукта (`launchSuccess=false`) транслируются из таблицы наблюдений в граф улик `EvidenceNodeEntity` (с отрицательной полярностью), чтобы служить основанием для логического вывода наблюдателя (`falsifyWittgensteinAntiMirror_unhealthyRuntimeObservationProjectsToEvidenceNode`).
 - `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006, Raz]: идемпотентность фиксации фактов — длящееся несоответствие обновляет временную метку существующей улики `EvidenceNodeEntity.createdAt` без размножения строк улик и находок (`falsifyRazProhibitionAsCode_standingFindingRefreshesTimestampWithoutDuplicateRows`); отсутствие сдачи порождает ровно одну заявку на ремонт с наследованием продуктового эпика (`falsifyRazProhibitionAsCode_missingDeliveryCreatesSingleRepairWishlistInheritingProductEpic`).
 
-**Форма: сильная.** Заслонено в `DeliveryRealityLaw2CarrierChannelTest` (6/6), `DeliveryRealityLaw3CategoryErrorTest` (8/8), `DeliveryRealityLaw8SecondOrderRepairTest` (6/6), `DeliveryPredicateAgreementTest` (7/7) и `DeliveryRealityProducerServiceFalsificationTest` (5/5, итого 32/32 тестов). Доказаны инварианты:
+**Форма: сильная.** Заслонено в `DeliveryRealityLaw2CarrierChannelTest` (10/10), `DeliveryRealityLaw3CategoryErrorTest` (4/4), `DeliveryRealityLaw8SecondOrderRepairTest` (6/6), `DeliveryRealityProducerServiceFalsificationTest` (5/5), `DeliveryBriefZoneBoundaryTest` (11/11) и `DeliveryPredicateAgreementTest` (7/7, итого 43/43 тестов [36 непосредственно по продюсеру/границам + 7 по предикатам]). Доказаны инварианты:
 - Ограничение домена ремонта: несущие задачи фабрики не производят продуктовых эпиков и заявок; повторный сбой доставки переходит в поглощающее состояние журнала дефектов (`max_repair_depth`).
 - Трансляция телеметрии рантайма в граф свидетельств для замкнутого контура вывода.
 - Идемпотентность улик: один факт расхождения порождает ровно одну улику с обновлением метки свежести.
 
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): фоновый демонический продюсер непрерывно сопоставляет статус задач с физическим состоянием `main`, сбои рантайма оперативно проецируются в улики, несущие задачи изолированы от продуктового контура. Заслон качества: 32/32 теста выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `DeliveryRealityProducerService` закрыта.
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): фоновый демонический продюсер непрерывно сопоставляет статус задач с физическим состоянием `main`, сбои рантайма оперативно проецируются в улики, несущие задачи изолированы от продуктового контура. Заслон качества: 36/36 тестов продюсера и 7/7 тестов согласия предикатов выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `DeliveryRealityProducerService` закрыта.
 
-**Текущий статус:** механизм описан канонически, заслонен 32 тестами и признан идеальным по текущему source/test contract. Код в этом такте не менялся (работа замером, не правкой).
+**Текущий статус:** механизм описан канонически, заслонен 36 тестами продюсера (и 7 тестами согласия предикатов) и признан идеальным по текущему source/test contract. Код сервисов в этом такте не менялся (работа замером, не правкой).
 
 **комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована.
 
@@ -1467,9 +1467,13 @@ first and keep these invariants green.
 
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Продукт `test-fiftieth` (`a716e82e-f4e2-4486-93bd-33f1e498386e`, brownfield, UP 2 недели): рантайм продукта поднят и непрерывно тестируется фабрикой (backend :18080 healthy, frontend :3000 healthy), артефакты `docker-compose.yml` и драйверы БД согласованы с контрактом, фиктивные фронтенд-записи отсутствуют. Заслон качества: 27/27 тестов выполняются 100% green в Docker-контейнере Maven. Ступень 4 для `ProductLaunchabilityService` закрыта. Секция V («Свидетельство доставки») полностью завершена!
 
-**Текущий статус:** механизм описан канонически, заслонен 27 тестами и признан идеальным по текущему source/test contract. Код в этом такте не менялся (работа замером, не правкой).
+### Итог Секции V
 
-**комментарий для Антигравити:** считаю механизм идеальным. Ступень 4 зафиксирована. Секция V закрыта на 100%.
+Все механизмы Секции V («Свидетельство доставки»: `ClientDeliverableReadinessService`, `DeliveryRealityProducerService`, `ProductLaunchabilityService`, связующие предикаты и модели `DeliveryQuestionRecord`, `DeliveryVerificationPredicate`, `DeliveryBriefZoneBoundaryTest`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (134/134 green в едином пакетном прогоне). Категориальная демаркация Остина (Austin D002), фальсификационные заслоны Поппера (Popper D008), каузальные цепочки надежности Голдмана (Goldman D010), деонтические запреты Раза (Raz D006), анти-зеркало телеметрии Витгенштейна (Wittgenstein D013) и детерминированная таблица истинности (Popper D012) полностью соблюдены. Не изменено ни одной строки рабочего кода сервисов фабрики (работа строгим замером).
+
+**Текущий статус:** считаю механизмы Секции V идеальными. Заслон качества: 134/134 green в едином пакетном прогоне в Docker Maven (D002 Austin / D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein / D012 Popper). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секции V идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (134/134 green, D002 Austin / D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein / D012 Popper).
 
 ---
 
