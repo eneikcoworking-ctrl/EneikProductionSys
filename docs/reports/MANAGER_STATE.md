@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-15 20:20 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-15 20:35 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (status: ok, backend-1 UP 2d).
@@ -6,12 +6,12 @@
 - Сайдкары: runtime-launcher-1, ml-1, judgment-proxy-1 — all UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 23G/38G (63%, норма < 70%), свободно 14GB. Память: 2.0Gi/3.7Gi, swap 1.9Gi. Docker clean.
+- Диск: 23G/38G (63%, норма < 70%), свободно 14GB. Память: 2.1Gi/3.7Gi, swap 1.9Gi. Docker clean.
 
 3. Контроль инженера (L2):
-- L2 закрыл Секцию XXI («Сущности, пространства состояний и алгебра решений», 133/133 green в коммите `1d4ff46`).
-- Инвариант суверенитета строго соблюден: 0 строк изменений в коде продукта и фабрики, чистый замер в Docker.
+- L2 закрыл Секции XXII и XXIII («Миграции: запреты базы» и «Живой замер», 111/111 green в коммите `8cc1f51`).
+- Инвариант суверенитета строго соблюден: 0 строк изменений в коде фабрики и продукта, чистый замер в Docker.
 
-4. Пакетный Work Order: Секция XXII (XXII, XXIIб..XXIIл) и Секция XXIII:
-- Механизмы: XXII миграции/онтологические запреты схемы (V137, V82, V97, FlywayValidation), XXIIб тождество в схеме (V132, V25), XXIIв возвращающие миграции (V19, V42..V45, V126), XXIIг изъятия (V58, V121, V123), XXIIд выключенный наблюдатель (V111), XXIIе связность свидетельств (V80/V81), XXIIж надзор за процессом (V72/V85), XXIIз притязания на файлы (V69/V99), XXIIи контекст (V55/V62), XXIIк клиентская приёмка (V100), XXIIл демаркация схемы Flyway, XXIII живой замер рантайма.
-- Базис: Popper D008 (фальсификация модификаций миграций и дрейфа бейзлайна), Goldman D010 (лок уровней абстракции схемы и надежность деноминатора), Raz D006 (деонтический запрет мутации рабочего кода при проходящих тестах, онтологические запреты БД), Varzi D004, Belnap D012, Wittgenstein D013, Ryle D002.
+4. Пакетный Work Order: Секция XXIV («Скрипты») и Секция XXV («Позвоночник потока»):
+- Механизмы: XXIV ручные скрипты (generate_philosopher_patterns, append_role_logic, audit_pr, mock_test_runner), XXV ядро и свод потока (FlowSpineService, OperationalFlowCoreService, SystemStatusService, SystemSettingsService, SettingsController, FlowSpineController, OperationalFlowCoreController, TocSentinelController, TocExecutionGraph).
+- Базис: Popper D008 (фальсификация прогонов без false green), Goldman D010 (лок уровней абстракции: read vs observe vs control), Raz D006 (деонтический запрет мутации рабочего кода при проходящих тестах), Belnap D012 (четырехзначная логика состояний), Wittgenstein D013 (анти-зеркало), Evans D006 (граница ручной оснастки).
