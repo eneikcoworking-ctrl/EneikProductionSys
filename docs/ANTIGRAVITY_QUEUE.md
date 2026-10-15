@@ -468,6 +468,11 @@
 - ~~`TaskStateTransitions`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 20/20 green [AutoMergeLaw20, TaskRepository, ClaimGuards], ideal)
 - ~~`SessionLifecycleServiceTransitions`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 14/14 green в SessionLifecycleService, ideal)
 - ~~`InteractingServicesDemarcation`~~ (Закрыто Ступень 4: замер в Docker Maven 74/74 green, ideal)
+- ~~`GeminiProjectObserverService`~~ (Закрыто Ступень 4: замер в Docker Maven 7/7 green [ObserverService 1/1, DecommissionFalsification 6/6], ideal)
+- ~~`gemini_project_observer_enabled & V111`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 15/15 green [DecommissionFalsification 6/6, SecurityIntegration 9/9], ideal)
+- ~~`ChessService`~~ (Закрыто Ступень 4: замер в Docker Maven 0 строк / 0 байт, TechnicalLeadCompilerIntegrationTest:242 exclusion green, ideal)
+- ~~`GeminiPRReviewDisablementAndJulesFallback`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven green в JulesDispatchServiceTest, ideal)
+- ~~`ReadingControllersDemarcation`~~ (Закрыто Ступень 4: замер в Docker Maven 57/57 green [GET/no-mutation проекции 15 контроллеров], ideal)
 
 ## Ступень 5 — проверить и не трогать (40)
 

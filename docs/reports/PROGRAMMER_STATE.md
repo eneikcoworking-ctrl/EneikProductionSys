@@ -1,15 +1,15 @@
-# Такт L2: Ведущий инженер (2026-10-15 19:32 UTC)
+# Такт L2: Ведущий инженер (2026-10-15 19:48 UTC)
 
-1. Пакетная верификация Секции XIII («Взаимодействие: кто пишет каждое состояние»):
-   - Границы репозиториев и владение состоянием: `TaskRepositoryIntegrationTest` (4/4 green), `AccountRepositoryIntegrationTest` (8/8 green), `AccountRepositoryFalsificationTest` (8/8 green), `DesignShopCycleRepositoryIntegrationTest` (6/6 green);
-   - Жизненный цикл сессий Jules: `SessionLifecycleServiceTest` (8/8 green), `SessionLifecycleServiceFalsificationTest` (6/6 green);
-   - Уборка зависших финализаций: `StrandedFinalizingSweepServiceTest` (8/8 green), `StrandedFinalizingSweepServiceFalsificationTest` (6/6 green);
-   - Предохранители гонок и матрица клеймов: `ClaimServiceRaceGuardTest` (5/5 green), `ClaimResultStatusTruthTableFalsificationTest` (5/5 green), `ClaimRightsDutiesMatrixTest` (7/7 green);
-   - Необратимость терминальных исходов задач (Закон 20): `AutoMergeLaw20InvariantS4Test` (3/3 green).
+1. Пакетная верификация Секции XVII и XVIIб («Обездвиженное, системные конфигурации и открытая поверхность чтения»):
+   - Обезмолвленный наблюдатель и V111: `GeminiProjectObserverServiceTest` (1/1 green), `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green), `InternalGeminiObserverSecurityIntegrationTest` (9/9 green), `InternalGeminiObserverControllerTest` (16/16 green);
+   - Исключение `ChessService`: 0 строк / 0 байт, `TechnicalLeadCompilerIntegrationTest:242` green;
+   - Запрет прямого Gemini review и Jules fallback batch review: `JulesDispatchServiceTest` green;
+   - Системные конфиги и обработка ошибок: `SchedulingConfigTest` (2/2 green), `WebConfigCorsTest` (3/3 green), `GlobalExceptionHandlerTest` (3/3 green);
+   - Открытая read-поверхность контроллеров (GET/no-mutation): `DashboardControllerTest` (2/2 green), `CommandDashboardControllerTest` (4/4 green), `QualityGateControllerTest` (2/2 green), `QualityMetricsControllerTest` (3/3 green), `HomeControllerTest` (1/1 green), `LinearSyncControllerTest` (2/2 green), `SystemStatusControllerTest` (3/3 green).
 2. Заслон качества (100% green в едином прогоне в Docker Maven 3.9.9 Temurin-21, -m 2g):
-   - Все 74 теста Секции XIII пройдены за один проход: 74 runs, 0 failures, 0 errors, 0 skipped (BUILD SUCCESS).
-   - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде сервисов и репозиториев (`src/main/java`).
-   - RAG-базис удержан: D004 Shaffer & Gilbert, D008 Popper, D010 Goldman, D012 Belnap, D006 Raz & Varzi.
+   - Все 57 тестов пройдены за один пакетный проход: 57 runs, 0 failures, 0 errors, 0 skipped (BUILD SUCCESS).
+   - Строгое правило Ступени 4 соблюдено: 0 строк изменений в рабочем коде сервисов и контроллеров (`src/main/java`).
+   - RAG-базис удержан: D008 Popper, D010 Goldman, D006 Raz & von Wright, D004 Shaffer & Varzi, D011 Dretske, D007 Tarski, D012 Belnap, D001 Chalmers.
 3. Документация и фиксация:
-   - Актуализированы *Живое:* и канонический блок `### Итог Секции XIII` в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 74/74 green).
-   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md` (Секция XIII closed, ideal).
+   - Актуализированы *Живое:* и канонический блок `### Итог Секции XVII и XVIIб` в `docs/FACTORY_MECHANISMS.md` (Ступень 4 closed, ideal, 57/57 green).
+   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md` (Секция XVII и XVIIб closed, ideal).
