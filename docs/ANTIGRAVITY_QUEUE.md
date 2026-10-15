@@ -250,6 +250,8 @@
 
 **Закрыто (Пакетный замер Секции VIII):** Все механизмы Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»: `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`, `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`, `DefectJournalService`, `FlowMetricsService`, `LeverPromotionService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalFlowCoreService`, `OperationalPolicyService`, `TrustSnapshotService`, `OperationalTruthService`, `FlowSpineService`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (281/281 green в едином прогоне). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер Секции XII):** Все механизмы Секции XII («Журнал, память, санитария»: `LogScope`, `ScopedBufferAppender`, `LogScopeBuffer`, `DurableProjectLogAppender`, `ProjectLogFlushQueue`, `ProjectEventLogService`, `ProjectEventLogRetentionService`, `SystemSettingsService`, `ProjectTreeService`, `IdleProjectAdviceService`, `RoleAdviceLoopService`, `RoleCapabilityLoader`, `RoleRulesParser`, `JulesRoleCapabilities`, `TaskTitleBuilder`, `ProjectAuditPipelineService`) подтверждены и заверены в едином пакетном прогоне в Docker Maven (64/64 green). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -280,7 +282,7 @@
 - `QualityMetricsController`
 - ~~`GeminiContextCacheManager`~~ (Закрыто Ступень 4: удален, inert/decommissioned, заслон 28/28 green в GeminiContextServiceTest, ideal)
 - `TocOptimizer`  ← ядро
-- `ProjectEventLogRetentionService`  ← ядро
+- ~~`ProjectEventLogRetentionService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)
 
 ## Ступень 2 — сперва измерить, потом решать (23 — все закрыты)
 

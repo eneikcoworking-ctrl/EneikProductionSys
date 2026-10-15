@@ -2886,13 +2886,18 @@ charter content из-за перехода только на parsed fields; вт
 *Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Семейство журнала, памяти, настроек, уставов и санитарии:
 - `LogScope`: строгая демаркация контекстов MDC (`PROJECT:{id}` против `SYSTEM`), защита от утечки системного шума в проектный буфер, отсечение DEBUG/TRACE. Заслон качества: 24/24 green (`LogScopeBufferTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5, `ScopedBufferAppenderFalsificationTest` 13/13) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `ProjectLogFlushQueue`: ограниченная очередь сброса с безопасным отсечением избытка при переполнении без риска OOM и без блокировки рабочих потоков. Заслон качества подтвержден тестами журнала и декоммиссии. Ступень 4 закрыта (ideal).
+- `ProjectEventLogRetentionService`: каузальная цепочка надёжности Голдмана (D010), удаление по жизненному циклу (grace period для accepted) и соблюдение per-project ceiling для active/frozen. Заслон качества: 10/10 green в `ProjectEventLogRetentionServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `SystemSettingsService`: институциональный факт-регистр настроек, валидация ключей и типов, автоматический аудит мутаций в `defect_journal` с маскированием секретов. Заслон качества: 13/13 green в `SystemSettingsServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `ProjectTreeService`: строго read-only проекция существующих фактов (readiness, feature, task, session, wishlist, SixSigma, Kaizen) без порождения вторичной истины. Ступень 4 закрыта (ideal).
 - `IdleProjectAdviceService`: покэ-йокэ наблюдающий предохранитель простоя (`IdleGuardVerdict`) со строгим подавлением спекулятивных вишлистов и задач в обход цикла фальсификации. Заслон качества: 9/9 green (`IdleProjectAdviceServiceTest` 6/6, `RoleAdviceLoopServiceTest` 2/2, `RoleAdviceLoopServiceIntegrationTest` 1/1) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `RoleCapabilityLoader`: загрузка уставов ролей с кэшированием по mtime и сохранением сырого Markdown-текста устава для внешних LLM-агентов. Заслон качества: 4/4 green в `RoleCapabilityLoaderTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `ProjectAuditPipelineService`: последовательный конвейер проектного аудита, ограниченный реально верифицирующими стадиями (`COVERAGE_AUDIT`, `STITCH_DESIGN`) без холостых переключений. Заслон качества: 4/4 green в `ProjectAuditPipelineServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-**Текущий статус:** силён (ideal). Заслон качества: 54/54 green в семействе журнала, памяти, настроек и санитарии. Ступень 4 закрыта.
+### Итог Секции XII
+
+Все механизмы Секции XII («Журнал, память, санитария»: `LogScope`, `ScopedBufferAppender`, `LogScopeBuffer`, `DurableProjectLogAppender`, `ProjectLogFlushQueue`, `ProjectEventLogService`, `ProjectEventLogRetentionService`, `SystemSettingsService`, `ProjectTreeService`, `IdleProjectAdviceService`, `RoleAdviceLoopService`, `RoleCapabilityLoader`, `RoleRulesParser`, `JulesRoleCapabilities`, `TaskTitleBuilder`, `ProjectAuditPipelineService`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (64/64 green в едином пакетном прогоне). Соблюдены инварианты демаркации контекстов и деонтического запрета Раза и Фон Вригта (`GEORG_HENRIK_FON_VRIGT_01_PROHIBITION_AS_CODE`, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, D006), институционального факт-регистра Серла (`DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, D007), каузальной цепочки надёжности и лока уровней абстракции Голдмана (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, D010), попперовской фальсификации ложных суждений (`KARL_POPPER_01_FALSIFICATION_HARNESS`, D008), телеосемантической обратной связи Дрецке (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK`, D011), супервентности Перла (`DZHUDA_PERL_13_SUPERVENIENCE_WATCH`, D013) и ригидного API-референта Эванса (`GARET_EVANS_01_RIGID_API_REFERENT`, D003). Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сервисов фабрики (`src/main/java`).
+
+**Текущий статус:** считаю механизмы Секции XII идеальными. Заслон качества: 64/64 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz & von Wright / D007 Searle / D011 Dretske / D013 Pearl / D003 Evans). Ступень 4 закрыта (ideal).
 
 **Комментарии для Антигравити по механизмам:**
 
@@ -2915,7 +2920,7 @@ charter content из-за перехода только на parsed fields; вт
 - `TaskTitleBuilder.displayTitle/build/enforceTwoOrThreeWords`: считаю механизм идеальным
 - `ProjectAuditPipelineService.getStage/startPipeline/executeSequentialAuditPipeline`: считаю механизм идеальным
 
-**комментарий для Антигравити:** смотри комментарии по механизмам выше; общий комментарий семейства не заменяет комментарий к каждому механизму.
+**комментарий для Антигравити:** считаю механизмы Секции XII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (64/64 green: D008, D010, D006, D007, D011, D013, D003).
 
 ---
 
