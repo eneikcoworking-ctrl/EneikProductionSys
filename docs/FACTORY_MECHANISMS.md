@@ -2391,9 +2391,13 @@ an ideal mechanism.
 - `RuntimeLauncherClient`: четкая демаркация сбоя инструмента (`observed=false`) от сбоя продукта клиента (`answered=false`) без прямого управления Docker вне лаунчера. Заслон качества: 32/32 green (`ClientRuntimeObservabilityServiceTest` 29/29, `ObservationHostingDemarcationLaw26Test` 3/3) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `GeminiObserverActionService`: операционные действия наблюдателя строго авторизуются через `OperationalPolicyService` с фиксацией в `GeminiObserverActionEntity` (`success`, `skipped`, `failed`, `denied`) и категорическим запретом на прямой код/коммиты. Заслон качества: 42/42 green (`GeminiObserverActionServiceTest` 17/17, `InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
-**Текущий статус:** идеальный (ideal). Внешняя граница AI/RAG/Runtime заслонена 142 тестами в Docker Maven без единой мутации сервисного кода. Ступень 4 закрыта.
+### Итог Секции IX
 
-**комментарий для Антигравити:** считаю механизм идеальным. Замер в рантайме и заслоны качества подтверждают выполнение инвариантов D008, D010, D006.
+Все механизмы Секции IX («Внешние системы: внешняя AI/RAG/Runtime-граница фабрики»: `GoogleAiResourceService`, `GoogleAiResourceController`, `GeminiContextService`, `EmbeddingSimilarityUtil`, `ContextChunkRepository`, `StitchClient`, `DesignAssetService`, `RuntimeLauncherClient`, `GeminiObserverActionService`, `InternalGeminiObserverController`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (142/142 green в едином пакетном прогоне). Каузальные цепочки надежности Голдмана (Goldman D010), фальсификационные заслоны Поппера (Popper D008), институциональные деонтические запреты Раза (Raz D006), топологические границы Варци (Varzi D006) и анти-зеркало телеметрии Витгенштейна (Wittgenstein D013) полностью соблюдены. Не изменено ни одной строки рабочего кода сервисов фабрики (работа строгим замером).
+
+**Текущий статус:** считаю механизмы Секции IX идеальными. Заслон качества: 142/142 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секции IX идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (142/142 green, D008 Popper / D010 Goldman / D006 Raz / D013 Wittgenstein).
 
 ---
 

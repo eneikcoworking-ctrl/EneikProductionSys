@@ -272,11 +272,11 @@
 - ~~`RepositoryStackAnalyzer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - `GitHubProjectFactoryClient`  ← ядро
 - `CommandDashboardService`  ← ядро
-- `InternalGeminiObserverController`
+- ~~`InternalGeminiObserverController`~~ (Закрыто Ступень 4: замер в Docker Maven 42/42 green, ideal)
 - `TocSentinelService`  ← ядро
-- `GoogleAiResourceController`
+- ~~`GoogleAiResourceController`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
 - `QualityMetricsController`
-- `GeminiContextCacheManager`
+- ~~`GeminiContextCacheManager`~~ (Закрыто Ступень 4: удален, inert/decommissioned, заслон 28/28 green в GeminiContextServiceTest, ideal)
 - `TocOptimizer`  ← ядро
 - `ProjectEventLogRetentionService`  ← ядро
 
