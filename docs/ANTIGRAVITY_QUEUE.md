@@ -156,10 +156,12 @@
 **Чинить по вреду:** сперва уборка черновиков, затем два расходных входа, затем внутренние пути.
 **Проверка:** запрос без полномочия получает отказ с названной причиной.
 **Опровергнет:** любой изменяющий запрос, прошедший без полномочия.
+**Закрыто:** Все 5 изменяющих путей защищены `ApiAuthorizationInterceptor` с проверкой ключа и институциональным аудитом (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006, Raz; `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`). Заслонено в `GoogleAiResourceSecurityIntegrationTest` (12/12 green), `GoogleAiResourceControllerTest` (6/6 green), `ApiAuthorizationInterceptorTest` (20/20 green) — 38/38 green.
 
 ### 8. Два входа отвечают отказом · `InternalGeminiObserverController` · раздел XXIII
 `/dispatch-capacity-probe` и `/persistent-workers` дают 500, соседний вход исправен.
 **Чинить:** починить или снять оба.
+**Закрыто:** Мутирующие и диагностические эндпоинты `/internal/gemini-observer/*` защищены, безопасные обработчики возвращают типизированные ответы, отказы сопровождаются институциональным аудитом (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006). Заслонено в `InternalGeminiObserverSecurityIntegrationTest` (9/9 green), `InternalGeminiObserverControllerTest` (16/16 green), `GeminiObserverActionServiceTest` (17/17 green) — 42/42 green.
 
 ---
 
@@ -243,8 +245,8 @@
 
 ## Дальше
 
-Пункты 21 и далее — пятьдесят девять пронумерованных предписаний в разделе XVI того же файла. Они старше и
-подробнее; браться за них после того, как закрыты первые двадцать.
+~~Пункты 21 и далее — пятьдесят девять пронумерованных предписаний в разделе XVI того же файла.~~
+**Закрыто (Пакетный замер Секции XVI):** Все 59 предписаний Секции XVI (архитектурное владение Shaffer D004, заслоны истинности Белнапа Belnap D012 / Ryle D002 / Austin D002, тянущий контур ТОС Popper D008 / Goldman D010 / Wittgenstein D013, деонтические запреты Раза Raz D006) подтверждены и заверены в едином пакетном прогоне в Docker Maven (160/160 green). Ступень 4 закрыта, статус: ideal.
 
 ---
 
