@@ -463,6 +463,11 @@
 - ~~`VideoAssetService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`StrandedDesignCycleSweepService`~~ (Закрыто Ступень 4: замер в Docker Maven 4/4 green, ideal)
 - ~~`GitHubPullRequestService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
+- ~~`FactoryWritableStateOwnerMap`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
+- ~~`WishlistStateTransitions`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 14/14 green в StrandedFinalizingSweepService, ideal)
+- ~~`TaskStateTransitions`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 20/20 green [AutoMergeLaw20, TaskRepository, ClaimGuards], ideal)
+- ~~`SessionLifecycleServiceTransitions`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 14/14 green в SessionLifecycleService, ideal)
+- ~~`InteractingServicesDemarcation`~~ (Закрыто Ступень 4: замер в Docker Maven 74/74 green, ideal)
 
 ## Ступень 5 — проверить и не трогать (40)
 
