@@ -2169,7 +2169,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 молчит.
 *Философия:* `ANTI_MIRROR_TELEMETRY` (D013) — **сильная**. Опровержение: найти величину, которую хребет
 показывает лучше, чем она есть.
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Деонтический заслон переходов политики, действий `OperationalAction` и истинности потока гарантирует детерминированный отказ с объяснимой причиной при нарушении инвариантов (`done_is_not_delivery`). Заслон качества: 119/119 green (`OperationalTruthServiceTest` 17/17, `FlowSpineServiceTest` 32/32, `OperationalFlowCoreFalsificationTest` 39/39, `OperationalPolicyServiceTest` 17/17, `OperationalPolicyReasonTest` 5/5, `OperationalPolicyDeniedExceptionFalsificationTest` 9/9) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
+*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Деонтический заслон переходов политики, действий `OperationalAction` и истинности потока гарантирует детерминированный отказ с объяснимой причиной при нарушении инвариантов (`done_is_not_delivery`). Заслон качества: 125/125 green (`OperationalTruthServiceTest` 17/17, `FlowSpineServiceTest` 32/32, `OperationalFlowCoreServiceTest` 6/6, `OperationalFlowCoreFalsificationTest` 39/39, `OperationalPolicyServiceTest` 17/17, `OperationalPolicyReasonTest` 5/5, `OperationalPolicyDeniedExceptionFalsificationTest` 9/9) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 
 **`TrustSnapshotService`** — снимки входных сигналов доверия с дозаполнением настоящего исхода.
 *Связи:* вызывающих нет — по расписанию; зовёт двоих.
