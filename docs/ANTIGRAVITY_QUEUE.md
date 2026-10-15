@@ -413,7 +413,7 @@
 - ~~`LayoutGeometryAuditService`~~ (Закрыто Ступень 4: замер в Docker Maven 13/13 green, ideal)
 - ~~`DesignSystemFalsificationService`~~ (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`DesignDriftMonitorService`~~ (Закрыто Ступень 4: замер в Docker Maven 7/7 green, ideal)
-- ~~`ClientRuntimeObservabilityService`~~ (Закрыто Ступень 4: замер в Docker Maven 32/32 green, ideal)
+- ~~`ClientRuntimeObservabilityService`~~ (Закрыто Ступень 4: замер в Docker Maven 37/37 green [29 service, 3 hosting, 5 failure-demarcation], ideal)
 - ~~`BetaPosterior`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - ~~`RuntimeHealthShiftDetector`~~ (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - ~~`ProductCapabilityService`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
