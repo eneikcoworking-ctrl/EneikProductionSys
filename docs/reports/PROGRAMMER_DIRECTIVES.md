@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Ступень 3 («Провести пробу, кода не менять» — пакет из 8 механизмов ядра)
+# Пакетная директива L1/L3 -> L2: Секция XVI/XXIX (Цех дизайна: порождение экранов, токенов, артефактов и предписания эстетического дрейфа)
 
-**Дата:** 2026-10-15 10:53 UTC  
+**Дата:** 2026-10-15 11:15 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,73 +10,83 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Настоящая директива охватывает всю Ступень 3 `docs/ANTIGRAVITY_QUEUE.md` (все 8 механизмов ядра и периферии):
-   - `ClaimResultStatus` (Секция XXIв)
-   - `OperationalPolicyDeniedException` (ядро, Секция XXIв)
-   - `AnomalyReport` (Секция XXIг)
-   - `JulesRoleCapabilities` (Секция XXI)
-   - `ScopedBufferAppender` (ядро, Секция XII)
-   - `V25__add_depends_on_and_hotspots.sql` (Секция XXII)
-   - `OperationalFlowCoreService` (ядро, Секция XXV)
-   - `AccountRepository` (ядро, Секция XXXV)
-3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступень 3):**
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Настоящая директива охватывает механизмы Секции XXIX и сопряженные предписания Секции XVI `docs/FACTORY_MECHANISMS.md`:
+   - `DesignAssetService` (ядро, Секция XXIX, предписания XVI §28, §30, §31)
+   - `DesignConsistencyAuditService` (Секция XXIX, предписание XVI §28)
+   - `StitchClient` (Секция XXIX)
+   - `GoogleAiResourceService` (Секция XXIX / XXXVIII, nano-banana fallback)
+   - `GitHubPullRequestService` (Секция XXIX, репозиторный носитель черновиков дизайна)
+   - `DesignShopOrchestrationService` (ядро, Секция XXIX, предписания XVI §28, §58)
+   - `JulesDispatchService` (ядро, Секция XXIX, метод `completeDesignReview`, предписание XVI §31)
+   - `DesignDriftMonitorService` (Секция XVI §28, §30)
+   - `StrandedDesignCycleSweepService` (Секция XVI §58)
+3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ:** Запрещено трогать рабочий код при проходящих тестах!
-   - «Форма: не мерено» — действие: провести названную пробу и зафиксировать её исход в `*Живое:*`. Правка кода на этой ступени признается грубой ошибкой.
+   - Любая модификация кода допустима исключительно при наличии воспроизводимого падающего теста, фальсифицирующего инвариант. Если тесты зеленые — код признается нерушимым и фиксируется замером.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D015, D009)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:** Принцип фальсификации. Тестовые заслоны не ищут подтверждений («код написан — значит работает»), а фальсифицируют инварианты: неразличение `failed`/`expired` в `ClaimResultStatus`, тихий пропуск недозволенных действий в `OperationalPolicyDeniedException`, дедлоки и циклы в `AnomalyReport`, мутацию ролевого словаря в `JulesRoleCapabilities`, проникновение системных логов в `ScopedBufferAppender`, повисшие ghost-зависимости в схеме V25, нарушение матрицы прав в `OperationalFlowCoreService` и двойной захват строки в `AccountRepository`. Тесты обязаны падать при нарушении инвариантов.
-- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:** Лок уровней абстракции и надежность цепочки происхождения данных (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`). Разделение живого чтения, наблюдаемой телеметрии и персистентного хранения: `OperationalFlowCoreService` жестко делит события `observe_only` и `flow_core_enforced`; `AnomalyReport` сохраняет неизменяемый слепок инцидента; `ScopedBufferAppender` изолирует проектный контекст от системного.
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:** Деонтический запрет как исключающая причина (`exclusionary reason`) и исполняемый код.
-  * Категорический запрет инженеру L2 на изменение производственного кода на Ступени 3 при проходящих тестах.
-  * В коде: типизированные отказы в `OperationalPolicyDeniedException`, матрица прав и обязанностей в `OperationalFlowCoreService` (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`), предикат закрытого мира в `JulesRoleCapabilities.isKnownRole`, взыскание как порядок в `AccountRepository` (`DZHOZEF_RAZ_21_PENALTY_AS_ORDERING`).
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:** Принцип фальсификации. Тестовые заслоны проверяют негативные инварианты и немедленный отказ:
+  * Немедленный отказ `aesthetic_drift` при несоответствии токенов (`tokenTraceRatio < 0.90`) в `DesignConsistencyAuditService`.
+  * Возврат `CANNOT_JUDGE` («не могу судить») для серверных оболочек SPA без стилей вместо ложного подтверждения или ложного сбоя (`falsifyCannotJudgeForEmptySpaShell`).
+  * Заслон на серию отказов генератора: 2 отказа подряд на одной дизайн-системе генерируют дефект в `DefectJournalService` (`TELEOSEMANTIC_FEEDBACK` / `DESIGN_GENERATOR_INCAPACITY`).
+- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` [D010 Data lineage loss, Goldman]:** Лок уровней абстракции и надежность цепочки происхождения данных (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`):
+  * Разделение объявленных токенов бренда (`declaredTokens`), фактически использованных генератором токенов (`producerTokens`) и аудиторских метрик в метаданных `.json`.
+  * Репозиторная видимость: сгенерированный черновик (`mockup.html`) признается фактом только при фиксации в репозитории клиента (`design/draft/{basename}/mockup.html`), а не на локальном диске бэкенда.
+  * Продвижение утвержденного дизайна (`design/approved/{basename}`) строго сохраняет байтовое тождество файла `mockup.html`.
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:** Деонтический запрет как исключающая причина (`exclusionary reason`) и исполняемый код:
+  * Императивный запрет инженеру L2 на изменение рабочего кода сервисов дизайн-цеха при проходящих тестах.
+  * В коде: строгий запрет использования nano-banana при `requireImplementableHtml=true` (запрет подмены HTML картинкой, `NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009).
+  * Запрет коммита off-token HTML в репозиторий проекта при провале аудита консистентности.
+  * Запрет продвижения дизайн-драфта без явного вердикта `approve` в `JulesDispatchService.completeDesignReview`.
+  * Защита от зависания притязаний: TTL-порог на `claimStartCycle` (15 минут) и безопасное освобождение через `StrandedDesignCycleSweepService`.
 
 ---
 
-## 3. Пакетный наряд по механизмам Ступени 3 («Провести пробу, кода не менять»)
+## 3. Пакетный наряд по механизмам Секции XVI/XXIX
 
-### Группа 1. Алгебра решений и статусы притязаний (Секция XXIв)
-1. **`ClaimResultStatus` (пункт 1 очереди Ступени 3):**
-   - **Проба:** Провести замер различимости исходов `done`, `failed`, `expired` через `ClaimResultStatusTruthTableFalsificationTest`.
-   - **Инвариант:** `ClaimService` при `expired` возвращает задачу в очередь (`TaskStatus.queued`), а при `failed` переводит в терминальный статус; `BottleneckDetectionService` считает всплеск `expired_lease_spike` строго по `expired`. Исходный код НЕ ТРОГАТЬ.
-2. **`OperationalPolicyDeniedException` (ядро, пункт 2 очереди Ступени 3):**
-   - **Проба:** Провести замер типизированного отказа через `OperationalPolicyDeniedExceptionFalsificationTest`.
-   - **Инвариант:** Недозволенные действия вызывают детерминированное исключение с типизированными `projectId`, `action`, `state`, `authorizationStatus`, транслируясь в HTTP 409 Conflict без повреждения состояния. Исходный код НЕ ТРОГАТЬ.
+### Группа 1. Генерация и токенный аудит экранных артефактов
+1. **`DesignAssetService` (ядро, Секция XXIX, предписания XVI §28, §30, §31):**
+   - **Проба:** Замерить генерацию через `StitchClient`, передачу объявленных токенов бренда в промпт, фиксацию `producerTokens` и `declaredTokens` в метаданных `.json`, отсечение off-token HTML без коммита в git.
+   - **Инвариант:** При `requireImplementableHtml=true` недопустим fallback на nano-banana. При 2 отказах подряд на одной дизайн-системе эмитируется дефект в `DefectJournalService`. Код НЕ ТРОГАТЬ.
+2. **`DesignConsistencyAuditService` (Секция XXIX, предписание XVI §28):**
+   - **Проба:** Замерить проверку `tokenTraceRatio >= 0.90` и кросс-экранный `crossScreenJaccard` (`NUEL_BELNAP_15_TOKEN_TRACE_UNITY` / D015).
+   - **Инвариант:** Пустая серверная оболочка SPA без стилей возвращает честный `CANNOT_JUDGE` (`traceRatio = 0.0`, `traceAccepted = false`). Код НЕ ТРОГАТЬ.
+3. **`StitchClient` (Секция XXIX):**
+   - **Проба:** Замерить вызовы удаленного генератора экранов и скриншотов, валидацию ключа и структуры ответа.
+   - **Инвариант:** Строгое соблюдение структуры `DesignAssetResult` с путями и идентификаторами экрана Stitch. Код НЕ ТРОГАТЬ.
 
-### Группа 2. Граф ограничений ТОС и десигнация ролей (Секции XXI, XXIг)
-3. **`AnomalyReport` (пункт 3 очереди Ступени 3):**
-   - **Проба:** Провести замер телеосемантического заслона через `AnomalyReportFalsificationTest`.
-   - **Инвариант:** Неизменяемый snapshot аномалии сохраняет контекст (8 полей), универсум `AnomalyType` строго закрыт 4 типами, сигнал аномалии немедленно прерывает циклы (`CYCLE_ABORTED`) и разрешает дедлоки (`DEADLOCK_ABORTED`). Исходный код НЕ ТРОГАТЬ.
-4. **`JulesRoleCapabilities` (пункт 4 очереди Ступени 3):**
-   - **Проба:** Провести замер ролевой границы через `JulesRoleCapabilitiesFalsificationTest`.
-   - **Инвариант:** Ролевой словарь жестко фиксирует 13 канонических десигнаторов (`BARCAN-TAG-00` .. `BARCAN-TAG-12`), предикат закрытого мира `isKnownRole` отсекает неизвестные роли, форсируется `ALL_CAPABILITIES`. Исходный код НЕ ТРОГАТЬ.
+### Группа 2. Внешние модели и репозиторный носитель
+4. **`GoogleAiResourceService` (Секция XXIX / XXXVIII, nano-banana fallback):**
+   - **Проба:** Замерить изоляцию взаимодействия с внешними графическими моделями.
+   - **Инвариант:** Модель генерации картинок не может подменять HTML-генератор там, где вызван контракт `mockup.html` (`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009). Код НЕ ТРОГАТЬ.
+5. **`GitHubPullRequestService` (Секция XXIX, дизайн-носитель):**
+   - **Проба:** Замерить операции `commitFile`, `deleteFile`, `copyFile` в контексте каталогов `design/draft` и `design/approved`.
+   - **Инвариант:** Отклоненные черновики полностью удаляются из ветки, утвержденные копируются без изменения байтов. Код НЕ ТРОГАТЬ.
 
-### Группа 3. Санитария логирования и реляционные ограничения (Секции XII, XXII)
-5. **`ScopedBufferAppender` (ядро, пункт 5 очереди Ступени 3):**
-   - **Проба:** Провести замер топологической изоляции логов через `ScopedBufferAppenderFalsificationTest`.
-   - **Инвариант:** В in-memory буфер проекта попадают строго события с префиксом `PROJECT:{uuid}`; системный шум (`SYSTEM`), безымянные события (`null`) и посторонние префиксы безусловно отсекаются. Исходный код НЕ ТРОГАТЬ.
-6. **`V25__add_depends_on_and_hotspots.sql` (пункт 6 очереди Ступени 3):**
-   - **Проба:** Провести замер реляционных инвариантов схемы через `V25MigrationFalsificationTest`.
-   - **Инвариант:** Внешний ключ `fk_tasks_depends_on` блокирует ghost-зависимости; реестр точек изменений `project_hotspot_files` гарантирует валидность владения и каскадное удаление при удалении проекта. Исходный код НЕ ТРОГАТЬ.
-
-### Группа 4. Ядро потока и атомарный выбор исполнителя (Секции XXV, XXXV)
-7. **`OperationalFlowCoreService` (ядро, пункт 7 очереди Ступени 3):**
-   - **Проба:** Провести замер матрицы прав и обязанностей через `OperationalFlowCoreFalsificationTest`.
-   - **Инвариант:** 19 состояний потока несут непустой список `forbiddenActions`; 7 состояний блокировки исполняют `ENFORCED_STOP_THE_LINE`; `decisionHash` (SHA-256) гарантирует дедупликацию журнала `flow_spine_events`. Исходный код НЕ ТРОГАТЬ.
-8. **`AccountRepository` (ядро, пункт 8 очереди Ступени 3):**
-   - **Проба:** Провести замер атомарного выбора и взыскания через `AccountSelectionFairnessTest`, `AccountRepositoryIntegrationTest`, `GeneralPoolAdmissionCoherenceIntegrationTest`, `ProjectFlowServiceLaw1JulesDispatchTest`.
-   - **Инвариант:** Атомарный выбор `FOR UPDATE SKIP LOCKED`; отказ аккаунта упорядочивает выбор (`ORDER BY refusal_run_count`), а не исключает его; learned capacity имеет приоритет над глобальными лимитами. Исходный код НЕ ТРОГАТЬ.
+### Группа 3. Оркестрация цикла, мониторинг дрейфа и продвижение
+6. **`DesignShopOrchestrationService` (ядро, Секция XXIX, предписания XVI §28, §58):**
+   - **Проба:** Замерить запуск цикла `startCycle`, фиксацию эталона `captureBaseline` (токены первого экрана) и проверку `hasImplementableHtml`.
+   - **Инвариант:** Отказ `aesthetic_drift` фиксирует рекламацию `recordUnusableDraftConcern` без холостых перезапусков. Притязание `claimStartCycle` защищено временным порогом (TTL). Код НЕ ТРОГАТЬ.
+7. **`JulesDispatchService` (метод `completeDesignReview`, предписание XVI §31):**
+   - **Проба:** Замерить продвижение черновика из `design/draft/{basename}` в `design/approved/{basename}`.
+   - **Инвариант:** Продвижение исполняется строго при вердикте `approve`. Код НЕ ТРОГАТЬ.
+8. **`DesignDriftMonitorService` (Секция XVI §28, §30):**
+   - **Проба:** Замерить сравнение живой страницы продукта из `ClientRuntimeObservabilityService` с зафиксированным эталоном `DesignShopCycleEntity`.
+   - **Инвариант:** При отсутствии эталона сетевой запрос пропускается (устранение муды); при наличии эталона вычисляется реальный дрейф CSS-токенов. Код НЕ ТРОГАТЬ.
+9. **`StrandedDesignCycleSweepService` (Секция XVI §58):**
+   - **Проба:** Замерить периодическое обнаружение брошенных притязаний цикла дизайна и освобождение через CAS `compareAndReleaseStrandedClaim`.
+   - **Инвариант:** Освобождение притязания фиксируется в `DefectJournalService` и проектном журнале. Код НЕ ТРОГАТЬ.
 
 ---
 
 ## 4. Регламент отчета инженера L2
 
-1. Провести пакетный запуск тестов-заслонов в Docker Maven (`-m 2g`).
-2. Внести отметки `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` для всех 8 механизмов Ступени 3.
-3. Отметить пункты Ступени 3 как закрытые в `docs/ANTIGRAVITY_QUEUE.md`.
-4. Сформировать лаконичный отчет в `docs/reports/PROGRAMMER_STATE.md` (до 20 строк).
-5. Зафиксировать результат коммитом `feat(stage3): complete Stage 3 batch runtime probe for mechanisms 1-8 (D008, D010, D006)`.
+1. Провести запуск тестовых заслонов кластера в Docker Maven (`-m 2g`).
+2. Внести отметки `*Живое:*` и подтверждение статуса пробы в `docs/FACTORY_MECHANISMS.md` для механизмов Секции XVI/XXIX.
+3. Сформировать лаконичный отчет в `docs/reports/PROGRAMMER_STATE.md` (до 20 строк).
+4. Зафиксировать результат семантическим коммитом `feat(design-shop): complete Section XVI/XXIX batch verification (D008, D010, D006)`.
