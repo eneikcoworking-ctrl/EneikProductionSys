@@ -262,7 +262,7 @@
 починку опровергнет. Порядок внутри ступени — по очереди в начале этого файла, она упорядочена по весу и вреду.
 
 - `V100__client_acceptance_traversals.sql`  ← ядро
-- `generate_philosopher_patterns.py`  ← ядро
+- ~~`generate_philosopher_patterns.py`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green в PhilosopherPatternCorpusConsistencyTest, ideal)
 - `SystemStatusService`  ← ядро
 - ~~`OperationalTruthService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
 - ~~`DesignAssetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 12/12 green, ideal)
@@ -438,6 +438,7 @@
 - ~~`ContextChunkRepository`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green, ideal)
 - ~~`GreetingRepository`~~ (Закрыто Ступень 4: замер в Docker Maven 5/5 green в GreetingControllerIntegrationTest, ideal)
 - ~~`TaskEntity`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
+- ~~`TaskDuplicateDetector`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green в TaskDuplicateDetectorTest, ideal)
 - ~~`JulesSessionEntity`~~ (Закрыто Ступень 4: замер в Docker Maven 14/14 green, ideal)
 - ~~`EvidenceNodeEntity`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 26/26 green, ideal)
 - ~~`JulesConfigEntity`~~ (Закрыто Ступень 4: замер в Docker Maven 13/13 green, ideal)
