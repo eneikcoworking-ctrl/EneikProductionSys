@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секции I и II — Приём требования и Компиляция
+# Пакетная директива L1/L3 -> L2: Секция III — Отправка: задача уходит в работу
 
-**Дата:** 2026-10-16 02:40 UTC  
+**Дата:** 2026-10-16 02:55 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -9,50 +9,49 @@
 
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
-1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секции XVI и XXIX («Реестр предписаний L2 и Цех дизайна») успешно заверены инженером (коммит `ebb1c09`, 272/272 green в едином Docker Maven прогоне, 0 строк изменений рабочего кода). Настоящая директива охватывает ключевой фундаментальный кластер жизненного цикла фабрики — **Секцию I («Приём требования: рыночный корпус, уставный гейт, провижининг проектов и онбординг»)** и **Секцию II («Компиляция: требование становится задачами, декомпозиция, сличители дубликатов и сборка вишлиста»)**:
-   - **Контур I.Intake (`Приём требования и провижининг проектов`):**
-     * Механизмы: `ProjectFlowService`, `ProjectFactoryService`, `GitHubProjectFactoryClient`, `LinearProjectFactoryClient`, `ProjectWorkspaceFactoryService`, `RequirementGroundingService`, `MarketCorpusService`, `MarketComplianceGate`, `MarketResearchService`, `MarketResearchController`, `OnboardingAuditService`, `RepositoryStackAnalyzer`, `StackProfile`, `InspectionStatus`, `OnboardingAuditFindingRepository`;
-     * Инварианты: приоритет целого над частями (`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`), каузальная цепочка надёжности данных и ликвидация N+1 (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`), запрет фиктивных репозиториев (phantom URLs, `NUEL_BELNAP_06_SUBSTITUTION_ORACLE`), топология границ файловой системы и проектных пространств (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`), защита от категориальной ошибки фабричного доступа против качества кода клиента (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`);
-     * Заслоны: `ProjectFlowServiceTest`, `ProjectFlowServiceFalsificationTest`, `ProjectFlowServiceLaw1JulesDispatchTest`, `ProjectFlowServiceResetTest`, `ProjectFlowServiceDbrRopeTest`, `ProjectFlowIntegrationTest`, `ProjectFactoryServiceTest`, `ProjectFactoryServiceFalsificationTest`, `GitHubProjectFactoryClientTest`, `LinearProjectFactoryClientTest`, `ProjectWorkspaceFactoryServiceTest`, `RequirementGroundingServiceTest`, `MarketCorpusServiceTest`, `MarketComplianceGateTest`, `MarketResearchServiceTest`, `MarketResearchControllerTest`, `OnboardingAuditServiceTest`, `OnboardingAuditServiceFalsificationTest`, `RepositoryStackAnalyzerTest`.
-   - **Контур II.Compilation (`Компиляция: требование становится задачами`):**
-     * Механизмы: `TechnicalLeadCompiler`, `FeatureService`, `EpistemicMetadataClassifier`, `KanoClass`, `EmsFlowStage`, `SelfFalsificationEpicMatcher`, `WishlistContentSimilarityMatcher`, `WishlistSimilarity`, `WishlistService`, `StrandedFinalizingSweepService`;
-     * Инварианты: институциональный факт и защита от тихого размножения задач (`DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER`), оракул подстановок и детерминизм ключей контента (`GOTLOB_FREGE_01_SENSE_REFERENCE_ORACLE`, `NUEL_BELNAP_06_SUBSTITUTION_ORACLE`), жесткие десигнаторы эпиков и признаков (`SOL_KRIPKE_01_RIGID_DESIGNATOR_CORE`), запрет компиляции невалидного DoR (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`), лок уровня абстракции Голдмана (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`), принципиальная целостность и CAS-атомарность освобождения зависших притязаний (`RONALD_DVORKIN_04_PRINCIPLED_INTEGRITY`);
-     * Заслоны: `TechnicalLeadCompilerTest`, `TechnicalLeadCompilerIntegrationTest`, `TechnicalLeadCompilerFalsificationTest`, `TechnicalLeadCompilerDbrRopeTest`, `FeatureServiceTest`, `EpistemicMetadataClassifierTest`, `KanoClassTest`, `EmsFlowStageTest`, `SelfFalsificationEpicMatcherTest`, `WishlistContentSimilarityMatcherTest`, `WishlistSimilarityTest`, `WishlistServiceTest`, `WishlistServiceFalsificationTest`, `StrandedFinalizingSweepServiceTest`, `StrandedFinalizingSweepServiceFalsificationTest`, `StrandedFinalizingDynamicTimeoutFalsificationTest`.
+1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и ручных согласований.
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секции I и II («Приём требования и Компиляция») успешно закрыты инженером (коммит `0ff2143`, 324/324 green в едином Docker Maven прогоне, 0 строк изменений рабочего кода). Настоящая директива охватывает следующий фундаментальный контур жизненного цикла фабрики — **Секцию III («Отправка: задача уходит в работу: Jules, сессии, притязания, аренда, здоровье аккаунтов и узкие места»)**:
+   - **Механизмы ядра и сервисы отправки:**
+     * `JulesDispatchService`, `JulesApiClient`, `SessionLifecycleService`, `PersistentWorkerSessionService`, `ClaimService` (`TaskClaimService`), `LeaseWatchdogService`, `AccountHealthService`, `BottleneckAwarePriorityService`, `BottleneckDetectionService`;
+     * Сущности и модели контура: `TaskClaim`, `TaskClaimRepository`, `JulesSessionEntity`, `AccountEntity`, `PersistentWorkerSession`, `AccountHealth`, `BottleneckScore`;
+   - **Заслоны верификации:**
+     * `JulesDispatchServiceTest`, `JulesDispatchServiceFalsificationTest`, `JulesDispatchServiceLaw4MergeEvidenceTest`, `JulesDispatchServiceTocDbrAdmissionTest`, `JulesRefusalKindsTest`, `JulesRoleCapabilitiesFalsificationTest`, `JulesApiClientTest`, `JulesApiClientFalsificationTest`, `SessionLifecycleServiceTest`, `SessionLifecycleServiceFalsificationTest`, `PersistentWorkerSessionServiceTest`, `PersistentWorkerSessionServiceFalsificationTest`, `TaskClaimServiceTest`, `ClaimServiceFalsificationTest`, `ClaimServiceRaceGuardTest`, `ClaimRightsDutiesMatrixTest`, `ClaimResultStatusTruthTableFalsificationTest`, `TocPriorityClaimTest`, `LeaseWatchdogServiceTest`, `LeaseWatchdogServiceFalsificationTest`, `AccountHealthServiceTest`, `AccountHealthServiceFalsificationTest`, `AccountHealthServiceLaw14Test`, `BottleneckAwarePriorityServiceTest`, `BottleneckAwarePriorityServiceFalsificationTest`, `BottleneckDetectionServiceTest`, `BottleneckDetectionServiceFalsificationTest`.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
-   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено модифицировать рабочий код сервисов, компилятора, контроллеров и моделей (`src/main/java`, `src/main/resources`, `scripts/`) при проходящих тестах!
+   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено вносить любые модификации в рабочий код сервисов, диспетчеров, контроллеров и клиентов (`src/main/java`, `src/main/resources`, `scripts/`) при проходящих тестах!
    - Механизмы уже воплощены в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D004, D009, D012, D002, D007)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D004, D012, D007, D011, D005)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` & `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS` [D008 False green, Popper & Williamson]:**
-  * Попперовская фальсификация: тесты обязаны падать при попытке подстановки фиктивного URL репозитория, при пропуске невалидного DoR, при нарушении проектной изоляции или дублировании компиляционных задач.
+  * Попперовская фальсификация: заслоны обязаны падать при попытке двойного клейма одной задачи, при утечке сессий поверх лимита аккаунта, при пропуске сетевого запроса к Jules без ключа или при нарушении квот бюджета диспетчеризации (`JulesDispatchServiceFalsificationTest`, `ClaimServiceRaceGuardTest`).
 - **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
-  * Лок уровней абстракции и каузальная цепочка: изоляция выборок по ID проекта, полное устранение N+1 запросов, детерминированная сортировка каталогов оператора.
+  * Лок уровней абстракции и каузальная цепочка: контекст отказа (`CreateSessionResult.failure`) строго фиксирует `promptLength`, `source`, `startingBranch`; полная изоляция задач по проектам и аккаунтам; ликвидация N+1 при определении узких мест воркеров.
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
   * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода фабрики при проходящих тестах;**
-  * Деонтический запрет компиляции заявок со статусом DoR `undetermined`/`waste`, запрет сетевых вызовов при приёме в обход провижининга.
-- **`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` & `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` [D004 / D006, Shaffer & Varzi]:**
-  * Мереологический приоритет целого над частями: границы владения состоянием задач и проектов; изоляция файловой системы в пределах `workspaceRoot`.
-- **`NUEL_BELNAP_06_SUBSTITUTION_ORACLE` & `GOTLOB_FREGE_01_SENSE_REFERENCE_ORACLE` [D009 Phantom substitution, Belnap & Frege]:**
-  * Запрет фантомных подстановок: при сбое провижининга в GitHub фабрика строго сохраняет `null` и не подменяет URL фиктивной строкой.
-- **`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` [D002 Category error, Ryle]:**
-  * Категориальное разделение: ошибка авторизации или сетевой недоступности фабрики никогда не записывается как дефект репозитория заказчика.
-- **`RONALD_DVORKIN_04_PRINCIPLED_INTEGRITY` [D012 Principled integrity, Dworkin]:**
-  * Освобождение зависших притязаний вишлиста через атомарный CAS, исключающий гонки с живыми воркерами.
+  * Исключающие основания Раза: `JulesApiClient` категорически запрещает сетевые вызовы при отключенной интеграции (`jules_enabled == false`) или пустом URL; `ClaimService` блокирует выдачу задачи при исчерпании лизы или деградации здоровья аккаунта.
+- **`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` & `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` [D004, Varzi]:**
+  * Мереологическое разделение владения: атомарный CAS и изоляция жизненного цикла притязаний на задачу (`TaskClaim`) между сессиями воркеров.
+- **`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` & `UILYAM_ESHBI_01_REQUISITE_VARIETY` [D012 Multi-valued truth, Belnap & Ashby]:**
+  * Четырехзначная логика истинности статусов притязаний и достаточное разнообразие состояний сессий Jules без схлопывания неизвестного в ложный успех.
+- **`MARGRET_GILBERT_04_INSTITUTIONAL_DEFECT_RECORD` & `MARGRET_GILBERT_01_JOINT_COMMITMENT` [D007 / D004, Gilbert]:**
+  * Совместное обязательство и институциональный регистр: фиксация отказов диспетчеризации в журнале дефектов без потери контекста.
+- **`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` [D011 Teleosemantic feedback, Dretske]:**
+  * Обратная связь по здоровью аккаунтов (`AccountHealthService`): перевод аккаунта в карантин при серийных сбоях токена.
+- **`FRENK_RAMSEY_01_MINIMAX_REGRET_DISPATCH` [D005 Minimax regret, Ramsey]:**
+  * Приоритизация очереди задач с учетом узких мест барабана TOC (`BottleneckAwarePriorityService`) для минимизации потерь пропускной способности.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. Провести строгий единый пакетный замер механизмов Секций I и II в Docker Maven:
+1. Провести строгий единый пакетный замер механизмов Секции III в Docker Maven:
    ```bash
-   docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ProjectFlowServiceTest,ProjectFlowServiceFalsificationTest,ProjectFlowServiceLaw1JulesDispatchTest,ProjectFlowServiceResetTest,ProjectFlowServiceDbrRopeTest,ProjectFlowIntegrationTest,ProjectFactoryServiceTest,ProjectFactoryServiceFalsificationTest,GitHubProjectFactoryClientTest,LinearProjectFactoryClientTest,ProjectWorkspaceFactoryServiceTest,RequirementGroundingServiceTest,MarketCorpusServiceTest,MarketComplianceGateTest,MarketResearchServiceTest,MarketResearchControllerTest,OnboardingAuditServiceTest,OnboardingAuditServiceFalsificationTest,RepositoryStackAnalyzerTest,TechnicalLeadCompilerTest,TechnicalLeadCompilerIntegrationTest,TechnicalLeadCompilerFalsificationTest,TechnicalLeadCompilerDbrRopeTest,FeatureServiceTest,EpistemicMetadataClassifierTest,KanoClassTest,EmsFlowStageTest,SelfFalsificationEpicMatcherTest,WishlistContentSimilarityMatcherTest,WishlistSimilarityTest,WishlistServiceTest,WishlistServiceFalsificationTest,StrandedFinalizingSweepServiceTest,StrandedFinalizingSweepServiceFalsificationTest,StrandedFinalizingDynamicTimeoutFalsificationTest
+   docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=JulesDispatchServiceTest,JulesDispatchServiceFalsificationTest,JulesDispatchServiceLaw4MergeEvidenceTest,JulesDispatchServiceTocDbrAdmissionTest,JulesRefusalKindsTest,JulesRoleCapabilitiesFalsificationTest,JulesApiClientTest,JulesApiClientFalsificationTest,SessionLifecycleServiceTest,SessionLifecycleServiceFalsificationTest,PersistentWorkerSessionServiceTest,PersistentWorkerSessionServiceFalsificationTest,TaskClaimServiceTest,ClaimServiceFalsificationTest,ClaimServiceRaceGuardTest,ClaimRightsDutiesMatrixTest,ClaimResultStatusTruthTableFalsificationTest,TocPriorityClaimTest,LeaseWatchdogServiceTest,LeaseWatchdogServiceFalsificationTest,AccountHealthServiceTest,AccountHealthServiceFalsificationTest,AccountHealthServiceLaw14Test,BottleneckAwarePriorityServiceTest,BottleneckAwarePriorityServiceFalsificationTest,BottleneckDetectionServiceTest,BottleneckDetectionServiceFalsificationTest
    ```
-2. Подтвердить статус `ideal` в `*Живое:*` механизмов Секций I и II в `docs/FACTORY_MECHANISMS.md`, внести/актуализировать блоки `### Итог Секции I`, `### Итог Секции II` и `### Итог кластера Секций I и II` со сводкой зелёных тестов, синхронизировать `docs/ANTIGRAVITY_QUEUE.md`.
+2. Подтвердить статус `ideal` в `*Живое:*` механизмов Секции III в `docs/FACTORY_MECHANISMS.md`, убедиться в наличии блока `### Итог Секции III`, синхронизировать `docs/ANTIGRAVITY_QUEUE.md` (внести Секцию III в `## Дальше`).
 3. Составить краткий отчет в `docs/reports/PROGRAMMER_STATE.md` (не более 15–20 строк).
-4. Закоммитить с семантическим сообщением `feat(intake-and-compiler): complete Section I & II batch verification (D008, D010, D006)`.
+4. Закоммитить с семантическим сообщением `feat(dispatch): complete Section III batch verification (D008, D010, D006)`.
