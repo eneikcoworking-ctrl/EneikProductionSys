@@ -1,12 +1,11 @@
-# Такт L2: Ведущий инженер (2026-10-16 06:21 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 06:28 UTC)
 
-1. Пакетная верификация Секций III и IV («Отправка: задача уходит в работу» и «Ревью, гейт, слияние и GitHub-инварианты»):
-   - Заверены все механизмы контуров отправки, притязаний, здоровья аккаунтов, автослияния, GitHub API, гейтов качества и ревью в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **394/394 green** (38 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 01:14 min).
-   - Секция III (154 теста): `JulesDispatchService` (151 green с под-сьютами), `JulesApiClient` (10), `SessionLifecycleService` (14), `PersistentWorkerSessionService` (8), `ClaimService` (19), `LeaseWatchdogService` (3), `AccountHealthService` (31), `BottleneckAwarePriorityService` (8), `BottleneckDetectionService` (4).
-   - Секция IV (240 тестов): `AutoMergeService` (50 green с под-сьютами), `GitHubPullRequestService` (12), `GitHubApiBudgetService` (3), `GithubAccessService` (6), `CodeChangeClassifier` (13), `GateOrchestrator` (5), `VerificationEvidenceGate` (8), `BaseQualityGate` (10), `BackendContractGate` (5), `DesignExcellenceGate` (18), `EpistemicLayerInvariantGate` (8), `BranchGarbageCollectorService` (13), `PrReviewPipelineService` (3).
+1. Пакетная верификация Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»):
+   - Заверены все механизмы контура самопроверки, метрик потока, операционной правды, кайдзен, фальсификации и оркестрации в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **290/290 green** (25 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 43.875 s).
+   - Механизмы Секции VIII (290 тестов): `FalsificationCycleService` (28 green), `EvidenceCoherenceService` (26 green: `EvidenceCoherenceServiceTest` 21, `EvidenceCoherenceV80TerminationFalsificationTest` 5), `OpsAuditorService` (11), `PlatformSelfReferenceDetector` (7), `FactorySelfHealthService` (5), `KaizenService` & `DefectJournalService` (24 green: `KaizenServiceTest` 10, `DefectJournalServiceTest` 3, `DefectJournalRootCauseAttributionTest` 6, `LogScopeAndDefectJournalInusFalsificationTest` 5), `FlowMetricsService` (4), `LeverPromotionService` (11 green: `LeverPromotionServiceTest` 7, `LeverPromotionServiceFalsificationTest` 4), `PlannedWorkRecoveryService` (15), `ContinuousOrchestrationService` (16), `OperationalTruthService` (17), `FlowSpineService` (32), `OperationalFlowCoreService` (45 green: `OperationalFlowCoreServiceTest` 6, `OperationalFlowCoreFalsificationTest` 39), `OperationalPolicyService` (31 green: `OperationalPolicyServiceTest` 17, `OperationalPolicyReasonTest` 5, `OperationalPolicyDeniedExceptionFalsificationTest` 9), `TrustSnapshotService` (9), `MarketResearchService` (9 green: `MarketResearchServiceTest` 3, `MarketResearchServiceFalsificationTest` 6).
 2. Соблюдение инвариантов Ступени 4:
    - 0 строк изменений рабочего кода сервисов (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером.
 3. Фиксация и статус:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирован замер кластера Секций III и IV (394/394 green, status: ideal).
-   - В `docs/ANTIGRAVITY_QUEUE.md` заверено закрытие пунктов Секций III и IV в Ступени 4.
-   - Философские заслоны соблюдены: D008 Popper, D010 Goldman, D006 Raz, D013 Wittgenstein, D012 Belnap, D004 Varzi & Gilbert, D007 Gilbert, D011 Dretske, D005 Ramsey, D002 Austin, D003 Quine.
+   - В `docs/FACTORY_MECHANISMS.md` зафиксирован замер Секции VIII (290/290 green, status: ideal).
+   - В `docs/ANTIGRAVITY_QUEUE.md` заверено закрытие пунктов Секции VIII в Ступени 4.
+   - Философские заслоны соблюдены: D008 Popper & Tarski, D010 Goldman, D006 Raz & Varzi, D013 Wittgenstein, D004 Varzi & Bratman, D002 Ryle, D007 Gilbert, D012 Belnap.
