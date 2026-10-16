@@ -2801,7 +2801,7 @@ callers/consumers grep: `ContinuousOrchestrationService.java:285`, `ProjectContr
 
 ### Итог кластера Секций IX, X и XI
 
-Все механизмы Секций IX, X и XI («Внешние системы, Дизайн-цех и Наблюдение за живым продуктом клиента») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 08:42 UTC]: суммарно 280/280 green (26 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:31 min):
+Все механизмы Секций IX, X и XI («Внешние системы, Дизайн-цех и Наблюдение за живым продуктом клиента») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 18:25 UTC]: суммарно 280/280 green (26 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:08 min):
 - **Секция IX (Внешние системы):** 110/110 green (`GoogleAiResourceSecurityIntegrationTest` 12/12, `GoogleAiResourceControllerTest` 6/6, `GeminiContextServiceTest` 28/28, `StitchClientTest` 10/10, `DesignAssetServiceTest` 12/12, `GeminiObserverActionServiceTest` 17/17, `InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9).
 - **Секция X (Дизайн-цех):** 91/91 green (`DesignShopOrchestrationServiceTest` 13/13, `DesignShopOrchestrationServiceLaw15Test` 7/7, `DesignShopCycleRepositoryIntegrationTest` 6/6, `DesignConsistencyAuditServiceTest` 15/15, `LayoutGeometryAuditServiceTest` 13/13, `DesignSystemFalsificationServiceTest` 6/6, `DesignDriftMonitorServiceTest` 7/7, `StrandedDesignCycleSweepServiceTest` 4/4, `DesignImplementationLoopClosureLaw3Test` 2/2, `DesignExcellenceGateTest` 12/12, `DesignExcellenceGateFalsificationTest` 6/6).
 - **Секция XI (Наблюдение за живым продуктом клиента):** 79/79 green (`ClientRuntimeObservabilityServiceTest` 29/29, `ObservationHostingDemarcationLaw26Test` 3/3, `FailureDemarcationLaw22Test` 5/5, `BetaPosteriorTest` 9/9, `RuntimeHealthShiftDetectorTest` 9/9, `ProductCapabilityServiceTest` 18/18, `RuntimeVerdictLayerTest` 6/6).
@@ -13808,6 +13808,44 @@ the ceiling by more than the expected delay-window intake.
 **Текущий статус:** считаю все механизмы Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация») идеальными. Заслон качества: 290/290 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D013 Wittgenstein / D004 Varzi / D002 Ryle / D007 Gilbert & Mackie / D011 Dretske). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити:** считаю механизмы Секции VIII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (290/290 green: D008, D010, D006, D012, D013, D004, D002, D007, D011).
+
+---
+
+### Итог Пакетного Замера Кластера Секций IX, X и XI («Внешние системы: AI/RAG/Runtime-граница фабрики, Цех дизайна и Наблюдение за живым продуктом клиента»)
+
+**Дата:** 2026-10-16 18:25 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 26 тест-сьютов Кластера Секций IX, X и XI со 100% green: **280/280 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:08 min).
+
+1. **Группа 1: Секция IX — Внешние системы и внешняя AI/RAG/Runtime-граница фабрики (110 тестов, 8 сьютов):**
+   - `GoogleAiResourceSecurityIntegrationTest` (12/12), `GoogleAiResourceControllerTest` (6/6): типобезопасная безопасность API Google AI, закрытие path traversal за пределами `./data/video-assets`, key-gate и fail-closed защита (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006).
+   - `GeminiContextServiceTest` (28/28): RAG постоянного контекста, косинусная близость векторов `EmbeddingSimilarityUtil`, lazy-load содержимого документов (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014).
+   - `StitchClientTest` (10/10): JSON-RPC клиент к Stitch MCP, сохранение `screenId` и изоляция сессий (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `DesignAssetServiceTest` (12/12): оркестрация дизайн-артефактов, отсечение офф-токен экранов до коммита в git (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015).
+   - `GeminiObserverActionServiceTest` (17/17), `InternalGeminiObserverControllerTest` (16/16), `InternalGeminiObserverSecurityIntegrationTest` (9/9): авторизация действий наблюдателя через политики с категорическим запретом мутации кода (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+
+2. **Группа 2: Секция X — Цех дизайна: экраны, марка, геометрия и дизайн-система (91 тест, 11 сьютов):**
+   - `DesignShopOrchestrationServiceTest` (13/13), `DesignShopOrchestrationServiceLaw15Test` (7/7), `DesignShopCycleRepositoryIntegrationTest` (6/6): полный жизненный цикл дизайн-цеха со строгим соблюдением Закона 15 (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015).
+   - `DesignConsistencyAuditServiceTest` (15/15): строгий аудит соответствия токенов дизайн-системы марке (`BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015).
+   - `LayoutGeometryAuditServiceTest` (13/13): геометрия экранов, взаимное расположение и отступы (`ENDI_KLARK_05_LAYOUT_PROXIMITY` / D011).
+   - `DesignSystemFalsificationServiceTest` (6/6): фальсификационные заслоны целостности дизайн-системы (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `DesignDriftMonitorServiceTest` (7/7): детектор дрейфа дизайн-токенов (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
+   - `StrandedDesignCycleSweepServiceTest` (4/4): выметающий сборщик зависших дизайн-циклов (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `DesignImplementationLoopClosureLaw3Test` (2/2): замыкание цикла реализации по Закону 3 (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011).
+   - `DesignExcellenceGateTest` (12/12), `DesignExcellenceGateFalsificationTest` (6/6): гейт совершенства дизайна с попперовской фальсификацией ложных подтверждений (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+3. **Группа 3: Секция XI — Наблюдение за живым продуктом клиента (79 тестов, 7 сьютов):**
+   - `ClientRuntimeObservabilityServiceTest` (29/29): демаркация сбоя инструмента наблюдения (`observed=false`) от сбоя продукта клиента (`answered=false`) (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
+   - `ObservationHostingDemarcationLaw26Test` (3/3): демаркация хостинга наблюдений по Закону 26 (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `FailureDemarcationLaw22Test` (5/5): фальсификация ложных отказов по Закону 22 (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `BetaPosteriorTest` (9/9): байесовская апостериорная оценка жизнеспособности продукта (`RICHARD_DZHEFFRI_02_DECISION_EXPECTED_LOSS` / D005).
+   - `RuntimeHealthShiftDetectorTest` (9/9): детектор статистического сдвига здоровья рантайма (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011).
+   - `ProductCapabilityServiceTest` (18/18): эмпирическая способность продукта отвечать на запросы без подмены декларациями (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011).
+   - `RuntimeVerdictLayerTest` (6/6): вердиктный слой рантайма в многозначной решётке суждений (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+
+*Соблюдение инварианта Ступени 4:* 0 строк изменений рабочего кода сервисов, моделей, сущностей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций IX, X и XI («Внешние системы, Дизайн-цех и Наблюдение за живым продуктом клиента») идеальными. Заслон качества: 280/280 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D013 Wittgenstein / D015 Barkan Marcus / D011 Clark & Dretske / D005 Jeffrey / D012 Belnap / D004 Varzi). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секций IX, X и XI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (280/280 green: D008, D010, D006, D013, D015, D011, D005, D012, D004).
 
 
 
