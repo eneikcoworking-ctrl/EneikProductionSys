@@ -1,16 +1,11 @@
-# Такт L2: Ведущий инженер (2026-10-16 12:12 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 12:23 UTC)
 
-1. Пакетная верификация Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»):
-   - Заверены все 25 тест-сьютов Секции VIII в едином пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **290/290 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 57.049 s).
-   - Самопроверка и здоровье фабрики (38/38 green, 3 сьюта): `FalsificationCycleServiceTest` (28/28), `PlatformSelfReferenceDetectorTest` (7/7), `FactorySelfHealthServiceTest` (5/5; Popper D008, Varzi D004, Ryle D002, Wittgenstein D013).
-   - Связность свидетельств ECHO (26/26 green, 2 сьюта): `EvidenceCoherenceServiceTest` (21/21), `EvidenceCoherenceV80TerminationFalsificationTest` (5/5; Goldman D010, Dretske D011).
-   - Аудит операций и восстановление (26/26 green, 2 сьюта): `OpsAuditorServiceTest` (11/11), `PlannedWorkRecoveryServiceTest` (15/15; Raz D006, Varzi D004, Ryle D002).
-   - Кайдзен и журнал дефектов (24/24 green, 4 сьюта): `KaizenServiceTest` (10/10), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5; Gilbert D007, Mackie D007).
-   - Метрики потока и рычаги (15/15 green, 3 сьюта): `FlowMetricsServiceTest` (4/4), `LeverPromotionServiceTest` (7/7), `LeverPromotionServiceFalsificationTest` (4/4; Church D008, Belnap D012, Goldman D010).
-   - Оркестрация и операционная политика (141/141 green, 8 сьютов): `ContinuousOrchestrationServiceTest` (16/16), `OperationalTruthServiceTest` (17/17), `FlowSpineServiceTest` (32/32), `OperationalFlowCoreServiceTest` (6/6), `OperationalFlowCoreFalsificationTest` (39/39), `OperationalPolicyServiceTest` (17/17), `OperationalPolicyReasonTest` (5/5), `OperationalPolicyDeniedExceptionFalsificationTest` (9/9; Bratman D004, Raz D006, Belnap D012, Wittgenstein D013).
-   - Снимки доверия и рыночные исследования (20/20 green, 3 сьюта): `TrustSnapshotServiceTest` (9/9), `MarketResearchServiceTest` (3/3), `MarketResearchServiceFalsificationTest` (6/6; Goldman D010, Popper D008).
+1. Пакетная верификация Секций XVI и XXIX («Реестр предписаний L2 и Цех дизайна: экраны, марка, геометрия и дизайн-система»):
+   - Заверены все 29 тест-сьютов Секций XVI и XXIX в едином пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **272/272 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 02:17 min).
+   - Секция XVI (Реестр 59 предписаний L2, 159/159 green, 16 сьютов): эндпоинты наблюдателя и деонтический аудит (42/42 green, Raz D006); сторож верёвки TOC и чистое чтение DBR (20/20 green, Wittgenstein D013, Church D008); LeanValue и TargetContext (13/13 green, Ryle D002, Belnap D012); анализатор стека и операционная правда (23/23 green, Goldman D010, Belnap D012); сличитель сходства вишлиста (20/20 green, Popper D008); системные настройки, Flyway и изоляция пространств имён Law 26 (41/41 green, Popper D008, Varzi D004).
+   - Секция XXIX (Цех дизайна: экраны, марка, геометрия и дизайн-система, 113/113 green, 13 сьютов): генерация и аудит токенов марки (27/27 green, Belnap D015, Wittgenstein D015); аудит геометрии и вьюпорта (13/13 green, Clark D011, Goldman D010); фальсификация и монитор дрейфа дизайн-системы (13/13 green, Popper D008, Wittgenstein D013); гейт совершенства дизайна (18/18 green, Popper D008, Goldman D010); CAS-клейм цикла, оркестрация Law 15 и сборщик зависших циклов (30/30 green, Raz D006, Varzi D004); замыкание реализации дизайна Law 3 и StitchClient (12/12 green, Raz D006, Goldman D010).
 2. Соблюдение инвариантов Ступени 4 и суверенитета:
    - 0 строк изменений рабочего кода сервисов, моделей, контроллеров и конфигураций (`src/main/java`, `src/main/resources`, `scripts/`). Верификация проведена строго пакетным замером в рантайме и Docker Maven.
 3. Фиксация и статус:
-   - В `docs/FACTORY_MECHANISMS.md` обновлены замеры Секции VIII (290/290 green, ideal).
-   - В `docs/ANTIGRAVITY_QUEUE.md` зафиксировано закрытие пакетного замера Секции VIII (290/290 green, ideal).
+   - В `docs/FACTORY_MECHANISMS.md` обновлены замеры Секций XVI и XXIX (272/272 green, ideal).
+   - В `docs/ANTIGRAVITY_QUEUE.md` зафиксировано закрытие пакетного замера Секций XVI и XXIX (272/272 green, ideal).
