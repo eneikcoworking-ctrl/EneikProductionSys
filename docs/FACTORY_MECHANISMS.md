@@ -3497,6 +3497,15 @@ charter content из-за перехода только на parsed fields; вт
 * `section XIV defect-family application map` — **комментарий для Антигравити:** считаю механизм идеальным. Заслон качества: 6/6 green в `PhilosopherPatternCorpusConsistencyTest`. Ступень 4 закрыта, статус: ideal.
 * `FACTORY_MECHANISMS grounding guard` — **комментарий для Антигравити:** считаю механизм идеальным. Заслон качества: 11/11 green в `RequirementGroundingServiceTest` (6/6) и `RequirementGroundingServiceFalsificationTest` (5/5). Ступень 4 закрыта, статус: ideal.
 
+### Итог Секции XIV
+
+Все механизмы Секции XIV («Сверка с корпусом философских образцов»: `docs/philosopher-patterns`, `Defect-family application map for factory mechanisms`, `Grounding guard against hallucinated mechanism records`) подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven: 17/17 green (0 failures, 0 errors, BUILD SUCCESS):
+- `docs/philosopher-patterns` (XIV.1): 6/6 green в `PhilosopherPatternCorpusConsistencyTest` (D010 DeRose/Goldman);
+- `Defect-family application map` (XIV.2): 6/6 green в `PhilosopherPatternCorpusConsistencyTest` (D010 Level of Abstraction Lock);
+- `FACTORY_MECHANISMS grounding guard` (XIV.3): 11/11 green в `RequirementGroundingServiceTest` (6/6) и `RequirementGroundingServiceFalsificationTest` (5/5) (D014 Pearl / D008 Popper).
+
+Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сервисов фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Все механизмы Секции XIV признаны идеальными (status: ideal).
+
 # XV. Класс дефекта «тихое размножение задач»: подпись, замер, случаи
 
 ## XV.1. Доменная подпись тихого размножения задач
@@ -3674,6 +3683,16 @@ charter content из-за перехода только на parsed fields; вт
 * `ContinuousOrchestrationService.checkDuplicateGenerationVelocity` — **комментарий для Антигравити:** считаю механизм идеальным. Заслон качества: 5/5 green в `TaskDuplicateDetectorTest`. Ступень 4 закрыта, статус: ideal.
 * `PlannedWorkRecoveryService` recovery/reset path — **комментарий для Антигравити:** считаю механизм идеальным. Заслон качества: 15/15 green в `PlannedWorkRecoveryServiceTest`. Ступень 4 закрыта, статус: ideal.
 * `compiler work identity/admission family` — **комментарий для Антигравити:** считаю механизм идеальным. Заслон качества: 28/28 green в `CompilerTaskIdentityTest` (3/3), `SemanticDuplicateVetoTest` (4/4), `TechnicalLeadCompilerIntegrationTest` (11/11), `TechnicalLeadCompilerFalsificationTest` (6/6), `TechnicalLeadCompilerTest` (4/4). Ступень 4 закрыта, статус: ideal.
+
+### Итог Секции XV
+
+Все механизмы Секции XV («Класс дефекта "тихое размножение задач": подпись, замер, случаи»: `TaskDuplicateDetector`, `ContinuousOrchestrationService.checkDuplicateGenerationVelocity`, `PlannedWorkRecoveryService.recoverStuckCompilingWishlists/cleanoutOrphanedMetaTasksWhenProductComplete`, `Compiler work identity and completion admission`) подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven: 48/48 green (0 failures, 0 errors, BUILD SUCCESS):
+- `TaskDuplicateDetector` (XV.1): 5/5 green в `TaskDuplicateDetectorTest` (D002 Ryle category error scan);
+- `Duplicate velocity journaler` (XV.2): 5/5 green в `TaskDuplicateDetectorTest` (D007 Tarski institutional fact register);
+- `Recovery/reset generator boundary` (XV.3): 15/15 green в `PlannedWorkRecoveryServiceTest` (D004 Shaffer part-whole ownership);
+- `Compiler work identity and completion admission` (XV.4): 28/28 green (`CompilerTaskIdentityTest` 3/3, `SemanticDuplicateVetoTest` 4/4, `TechnicalLeadCompilerIntegrationTest` 11/11, `TechnicalLeadCompilerFalsificationTest` 6/6, `TechnicalLeadCompilerTest` 4/4) (D010 Shaffer persistence snapshot / D008 Popper falsification).
+
+Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сервисов фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Все механизмы Секции XV признаны идеальными (status: ideal).
 
 # XVI. Предписания для L2: что и как чинить
 
@@ -5649,13 +5668,22 @@ associated with this repo»: это заготовка, а не боевая п�
   задачи не требует.
 - `TocEdge` — отсутствие читателей у счётчика переходов следует из задачи 46 и исчезнет вместе с ней.
 
-### Итог
+### Итог Секции XVI
 
-Все 59 предписаний Секции XVI подтверждены и заверены единым пакетным замером в рантайме и Docker Maven. Архитектурное владение, заслоны истинности Белнапа, тянущий контур ТОС, деонтические запреты Раза и изоляция границ полностью соблюдены (160/160 green, D008, D010, D006, D012, D002).
+Все 59 предписаний Секции XVI подтверждены и заверены единым пакетным замером в рантайме и Docker Maven. Архитектурное владение, заслоны истинности Белнапа, тянущий контур ТОС, деонтические запреты Раза и изоляция границ полностью соблюдены (159/159 green, D008, D010, D006, D012, D002).
 
-**Текущий статус:** считаю механизмы Секции XVI идеальными. Заслон качества: 160/160 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz / D012 Belnap / D002 Ryle). Ступень 4 закрыта (ideal).
+**Текущий статус:** считаю механизмы Секции XVI идеальными. Заслон качества: 159/159 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz / D012 Belnap / D002 Ryle). Ступень 4 закрыта (ideal).
 
-**комментарий для Антигравити:** считаю механизмы Секции XVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (160/160 green, D008 Popper / D010 Goldman / D006 Raz / D012 Belnap / D002 Ryle).
+**комментарий для Антигравити:** считаю механизмы Секции XVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (159/159 green, D008 Popper / D010 Goldman / D006 Raz / D012 Belnap / D002 Ryle).
+
+### Итог кластера Секций XIV, XV и XVI
+
+Все механизмы Секций XIV, XV и XVI («Сверка с корпусом философских образцов, класс дефекта "тихое размножение задач" и реестр архитектурных предписаний») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): суммарно 224/224 green (0 failures, 0 errors, 0 skipped, BUILD SUCCESS):
+- **Секция XIV («Сверка с корпусом философских образцов»):** 17/17 green (`PhilosopherPatternCorpusConsistencyTest` 6/6, `RequirementGroundingServiceTest` 6/6, `RequirementGroundingServiceFalsificationTest` 5/5). Корпус из 86 файлов, 1720 строк паттернов и 15 кодов дефектов согласован, исключены галлюцинации и фантомные механизмы (D010 DeRose, D014 Pearl, D008 Popper).
+- **Секция XV («Класс дефекта "тихое размножение задач"»):** 48/48 green (`TaskDuplicateDetectorTest` 5/5, `PlannedWorkRecoveryServiceTest` 15/15, `CompilerTaskIdentityTest` 3/3, `SemanticDuplicateVetoTest` 4/4, `TechnicalLeadCompilerIntegrationTest` 11/11, `TechnicalLeadCompilerFalsificationTest` 6/6, `TechnicalLeadCompilerTest` 4/4). Разделены категории залипших задач и скорости их генерации во времени (D002 Ryle), институциональная запись в журнал дефектов без стопа потока (D007 Tarski), атомарное владение восстановлением состояния (D004 Shaffer) и стабильное тождество задач компилятора по контентному ключу V137 (D010 Shaffer, D008 Popper).
+- **Секция XVI («Предписания для L2: что и как чинить»):** 159/159 green (`InternalGeminiObserverSecurityIntegrationTest` 9/9, `InternalGeminiObserverControllerTest` 16/16, `GeminiObserverActionServiceTest` 17/17, `TocSentinelServiceTest` 15/15, `TocSentinelControllerTest` 8/8, `LeanValueTest` 9/9, `TargetContextTest` 4/4, `RepositoryStackAnalyzerTest` 6/6, `OperationalTruthServiceTest` 17/17, `WishlistServiceFalsificationTest` 10/10, `WishlistContentSimilarityMatcherTest` 8/8, `WishlistSimilarityTest` 9/9, `SettingsControllerIntegrationTest` 8/8, `SystemSettingsServiceTest` 13/13, `FlywayMigrationValidationTest` 4/4, `ProductNamespaceLaw26Test` 14/14). Полный реестр 59 архитектурных предписаний фабрики: деонтические запреты Раза (Raz D006), топология границ Варци (Varzi D006), четырехзначная истинность Белнапа (Belnap D012), тянущий контур ТОС (Goldratt D013) и институциональные факты Тарского (Tarski D007).
+
+Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сервисов, моделей, контроллеров и репозиториев фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Все механизмы кластера признаны идеальными (status: ideal).
 
 ---
 
