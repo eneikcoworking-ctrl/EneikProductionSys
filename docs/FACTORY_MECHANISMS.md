@@ -13580,7 +13580,7 @@ the ceiling by more than the expected delay-window intake.
    - `SystemStatusServiceTest` дополнен тестами `emsMetricsNullProjectScopesToActiveProjectAndNeverCallsFindAllOrScansAllRows` и `emsMetricsNullProjectAndNoActiveProjectReturnsUndeterminedSectionWithReason` (16/16 green).
    - Все 50 тестов пройдены успешно (`BUILD SUCCESS`).
 
-*Живое, 16 октября 2026:* Проведен единый пакетный замер механизмов заслонов качества и решётки вердиктов в контейнере Docker Maven 3.9.9 Temurin-21 (-m 2g): 122/122 green (0 failures, 0 errors, BUILD SUCCESS).
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:32 UTC]. Механизмы заслонов качества задач и решётки вердиктов заверены со 100% green: 122/122 green (16 тест-сьютов, 0 failures, 0 errors, BUILD SUCCESS).
 - Заслоны качества (`GateOrchestratorIntegrationTest` 9/9, `GateOrchestratorFalsificationTest` 6/6, `BaseQualityGateTest` 10/10, `BaseQualityGateFalsificationTest` 6/6, `BackendContractGateTest` 5/5, `BackendContractGateFalsificationTest` 6/6, `DesignExcellenceGateTest` 12/12, `DesignExcellenceGateFalsificationTest` 6/6, `VerificationEvidenceGateTest` 8/8, `VerificationEvidenceGateFalsificationTest` 6/6, `EpistemicLayerInvariantGateTest` 8/8, `EpistemicLayerInvariantGateFalsificationTest` 6/6, `QualityGateControllerTest` 2/2) — 90/90 green. Подтверждены инварианты: пустой список применимых проверок никогда не признается пройденным гейтом (`applicableChecksByStage`), знаменатель формируется per-stage, реальные PR/file evidence превалируют над декларацией в payload, делегирование `/api/quality-gate/defect-rate` в `SixSigmaAuditService` без вызовов `findAll()`.
 - Решётка вердиктов (`VerdictGateTest` 14/14, `VerdictReconciliationTest` 11/11, `VerdictLayerFalsificationTest` 7/7) — 32/32 green. Подтверждены свойства: монотонность решётки готовности (гейт может только ужесточить суждение о готовности, но не ослабить его), трёхзначная логика Белнапа (`undetermined`), отказ при пустой решётке или отключённом флаге без ложных разрешений.
 Ступень 4 для Task Quality Gates & Verdict Surfaces закрыта (ideal).
@@ -13614,7 +13614,7 @@ the ceiling by more than the expected delay-window intake.
 
 *Свидетельства записи:* `git status --short`; `git log -1 --oneline`; `sed -n '1,220p' /home/remotecli/codex-mechanisms-session/SESSION.md`; `sed -n '1,80p' docs/HOW_TO_READ_BEFORE_FIXING.md`; `sed -n '130,176p' docs/reports/FACTORY_MECHANISM_DENOMINATOR.md`; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN\|ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK"` and `grep -n "ACP-061"`; `find src/main/java src/test/java -type f \( -name '*ProjectFactory*' -o -name '*Provisioning*' -o -name '*WorkspaceArtifacts*' \)`; `nl -ba` on `ProjectFactoryService.java`, `ProjectWorkspaceFactoryService.java`, all project-factory result records, `GitHubProjectFactoryClient.java`, `LinearProjectFactoryClient.java`, `ProjectFlowService.java:351-385`, `ProjectEntity.java`, and project-factory tests; `grep -RIn "projectFactoryService.provision\|factoryReport\|factoryStatus" src/main/java`.
 
-*Живое, 16 октября 2026:* Проведен единый пакетный замер механизмов провижининга проекта в Docker Maven 3.9.9 Temurin-21 (-m 2g): 22/22 green (0 failures, 0 errors, BUILD SUCCESS).
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:32 UTC]. Механизмы провижининга проекта заверены со 100% green: 22/22 green (5 тест-сьютов, 0 failures, 0 errors, BUILD SUCCESS).
 - `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5), `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6), `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4) — 22/22 green.
 - Заслонены инварианты: адрес репозитория появляется только из физического GitHub-свидетельства (201 create / 200 GET), изоляция путей workspace (`boundaryTopologyRejectsPathTraversalOutsideRoot`), сохранение файлов существующего репозитория при brownfield, детерминированный отчёт `factoryReport` без маскировки отказов.
 Ступень 4 для Project Factory Provisioning Result Chain закрыта (ideal).
@@ -13676,3 +13676,36 @@ the ceiling by more than the expected delay-window intake.
 **Текущий статус:** считаю механизмы Секций IX, X и XI идеальными. Заслон качества: 280/280 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D015 Belnap / D012 Belnap / D013 Wittgenstein & Noë / D004 Varzi / D011 Dretske & Clark). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити:** считаю механизмы Секций IX, X и XI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (280/280 green: D008, D010, D006, D015, D012, D013, D004, D011).
+
+---
+
+### Итог Строгих Семейств Ступени 4 («Заслоны качества задач, решётка вердиктов и провижининг проектов»)
+
+**Дата:** 2026-10-16 12:32 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 21 тест-сьют строгих семейств Ступени 4 со 100% green: **144/144 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:42 min).
+
+1. **Группа 1: Заслоны качества задач и оркестратор гейтов (Task Quality Gates & Gate Orchestrator, 90/90 green, 13 сьютов):**
+   - `GateOrchestratorIntegrationTest` (9/9), `GateOrchestratorFalsificationTest` (6/6): оркестрация стадий гейта качества и фальсификационный заслон прохождения стадий (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `BaseQualityGateTest` (10/10), `BaseQualityGateFalsificationTest` (6/6): базовый гейт качества с отсечением симуляций (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `BackendContractGateTest` (5/5), `BackendContractGateFalsificationTest` (6/6): заслон контрактов бэкенда и демаркация API (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `DesignExcellenceGateTest` (12/12), `DesignExcellenceGateFalsificationTest` (6/6): строгий гейт совершенства дизайна на реальных артефактах (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `VerificationEvidenceGateTest` (8/8), `VerificationEvidenceGateFalsificationTest` (6/6): заслон наличия верификационных свидетельств (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+   - `EpistemicLayerInvariantGateTest` (8/8), `EpistemicLayerInvariantGateFalsificationTest` (6/6): заслон эпистемических слоев и инвариантов фабрики (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `QualityGateControllerTest` (2/2): контроллер гейта качества с проверкой деонтических прав (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+
+2. **Группа 2: Решётка вердиктов и согласование исходов (Verdict Surfaces & Lattice, 32/32 green, 3 сьюта):**
+   - `VerdictGateTest` (14/14): решётка вердиктов качества с монотонным сужением допусков (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `VerdictReconciliationTest` (11/11): детерминированное согласование конфликтующих слоев вердиктов (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `VerdictLayerFalsificationTest` (7/7): фальсификация ложных вердиктов готовности (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+3. **Группа 3: Цепочка результатов провижининга фабрики проектов (Project Factory Provisioning Result Chain, 22/22 green, 5 сьютов):**
+   - `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5): топологическая изоляция путей воркспейса проекта (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6): детерминированный провижининг проектов без маскировки сбоев (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `GitHubProjectFactoryClientTest` (3/3): фиксация URL репозитория строго при наличии GitHub-свидетельства (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `LinearProjectFactoryClientTest` (4/4): клиент фабрики проектов Linear с изоляцией контекста (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+*Соблюдение инварианта Ступени 4:* 0 строк изменений рабочего кода сервисов, моделей, сущностей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы строгих семейств Ступени 4 идеальными. Заслон качества: 144/144 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D004 Shaffer). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы строгих семейств Ступени 4 идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (144/144 green: D008, D010, D006, D012, D004).
+

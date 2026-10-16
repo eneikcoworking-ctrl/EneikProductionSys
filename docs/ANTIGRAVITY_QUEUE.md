@@ -303,6 +303,8 @@
 
 **Закрыто (Пакетный замер Секции VIII — Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация):** Все механизмы Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»: `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`, `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`, `DefectJournalService`, `FlowMetricsService`, `LeverPromotionService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalFlowCoreService`, `OperationalPolicyService`, `TrustSnapshotService`, `OperationalTruthService`, `FlowSpineService`, `MarketResearchService`) подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 10:08 UTC] со 100% green: 290/290 green (25 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:36 min). Инварианты D008 (Popper falsification harness), D010 (Goldman data lineage & abstraction lock), D006 (Raz prohibition as code & Varzi boundary topology), D013 (Wittgenstein anti-mirror telemetry), D004 (Varzi part-whole ownership), D002 (Ryle category error scan), D007 (Gilbert institutional defect record), D012 (Belnap truth status table) полностью соблюдены. 0 строк изменений рабочего кода сервисов (работа строгим замером Ступени 4). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер строгих семейств Ступени 4 — Заслоны качества задач, решётка вердиктов и провижининг проектов):** Все механизмы строгих семейств Ступени 4 («Заслоны качества задач, решётка вердиктов и провижининг проектов»: `GateOrchestrator`, `GateCheck`, `GateStage`, `GateResult`, `BaseQualityGate`, `BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate`, `EpistemicLayerInvariantGate`, `QualityGateController`, `VerdictGate`, `VerdictReconciliation`, `VerdictLayer`, `ProjectWorkspaceFactoryService`, `WorkspaceArtifacts`, `WorkspaceProvisioningResult`, `GitHubProjectFactoryClient`, `GitHubProvisioningResult`, `CollaboratorProvisioningResult`, `LinearProjectFactoryClient`, `LinearProvisioningResult`, `ProjectFactoryService`, `ProjectFactoryResult`) подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:32 UTC] со 100% green: **144/144 green** (21 тест-сьют: Task Quality Gates & Gate Orchestrator 90/90 green [13 сьютов], Verdict Surfaces & Lattice 32/32 green [3 сьюта], Project Factory Provisioning Result Chain 22/22 green [5 сьютов]; 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 01:42 min). Инварианты D008 (Popper falsification harness & Tarski truth status), D010 (Goldman data lineage & abstraction lock), D006 (Raz deontic prohibition as code & rights-duties matrix & Varzi boundary topology), D012 (Belnap truth status table), D004 (Shaffer & Varzi part-whole ownership) полностью соблюдены. 0 строк изменений рабочего кода сервисов (работа строгим замером Ступени 4). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -386,8 +388,8 @@
 Дефекты, если найдутся, заводить задачей и переносить на первую ступень.
 
 - ~~`ProjectFlowService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 61/61 green, ideal)
-- ~~`ProjectFactoryService`~~ (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
-- ~~`ProjectWorkspaceFactoryService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green, ideal)
+- ~~`ProjectFactoryService`~~ (Закрыто Ступень 4: замер в Docker Maven 10/10 green [ProjectFactoryServiceTest 4/4, ProjectFactoryServiceFalsificationTest 6/6], ideal)
+- ~~`ProjectWorkspaceFactoryService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 5/5 green [ProjectWorkspaceFactoryServiceFalsificationTest 5/5], ideal)
 - ~~`RequirementGroundingService`~~ (Закрыто Ступень 4: замер в Docker Maven 11/11 green, ideal)
 - ~~`MarketCorpusService`~~ (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
 - ~~`MarketComplianceGate`~~ (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
@@ -415,8 +417,8 @@
 - ~~`GitHubApiBudgetService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
 - ~~`GithubAccessService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 17/17 green, ideal)
 - ~~`CodeChangeClassifier`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 19/19 green, ideal)
-- ~~`GateOrchestrator`~~ (Закрыто Ступень 4: замер в Docker Maven 15/15 green, ideal)
-- ~~`VerificationEvidenceGate`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 73/73 green [14/14 verification gate, 16/16 base quality gate, 11/11 backend contract gate, 18/18 design excellence gate, 14/14 epistemic layer gate], ideal)
+- ~~`GateOrchestrator`~~ (Закрыто Ступень 4: замер в Docker Maven 15/15 green [GateOrchestratorIntegrationTest 9/9, GateOrchestratorFalsificationTest 6/6], ideal)
+- ~~`VerificationEvidenceGate`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 90/90 green [14/14 verification gate, 16/16 base quality gate, 11/11 backend contract gate, 18/18 design excellence gate, 14/14 epistemic layer gate, 15/15 gate orchestrator, 2/2 quality gate controller], ideal)
 - ~~`BranchGarbageCollectorService`~~ (Закрыто Ступень 4: замер в Docker Maven 19/19 green, ideal)
 - ~~`PrReviewPipelineService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green, ideal)
 - ~~`ClientDeliverableReadinessService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 62/62 green [49 unit, 6 falsification, 7 predicate agreement], ideal)
