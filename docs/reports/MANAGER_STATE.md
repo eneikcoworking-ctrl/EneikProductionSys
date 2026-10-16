@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 02:30 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 02:40 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 23G/38G (64%, норма < 70%), свободно 14GB. Память: 2.1Gi/3.7Gi, swap 1.9Gi. Docker clean.
 
 3. Контроль инженера (L2):
-- L2 завершил Секцию VIII («Самопроверка, Flow, Правда, Кайдзен, Оркестрация», коммит 515a553, 281/281 green в Docker Maven, 0 строк изменений кода).
+- L2 завершил Секции XVI и XXIX («Реестр предписаний L2 и Цех дизайна», коммит ebb1c09, 272/272 green в Docker Maven, 0 строк изменений кода).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: строгий замер рантайма без мутаций рабочего кода.
 
-4. Пакетный Work Order: Секции XVI и XXIX («Реестр предписаний L2 и Цех дизайна»):
-- Механизмы: InternalGeminiObserverController, GeminiObserverActionService, TocSentinelService, LeanValue, TargetContext, RepositoryStackAnalyzer, OperationalTruthService, WishlistService, SettingsController, DesignAssetService, DesignConsistencyAuditService, LayoutGeometryAuditService, DesignSystemFalsificationService, DesignDriftMonitorService, DesignExcellenceGate, DesignShopCycleRepository, DesignShopOrchestrationService, StitchClient.
-- Базис RAG: Popper/Williamson D008 (фальсификация геометрии и дизайн-системы), Goldman D010/D011 (лок уровней абстракции и близость элементов), Raz D006 (деонтический запрет мутации кода при зеленых тестах и запрет подмены HTML на картинки), Barcan Marcus/Wittgenstein D015 (единство токенов и Jaccard-гейт), Belnap D012 (многозначная истинность), Ryle D002 (защита от категориальной ошибки).
+4. Пакетный Work Order: Секции I и II («Приём требования и Компиляция»):
+- Механизмы: ProjectFlowService, ProjectFactoryService, GitHubProjectFactoryClient, LinearProjectFactoryClient, ProjectWorkspaceFactoryService, RequirementGroundingService, MarketCorpusService, MarketComplianceGate, MarketResearchService, OnboardingAuditService, RepositoryStackAnalyzer, TechnicalLeadCompiler, FeatureService, EpistemicMetadataClassifier, KanoClass, EmsFlowStage, SelfFalsificationEpicMatcher, WishlistContentSimilarityMatcher, WishlistService, StrandedFinalizingSweepService.
+- Базис RAG: Popper D008 (фальсификация инвариантов intake/compiler), Goldman D010 (лок уровней абстракции и ликвидация N+1), Raz D006 (деонтический запрет мутации кода при зеленых тестах и DoR-запреты), Shaffer D004/Varzi D006 (приоритет целого и границы воркспейса), Belnap D009/Frege D009 (запрет фантомных подстановок URL и ключи контента), Ryle D002 (защита от категориальной ошибки), Dworkin D012 (CAS-целостность).
