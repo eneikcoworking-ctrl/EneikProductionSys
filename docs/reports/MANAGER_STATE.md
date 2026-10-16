@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 17:00 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 17:10 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 24G/38G (67%, норма < 70%), свободно 12GB. Память: 2.1Gi/3.7Gi, swap 1.8Gi. Норма.
 
 3. Контроль инженера (L2):
-- L2 закрыл пакетный замер Кластера Секций XXII и XXIII (коммит 7882db5, 116/116 green).
+- L2 закрыл пакетный замер Секций XXIV и XXV («Скрипты и Позвоночник потока», коммит c8b89c2, 169/169 green).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: строго 0 строк изменений рабочего кода.
 
-4. Пакетный Work Order: Кластер Секций XXIV и XXV («Скрипты и Позвоночник потока»):
-- Механизмы (169 тестов: 149 Maven + 20 Python): PhilosopherPatternCorpusConsistency, FlowSpineService, OperationalFlowCoreService, OperationalFlowCoreFalsification, SystemStatusService, SystemStatusController, SystemSettingsService, SettingsControllerIntegration, TocSentinelController, TocSentinelService, generate_philosopher_patterns, audit_pr, test_append_role_logic.
-- Базис RAG: Popper D008 (фальсификационные заслоны ядра), Goldman D010 (лок уровней абстракции в статусе), Raz D006 (деонтический запрет L2 на правку кода при проходящих тестах), Wittgenstein D013 (анти-зеркало телеметрии рантайма без мутаций на чтении).
+4. Пакетный Work Order: Кластер Секций XXVI, XXVII и XXVIII («Служба контекста, Операционная правда и Внешняя AI-граница»):
+- Механизмы (215 тестов в 17 сьютах Docker Maven): GeminiContextService, InternalGeminiObserverController, OperationalTruthService, TrustSnapshotService, ClientDeliverableReadinessService, GoogleAiResourceController, StitchClient, MLPredictionServiceClient, JudgmentAgentClient, декоммиссия наблюдателя Gemini.
+- Базис RAG: Popper & Tarski D008 (фальсификация готовности), Goldman D010 (асимметричная динамика доверия и лок абстракций), Raz D006 (деонтический запрет L2 на правку кода при проходящих тестах), Wittgenstein D013 (анти-зеркало в observe_only), Church D014 (RAG-капсулы), Belnap D012 (4-значная истинность), Floridi D009 (оракул подмены).
