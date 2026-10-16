@@ -8624,7 +8624,7 @@ should think — many-valued diagnostics*. Сильная дословно: «и
 хранению, не мерена по вызывающим.** Показано, как состояние хранится (отметка времени) и как разрешается
 (притязание снимается по завершении либо возвращается обходом застрявших). Но опровержение требует
 проверить всех читающих этот столбец, а я их не обходил.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Атомарное притязание завершения сессии (`pr_opened_workflow_claimed_at`), предотвращение гонок двойной обработки и целостность схемы заслонены в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Валидация 143 миграций Flyway на старте схемы и защищенные инварианты V30, V42, V44, V45, V55, V82, V92, V97 заслонены в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Атомарное притязание завершения сессии (`pr_opened_workflow_claimed_at`), предотвращение гонок двойной обработки и целостность схемы заверены без изменений кода. Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по слою
 
@@ -8740,7 +8740,7 @@ and secondary intensions*. Сильная дословно: «отображае
 *Философия:* `AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` (D002), формы и опровержение дословно выше.
 **Форма: сильная.** Личность объекта задана содержанием и областью (сессией), владелец назван внешним
 ключом на сессию, а уникальный индекс делает нарушение невозможным, а не нежелательным.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Тождество нитей фич (`role_threads`/`feature_threads`), детерминированное тождество ответов по хешу (`jules_activity_responses`) и валидация схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Тождество задач компилятора из content_key (миграция V137) заслонено в `CompilerTaskIdentityTest` (1/1 green); тождество нитей фич (`role_threads`/`feature_threads`) и детерминированное тождество ответов по хешу (`jules_activity_responses`) заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -8873,7 +8873,7 @@ meaning as use, private-language argument*. Сильная дословно: «�
 предъявить его можно. Это то самое различение, которое `WishlistEntity` делает предикатами
 `decompositionRefused` и `decompositionUnreached` (раздел XXI): свидетельство о предмете против
 свидетельства о себе, здесь введённое в хранилище.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Разделение отказа продукта и отказа измерительного прибора (`client_runtime_observations.instrument_failure`), предотвращение смещения байесовских апостериоров заслонены в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Цепочка миграций V25/V33–V40, откат и починки схемы задач и источников wishlist заслонены в `V25MigrationFalsificationTest` (7/7 green); разделение отказа продукта и измерительного прибора (`client_runtime_observations.instrument_failure`) заслонено в `Stage5ProtectedInvariantsFalsificationTest` (15/15 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -9005,7 +9005,7 @@ Persons — psychological continuity and identity*. Сильная дослов�
 ветвь ожиданием человека» — стало невыразимым: таблицы, в которую это писалось, не существует, и запись в
 неё не соберётся. Это тот же способ, каким удаление значения `idle_generation` сделало невыразимым
 самопридуманное улучшение (раздел XXI, `WishlistSource`). Теста, закрепляющего отсутствие, отдельная проверка не проводилась.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ликвидация тупикового ожидания человека (`needs_human_review`), деонтический запрет Раза и валидация схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Схема V28, V29, V77 агентской модели, изоляция метаданных и удаление устаревших артефактов заслонены в `AgencySchemaTest` (1/1 green); ликвидация тупикового ожидания человека (`needs_human_review`), деонтический запрет Раза и валидация схемы заверены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -9117,7 +9117,7 @@ Knowledge — doxastic commitment*. Сильная дословно: «запи�
 излагает новое убеждение без старого и без свидетельства — дословно слабая форма. Свидетельство и замена
 записаны в заглушке. Опровержение образца («спросить, во что верили час назад») из слоя миграций ответа не
 получает, потому что связи от `V111` к заглушке нет.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Перманентное отключение Gemini observer закреплено в БД и конфигурации, заслонено в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Перманентное отключение Gemini observer (V111) закреплено в БД и конфигурации, заслонено в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -9232,7 +9232,7 @@ should think — many-valued diagnostics*. Сильная дословно: «и
 хранению, слабая по вызывающим — и слаба она по той же причине, что и весь этот куст.** Показано, как
 неизвестное хранится и почему оно неизвестно; но «трактуемый по месту» здесь не опровергнуть и не
 подтвердить, потому что мест трактовки нет: решающих читателей у этих строк не существует.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 07:54 UTC]. Предел хранения прогонов связности (`coherence_runs`), алгоритм релаксации ECHO Тагарда и AGM-байесовская оценка доверия узлов заслонены в `EvidenceCoherenceServiceTest` (21/21 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Релаксация графа свидетельств по алгоритму ECHO Тагарда, AGM-байесовская оценка доверия узлов и предел хранения прогонов связности заслонены в `EvidenceCoherenceServiceTest` (21/21 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -9363,7 +9363,7 @@ trust-score weight changes are gated by a reproducible labeled-history sufficien
 `OperationalTruthService.java:186-208`, `526-572`; philosopher rows named above.
 
 **Текущий статус** — идеальный. Заслон качества: подтверждено пакетным замером в Docker Maven 3.9.9 Temurin-21 (-m 2g) в `ProcessControlServiceTest` (8/8 green), `ProcessControlServiceFalsificationTest` (3/3 green), `FlywayMigrationValidationTest` (4/4 green). Залоченный бейзлайн фазы 1, u-chart пределы 3-sigma, распространение sixSigmaMetricLabel и правила Western Electric доказаны (Popper D008, Goldman D010, Davidson D007). Ступень 4 закрыта, статус: ideal.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 07:54 UTC]. Контрольные карты u-chart Шухарта, фиксация контрольных пределов Phase-1, правила Western Electric и сбор доверительных снимков заслонены в `ProcessControlServiceTest` (8/8 green), `ProcessControlServiceFalsificationTest` (3/3 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Статистический контроль Шесть сигм (миграция V89), контрольные карты u-chart Шухарта, фиксация контрольных пределов Phase-1, правила Western Electric и сбор доверительных снимков заслонены в `ProcessControlServiceTest` (8/8 green), `ProcessControlServiceFalsificationTest` (3/3 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## комментарий для Антигравити по механизмам
 
@@ -9453,7 +9453,7 @@ and HTTP-code probes for `/dispatch-capacity-probe` and `/persistent-workers`; s
 preserve the 7 September snapshot as historical evidence.
 
 **Текущий статус** — идеальный. Эмпирический замер рантайма в Hetzner: хост `2026-10-16T07:55:55Z`, Spring Boot Actuator `UP/ok` (`{"timestamp":"2026-10-16T07:55:55.093279354Z","springBootStatus":"UP","status":"ok"}`), контейнеры фабрики (`backend`, `postgres`, `frontend`, `runtime-launcher`, `ml`, `judgment-proxy`) стабильно `Up/healthy`, диск хоста 65% (13G доступно, строго <70%), память хоста 1.1G free / 1.7G available, swap 1.8G. Механизм замера телеметрии верифицирован (Wittgenstein D013, Goldman D010). Ступень 4 закрыта, статус: ideal.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 07:54 UTC] и хостовой телеметрии: Actuator `UP/ok`, Docker контейнеры в строю, диск 65% (<70%), память 2.1Gi/3.7Gi (1.1Gi free, 1.7Gi available). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC] и хостовой телеметрии: Actuator `UP/ok`, Docker-контейнеры в строю, диск 65% (<70%), память 2.1Gi/3.7Gi (1.1Gi free, 1.7Gi available). Ступень 4 закрыта, статус: ideal.
 
 ## XXIII.1. Комментарии для Антигравити по механизмам
 
@@ -9544,7 +9544,7 @@ conflicts absent from decision denominators.
 `src/main/java/com/eneik/production/services/AutoMergeService.java:1883`.
 
 **Текущий статус** — идеальный. Заслон качества: подтверждено пакетным замером в Docker Maven 3.9.9 Temurin-21 (-m 2g) в `TaskClaimServiceTest` (8/8 green), `ClaimServiceRaceGuardTest` (1/1 green), `ClaimServiceFalsificationTest` (10/10 green), `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10 green) и `FlywayMigrationValidationTest` (4/4 green). Владение файлами, сохранение веток конфликтов и демаркация притязаний доказаны (Shaffer D004, Levi D012, Goldman D010). Ступень 4 закрыта, статус: ideal.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 07:54 UTC]. Топология файловых притязаний (`project_file_claims`), монопольные блокировки `SELECT ... FOR UPDATE`, сохранение конфликтных веток (`preserved_branch`), очистка сиротских конфликтов и защита от гонок захвата заслонены в `TaskClaimServiceTest` (8/8 green), `ClaimServiceRaceGuardTest` (1/1 green), `ClaimServiceFalsificationTest` (10/10 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Топология файловых притязаний (`project_file_claims`, миграция V128), монопольные блокировки `SELECT ... FOR UPDATE`, сохранение конфликтных веток (`preserved_branch`), очистка сиротских конфликтов и защита от гонок захвата заслонены в `TaskClaimServiceTest` (8/8 green), `ClaimServiceRaceGuardTest` (1/1 green), `ClaimServiceFalsificationTest` (10/10 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## XXIIз.1. Комментарии для Антигравити по механизмам
 
@@ -9642,7 +9642,7 @@ measurements state correct field and source.
 `grep -RIn 'verdict_gating_project_slug|gemini_context_learning_enabled|Gemini returned no actionable decisions'`.
 
 **Текущий статус** — идеальный. Заслон качества: подтверждено пакетным замером в Docker Maven 3.9.9 Temurin-21 (-m 2g) в `V25MigrationFalsificationTest` (7/7 green), `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10 green) и `FlywayMigrationValidationTest` (4/4 green). Реляционные инварианты графа зависимостей, каскад хотспотов, хеширование чанков контекста и RAG дедупликация доказаны (Church D014/D009, Shaffer D004, Goldman D010). Ступень 4 закрыта, статус: ideal.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 07:54 UTC]. Хеширование чанков контекста (`content_hash`), дедупликация RAG, реляционные инварианты графа зависимостей `fk_tasks_depends_on` и каскад хотспотов заслонены в `V25MigrationFalsificationTest` (7/7 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Хеширование чанков контекста (`content_hash`), дедупликация RAG, реляционные инварианты графа зависимостей `fk_tasks_depends_on` и каскад хотспотов заслонены в `V25MigrationFalsificationTest` (7/7 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## XXIIи.1. Комментарии для Антигравити по механизмам
 
@@ -9740,7 +9740,7 @@ observation writer/readers remain intact.
 `grep -RIn 'ProjectFinalReportRepository|projectFinalReportRepository\.save' src/main/java`.
 
 **Текущий статус** — идеальный. Заслон качества: подтверждено пакетным замером в Docker Maven 3.9.9 Temurin-21 (-m 2g) в `FlowSpineServiceTest` (32/32 green), `V15ProjectFinalReportPersistenceFalsificationTest` (4/4 green), `Stage5ProtectedInvariantsFalsificationTest` (15/15 green) и `FlywayMigrationValidationTest` (4/4 green). Демаркация приемки клиентом `walked_by="client"`, инвариант `done_is_not_delivery`, долговечность финальных отчетов и объективная телеметрия рантайма доказаны (Belnap D007, Wittgenstein D013, Popper D008). Ступень 4 закрыта, статус: ideal.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 07:54 UTC]. Демаркация приемки клиентом (`walked_by="client"`), инвариант `done_is_not_delivery`, телеметрия рантайма и фиксация защищенных инвариантов схемы заслонены в `FlowSpineServiceTest` (32/32 green), `Stage5ProtectedInvariantsFalsificationTest` (15/15 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Позвоночник потока (миграция V66), наблюдаемость без мутаций, демаркация приемки клиентом (`walked_by="client"`), инвариант `done_is_not_delivery`, телеметрия рантайма и фиксация защищенных инвариантов схемы заслонены в `FlowSpineServiceTest` (32/32 green), `Stage5ProtectedInvariantsFalsificationTest` (15/15 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## XXIIк.1. Комментарии для Антигравити по механизмам
 
@@ -9830,7 +9830,7 @@ exclusions are reproducible by command; startup/readiness evidence can name curr
 `grep -RIn 'flyway\|migration\|schema' src/main/java src/main/resources | head -60`.
 
 **Текущий статус** — идеальный. Заслон качества: подтверждено пакетным замером в Docker Maven 3.9.9 Temurin-21 (-m 2g) в `FlywayMigrationValidationTest` (4/4 green, валидированы все 143 миграции Flyway за 00:00.026s, schema up-to-date, 0 migration drift). Строгая демаркация shape-only и behavior-changing миграций подтверждена (Goldman D010, Pearl D003, Popper D008). Ступень 4 закрыта, статус: ideal.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 07:54 UTC]. Валидация 143 миграций Flyway на старте схемы H2/PostgreSQL заслонена в `FlywayMigrationValidationTest` (4/4 green, DbValidate execution time 00:00.095s, 0 drift). Демаркация shape-only и behavior-changing миграций подтверждена. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 09:29 UTC]. Валидация 143 миграций Flyway на старте схемы H2/PostgreSQL заслонена в `FlywayMigrationValidationTest` (4/4 green, DbValidate execution time 00:00.054s, 0 drift). Демаркация shape-only и behavior-changing миграций подтверждена. Ступень 4 закрыта, статус: ideal.
 
 ## XXIIл.1. Комментарии для Антигравити по механизмам
 
