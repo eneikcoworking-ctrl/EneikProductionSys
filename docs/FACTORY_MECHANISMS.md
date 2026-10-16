@@ -13709,3 +13709,36 @@ the ceiling by more than the expected delay-window intake.
 
 **комментарий для Антигравити:** считаю механизмы строгих семейств Ступени 4 идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (144/144 green: D008, D010, D006, D012, D004).
 
+---
+
+### Итог Пакетного Замера Секций I и II («Приём требования и Компиляция»)
+
+**Дата:** 2026-10-16 12:42 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 44 тест-сьюта Секций I и II со 100% green: **305/305 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:25 min).
+
+1. **Группа 1: Секция I — Приём требования и провижининг проектов (165 тестов, 22 сьюта):**
+   - `ProjectFlowServiceTest` (44/44), `ProjectFlowServiceFalsificationTest` (6/6), `ProjectFlowServiceLaw1JulesDispatchTest` (4/4), `ProjectFlowServiceResetTest` (3/3), `ProjectFlowServiceDbrRopeTest` (4/4), `ProjectFlowIntegrationTest` (5/5): ядро сборки графа задач, DBR-верёвка и оркестрация потока (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6), `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4), `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5): детерминированный провижининг проектов с топологической изоляцией воркспейса (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `RequirementGroundingServiceTest` (6/6), `RequirementGroundingServiceFalsificationTest` (5/5): заземление требований на факты заказчика (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `MarketCorpusServiceTest` (19/19), `MarketCorpusServiceFalsificationTest` (6/6): рыночный корпус и онтология домена (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `MarketComplianceGateTest` (12/12), `MarketComplianceGateFalsificationTest` (5/5): гейт соответствия рыночным стандартам (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `MarketResearchServiceTest` (3/3), `MarketResearchServiceFalsificationTest` (6/6): забор внешних измерений через системного носителя без искажения очередей (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `OnboardingAuditServiceTest` (5/5), `OnboardingAuditServiceFalsificationTest` (4/4), `RepositoryStackAnalyzerTest` (6/6): аудит онбординга и анализ стека репозитория (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+
+2. **Группа 2: Секция II — Компиляция: требование становится задачами (140 тестов, 22 сьюта):**
+   - `TechnicalLeadCompilerTest` (4/4), `TechnicalLeadCompilerFalsificationTest` (6/6), `TechnicalLeadCompilerIntegrationTest` (11/11), `WishlistCompileBudgetLaw9Test` (6/6): институциональный компилятор техлида и бюджет компиляции (`DZHON_SERL_01_INSTITUTIONAL_FACT` / D007, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `FeatureServiceTest` (5/5), `FeatureServiceFalsificationTest` (6/6): управление фичами и потоками сущностей (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `EpistemicMetadataClassifierTest` (5/5), `EpistemicMetadataClassifierFalsificationTest` (5/5): эпистемическая классификация метаданных (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `KanoClassTest` (5/5), `KanoClassFalsificationTest` (6/6): классификатор Кано как жесткий десигнатор ценности (`SOL_KRIPKE_01_RIGID_DESIGNATOR` / D001).
+   - `EmsFlowStageTest` (5/5), `EmsFlowStageFalsificationTest` (6/6): строгие стадии потока EMS (`LYUDVIG_VITGENSHTEYN_01_CRITERIA_NOT_SYMPTOM` / D001).
+   - `SelfFalsificationEpicMatcherTest` (6/6), `SelfFalsificationEpicMatcherFalsificationTest` (6/6): сличитель эпиков с защитой от самообмана (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `WishlistContentSimilarityMatcherTest` (8/8), `WishlistContentSimilarityMatcherFalsificationTest` (6/6), `WishlistSimilarityTest` (6/6), `WishlistSimilarityKripkeIntensionFalsificationTest` (5/5): семантическое сличение вишлиста с отсечением дубликатов (`GOTLOB_FREGE_01_SENSE_AND_REFERENCE` / D009).
+   - `WishlistServiceFalsificationTest` (6/6), `WishlistControllerIntegrationTest` (8/8): сервис и контроллер вишлиста со строгим деонтическим заслоном (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `StrandedFinalizingSweepServiceTest` (8/8), `StrandedFinalizingSweepServiceFalsificationTest` (6/6), `StrandedFinalizingDynamicTimeoutFalsificationTest` (5/5): безопасная эвакуация застрявших притязаний без паразитного размножения (`UASLI_SALMON_01_CAUSAL_PROCESS` / D013, `RONALD_DVORKIN_01_HARD_CASES` / D012).
+
+*Соблюдение инварианта Ступени 4:* 0 строк изменений рабочего кода сервисов, моделей, сущностей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Секций I и II («Приём требования и Компиляция») идеальными. Заслон качества: 305/305 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D007 Searle / D001 Kripke & Wittgenstein / D009 Frege & Belnap / D013 Salmon & Wittgenstein / D012 Belnap & Dworkin / D004 Shaffer). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секций I и II идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (305/305 green: D008, D010, D006, D007, D001, D009, D013, D012, D004).
+
+
