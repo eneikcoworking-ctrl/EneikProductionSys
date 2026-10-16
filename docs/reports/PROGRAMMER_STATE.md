@@ -1,16 +1,14 @@
-# Такт L2: Ведущий инженер (2026-10-16 04:22 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 04:36 UTC)
 
-1. Пакетная верификация Секции XXI («Сущности, несущие поведение, пространства состояний и алгебра решений»):
-   - Заверен масштабный стратегический контур фабрики (133/133 green, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS):
-     * XXI (Сущности с поведением и доставка): `TaskEntityLaw20Test` (6/6), `DeliveryQuestionRecordTest` (3/3), `TaskAcceptanceCriteriaGuardTest` (1/1), `TaskEntityLaw1CarrierTest` (5/5), `DeliveryVerificationPredicateTest` (6/6).
-     * XXIб (Девять пространств состояний): `LeanValueTest` (9/9), `AccountStatusConjunctionTest` (7/7), `TargetContextTest` (4/4), `DecompositionVerdictTest` (5/5).
-     * XXIв (Алгебра решений и решётка вердиктов): `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `InfrastructureVerdictLayerTest` (8/8), `AcceptanceVerdictLayerTest` (7/7), `RuntimeVerdictLayerTest` (6/6).
-     * XXIг (Граф ограничения и сторож ТОС): `TocOptimizerTest` (7/7), `TocNodeTimeoutTest` (4/4), `TocPersistenceSnapshotTest` (4/4).
-     * XXIд, XXIе, XXIж, XXIз (Лестница доверия, журнал дефектов, память об отказах, компактность H2): `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `LogScopeBufferTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `EneikProductionApplicationShutdownCompactTest` (6/6).
-   - Единый пакетный замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 133/133 green (0 failures, 0 errors, 0 skipped, BUILD SUCCESS).
+1. Пакетная верификация Секции XXII и XXIII («Миграции, схема БД, онтологические запреты и живой замер»):
+   - Заверен контур схемы, запретов БД и потока (111/111 green, 0 failures, 0 errors, BUILD SUCCESS):
+     * XXII (V137, V82, V97, валидация схемы): `FlywayMigrationValidationTest` (4/4), `CompilerTaskIdentityTest` (1/1).
+     * XXIIб, XXIIв (V132, V25, V19, V42-V45, V126): `V25MigrationFalsificationTest` (7/7), `AgencySchemaTest` (1/1).
+     * Хранилища и притязания (V58, V121, клеймы): `TaskClaimServiceTest` (8/8), `ClaimServiceRaceGuardTest` (1/1), `ClaimServiceFalsificationTest` (10/10).
+     * XXIIе, XXIIж, XXIIз, XXIIи, XXIIк, XXIIл: `EvidenceCoherenceServiceTest` (21/21), `ProcessControlServiceTest` (8/8), `ProcessControlServiceFalsificationTest` (3/3), `FlowSpineServiceTest` (32/32), `Stage5ProtectedInvariantsFalsificationTest` (15/15).
+   - Единый пакетный замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 111/111 green (0 failures, 0 errors, BUILD SUCCESS).
 2. Соблюдение инвариантов Ступени 4:
    - 0 строк модификации рабочего кода (`src/main/java`, `src/main/resources`, `scripts/`). Работа строгим замером.
-   - RAG-корпус удержан: D008 Popper falsification, D010 Goldman abstraction lock & Parfit/Shaffer persistence snapshot, D006 Raz prohibition as code, D012 Belnap 4-valued truth status table, D002 Ryle category error scan, D004 Shaffer & Varzi part-whole ownership.
+   - RAG-корпус удержан: D008 Popper & Tarski, D010 Goldman & Parfit, D006 Raz, D004 Varzi & Shaffer, D012 Belnap, D013 Wittgenstein.
 3. Документация и фиксация:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксированы блоки итогов Секции XXI и отметки *Живое:* (133/133 green, status: ideal).
-   - Закрыта Секция XXI в `docs/ANTIGRAVITY_QUEUE.md`.
+   - В `docs/FACTORY_MECHANISMS.md` обновлены отметки живых замеров и итог Секции XXII и XXIII (111/111 green, status: ideal).

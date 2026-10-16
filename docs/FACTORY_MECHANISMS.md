@@ -8555,7 +8555,7 @@ Persons — psychological continuity and identity*. Сильная дослов�
 сбой `Value too long for column CONTENT_KEY VARCHAR(255)` и паралич декомпозиции (`SYSTEM_STALLED`). Ключ ограничен вычислением
 детерминированного SHA-256 хеша от отсортированных UUID (`compile:<project>:<sha256Hex>`), фиксируя длину ровно
 в 109 символов при любом размере пачки пожеланий (заслон: `CompilerTaskIdentityTest.contentKeyLengthIsStrictlyBoundedRegardlessOfBatchSize`).
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Детерминированное тождество задач компилятора (`content_key`), предотвращение тихого размножения задач и целостность схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Детерминированное тождество задач компилятора (`content_key`), предотвращение тихого размножения задач и целостность схемы заслонены в `FlywayMigrationValidationTest` (4/4 green) и `CompilerTaskIdentityTest` (1/1 green). Ступень 4 закрыта, статус: ideal.
 
 **`V82__operational_reality_findings.sql`** — заводит запись о расхождении между тем, что сессия сообщает о
 себе, и тем, что показывает GitHub; и переписывает проверку «ровно один источник» с четырёх слагаемых на
@@ -8582,7 +8582,7 @@ Persons — psychological continuity and identity*. Сильная дослов�
 нельзя даже намеренно из приложения; причина объяснима — имя ограничения её называет. Оговорю недостающее:
 отдельный тест на это ограничение не найден, а образец его требует, — так что «сильная» здесь опирается
 на исполнимость и объяснимость, а третье условие **не мерено**.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ограничение схемы ровно одного источника узла свидетельства (`chk_evidence_nodes_exactly_one_source`), каскадное удаление и валидация миграций заслонены в `FlywayMigrationValidationTest` (4/4 green) и `AgencySchemaTest` (1/1 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ограничение схемы ровно одного источника узла свидетельства (`chk_evidence_nodes_exactly_one_source`), каскадное удаление и валидация миграций заслонены в `FlywayMigrationValidationTest` (4/4 green) и `AgencySchemaTest` (1/1 green). Ступень 4 закрыта, статус: ideal.
 
 **`V97__jules_session_pr_opened_workflow_claim.sql`** — вводит атомарное притязание на обработку завершения
 сессии, закрывая гонку двойной обработки.
@@ -8607,7 +8607,7 @@ should think — many-valued diagnostics*. Сильная дословно: «и
 хранению, не мерена по вызывающим.** Показано, как состояние хранится (отметка времени) и как разрешается
 (притязание снимается по завершении либо возвращается обходом застрявших). Но опровержение требует
 проверить всех читающих этот столбец, а я их не обходил.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Атомарное притязание завершения сессии (`pr_opened_workflow_claimed_at`), предотвращение гонок двойной обработки и целостность схемы заслонены в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Атомарное притязание завершения сессии (`pr_opened_workflow_claimed_at`), предотвращение гонок двойной обработки и целостность схемы заслонены в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по слою
 
@@ -8723,7 +8723,7 @@ and secondary intensions*. Сильная дословно: «отображае
 *Философия:* `AHILLE_VARTSI_01_ACTUAL_OBJECT_REGISTER` (D002), формы и опровержение дословно выше.
 **Форма: сильная.** Личность объекта задана содержанием и областью (сессией), владелец назван внешним
 ключом на сессию, а уникальный индекс делает нарушение невозможным, а не нежелательным.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Тождество нитей фич (`role_threads`/`feature_threads`), детерминированное тождество ответов по хешу (`jules_activity_responses`) и валидация схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Тождество нитей фич (`role_threads`/`feature_threads`), детерминированное тождество ответов по хешу (`jules_activity_responses`) и валидация схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -8823,7 +8823,7 @@ knowing-how versus knowing-that, category mistakes*. Сильная дослов
 другого без преобразования». **Форма: слабая до исправления, и об исправлении у меня замера нет.**
 Значение рода «заголовок, сочинённый фабрикой» служило признаком рода «тождество требования заказчика».
 Что исправление вперёд действительно применено, миграция утверждает, а проверка не проводилась.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Целостность требований заказчика и валидация миграции схемы базы данных заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Целостность требований заказчика и валидация миграции схемы базы данных заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V104__observation_instrument_failure.sql`** — отделяет наблюдение о продукте от наблюдения о собственном
 приборе.
@@ -8856,7 +8856,7 @@ meaning as use, private-language argument*. Сильная дословно: «�
 предъявить его можно. Это то самое различение, которое `WishlistEntity` делает предикатами
 `decompositionRefused` и `decompositionUnreached` (раздел XXI): свидетельство о предмете против
 свидетельства о себе, здесь введённое в хранилище.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Разделение отказа продукта и отказа измерительного прибора (`client_runtime_observations.instrument_failure`), предотвращение смещения байесовских апостериоров заслонены в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Разделение отказа продукта и отказа измерительного прибора (`client_runtime_observations.instrument_failure`), предотвращение смещения байесовских апостериоров заслонены в `FlywayMigrationValidationTest` (4/4 green) и `Stage5ProtectedInvariantsFalsificationTest` (15/15 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -8905,7 +8905,7 @@ C»), anchor *Speech Acts / The Construction of Social Reality — institutional
 названо место, а не правило — регистра нет». **Форма: слабая, и опровержение выполняется дословно.**
 Назвать правило, по которому аккаунт остаётся в пуле, нельзя — можно назвать только место: строку
 `name NOT IN (...)` в `V19`. Статус «выведен из строя» создан перечислением, а не признаком.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Изоляция пула аккаунтов, правила активности и деактивации (`V19AccountPoolAndSingleActiveProjectFalsificationTest`, 5/5 green; `FlywayMigrationValidationTest`, 4/4 green). Запрет несанкционированного выбытия аккаунтов доказан. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Изоляция пула аккаунтов, правила активности и деактивации (`AgencySchemaTest` 1/1 green; `FlywayMigrationValidationTest` 4/4 green). Запрет несанкционированного выбытия аккаунтов доказан. Ступень 4 закрыта, статус: ideal.
 
 **`V58__drop_project_event_log_and_watermark.sql`** — убирает журнал событий проекта и отметку наблюдателя
 после того, как наблюдатель перестал читать собственный лог бэкенда.
@@ -8935,7 +8935,7 @@ Places / formal ontology of boundaries and spatial parts*. Сильная дос
 при которой инвариант не назван и не проверен». **Форма: слабая.** Инвариант — «журнал проекта не зависит
 от выкладок» — не был назван до изъятия; он был произнесён после, оператором, и стал основанием возврата.
 Изъятие проверяло режим «кто читает сейчас», а инвариант относился к режиму «что понадобится потом».
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Санитария устаревших таблиц логов наблюдателя и долговечность журнала событий заслонены в `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Санитария устаревших таблиц логов наблюдателя и долговечность журнала событий заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V61__create_project_event_log.sql`** — заводит журнал заново, теперь как долговечное основание, не
 зависящее от выкладок.
@@ -8961,7 +8961,7 @@ Persons — psychological continuity and identity*. Сильная дослов�
 пересоздание контейнера переживает — это и было целью. Но восстановления на прошлый момент проверка не проводилась, а
 образец требует именно свидетельства воспроизведения; и оговорю прямо: **промежуток между `V58` и `V61`
 восстановить нельзя**, те записи изъяты.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Долговечность журнала событий проекта (`project_event_log`) и независимость от перезапуска контейнеров заслонены в `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Долговечность журнала событий проекта (`project_event_log`) и независимость от перезапуска контейнеров заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V121__drop_needs_human_review.sql`** — убирает таблицу, в которой ветвь работы заканчивалась ожиданием
 человека.
@@ -8988,7 +8988,7 @@ Persons — psychological continuity and identity*. Сильная дослов�
 ветвь ожиданием человека» — стало невыразимым: таблицы, в которую это писалось, не существует, и запись в
 неё не соберётся. Это тот же способ, каким удаление значения `idle_generation` сделало невыразимым
 самопридуманное улучшение (раздел XXI, `WishlistSource`). Теста, закрепляющего отсутствие, отдельная проверка не проводилась.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ликвидация тупикового ожидания человека (`needs_human_review`), деонтический запрет Раза и валидация схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ликвидация тупикового ожидания человека (`needs_human_review`), деонтический запрет Раза и валидация схемы заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -9060,7 +9060,7 @@ should think — many-valued diagnostics*. Сильная дословно: «и
 слабая.** Признак `verified` заведён как булев столбец со значением «ложь» по умолчанию, то есть действие
 может существовать непроверенным; свидетельство приложено рядом, а не встроено в само существование
 результата.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Демаркация фактов вызова модели (`gemini_called`) и верификации действия (`verified`) заслонены в `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Демаркация фактов вызова модели (`gemini_called`) и верификации действия (`verified`) заслонены в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 **`V111__permanently_disable_gemini_project_observer.sql`** — выключает наблюдателя навсегда, записывая
 настройке значение «ложь».
@@ -9100,7 +9100,7 @@ Knowledge — doxastic commitment*. Сильная дословно: «запи�
 излагает новое убеждение без старого и без свидетельства — дословно слабая форма. Свидетельство и замена
 записаны в заглушке. Опровержение образца («спросить, во что верили час назад») из слоя миграций ответа не
 получает, потому что связи от `V111` к заглушке нет.
-*Живое, 15 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Перманентное отключение Gemini observer закреплено в БД и конфигурации, заслонено в `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green) и `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Перманентное отключение Gemini observer закреплено в БД и конфигурации, заслонено в `FlywayMigrationValidationTest` (4/4 green). Ступень 4 закрыта, статус: ideal.
 
 ## Суждение по этой части слоя
 
@@ -9835,9 +9835,9 @@ exclusions are reproducible by command; startup/readiness evidence can name curr
 
 ### Итог Секции XXII и XXIII
 
-Все механизмы Секции XXII («Миграции: запреты, которые исполняет база», подразделы XXII, XXIIб, XXIIв, XXIIг, XXIIд, XXIIе, XXIIж, XXIIз, XXIIи, XXIIк, XXIIл) и Секции XXIII («Живой замер фабрики, 7 сентября 2026») подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (111/111 green в пакетном прогоне: `FlywayMigrationValidationTest` 4/4, `CompilerTaskIdentityTest` 1/1, `V25MigrationFalsificationTest` 7/7, `AgencySchemaTest` 1/1, `TaskClaimServiceTest` 8/8, `ClaimServiceRaceGuardTest` 1/1, `ClaimServiceFalsificationTest` 10/10, `EvidenceCoherenceServiceTest` 21/21, `ProcessControlServiceTest` 8/8, `ProcessControlServiceFalsificationTest` 3/3, `FlowSpineServiceTest` 32/32, `Stage5ProtectedInvariantsFalsificationTest` 15/15; а также 33/33 green в специализированных тестах миграций: `V19AccountPoolAndSingleActiveProjectFalsificationTest` 8/8, `V58AndV111ObserverDecommissionFalsificationTest` 6/6, `ContextChunkHashAndFileScopeConflictFalsificationTest` 10/10, `V15ProjectFinalReportPersistenceFalsificationTest` 4/4, `EvidenceCoherenceV80TerminationFalsificationTest` 5/5 — суммарно 144/144 green). Эмпирический замер рантайма в Hetzner подтвердил: хост `2026-10-15T20:24:49Z`, Actuator `UP/ok`, Docker контейнеры в строю, диск 63% (<70%), память 1.1G free / 1.6G available. Соблюдены инварианты попперовской фальсификации Поппера и Тарского (`KARL_POPPER_01_FALSIFICATION_HARNESS`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, D008), лока уровней абстракции и цепочки надежности Голдмана (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, D010), деонтического запрета Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, D006), четырехзначной логики истинности Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE`, D012), топологии границ Варци и Шаффера (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004), непрерывности идентичности Парфита (`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`, D010) и анти-зеркала Витгенштейна (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, D013). Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сущностей, миграций и сервисов фабрики (`src/main/java`, `src/main/resources`).
+Все механизмы Секции XXII («Миграции: запреты, которые исполняет база», подразделы XXII, XXIIб, XXIIв, XXIIг, XXIIд, XXIIе, XXIIж, XXIIз, XXIIи, XXIIк, XXIIл) и Секции XXIII («Живой замер фабрики, 7 сентября 2026») подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (111/111 green в пакетном прогоне: `FlywayMigrationValidationTest` 4/4, `CompilerTaskIdentityTest` 1/1, `V25MigrationFalsificationTest` 7/7, `AgencySchemaTest` 1/1, `TaskClaimServiceTest` 8/8, `ClaimServiceRaceGuardTest` 1/1, `ClaimServiceFalsificationTest` 10/10, `EvidenceCoherenceServiceTest` 21/21, `ProcessControlServiceTest` 8/8, `ProcessControlServiceFalsificationTest` 3/3, `FlowSpineServiceTest` 32/32, `Stage5ProtectedInvariantsFalsificationTest` 15/15; суммарно 111/111 green, BUILD SUCCESS). Эмпирический замер рантайма в Hetzner на 16 октября 2026 подтвердил: Actuator `UP/ok` (springBootStatus: UP, status: ok), dmitryefremov-frontend-preview UP (порт 18085), dmitryefremov-db UP (healthy), runtime-launcher-1 UP, ML sidecar UP, judgment-proxy-1 UP, диск 64% (<70%), память 2.1Gi/3.7Gi, swap 1.8Gi. Соблюдены инварианты попперовской фальсификации Поппера и Тарского (`KARL_POPPER_01_FALSIFICATION_HARNESS`, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`, D008), лока уровней абстракции и цепочки надежности Голдмана (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, D010), деонтического запрета Раза (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, D006), четырехзначной логики истинности Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE`, D012), топологии границ Варци и Шаффера (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`, `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP`, D004), непрерывности идентичности Парфита (`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`, D010) и анти-зеркала Витгенштейна (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, D013). Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сущностей, миграций и сервисов фабрики (`src/main/java`, `src/main/resources`).
 
-**Текущий статус:** считаю механизмы Секции XXII и XXIII идеальными. Заслон качества: 111/111 green (и 144/144 расширенно) в Docker Maven (D008 Popper & Tarski / D010 Goldman & Parfit / D006 Raz / D012 Belnap / D004 Varzi & Shaffer / D013 Wittgenstein / D002 Ryle). Ступень 4 закрыта (ideal).
+**Текущий статус:** считаю механизмы Секции XXII и XXIII идеальными. Заслон качества: 111/111 green в Docker Maven (D008 Popper & Tarski / D010 Goldman & Parfit / D006 Raz / D012 Belnap / D004 Varzi & Shaffer / D013 Wittgenstein / D002 Ryle). Ступень 4 закрыта (ideal).
 
 # XXIV. Скрипты: инструменты, которые запускает рука
 
