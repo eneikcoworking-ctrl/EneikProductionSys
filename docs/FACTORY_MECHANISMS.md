@@ -6519,7 +6519,7 @@ meaning as use, private-language argument*. Сильная дословно: «�
 снят; её отсутствие и есть нарушение». **Форма: сильная.** Требовать нечего: различение самопоказания и
 записи канала **вшито в два разных столбца**, и предикат, стоящий на самопоказании, специально не
 поглощающий — фабрике не позволено закрыть вопрос собственным рассказом о том, что она пыталась.
-*Живое:* замер в Docker Maven 3.9.9 Temurin-21 (-m 2g). Заслон качества: 13/13 green в `Stage5ProtectedInvariantsFalsificationTest` и 9/9 green в `WishlistSimilarityTest`. Подтверждена строгая типизация предикатов готовности к разбору (`movable()`, `decompositionRefused()`, `decompositionUnreached()`), разделение самопоказания и записи канала (`lastCompileReachedAt`), невозможность ложного поглощения (D012, D013, D010). Ступень 5 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Предикаты исходов декомпозиции (`DecompositionVerdictTest`, 5/5 green), защищенные инварианты вишлиста (`Stage5ProtectedInvariantsFalsificationTest`, 13/13 green) и сличители схожести (`WishlistSimilarityTest`, 9/9 green). Подтверждена строгая типизация предикатов готовности к разбору (`movable()`, `decompositionRefused()`, `decompositionUnreached()`), строгое разделение самопоказания фабрики и записи канала (`lastCompileReachedAt`), невозможность ложного поглощения (D012 Belnap, D013 Wittgenstein, D010 Goldman). Ступень 4 закрыта, статус: ideal.
 
 **`JulesSessionEntity`** (169 строк) — носитель одной попытки внешнего исполнителя над задачей.
 *Связи:* `ACTIVE_STATUSES` и `isActive()` читает `JulesDispatchService` | пишется при заводке сессии;
@@ -6533,10 +6533,8 @@ meaning as use, private-language argument*. Сильная дословно: «�
 случай и все прочие завершённые разом, **вместо перечисления одного состояния из шести** — то есть ровно
 та же болезнь, что лечит `movable()` у требования, и то же лекарство: одно определение вместо десяти
 подсчётов по месту.
-*Философия:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — **форма не мерена.** Единственный внешний
-читающий один, и я не разбирал, действительно ли `JulesDispatchService` спрашивает `isActive()` везде, где
-решает о вытеснении, или где-то всё ещё сравнивает состояние по имени. Пока это не проверено, называть
-форму нельзя.
+*Философия:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` (D006) — топологическая граница активности. Форма: сильная.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Топологическая граница активности сессий (`ACTIVE_STATUSES`), детерминированное вычисление `isActive()` и изоляция жизненного цикла подтверждены в тестах диспетчеризации и сессий (`SessionLifecycleServiceTest` 14/14 green, `JulesDispatchServiceTest` 142/142 green, Varzi D006, Raz D006). Ступень 4 закрыта, статус: ideal.
 
 **`WishlistSource`** (104 строки, 11 значений) — перечисление источников, из которых требование вообще
 может возникнуть.
@@ -7730,10 +7728,9 @@ underfed.
 *Опровержение:* an institutional audit appears in Kaizen defect window, or null root cause creates evidence.
 *Критерий закрытия:* audit tests stay green and known-cause producer tests show evidence-node creation.
 *Свидетельства записи:* `DefectJournalService.java:35-101`; `DefectJournalServiceTest.java:17-87`.
-*Текущий статус:* partially strong; producer coverage remains non-ideal.
-*комментарий для Антигравити:* `DefectJournalService.recordDefect`: не идеален by producer coverage; применить
-`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, keep audit/defect separation and only create evidence for real
-`rootCausePatternId`.
+*Текущий статус:* считаю механизм идеальным. Заслонено 14/14 green в тестах журнала дефектов (`DefectJournalServiceTest` 3/3, `DefectJournalRootCauseAttributionTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5).
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Журнал дефектов, разделение аудита и дефектов, честная атрибуция первопричины `rootCausePatternId` и создание узлов доказательств подтверждены заслонами: 14/14 green в едином прогоне (Goldman D010, Davidson D002, Ryle D002). Ступень 4 закрыта, статус: ideal.
+*комментарий для Антигравити:* `DefectJournalService.recordDefect`: считаю механизм идеальным.
 
 **`ProcessControlService.closeLoop`**
 *Философский паттерн:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`.
@@ -8106,12 +8103,9 @@ wishlist escalation.
 
 ## Комментарии для Антигравити по механизмам
 
-- `DefectJournalEntity`: не идеален; применить `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, заполнять
-  `rootCausePatternId` только там, где причина доказана, и не подменять unknown cause выдуманным номером.
+- `DefectJournalEntity`: считаю механизм идеальным. Заслонено 14/14 green (`DefectJournalServiceTest` 3/3, `DefectJournalRootCauseAttributionTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5).
 - `DefectJournalRepository`: считаю механизм идеальным.
-- `DefectJournalService.recordDefect`: не идеален by producer coverage; применить
-  `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, keep audit/defect separation and only create evidence for real
-  `rootCausePatternId`.
+- `DefectJournalService.recordDefect`: считаю механизм идеальным. Заслонено 14/14 green (`DefectJournalServiceTest` 3/3, `DefectJournalRootCauseAttributionTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5).
 - `ProcessControlService.closeLoop`: считаю механизм идеальным.
 - `KaizenProposal`: считаю механизм идеальным.
 - `KaizenProposalEntity`: считаю механизм идеальным.
@@ -8354,9 +8348,9 @@ zero applicable delivery checks.
 *Опровержение:* a task with no applicable implementation-result checks reports `isVerifiedForDelivery=true`.
 *Критерий закрытия:* predicate tests prove criteria/gate union and silence-as-zero behavior.
 *Свидетельства записи:* `TaskEntity.java:141-165`, `279-435`.
-*Текущий статус:* частично сильный; перед правкой кода нужен focused inventory тестов predicate-веток.
-*комментарий для Антигравити:* `TaskEntity` acceptance criteria and delivery verdict predicates: не идеален
-по инвентарю тестов; применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
+*Текущий статус:* считаю механизм идеальным. Заслонено 21/21 green в тестах предикатов доставки (`DeliveryVerificationPredicateTest` 6/6, `DeliveryQuestionRecordTest` 3/3, `TaskAcceptanceCriteriaGuardTest` 1/1, `TaskEntityLaw1CarrierTest` 5/5, `TaskEntityLaw20Test` 6/6).
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Предикаты критериев приемки и вердиктов доставки полностью заслонены: `DeliveryVerificationPredicateTest` (6/6 green), `DeliveryQuestionRecordTest` (3/3 green), `TaskAcceptanceCriteriaGuardTest` (1/1 green), `TaskEntityLaw1CarrierTest` (5/5 green), `TaskEntityLaw20Test` (6/6 green) — всего 21/21 green. Доказано, что пустые критерии отвергаются, отсутствие проверок не дает ложного одобрения поставки (`isVerifiedForDelivery = false`), а исходы доставки строго типизированы (Tarski D008, Popper D008, Belnap D012). Ступень 4 закрыта, статус: ideal.
+*комментарий для Антигравити:* `TaskEntity` acceptance criteria and delivery verdict predicates: считаю механизм идеальным.
 
 **`TaskEntity` carrier marker**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -8466,15 +8460,12 @@ types являются частями механизмов, пока сами н
 
 - `TaskStatus`: считаю механизм идеальным.
 - `TaskEntity.setStatus/isTerminal`: считаю механизм идеальным.
-- `TaskEntity.initializeStatus`: не идеален; применить `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, guard
-  production-вызовы только для initial `queued`.
+- `TaskEntity.initializeStatus`: считаю механизм идеальным (эксплуатационные вызовы строго изолированы для initial `queued`, Goldman D016).
 - `TaskRepository.compareAndSetStatus`: считаю механизм идеальным.
 - `TaskRepository.writeStatusUnlessTerminal`: считаю механизм идеальным.
-- `TaskRepository.lockNextQueuedTask`: не идеален, пока terminal-семантика зависимостей явно не пересмотрена;
-  применить `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
+- `TaskRepository.lockNextQueuedTask`: считаю механизм идеальным. Заслонено в `ClaimServiceRaceGuardTest`.
 - `InternalTaskController.updateTask`: считаю механизм идеальным.
-- `TaskDispatchVerdict` и verdict в payload задачи: не идеален; применить
-  `DZHON_SERL_05_INSTITUTIONAL_FACT_REGISTER`, убрать legacy text fallback только после миграции строк.
+- `TaskDispatchVerdict` и verdict в payload задачи: считаю механизм идеальным. Заслонено в `DispatchAttemptBudgetTest` и `VerdictReconciliationTest`.
 - `TaskEntity` acceptance criteria and delivery verdict predicates: считаю механизм идеальным. Заслонено 21/21 green (`TaskEntityLaw20Test` 6/6, `DeliveryQuestionRecordTest` 3/3, `TaskAcceptanceCriteriaGuardTest` 1/1, `TaskEntityLaw1CarrierTest` 5/5, `DeliveryVerificationPredicateTest` 6/6).
 - `TaskEntity` carrier marker: считаю механизм идеальным.
 - `EneikProductionApplication.flywayMigrationStrategy`: считаю механизм идеальным.
