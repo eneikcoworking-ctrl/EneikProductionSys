@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 16:03 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 16:11 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 24G/38G (67%, норма < 70%), свободно 13GB. Память: 2.1Gi/3.7Gi, swap 1.8Gi. Норма.
 
 3. Контроль инженера (L2):
-- L2 закрыл пакетный замер Секции VIII («Самопроверка, Flow & Metrics, Кайдзен, Фальсификация») (коммит a84087e, 290/290 green).
+- L2 закрыл пакетный замер Секций XVI и XXIX («Реестр 59 предписаний L2» и «Цех дизайна») (коммит a12b89c, 272/272 green).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: 0 строк изменений рабочего кода.
 
-4. Пакетный Work Order: Секции XVI и XXIX («Реестр 59 предписаний L2» и «Цех дизайна: экраны, марка, геометрия, дизайн-система»):
-- Механизмы (272 теста, 29 сьютов): Security наблюдателя, верёвка TOC, LeanValue/TargetContext, RepositoryStackAnalyzer, OperationalTruth, WishlistSimilarity/Falsification, SystemSettings, FlywayValidation, Law26, DesignAsset, DesignConsistency/Layout, DesignSystemFalsification/Drift, DesignExcellenceGate, DesignCycleRepo/Orchestration, StrandedDesignSweep, StitchClient.
-- Базис RAG: Popper D008 (фальсификация дизайн-системы и гейтов), Goldman D010 (лок уровней абстракции и цепочка доверия), Raz D006 (деонтический запрет L2 трогать рабочий код при проходящих тестах), Barcan Marcus D015 (модальный актуализм токенов), Wittgenstein/Noë D013 (анти-зеркало рантайма, причинный след), Belnap D012 (4-значная таблица истинности), Floridi D009 (оракул подстановки), Varzi D004/D006, Ryle D002.
+4. Пакетный Work Order: Секции XXII и XXIII («Миграции базы: запреты базы, тождество в схеме, притязания, связность свидетельств, надзор и живой замер»):
+- Механизмы (116 тестов, 13 сьютов): FlywayMigrationValidation, CompilerTaskIdentity, V25MigrationFalsification, AgencySchema, TaskClaimService, ClaimServiceRaceGuard, ClaimServiceFalsification, EvidenceCoherence, ProcessControl, FlowSpine, Stage5ProtectedInvariants.
+- Базис RAG: Popper D008 (фальсификация V25, притязаний и связности), Goldman D010 (лок уровней абстракции V137 и цепь свидетельств), Raz D006 (деонтический запрет L2 трогать рабочий код при проходящих тестах, валидация миграций без repair), Varzi D004/D006 (топология границ и мереология), Dretske D011 (телеосемантика надзора), Belnap D012 (4-значная семантика истинности), Wittgenstein D013 (анти-зеркало рантайма).
