@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 18:03 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 18:13 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -6,12 +6,12 @@
 - Сайдкары: runtime-launcher-1 UP 12d (healthy), ML sidecar UP 12d (healthy), judgment-proxy-1 UP 4w (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 24G/38G (67%, норма < 70%), свободно 12GB. Память: 2.1Gi/3.7Gi, swap 1.8Gi. Норма.
+- Диск: 24G/38G (67%, норма < 70%), свободно 13GB. Память: 2.0Gi/3.7Gi, swap 1.8Gi. Норма.
 
 3. Контроль инженера (L2):
-- L2 закрыл пакетный замер Кластера Секций XXII и XXIII (коммит c1d20d7, 116/116 green, 13 сьютов).
+- L2 закрыл пакетный замер Секций XXIV и XXV (коммит 976feb6, 169/169 green: 149 Maven + 20 Python).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: строго 0 строк изменений рабочего кода.
 
-4. Пакетный Work Order: Кластер Секций XXIV и XXV («Скрипты и Позвоночник потока: FlowSpine, ядро потока, статус системы, защищенные настройки и адаптивный сторож ТОС»):
-- Механизмы (169 тестов: 149 в 10 сьютах Docker Maven + 20 в Python): FlowSpineServiceTest, OperationalFlowCoreServiceTest, OperationalFlowCoreFalsificationTest, SystemStatusServiceTest, SystemStatusControllerTest, SystemSettingsServiceTest, SettingsControllerIntegrationTest, TocSentinelControllerTest, TocSentinelServiceTest, PhilosopherPatternCorpusConsistencyTest; скрипты generate_philosopher_patterns, audit_pr, append_role_logic.
-- Базис RAG: Popper D008 (фальсификация ядра потока и непротиворечивости корпуса), Goldman D010 (лок уровней абстракции, консолидация чтения в 1 запрос без подъёма таблиц), Raz D006 (деонтический запрет L2 на мутации кода при зелёных тестах; защита настроек), Wittgenstein D013 (анти-зеркало телеметрии в FlowSpine), Church D014 (RAG grounding capsule).
+4. Пакетный Work Order: Секция VIII Flow & Metrics («Самопроверка, Flow & Metrics, Кайдзен, Фальсификация»):
+- Механизмы (290 тестов в 25 сьютах Docker Maven): FalsificationCycleService, EvidenceCoherenceService, OpsAuditorService, PlatformSelfReferenceDetector, FactorySelfHealthService, KaizenService, DefectJournalService, FlowMetricsService, LeverPromotionService, PlannedWorkRecoveryService, ContinuousOrchestrationService, FlowSpineService, OperationalFlowCoreService, OperationalPolicyService, TrustSnapshotService, OperationalTruthService, MarketResearchService.
+- Базис RAG: Popper & Tarski D008 (фальсификация ядра и рыночного соответствия), Goldman D010 (лок уровней абстракции и асимметричное доверие), Raz D006 (деонтический запрет мутации рабочего кода; отказы политик), Wittgenstein D013 (анти-зеркало телеметрии в FlowSpine), Belnap D012 (4-значная решётка истинности).
