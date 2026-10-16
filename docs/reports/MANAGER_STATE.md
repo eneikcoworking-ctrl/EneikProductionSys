@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 12:50 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 13:00 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 24G/38G (66%, норма < 70%), свободно 13GB. Память: 2.1Gi/3.7Gi, swap 1.8Gi. Чисто.
 
 3. Контроль инженера (L2):
-- L2 успешно закрыл пакетный замер Секций I и II (коммит 28d3f00, 305/305 green, 0 строк изменений кода).
+- L2 успешно закрыл пакетный замер Секций III и IV (коммит ab661c6, 450/450 green, 0 строк изменений кода).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: 0 строк изменений рабочего кода.
 
-4. Пакетный Work Order: Секции III и IV (Отправка и Ревью/Слияние):
-- Механизмы (394 теста Docker Maven, 48 сьютов): Секция III Отправка (JulesDispatch, JulesApiClient, SessionLifecycle, PersistentWorker, ClaimService, LeaseWatchdog, AccountHealth, Bottleneck); Секция IV Ревью/Слияние (AutoMerge, GitHubPullRequest, GitHubApiBudget, CodeChangeClassifier, каскад QualityGate, BranchGarbageCollector, PrReviewPipeline).
-- Базис RAG: Popper D008 (фальсификация гейтов, сессий и слияния), Goldman D010 (лок уровней абстракции и трассируемость токенов/отказов), Raz D006 (деонтический запрет L2 на модификацию рабочего кода, запрет невалидных вызовов и слияний), Varzi D004 (мереологический инвариант владения ветками).
+4. Пакетный Work Order: Секция VIII (Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация):
+- Механизмы (290 тестов Docker Maven, 25 сьютов): FalsificationCycle, EvidenceCoherence, OpsAuditor, PlatformSelfReference, FactorySelfHealth, Kaizen & DefectJournal, FlowMetrics, LeverPromotion, PlannedWorkRecovery, ContinuousOrchestration, OperationalFlowCore, OperationalPolicy, OperationalTruth, FlowSpine, TrustSnapshot, MarketResearch.
+- Базис RAG: Popper D008 (фальсификация циклов и переходов), Goldman D010 (лок уровней абстракции и flow-метрик), Raz D006 (деонтический запрет L2 на модификацию рабочего кода, заслоны отказов), Varzi D004 (монопольное владение), Dretske D011 (телеосемантика прогресса), Belnap D012 (4-значная решётка истинности), Wittgenstein D013 (анти-зеркало телеметрии).
