@@ -1,4 +1,4 @@
-# Директивы и наряд для L2 (2026-10-16 23:45 UTC)
+# Директивы и наряд для L2 (2026-10-16 23:55 UTC)
 
 **От:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
@@ -10,62 +10,63 @@
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и ручных согласований.
 2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком.
-   - Секции XIV, XV и XVI («Сверка с корпусом философских образцов, класс дефекта "тихое размножение задач" и реестр 59 архитектурных предписаний L2») полностью заверены инженером (коммит `ca70d05c`, 224/224 green в 26 тест-сьютах Docker Maven, строго 0 строк изменений рабочего кода).
-   - Настоящая директива открывает пакетный замер следующего стратегического контура фабрики — **Кластер Секций XVII, XVIIб, XIX и XX («Обездвиженные механизмы, планировщик и читающие контроллеры, сайдкары вне бэкенда и ключевые хранилища потока»)** целиком (**158 тестов в 26 тест-сьютах в едином пакетном прогоне в Docker Maven**):
-     * **Группа 1: Секции XVII и XVIIб — Обездвиженные механизмы, планировщик и читающие контроллеры (57 тестов, 14 сьютов):**
-       - `DashboardControllerTest` (2/2 green), `CommandDashboardControllerTest` (4/4 green), `QualityGateControllerTest` (2/2 green), `QualityMetricsControllerTest` (3/3 green), `HomeControllerTest` (1/1 green), `LinearSyncControllerTest` (2/2 green), `SystemStatusControllerTest` (3/3 green): демаркация читающих GET-поверхностей строго без мутаций состояния (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006);
-       - `GlobalExceptionHandlerTest` (3/3 green): санитарный перехват непойманных исключений с изоляцией сетевых обрывов и клиентских ошибок (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012);
-       - `WebConfigCorsTest` (3/3 green): строгая топология CORS с запретом wildcard при credentials (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
-       - `SchedulingConfigTest` (2/2 green): единый монопольный владелец пула планировщика фабрики (`poolSize = 10`, `DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` / D004);
-       - `InternalGeminiObserverSecurityIntegrationTest` (9/9 green), `InternalGeminiObserverControllerTest` (16/16 green): деонтическая защита сервисных интерфейсов наблюдателя (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
-       - `V58AndV111ObserverDecommissionFalsificationTest` (6/6 green), `GeminiProjectObserverServiceTest` (1/1 green): попперовская фальсификация вывода наблюдателя из эксплуатации и инертность стабов (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `DZHONATAN_SHAFFER_01_ACTUAL_OBJECT_REGISTER` / D004).
-     * **Группа 2: Секция XIX — Сайдкары: механизмы вне бэкенда (51 тест, 5 сьютов):**
-       - `ClientRuntimeObservabilityServiceTest` (29/29 green), `ObservationHostingDemarcationLaw26Test` (3/3 green): сайдкар `launcher.py` и `RuntimeLauncherClient`, сетевая изоляция хостинга наблюдений по Закону 26, memory bound и port remap (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
-       - `JudgmentAgentClientTest` (6/6 green), `JudgmentAgentClientLaw17Test` (4/4 green): прокси суждений `judgment-proxy/server.js`, детерминированная валидация, теневой аудит и честный provenance без ложной подмены эвристики на суждение модели (`ALONZO_CHERCH_01_SUBSTITUTION_ORACLE` / D009, D017);
-       - `MLPredictionServiceClientTest` (9/9 green): сайдкар предсказаний `PredictionService.py`, локальные эмбеддинги и эвристики узких мест без потери цепочки происхождения данных (`AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER` / D007, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
-     * **Группа 3: Секция XX — Хранилища, которые держат поток (50 тестов, 7 сьютов):**
-       - `DesignShopCycleRepositoryIntegrationTest` (6/6 green): эксклюзивная аренда старта дизайн-цикла через атомарный CAS (`startCycleClaimedAt IS NULL` and `lastWasReady = false`), исключающая параллельные циклы генерации (`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` / D004, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
-       - `TaskClaimServiceTest` (8/8 green), `ClaimServiceRaceGuardTest` (5/5 green), `ClaimServiceFalsificationTest` (6/6 green): детерминированная выборка `findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc`, CAS-изоляция и агрегированный подсчет протухших аренд (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
-       - `ProjectEventLogRetentionServiceTest` (10/10 green): постраничное отсечение по потолку емкости долговечного журнала проекта без подъема излишка в память JVM (`KIT_DEROUZ_01_RELIABILITY_CHAIN` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
-       - `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10 green): дедупликация и персистентность контекстных фрагментов по `contentHash` и `sourceRef` без наложения устаревших фрагментов (`DZHONATAN_SHAFFER_18_PERSISTENCE_SNAPSHOT` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
-       - `GreetingControllerIntegrationTest` (5/5 green): строгая изоляция демонстрационного контура `greetings` от производственных метрик потока фабрики (`KIT_DEROUZ_13_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - Кластер Секций XVII, XVIIб, XIX и XX («Обездвиженные механизмы, планировщик и читающие контроллеры, сайдкары вне бэкенда и ключевые хранилища потока») успешно заверен инженером (коммит `70b31ebd`, 158/158 green в 26 тест-сьютах Docker Maven, строго 0 строк изменений рабочего кода).
+   - Настоящая директива открывает пакетный замер следующей стратегической секции фабрики — **Секция XXI («Сущности, несущие поведение, девять пространств состояний, алгебра решений, граф ограничений, лестница доверия, журнал дефектов и уплотнение хранилища»: подразделы XXI, XXIб, XXIв, XXIг, XXIд, XXIе, XXIж, XXIз)** целиком (**133 теста в 22 тест-сьютах в едином пакетном прогоне в Docker Maven**):
+     * **Группа 1: Подраздел XXI — Сущности, несущие поведение (27 тестов, 6 сьютов):**
+       - `TaskEntityLaw20Test` (6/6 green): абсолютная защита от перезаписи терминальных статусов задачи (Закон 20, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
+       - `DeliveryQuestionRecordTest` (3/3 green), `TaskAcceptanceCriteriaGuardTest` (1/1 green), `DeliveryVerificationPredicateTest` (6/6 green): разведение трех исходов верификации доставки (`deliveryRuledByCriteria`, `deliveryQuestionPutButUnsettled`, `isDeliveryVerificationAbsent`), фиксация заданных вопросов и защита критериев приемки (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+       - `TaskEntityLaw1CarrierTest` (5/5 green): строгая изоляция задач-носителей фабрики от продуктового бэклога заказчика (Закон 1, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
+       - `DecompositionVerdictTest` (5/5 green): разграничение отказа декомпозиции и недостижимости компилятора (`decompositionRefused()` vs `decompositionUnreached()`), разделение самопоказания фабрики и записи канала (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+     * **Группа 2: Подраздел XXIб — Девять пространств состояний (20 тестов, 3 сьюта):**
+       - `LeanValueTest` (9/9 green): строгая 4-значная типизация ценности Lean (`essential`, `valuable`, `waste`, `undetermined`) без ложного превращения нераспознанного шума в ценность (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012);
+       - `AccountStatusConjunctionTest` (7/7 green): двухконъюнктная модель доступности аккаунта `status && enabled` без скрытых персистентных блокировок (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
+       - `TargetContextTest` (4/4 green): цель задачи с обязательным явным значением `undetermined` вместо слепого умолчания репозитория (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+     * **Группа 3: Подраздел XXIв — Алгебра решений и решётка вердиктов (46 тестов, 5 сьютов):**
+       - `VerdictGateTest` (14/14 green): монотонность сужения разрешений решётки готовности — гейт качества вправе только ужесточать вердикт (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
+       - `VerdictReconciliationTest` (11/11 green): детерминированное согласование вердиктов (`WITHHOLD` доминирует над частичными подтверждениями, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012);
+       - `RuntimeVerdictLayerTest` (6/6 green), `AcceptanceVerdictLayerTest` (7/7 green), `InfrastructureVerdictLayerTest` (8/8 green): стратификация вердиктных слоев без категориального смешения инфраструктурных сбоев с продуктовыми дефектами (`GILBERT_RAYL_02_CATEGORY_ERROR_SCAN` / D002, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+     * **Группа 4: Подразделы XXIг, XXIд, XXIе, XXIж, XXIз — Граф ограничений, память об отказах и хранилище (40 тестов, 8 сьютов):**
+       - `TocOptimizerTest` (7/7 green), `TocNodeTimeoutTest` (4/4 green), `TocPersistenceSnapshotTest` (4/4 green): граф ограничений ТОС, онлайн-алгоритм Велфорда для таймингов и персистентные снимки состояния ограничений (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010);
+       - `DefectJournalServiceTest` (3/3 green), `DefectJournalRootCauseAttributionTest` (6/6 green), `LogScopeAndDefectJournalInusFalsificationTest` (5/5 green): память о собственных отказах фабрики, детерминированная каузальная атрибуция причин INUS без домыслов и неподкупность журнала дефектов (`DURDZHON_MJEKKI_03_INUS_CONDITION` / D007, `MARGRET_GILBERT_04_INSTITUTIONAL_DEFECT_RECORD` / D007);
+       - `LogScopeBufferTest` (6/6 green): семантическая изоляция кольцевого буфера логов от промптов исполнителей (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010);
+       - `EneikProductionApplicationShutdownCompactTest` (6/6 green): чистое уплотнение H2-хранилища на этапе остановки приложения без повреждения схемы и зависаний (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
-   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено вносить любые изменения в рабочий код сервисов, контроллеров, репозиториев, сайдкаров, сущностей и скриптов (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`) при проходящих тестах!
+   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено вносить любые изменения в рабочий код сервисов, моделей, сущностей, перечислений, контроллеров и конфигураций (`src/main/java`, `src/main/resources`, `scripts/`) при проходящих тестах!
    - Механизмы уже воплощены в кодовой базе фабрики в идеальной форме. Задача инженера L2 — подтвердить нерушимость заслонов единым непрерывным пакетным замером в рантайме Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D004, D009, D017, D002, D007, D012)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D012, D002, D007, D013, D004)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` & `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` [D008 False green / Popper & Tarski]:**
-  * Фальсификационные заслоны вывода наблюдателя из эксплуатации (`V58AndV111ObserverDecommissionFalsificationTest`), изоляции рантайма (`ObservationHostingDemarcationLaw26Test`), гонок аренды задач (`ClaimServiceFalsificationTest`), коллизий контекстных чанков (`ContextChunkHashAndFileScopeConflictFalsificationTest`) и удержания журнала (`ProjectEventLogRetentionServiceTest`).
-- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `KIT_DEROUZ_01_RELIABILITY_CHAIN` [D010 Data lineage loss / Goldman & DeRose]:**
-  * Лок уровней абстракции открытых читающих GET-контроллеров без побочных мутаций, надежная цепочка журнала проекта и строгая изоляция демо-контура от метрик хребта фабрики (`GreetingControllerIntegrationTest`).
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity / Raz]:**
-  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода фабрики при зелёных тестах (exclusionary reasons);**
-  * Деонтические заслоны доступа к API наблюдателя (`InternalGeminiObserverSecurityIntegrationTest`), запрет wildcard в CORS (`WebConfigCorsTest`) и изоляция хостинга по Закону 26 (`ObservationHostingDemarcationLaw26Test`).
-- **`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` & `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` [D004 Mereology / Shaffer & Varzi]:**
-  * Атомарный захват циклов старта дизайн-цеха через CAS (`DesignShopCycleRepositoryIntegrationTest`), монопольное владение пулом планировщика (`SchedulingConfigTest`) и инертность стабов (`GeminiProjectObserverServiceTest`).
-- **`ALONZO_CHERCH_01_SUBSTITUTION_ORACLE` [D009 / D017 Substitution proof failure / Church]:**
-  * Честный provenance суждений и прозрачность фоллбэков прокси суждений (`JudgmentAgentClientTest`, `JudgmentAgentClientLaw17Test`).
-- **`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` [D002 Category error / Ryle]:**
-  * Детерминированное различение факта существования активного притязания от требования единственности в схеме (`TaskClaimServiceTest`).
+  * Попперовские фальсификационные заслоны критериев доставки (`DeliveryVerificationPredicateTest`), монотонности сужения решётки вердиктов (`VerdictGateTest`) и снимков ограничений TOC (`TocPersistenceSnapshotTest`).
+- **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss / Goldman]:**
+  * Строгий лок уровней абстракции сущностей, изоляция кольцевого буфера логов от промптов кодеров (`LogScopeBufferTest`), каузальная надежность происхождения статусов и двухконъюнктной доступности аккаунтов (`AccountStatusConjunctionTest`).
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` & `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` [D006 Authorization ambiguity / Raz & Varzi]:**
+  * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода фабрики при проходящих тестах (exclusionary reasons);**
+  * Деонтические запреты: Закон 1 изоляции носителя фабрики (`TaskEntityLaw1CarrierTest`) и Закон 20 монопольного владения терминальным статусом задачи (`TaskEntityLaw20Test`).
 - **`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D012 Truth status / Belnap]:**
-  * Разделение категорий сетевых обрывов, клиентских ошибок и внутренних аварий сервера в `GlobalExceptionHandlerTest`.
-- **`AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER` [D007 Belief update without ledger / Levi]:**
-  * Фиксация происхождения фактов и свидетельств узких мест в сайдкаре ML (`MLPredictionServiceClientTest`).
+  * Четырехзначная логика истинности в предикатах доставки (`DeliveryQuestionRecordTest`), явное представление неизвестного (`TargetContextTest.UNDETERMINED`, `LeanValueTest`), решётка вердиктов качества (`VerdictGateTest`, `VerdictReconciliationTest`).
+- **`GILBERT_RAYL_02_CATEGORY_ERROR_SCAN` [D002 Category error / Ryle]:**
+  * Исключение смешения категорий: разделение отказа декомпозиции и недостижимости компилятора (`DecompositionVerdictTest`), стратификация инфраструктурных и приемочных вердиктов (`InfrastructureVerdictLayerTest`, `AcceptanceVerdictLayerTest`).
+- **`DURDZHON_MJEKKI_03_INUS_CONDITION` & `MARGRET_GILBERT_04_INSTITUTIONAL_DEFECT_RECORD` [D007 Epistemic fabrication / Mackie & Gilbert]:**
+  * Детерминированная каузальная атрибуция дефектов по методу INUS без субъективных домыслов (`DefectJournalRootCauseAttributionTest`), институциональный учет отказов в журнале дефектов.
+- **`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift / Wittgenstein]:**
+  * Анти-зеркальная телеметрия: разделение самопоказания фабрики и объективной записи канала в `WishlistEntity`, корректное уплотнение H2-хранилища при остановке без повреждения физического состояния (`EneikProductionApplicationShutdownCompactTest`).
+- **`DZHONATAN_SHAFFER_04_PART_WHOLE_OWNERSHIP` & `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` [D004 Mereology / Shaffer & Varzi]:**
+  * Монопольное владение жизненным циклом сущности задачи и атомарные переходы состояний в репозитории.
 
 ---
 
 ## 3. Ожидаемый результат такта L2
 
-1. Провести единый непрерывный пакетный прогон тестов Кластера Секций XVII, XVIIб, XIX и XX в Docker Maven 3.9.9 Temurin-21 (`-m 2g`):
+1. Провести единый непрерывный пакетный прогон тестов Секции XXI в Docker Maven 3.9.9 Temurin-21 (`-m 2g`):
    ```bash
-   docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DashboardControllerTest,CommandDashboardControllerTest,QualityGateControllerTest,QualityMetricsControllerTest,HomeControllerTest,LinearSyncControllerTest,SystemStatusControllerTest,GlobalExceptionHandlerTest,WebConfigCorsTest,SchedulingConfigTest,InternalGeminiObserverSecurityIntegrationTest,InternalGeminiObserverControllerTest,V58AndV111ObserverDecommissionFalsificationTest,GeminiProjectObserverServiceTest,ClientRuntimeObservabilityServiceTest,ObservationHostingDemarcationLaw26Test,JudgmentAgentClientTest,JudgmentAgentClientLaw17Test,MLPredictionServiceClientTest,DesignShopCycleRepositoryIntegrationTest,TaskClaimServiceTest,ClaimServiceRaceGuardTest,ClaimServiceFalsificationTest,ProjectEventLogRetentionServiceTest,ContextChunkHashAndFileScopeConflictFalsificationTest,GreetingControllerIntegrationTest
+   docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=TocOptimizerTest,TocNodeTimeoutTest,TocPersistenceSnapshotTest,EneikProductionApplicationShutdownCompactTest,LogScopeBufferTest,LogScopeAndDefectJournalInusFalsificationTest,DefectJournalRootCauseAttributionTest,InfrastructureVerdictLayerTest,AcceptanceVerdictLayerTest,RuntimeVerdictLayerTest,VerdictReconciliationTest,VerdictGateTest,TaskEntityLaw20Test,DeliveryQuestionRecordTest,DecompositionVerdictTest,LeanValueTest,AccountStatusConjunctionTest,TargetContextTest,TaskAcceptanceCriteriaGuardTest,TaskEntityLaw1CarrierTest,DeliveryVerificationPredicateTest,DefectJournalServiceTest
    ```
-2. Подтвердить 100% green результат (**158/158 green в 26 тест-сьютах**).
-3. Зафиксировать строго 0 строк изменений рабочего кода (`git status` чист по `src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`).
-4. Актуализировать отметки Ступени 4 по Кластеру Секций XVII, XVIIб, XIX и XX в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md`.
-5. Сформировать лаконичный отчёт в `docs/reports/PROGRAMMER_STATE.md` (до 15–20 строк) и закоммитить: `feat(sections-xvii-xx): complete Stage 4 batch verification (D008, D010, D006)`.
+2. Подтвердить 100% green результат (**133/133 green в 22 тест-сьютах**, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS).
+3. Зафиксировать строго 0 строк изменений рабочего кода (`git status` чист по `src/main/java`, `src/main/resources`, `scripts/`).
+4. Актуализировать строки *Живое:* и итоговый блок Секции XXI в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md`.
+5. Сформировать лаконичный отчёт в `docs/reports/PROGRAMMER_STATE.md` (до 15–20 строк) и закоммитить: `feat(section-xxi): complete Stage 4 batch verification (D008, D010, D006)`.
