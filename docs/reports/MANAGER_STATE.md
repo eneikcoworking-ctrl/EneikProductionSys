@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 13:52 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 14:05 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 24G/38G (66%, норма < 70%), свободно 13GB. Память: 2.1Gi/3.7Gi, swap 1.8Gi. Чисто.
 
 3. Контроль инженера (L2):
-- L2 успешно закрыл пакетный замер Секций XXIV и XXV (коммит 0519450, 169/169 green, 0 строк изменений кода).
+- L2 успешно закрыл пакетный замер Секций XXVI, XXVII и XXVIII (коммит a192af0, 215/215 green, 0 строк изменений кода).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: 0 строк изменений рабочего кода.
 
-4. Пакетный Work Order: Секции XXVI, XXVII и XXVIII («Контекст, Операционная правда и AI-граница»):
-- Механизмы (215 тестов, 17 сьютов в Docker Maven): GeminiContextService, InternalGeminiObserverController, OperationalTruthService, TrustSnapshotService, ClientDeliverableReadinessService, GoogleAiResourceController, StitchClient, MLPredictionServiceClient, JudgmentAgentClient, DecommissionObserver.
-- Базис RAG: Popper D008 (фальсификационные заслоны готовности и декоммиссии), Goldman D010 (асимметричная динамика доверия, лок уровней абстракции), Raz D006 (деонтический запрет L2 на правку кода, матрица прав доступа), Belnap D012 (4-значная истинность), Wittgenstein D013 (анти-зеркало observe_only), Floridi D009 (запрет подмены HTML картинками), Church D014 (RAG-граундинг капсулы).
+4. Пакетный Work Order: Секции XXX–XXXVI («ML-дверь, Онбординг, Завод проектов, Пульт, Авторизация, Аккаунты, Задачи»):
+- Механизмы (136 тестов, 18 сьютов в Docker Maven): MLPredictionServiceClient, RepositoryStackAnalyzer, OnboardingAuditService, GitHubProjectFactoryClient, LinearProjectFactoryClient, ProjectFactoryService, ProjectWorkspaceFactoryService, CommandDashboardService, ApiAuthorizationInterceptor, AccountHealthService, AccountRepository, TaskEntity, TaskRepository.
+- Базис RAG: Popper D008 (фальсификационные заслоны готовности и неизменяемости), Goldman D010 (каузальная надежность происхождения и лок абстракций), Raz D006 (деонтический запрет L2 на правку кода, ротация отказов), Ryle D002 (демаркация ошибки доступа от реальности клиента), Belnap D012 (многозначная истинность), Noë D013 (трассировка переходов задач).
