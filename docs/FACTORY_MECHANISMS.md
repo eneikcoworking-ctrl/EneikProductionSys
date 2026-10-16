@@ -2094,7 +2094,7 @@ ontology of boundaries and spatial parts*. Сильная форма досло�
 *Перепроверка прежнего утверждения:* раньше в этом файле стояло «`WishlistRepository` — 20 писателей».
 Сегодняшний замер даёт **18**. Расхождение не объяснено: прежний счёт снят другим способом и мог включать
 чтение или сам файл сущности. До объяснения верным считать сегодняшний, снятый названной командой.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Суточный цикл фальсификации и монопольное владение агрегатами `falsification_runs` и `code_integrity_findings` строго закреплены за сервисом (D008 Popper, D004 Varzi). Заслон качества: 28/28 green в `FalsificationCycleServiceTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Суточный цикл фальсификации и монопольное владение агрегатами `falsification_runs` и `code_integrity_findings` строго закреплены за сервисом (D008 Popper, D004 Varzi). Заслон качества: 28/28 green в `FalsificationCycleServiceTest`. Ступень 4 закрыта, статус: ideal.
 
 **`EvidenceCoherenceService`** — ECHO Тагарда на собственном графе свидетельств: настоящая релаксация, а не
 эвристика со ссылкой.
@@ -2105,7 +2105,7 @@ ontology of boundaries and spatial parts*. Сильная форма досло�
 кто-то читает.
 *Философия:* `INUS_FACTOR_CHECK` (D007) — **сильная** по устройству, **не мерена** по читателю. Опровержение:
 назвать решение, изменённое его выводом.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Расчет когерентности свидетельств ECHO Тагарда обеспечивает релаксацию графа без ложной уверенности на пустых данных (D010 Goldman, D011 Dretske). Заслон качества: 26/26 green (`EvidenceCoherenceServiceTest` 21/21, `EvidenceCoherenceV80TerminationFalsificationTest` 5/5). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Расчет когерентности свидетельств ECHO Тагарда обеспечивает релаксацию графа без ложной уверенности на пустых данных (D010 Goldman, D011 Dretske). Заслон качества: 26/26 green (`EvidenceCoherenceServiceTest` 21/21, `EvidenceCoherenceV80TerminationFalsificationTest` 5/5). Ступень 4 закрыта, статус: ideal.
 
 **`OpsAuditorService`** — собрать состояние, поставить диагноз, применить узкое доказательное исправление.
 *Связи:* вызывающих нет — по расписанию; зовёт 4; **пишет задачи и заявки**.
@@ -2138,7 +2138,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 
 *Опровержение, назначенное вперёд:* прогон, в котором Gemini вернула решение, а предусловие к моменту
 исполнения уже не держится. Заслон обязан отказать, и это будет видно строкой «precondition no longer holds».
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Аудитор операций действует исключительно на независимо проверенных фактах с обязательной тройной валидацией предусловий (D006 Raz, D006 Goldman). Заслон качества: 11/11 green в `OpsAuditorServiceTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Аудитор операций действует исключительно на независимо проверенных фактах с обязательной тройной валидацией предусловий (D006 Raz, D006 Goldman). Заслон качества: 11/11 green в `OpsAuditorServiceTest`. Ступень 4 закрыта, статус: ideal.
 
 
 **`PlatformSelfReferenceDetector`** — не про саму ли фабрику эта находка, поданная как находка о продукте?
@@ -2149,7 +2149,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 делает.
 *Философия:* `CATEGORY_ERROR_SCAN` (D002) — **слабая**: механизм исправен и не вызван. Опровержение: создать
 заявку из заводской находки и посмотреть, попала ли она в список клиента.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Детектор отсекает внутренний заводской шум и фабричные находки от продуктового бэклога клиента (защита от D002 Category error / Ryle). Заслон качества: 7/7 green в `PlatformSelfReferenceDetectorTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Детектор отсекает внутренний заводской шум и фабричные находки от продуктового бэклога клиента (защита от D002 Category error / Ryle). Заслон качества: 7/7 green в `PlatformSelfReferenceDetectorTest`. Ступень 4 закрыта, статус: ideal.
 
 **`FactorySelfHealthService`** — фабрика следила за продуктами клиентов и не следила за собой.
 *Связи:* вызывает слой инфраструктурного вердикта; зовёт кайдзен.
@@ -2159,7 +2159,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 себе, всегда узнаёт об этом одинаково** — по тому, что оператору покажется, будто машина тормозит.
 *Философия:* `SELF_MODEL_SANITY` (D013) — **сильная**. Опровержение: довести базу до нездоровья и посмотреть,
 сказал ли кто-нибудь.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Непрерывный мониторинг собственного здоровья фабрики (размер БД, пулы соединений, очереди) с эскалацией в Кайдзен (D013 Wittgenstein). Заслон качества: 5/5 green в `FactorySelfHealthServiceTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Непрерывный мониторинг собственного здоровья фабрики (размер БД, пулы соединений, очереди) с эскалацией в Кайдзен (D013 Wittgenstein). Заслон качества: 5/5 green в `FactorySelfHealthServiceTest`. Ступень 4 закрыта, статус: ideal.
 
 **`KaizenService`** и журнал дефектов — предложения улучшений и постоянная запись.
 *Связи:* вызывают 5; зовёт 8; пишет 3 хранилища.
@@ -2167,7 +2167,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 *Комментарий:* **периферия.** Молча прекратившееся требование — та самая потеря, против которой написан
 закон 3.
 *Философия:* `BELIEF_UPDATE_LEDGER` (D007) — **сильная**. Опровержение: исчерпать предел и не найти записи.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Дедупликация и жизненный цикл микро-улучшений PDCA строго изолированы по `(projectId, category, targetComponent)` с фиксацией в журнале дефектов (D007 Gilbert, D007 Mackie/INUS). Заслон качества: 24/24 green (`KaizenServiceTest` 10/10, `DefectJournalServiceTest` 3/3, `DefectJournalRootCauseAttributionTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Дедупликация и жизненный цикл микро-улучшений PDCA строго изолированы по `(projectId, category, targetComponent)` с фиксацией в журнале дефектов (D007 Gilbert, D007 Mackie/INUS). Заслон качества: 24/24 green (`KaizenServiceTest` 10/10, `DefectJournalServiceTest` 3/3, `DefectJournalRootCauseAttributionTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5). Ступень 4 закрыта, статус: ideal.
 
 
 
@@ -2199,7 +2199,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 *Что кодить следующим после явного разрешения на код:* after explicit code approval, the safest candidates are documentation-backed predicate additions for `findOpenSibling` and project-scoped `FlowMetricsService.computeForProject`; both still need focused fixtures first. `deleteMatching` is not safe until its project/status scope is decided. `MarketResearchService` carrier selection is tied to the existing active-project/fallback policy question. `LeverPromotionService` should not be changed until active lever-key cardinality is measured or declared.
 
 *Текущий статус:* ideal. Scoped Kaizen deduplication/cleanup, project-scoped FlowMetrics acquisition, and deterministic MarketResearch carrier selection implemented and verified with 75 green tests (Section 6/10 closed).
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Кластер улучшений и сигналов потока Секции VIII: `FlowMetricsService` (4/4 green в `FlowMetricsServiceTest`), `MarketResearchService` (9/9 green: `MarketResearchServiceTest` 3/3, `MarketResearchServiceFalsificationTest` 6/6), `KaizenService` (10/10 green в `KaizenServiceTest`), `LeverPromotionService` (11/11 green: `LeverPromotionServiceTest` 7/7, `LeverPromotionServiceFalsificationTest` 4/4). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Кластер улучшений и сигналов потока Секции VIII: `FlowMetricsService` (4/4 green в `FlowMetricsServiceTest`), `MarketResearchService` (9/9 green: `MarketResearchServiceTest` 3/3, `MarketResearchServiceFalsificationTest` 6/6), `KaizenService` (10/10 green в `KaizenServiceTest`), `LeverPromotionService` (11/11 green: `LeverPromotionServiceTest` 7/7, `LeverPromotionServiceFalsificationTest` 4/4). Ступень 4 закрыта, статус: ideal.
 
 *Свидетельства записи:* `grep -n "\.findAll()"` across `KaizenService`, `FlowMetricsService`, `LeverPromotionService`, `MarketResearchService`; focused `nl -ba` contexts around `KaizenService` lines 77-163, 214-326, 628-858; `FlowMetricsService` lines 71-143; `LeverPromotionService` lines 50-141; `MarketResearchService` lines 49-140; `KaizenController` lines 25-78; `MarketResearchController` lines 35-57; repository grep for `KaizenProposalRepository`, `WishlistRepository`, `TaskRepository`, `LeverObservationRepository`, `ProjectRepository`; caller grep for `computeForProject`, `createResearchTask`, `recordObservation`, `currentStage`, `getDeduplicatedProposals`; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN" docs/philosopher-patterns/philosophers/BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE_02_elvin-goldman.md`; `grep -n "ACP-061" docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`; `grep -n "RELIABILITY_CHAIN" docs/philosopher-patterns/03_PATTERN_STRENGTH.md`.
 
@@ -2216,7 +2216,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 механизм, который сделает X вследствие моего действия.
 *Философия:* `CATEGORY_ERROR_SCAN` (D002) — **сильная** после починки посылки уборки. Опровержение: сбросить
 состояние и посчитать строки, созданные другими вследствие сброса.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Восстановление задач сохраняет стабильную идентичность исходной задачи и исключает каскадное размножение задач/заявок (D004 Varzi, D002 Ryle). Заслон качества: 15/15 green в `PlannedWorkRecoveryServiceTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Восстановление задач сохраняет стабильную идентичность исходной задачи и исключает каскадное размножение задач/заявок (D004 Varzi, D002 Ryle). Заслон качества: 15/15 green в `PlannedWorkRecoveryServiceTest`. Ступень 4 закрыта, статус: ideal.
 
 **`ContinuousOrchestrationService`** — общий тик: что делать сейчас, кого восстановить, кого разблокировать.
 *Связи:* вызывающих нет — по расписанию; **зовёт 18 механизмов**; пишет `AccountRepository`.
@@ -2225,7 +2225,7 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 наблюдения отдельно оговаривает, что **не заводит своего крона**, а встраивается сюда, — редкая дисциплина.
 *Философия:* `PLANNING_CONSISTENCY` (D004) — **сильная**. Опровержение: найти второй крон, решающий
 очерёдность действий проекта.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Единый детерминированный тик оркестрации фабрики без неконтролируемых сторонних фоновых кронов (D004 Bratman, D006 Raz). Заслон качества: 16/16 green в `ContinuousOrchestrationServiceTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Единый детерминированный тик оркестрации фабрики без неконтролируемых сторонних фоновых кронов (D004 Bratman, D006 Raz). Заслон качества: 16/16 green в `ContinuousOrchestrationServiceTest`. Ступень 4 закрыта, статус: ideal.
 
 **`OperationalPolicyService`**, **`OperationalFlowCoreService`**, **`OperationalTruthService`**,
 **`OperationalAction`**, **`FlowSpineService`** — операционная политика и хребет потока.
@@ -2237,18 +2237,18 @@ piece of gathered, independently-verified evidence — **never the LLM's own cla
 молчит.
 *Философия:* `ANTI_MIRROR_TELEMETRY` (D013) — **сильная**. Опровержение: найти величину, которую хребет
 показывает лучше, чем она есть.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Деонтический заслон переходов политики, матрицы прав/обязанностей Flow Core, действий `OperationalAction` и истинности потока гарантирует детерминированный отказ с объяснимой причиной при нарушении инвариантов (`done_is_not_delivery`). Заслон качества: 125/125 green (`OperationalTruthServiceTest` 17/17, `FlowSpineServiceTest` 32/32, `OperationalFlowCoreServiceTest` 6/6, `OperationalFlowCoreFalsificationTest` 39/39, `OperationalPolicyServiceTest` 17/17, `OperationalPolicyReasonTest` 5/5, `OperationalPolicyDeniedExceptionFalsificationTest` 9/9). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Деонтический заслон переходов политики, матрицы прав/обязанностей Flow Core, действий `OperationalAction` и истинности потока гарантирует детерминированный отказ с объяснимой причиной при нарушении инвариантов (`done_is_not_delivery`). Заслон качества: 125/125 green (`OperationalTruthServiceTest` 17/17, `FlowSpineServiceTest` 32/32, `OperationalFlowCoreServiceTest` 6/6, `OperationalFlowCoreFalsificationTest` 39/39, `OperationalPolicyServiceTest` 17/17, `OperationalPolicyReasonTest` 5/5, `OperationalPolicyDeniedExceptionFalsificationTest` 9/9). Ступень 4 закрыта, статус: ideal.
 
 **`TrustSnapshotService`** — снимки входных сигналов доверия с дозаполнением настоящего исхода.
 *Связи:* вызывающих нет — по расписанию; зовёт двоих.
 *Ценность:* сбор данных для решателя, который **ещё не имеет права решать**.
 *Комментарий:* **периферия.** Правильный порядок: сперва накопить свидетельство, потом дать полномочия.
 *Философия:* `PERSISTENCE_SNAPSHOT` (D010) — **сильная**. Опровержение: найти снимок без дозаполненного исхода.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]. Фиксация снимков доверия сохраняет входные сигналы с отложенным дозаполнением фактических результатов сдачи/отклонения (D010 Goldman). Заслон качества: 9/9 green в `TrustSnapshotServiceTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]. Фиксация снимков доверия сохраняет входные сигналы с отложенным дозаполнением фактических результатов сдачи/отклонения (D010 Goldman). Заслон качества: 9/9 green в `TrustSnapshotServiceTest`. Ступень 4 закрыта, статус: ideal.
 
 ### Итог Секции VIII
 
-Все механизмы контура самопроверки и координации фабрики Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»: `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`, `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`, `DefectJournalService`, `FlowMetricsService`, `LeverPromotionService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalFlowCoreService`, `OperationalPolicyService`, `TrustSnapshotService`, `OperationalTruthService`, `FlowSpineService`, `MarketResearchService`) подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 12:11 UTC]: **290/290 green в едином пакетном запуске** (25 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 57.049 s):
+Все механизмы контура самопроверки и координации фабрики Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»: `FalsificationCycleService`, `EvidenceCoherenceService`, `OpsAuditorService`, `PlatformSelfReferenceDetector`, `FactorySelfHealthService`, `KaizenService`, `DefectJournalService`, `FlowMetricsService`, `LeverPromotionService`, `PlannedWorkRecoveryService`, `ContinuousOrchestrationService`, `OperationalFlowCoreService`, `OperationalPolicyService`, `TrustSnapshotService`, `OperationalTruthService`, `FlowSpineService`, `MarketResearchService`) подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 13:03 UTC]: **290/290 green в едином пакетном запуске** (25 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:24 min):
 - **`FalsificationCycleService`:** 28/28 green (`FalsificationCycleServiceTest` 28/28). Суточный цикл фальсификации и монопольное владение агрегатами `falsification_runs` и `code_integrity_findings` (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004).
 - **`EvidenceCoherenceService`:** 26/26 green (`EvidenceCoherenceServiceTest` 21/21, `EvidenceCoherenceV80TerminationFalsificationTest` 5/5). Релаксация графа свидетельств по алгоритму ECHO Тагарда без ложной уверенности на пустых данных (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011).
 - **`OpsAuditorService`:** 11/11 green (`OpsAuditorServiceTest` 11/11). Аудитор операций на независимо проверенных фактах (`independently-verified facts`) с обязательной тройной валидацией предусловий (`ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` / D006, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
