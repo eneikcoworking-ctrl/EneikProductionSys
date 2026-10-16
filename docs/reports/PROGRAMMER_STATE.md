@@ -1,19 +1,17 @@
-# Такт L2: Ведущий инженер (2026-10-16 00:45 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 01:05 UTC)
 
-1. Пакетная верификация Секций XXXVII–XLIV и XVIII («Финальный контур TOC, авторизация AI-ресурсов, метрики Six Sigma, выметающие обходы, заслоны экранов, очистка журналов и завершающий баланс фабрики»):
-   - Секция XXXVII (Сторож ТОС): `TocSentinelServiceTest` (18/18), `TocOptimizerTest` (7/7), `TocSentinelControllerTest` (2/2) — 27/27 green.
-   - Секция XXXVIII (Вход к ресурсам модели): `ApiAuthorizationInterceptorTest` (20/20), `GoogleAiResourceControllerTest` (6/6) — 26/26 green.
-   - Секция XXXIX (Метрики качества): `SixSigmaAuditServiceTest` (26/26), `QualityMetricsControllerTest` (3/3), `QualityGateControllerTest` (2/2) — 31/31 green.
-   - Секция XL (Выметающий обход): `BranchGarbageCollectorServiceTest` (13/13), `BranchGarbageCollectorServiceFalsificationTest` (6/6), `StrandedFinalizingSweepServiceTest` (8/8), `StrandedFinalizingSweepServiceFalsificationTest` (6/6) — 33/33 green.
-   - Секция XLI (Заслон качества экрана): `DesignExcellenceGateTest` (12/12), `BaseQualityGateTest` (10/10), `VerificationEvidenceGateTest` (8/8), `BackendContractGateTest` (5/5) — 35/35 green.
-   - Секция XLII (Кэш постоянного корпуса): `GeminiContextCacheManager` снят/decommissioned (0 в Java, единый кэш в `PredictionService.py`, ideal).
-   - Секция XLIII (Верёвка TOC): `TocOptimizerTest` (7/7), `TocSentinelServiceTest` (18/18) — 25/25 green.
-   - Секция XLIV (Очистка журнала проекта): `ProjectEventLogRetentionServiceTest` (10/10) — 10/10 green.
-   - Секция XVIII (Завершающий баланс фабрики): архитектурная демаркация суверенитета, все 205 механизмов фабрики закрыты (ideal).
-   - Итоговый единый пакетный замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 162/162 green (0 failures, 0 errors, BUILD SUCCESS).
+1. Пакетная верификация Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Оркестрация»):
+   - `FalsificationCycleServiceTest` (28/28), `EvidenceCoherenceServiceTest` (21/21), `EvidenceCoherenceV80TerminationFalsificationTest` (5/5) — 54/54 green.
+   - `OpsAuditorServiceTest` (11/11), `PlatformSelfReferenceDetectorTest` (7/7), `FactorySelfHealthServiceTest` (5/5) — 23/23 green.
+   - `KaizenServiceTest` (10/10), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5) — 24/24 green.
+   - `FlowMetricsServiceTest` (4/4), `LeverPromotionServiceTest` (7/7), `LeverPromotionServiceFalsificationTest` (4/4) — 15/15 green.
+   - `PlannedWorkRecoveryServiceTest` (15/15), `ContinuousOrchestrationServiceTest` (16/16) — 31/31 green.
+   - `OperationalTruthServiceTest` (17/17), `FlowSpineServiceTest` (32/32), `OperationalFlowCoreServiceTest` (6/6), `OperationalFlowCoreFalsificationTest` (39/39), `OperationalPolicyServiceTest` (17/17), `OperationalPolicyReasonTest` (5/5), `OperationalPolicyDeniedExceptionFalsificationTest` (9/9) — 125/125 green.
+   - `TrustSnapshotServiceTest` (9/9) — 9/9 green.
+   - Итоговый единый пакетный замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 281/281 green (0 failures, 0 errors, BUILD SUCCESS).
 2. Соблюдение инвариантов Ступени 4:
    - 0 строк модификации рабочего кода (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером, не правкой.
-   - RAG-корпус удержан: D008 Popper & Tarski, D010 Goldman, D006 Raz & Varzi, D012 Belnap, D013 Wittgenstein & Noë, D004 Varzi, D011 Dretske & Clark.
+   - RAG-корпус удержан: D008 Popper & Tarski, D010 Goldman, D006 Raz, D012 Belnap, D013 Wittgenstein, D004 Varzi & Bratman, D002 Ryle, D007 Gilbert & Dretske.
 3. Документация и фиксация:
-   - Обновлены строки *Живое:* для Секций XXXVII–XLIV и XVIII, оформлен блок `### Итог Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII, XLIV и XVIII` в `docs/FACTORY_MECHANISMS.md` (status: ideal).
-   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md`: закрыт последний пункт Ступени 1 (`QualityMetricsController`), зафиксирован пакетный блок Секций XXXVII–XLIV и XVIII. Все 205 механизмов очереди закрыты.
+   - Обновлен блок `### Итог Секции VIII` в `docs/FACTORY_MECHANISMS.md` со сводкой 281/281 green (status: ideal).
+   - Подтверждена синхронизация `docs/ANTIGRAVITY_QUEUE.md` (все механизмы Секции VIII закрыты, status: ideal).
