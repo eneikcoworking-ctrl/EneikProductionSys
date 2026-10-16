@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 13:42 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 13:52 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 24G/38G (66%, норма < 70%), свободно 13GB. Память: 2.1Gi/3.7Gi, swap 1.8Gi. Чисто.
 
 3. Контроль инженера (L2):
-- L2 успешно закрыл пакетный замер Секций XXII и XXIII (коммит 4df7a4a, 116/116 green, 0 строк изменений кода).
+- L2 успешно закрыл пакетный замер Секций XXIV и XXV (коммит 0519450, 169/169 green, 0 строк изменений кода).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: 0 строк изменений рабочего кода.
 
-4. Пакетный Work Order: Секции XXIV и XXV (Скрипты и Позвоночник потока):
-- Механизмы (169 тестов: 149 Maven + 20 Python, 1720 паттернов): FlowSpineService, OperationalFlowCore, SystemStatusService, SystemSettingsService, SettingsController, FlowSpineController, OperationalFlowCoreController, TocSentinelController, PhilosopherPatternCorpusConsistency, append_role_logic, mock_test_runner.
-- Базис RAG: Popper D008 (фальсификационные заслоны переходов), Goldman D010 (лок уровней абстракции, хеш SHA-256), Raz D006 (деонтический запрет L2 на модификацию кода, flow_core_enforced), Wittgenstein D013 (анти-зеркало телеметрии observe_only), Church D014 (заземление философского корпуса).
+4. Пакетный Work Order: Секции XXVI, XXVII и XXVIII («Контекст, Операционная правда и AI-граница»):
+- Механизмы (215 тестов, 17 сьютов в Docker Maven): GeminiContextService, InternalGeminiObserverController, OperationalTruthService, TrustSnapshotService, ClientDeliverableReadinessService, GoogleAiResourceController, StitchClient, MLPredictionServiceClient, JudgmentAgentClient, DecommissionObserver.
+- Базис RAG: Popper D008 (фальсификационные заслоны готовности и декоммиссии), Goldman D010 (асимметричная динамика доверия, лок уровней абстракции), Raz D006 (деонтический запрет L2 на правку кода, матрица прав доступа), Belnap D012 (4-значная истинность), Wittgenstein D013 (анти-зеркало observe_only), Floridi D009 (запрет подмены HTML картинками), Church D014 (RAG-граундинг капсулы).
