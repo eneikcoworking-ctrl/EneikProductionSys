@@ -1,13 +1,14 @@
-# Такт L2: Ведущий инженер (2026-10-16 05:08 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 05:22 UTC)
 
-1. Пакетная верификация Секций XXIV и XXV («Скрипты оператора, Позвоночник потока, Ядро исполнения и Свод состояния»):
-   - Заверен контур скриптов оператора, ядра потока и свода состояния (169/169 green: 149/149 green в Docker Maven и 20/20 green в Python unittest, 0 failures, 0 errors, BUILD SUCCESS):
-     * Секция XXIV (Скрипты и корпус): `generate_philosopher_patterns.py` (заслон `PhilosopherPatternCorpusConsistencyTest` 6/6, `--verify` 1720 паттернов, 53 семейства, 104 ACP); `append_role_logic.py` и `audit_pr.py` (`tests/test_append_role_logic.py` 10/10, fail-closed границы 13 хартий BARCAN-TAG-00..12); `mock_test_runner.py` (`tests/test_mock_test_runner.py` 10/10, реальные проверки Greeting и PrivacyFilter); ручная оснастка демаркирована (Evans D006, Goldman D010).
-     * Секция XXV (Позвоночник и ядро потока, свод и настройки): `FlowSpineServiceTest` (32/32), `OperationalFlowCoreServiceTest` (6/6), `OperationalFlowCoreFalsificationTest` (39/39), `SystemStatusServiceTest` (22/22), `SystemStatusControllerTest` (3/3), `SystemSettingsServiceTest` (13/13), `SettingsControllerIntegrationTest` (8/8), `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2).
-   - Единый пакетный замер в Docker Maven 3.9.9 Temurin-21 (-m 2g) и Python: 169/169 green (0 failures, 0 errors, BUILD SUCCESS).
+1. Пакетная верификация Секций XXVI, XXVII и XXVIII («Служба контекста, Операционная правда и Внешняя AI-граница фабрики: отказ от Gemini»):
+   - Заверен контур выборки знаний, операционной правды и внешней AI-границы фабрики (215/215 green в Docker Maven, 0 failures, 0 errors, BUILD SUCCESS):
+     * Секция XXVI (Служба контекста): `GeminiContextServiceTest` (28/28), `InternalGeminiObserverControllerTest` (16/16), `InternalGeminiObserverSecurityIntegrationTest` (9/9), `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10), `GeminiObserverActionServiceTest` (17/17) — суммарно 80/80 green. Векторные проекции, динамический порог близости Church D014, деонтический доступ Raz D006.
+     * Секция XXVII (Операционная правда): `OperationalTruthServiceTest` (17/17), `TrustSnapshotServiceTest` (9/9), `ClientDeliverableReadinessServiceTest` (49/49), `ClientDeliverableReadinessServiceFalsificationTest` (6/6) — суммарно 81/81 green. Асимметричное доверие Goldman D010, 4-значная логика Belnap D012, анти-зеркало D013, фальсификация Popper D008.
+     * Секция XXVIII (Внешняя AI-граница): `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12), `StitchClientTest` (10/10), `MLPredictionServiceClientTest` (9/9), `JudgmentAgentClientTest` (6/6), `JudgmentAgentClientLaw17Test` (4/4), `GeminiProjectObserverServiceTest` (1/1), `V58AndV111ObserverDecommissionFalsificationTest` (6/6) — суммарно 54/54 green. Матрица прав Raz D006, запрет подмены HTML Floridi D009, защита векторов Goldman D010, декоммиссия Gemini-наблюдателя.
+   - Единый пакетный замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 215/215 green (0 failures, 0 errors, BUILD SUCCESS).
 2. Соблюдение инвариантов Ступени 4:
    - 0 строк модификации рабочего кода (`src/main/java`, `src/main/resources`, `scripts/`). Работа строгим замером.
-   - Инварианты удержаны: D008 Popper & Tarski, D010 Goldman, D006 Raz & Evans, D012 Belnap, D013 Wittgenstein, D014 Church.
+   - Инварианты удержаны: D008 Popper & Tarski, D010 Goldman, D006 Raz & Varzi, D012 Belnap, D013 Wittgenstein, D014 Church, D009 Floridi.
 3. Документация и фиксация:
-   - В `docs/FACTORY_MECHANISMS.md` обновлены отметки живых замеров и итог Секций XXIV и XXV (169/169 green, status: ideal).
-   - В `docs/ANTIGRAVITY_QUEUE.md` закрыт пункт 3 (дисциплина full-table reads и SystemStatusService).
+   - В `docs/FACTORY_MECHANISMS.md` обновлены отметки живых замеров и итог Секций XXVI, XXVII и XXVIII (215/215 green, status: ideal).
+   - В `docs/ANTIGRAVITY_QUEUE.md` зафиксировано закрытие пакетного замера Секций XXVI, XXVII и XXVIII.
