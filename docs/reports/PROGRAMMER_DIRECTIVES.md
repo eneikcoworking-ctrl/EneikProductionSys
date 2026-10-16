@@ -1,4 +1,4 @@
-# Директивы и наряд для L2 (2026-10-16 11:41 UTC)
+# Директивы и наряд для L2 (2026-10-16 11:51 UTC)
 
 **От:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
@@ -10,22 +10,22 @@
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и ручных согласований.
 2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком.
-   - Секции XXIV и XXV («Скрипты оператора и Позвоночник потока») успешно заверены инженером (коммит `6c73570`, 169/169 green: 149 Maven + 20 Python, 1720 философских паттернов верифицировано, 0 строк изменений рабочего кода).
-   - Настоящая директива открывает пакетный замер следующего стратегического кластера фабрики — **Секций XXVI («Служба контекста: чем определяется, что исполнитель прочтёт»), XXVII («Операционная правда: чем фабрика оценивает доверие к себе») и XXVIII («Внешняя AI-граница фабрики: отказ от Gemini»)** целиком (17 тест-сьютов, 215 тестов в едином пакетном прогоне Docker Maven):
-     * **Секция XXVI: Служба контекста (80 тестов, 5 сьютов):**
-       - `GeminiContextServiceTest` (28/28): динамический порог близости `dynamicSimilarityFloor`, векторные проекции исключают подъем полного корпуса в память JVM, стратификация продуктовых исполнителей `PRODUCT_WORKER_SOURCE_TYPES` (`ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010);
-       - `InternalGeminiObserverControllerTest` (16/16), `InternalGeminiObserverSecurityIntegrationTest` (9/9): деонтические заслоны доступа к диагностическим эндпоинтам по API-ключу (401/403), институциональный аудит вызывающего (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
-       - `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10): дедупликация чанков по хешу содержимого, предотвращение коллизий file-scope (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
-       - `GeminiObserverActionServiceTest` (17/17): типизированные безопасные действия, изоляция от сбоев внешней модели (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
-     * **Секция XXVII: Операционная правда и доверие (81 тест, 4 сьюта):**
-       - `OperationalTruthServiceTest` (17/17), `TrustSnapshotServiceTest` (9/9): асимметричная динамика доверия `ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` (медленный ступенчатый рост 1..4 -> 0.50, 5..9 -> 0.65, 10..14 -> 0.75, 15..19 -> 0.85, >=20 -> 1.0; мгновенный сброс при подтвержденном отказе), окно свежести `TRUST_RECENCY_WINDOW` 30 дней, чистый `observe_only` режим DTO без побочных эффектов мутации базы данных (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013);
-       - `ClientDeliverableReadinessServiceTest` (49/49), `ClientDeliverableReadinessServiceFalsificationTest` (6/6): строгий гейт готовности клиентских артефактов, исключение ложной готовности без подтвержденных свидетельств (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
-     * **Секция XXVIII: Внешняя AI-граница фабрики — отказ от Gemini (54 теста, 8 сьютов):**
-       - `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12): деонтическая матрица прав и обязанностей доступа к ресурсам AI (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006), аудит мутаций `AuditCallerResolver`;
-       - `StitchClientTest` (10/10): категорический запрет подмены HTML картинками Nano Banana (`LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE` / D009), сохранение стабильной идентичности экранов Stitch (`screenId`);
-       - `MLPredictionServiceClientTest` (9/9): fail-safe Java-клиент ML сайдкара, breaker-предохранитель, защита от сбоев и нулевых/фиктивных векторов (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008);
-       - `JudgmentAgentClientTest` (6/6), `JudgmentAgentClientLaw17Test` (4/4): разделение фабричного, продуктового и поставочного уровней суждения, соблюдение коммуникативных максим Закона 17 (`LUCHANO_FLORIDI_04_LEVEL_OF_ABSTRACTION_LOCK` / D010, `LUCHANO_FLORIDI_02_CONSTRUCTIVE_PROOF_OBJECT` / D007);
-       - `GeminiProjectObserverServiceTest` (1/1), `V58AndV111ObserverDecommissionFalsificationTest` (6/6): полная декоммиссия наблюдателя Gemini, инертность фоновых циклов, V58/V111 stubs (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - Секции XXVI, XXVII и XXVIII («Служба контекста, Операционная правда и Внешняя AI-граница») успешно заверены инженером (коммит `6f98f25`, 215/215 green, 0 строк изменений рабочего кода).
+   - Настоящая директива открывает пакетный замер следующего стратегического кластера фабрики — **Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI** целиком (18 тест-сьютов, 136 тестов в едином пакетном прогоне Docker Maven):
+     * **Секция XXX: Клиент к предсказателю (9 тестов, 1 сьют):**
+       - `MLPredictionServiceClientTest` (9/9): fail-safe клиент к сайдкару FastEmbed, breaker-предохранитель, запрет фиктивных/нулевых mock-векторов при сбое, сохранение sentinel-недоступности в `chatCritical` без утечек в сырой Gemini (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+     * **Секция XXXI: Разбор чужого репозитория (15 тестов, 3 сьюта):**
+       - `RepositoryStackAnalyzerTest` (6/6), `OnboardingAuditServiceTest` (5/5), `OnboardingAuditServiceFalsificationTest` (4/4): трёхзначный статус инспекции `InspectionStatus` (`YES`, `NO`, `UNCHECKED`), сбой авторизации фабрики никогда не превращается в ложный дефект заказчика (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+     * **Секция XXXII: Завод репозиториев (22 теста, 5 сьютов):**
+       - `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4), `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6), `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5): адрес репозитория возникает только по факту физического свидетельства GitHub (201 create или verified 200 на 422), при сбое возвращается `null` без подстановки фантомных URL, изоляция топологии путей workspace (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006).
+     * **Секция XXXIII: Пульт управления (8 тестов, 2 сьюта):**
+       - `CommandDashboardControllerTest` (4/4), `CommandDashboardServiceTest` (4/4): пятизначная конъюнкция Клиини, запрет объявления готовности `ready` без клиентского свидетельства приемки (`client_acceptance_traversals` с `walked_by='client'`), сохранение трёхзначной логики Белнапа `unknown` (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+     * **Секция XXXIV: Внутренний вход наблюдателя (20 тестов, 1 сьют):**
+       - `ApiAuthorizationInterceptorTest` (20/20): деонтический запрет неавторизованных мутаций через внутренний вход наблюдателя (401/403), защита сервисных эндпоинтов авторизацией и аудит актора (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+     * **Секция XXXV: Выбор аккаунта (47 тестов, 3 сьюта):**
+       - `AccountHealthServiceTest` (31/31), `AccountRepositoryFalsificationTest` (8/8), `AccountRepositoryIntegrationTest` (8/8): наказание порядком ротации (`refusal run`), а не исключением из пула, атомарный CAS-захват (`FOR UPDATE SKIP LOCKED`), вытеснение глобальных догадок локально выученными пределами (de re), освобождение слотов для blocked/done задач (`DZHOZEF_RAZ_21_PENALTY_AS_ORDERING` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+     * **Секция XXXVI: Хранилище задач (15 тестов, 3 сьюта):**
+       - `TaskEntityLaw20Test` (6/6), `TaskEntityLaw1CarrierTest` (5/5), `TaskRepositoryIntegrationTest` (4/4): неизменяемость терминальных статусов (Закон 20), деонтический запрет перезаписи на уровне сущности (`TaskEntity.setStatus`) и на уровне SQL-репозитория (`TaskRepository.writeStatusUnlessTerminalAt`, `compareAndSetStatusAt`), гарантирующий защиту от stale-read воскрешения (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено вносить любые модификации в рабочий код подсистем фабрики, моделей, сущностей, энумов, контроллеров, миграций и сервисов (`src/main/java`, `src/main/resources`, `scripts/`) при проходящих тестах!
@@ -34,35 +34,33 @@
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D012, D013, D014, D009)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D012, D002, D013)
 
 - **`KARL_POPPER_01_FALSIFICATION_HARNESS` & `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` [D008 False green / Popper & Tarski]:**
-  * Попперовская фальсификация: тесты обязаны воспроизводимо падать при повреждении заслонов готовности клиентских артефактов (`ClientDeliverableReadinessServiceFalsificationTest`), попытках воскрешения декоммиссованного наблюдателя (`V58AndV111ObserverDecommissionFalsificationTest`) или коллизиях file-scope (`ContextChunkHashAndFileScopeConflictFalsificationTest`).
+  * Попперовская фальсификация: тесты обязаны воспроизводимо падать при повреждении заслонов готовности клиентских артефактов, попытках подстановки фантомных URL репозиториев или пробитии защитных breakers.
 - **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss / Goldman]:**
-  * Лок уровней абстракции и каузальная цепочка надёжности: разделение фабричного, продуктового и поставочного уровней суждения; асимметричный ступенчатый рост доверия от накопленных подтвержденных свидетельств (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS`) с мгновенным сбросом при доказанном отказе; сохранение источников и размерностей векторов без порождения ложных нулевых проекций.
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` & `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` [D006 Authorization ambiguity / Raz]:**
+  * Лок уровней абстракции и каузальная цепочка надёжности: разделение фабричного, продуктового и поставочного уровней суждения; сохранение происхождения свидетельств от первичных HTTP-ответов до полей сущностей без подмены догадками.
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` & `DZHOZEF_RAZ_21_PENALTY_AS_ORDERING` [D006 Authorization ambiguity / Raz]:**
   * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода фабрики при проходящих тестах (exclusionary reasons);**
-  * Деонтическая матрица прав и обязанностей доступа к изменяющим ресурсам AI (`GoogleAiResourceSecurityIntegrationTest`) и диагностическим входам наблюдателя (`InternalGeminiObserverSecurityIntegrationTest`), исключающая несанкционированные мутации и нецелевой расход квот.
-- **`LUCHANO_FLORIDI_01_SUBSTITUTION_ORACLE` [D009 Substitution failure / Floridi]:**
-  * Оракул подмены: категорический запрет подмены HTML-макетов картинками Nano Banana при требовании имплементируемого HTML (`requireImplementableHtml=true`); сохранение идентичности артефактов экранов Stitch (`screenId`).
+  * Наказание аккаунтов порядком ротации (`refusal run`), а не исключением из пула; деонтический барьер на эндпоинты внутреннего наблюдателя.
 - **`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D012 Multi-valued truth / Belnap]:**
-  * Четырёхзначная логика: явное разграничение состояний доверия (`undetermined != blocked != trusted`) в операционной правде.
-- **`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift / Wittgenstein]:**
-  * Принцип анти-зеркала: замер операционной правды и статуса проекта работает в режиме строгого чтения (`observe_only`), не оставляя мутационных следов в базе данных.
-- **`ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` [D014 RAG hallucination / Church]:**
-  * Заземление контекста: динамический порог близости `dynamicSimilarityFloor` отсекает несвязанные куски корпуса, исключая галлюцинации и утечки внутренних данных оркестратора в подсказки продуктовых исполнителей.
+  * Четырёхзначная логика: явное разграничение состояний (`undetermined != blocked != trusted`, `unknown != failure`).
+- **`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` [D002 Category error / Ryle]:**
+  * Категориальное разделение: внутренняя техническая ошибка авторизации фабрики никогда не записывается как факт о дефекте кодовой базы заказчика.
+- **`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` & `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift / Noë & Wittgenstein]:**
+  * Принцип анти-зеркала и трассировка процесса: неизменяемость терминальных статусов задач (Закон 20), защита от перезаписи при stale reads на уровнях Java Entity и SQL Repository.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. **Единый пакетный запуск тестов Секций XXVI, XXVII и XXVIII (215 тестов, 17 сьютов в Docker Maven):**
+1. **Единый пакетный запуск тестов Секций XXX–XXXVI (136 тестов, 18 сьютов в Docker Maven):**
    ```bash
-   docker run --rm -m 2g -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/app -w /app maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=GeminiContextServiceTest,InternalGeminiObserverControllerTest,InternalGeminiObserverSecurityIntegrationTest,ContextChunkHashAndFileScopeConflictFalsificationTest,GeminiObserverActionServiceTest,OperationalTruthServiceTest,TrustSnapshotServiceTest,ClientDeliverableReadinessServiceTest,ClientDeliverableReadinessServiceFalsificationTest,GoogleAiResourceControllerTest,GoogleAiResourceSecurityIntegrationTest,StitchClientTest,MLPredictionServiceClientTest,JudgmentAgentClientTest,JudgmentAgentClientLaw17Test,GeminiProjectObserverServiceTest,V58AndV111ObserverDecommissionFalsificationTest
+   docker run --rm -m 2g -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/app -w /app maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=MLPredictionServiceClientTest,RepositoryStackAnalyzerTest,OnboardingAuditServiceTest,OnboardingAuditServiceFalsificationTest,GitHubProjectFactoryClientTest,LinearProjectFactoryClientTest,ProjectFactoryServiceTest,ProjectFactoryServiceFalsificationTest,ProjectWorkspaceFactoryServiceFalsificationTest,CommandDashboardControllerTest,CommandDashboardServiceTest,ApiAuthorizationInterceptorTest,AccountHealthServiceTest,AccountRepositoryFalsificationTest,AccountRepositoryIntegrationTest,TaskEntityLaw20Test,TaskEntityLaw1CarrierTest,TaskRepositoryIntegrationTest
    ```
 2. **Соблюдение инварианта суверенитета и правила Ступени 4:**
    - 0 строк изменений рабочего кода (`src/main/java`, `src/main/resources`, `scripts/`).
    - Фиксация статуса в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md`.
 3. **Отчёт и фиксация:**
    - Обновить `docs/reports/PROGRAMMER_STATE.md` (кратко, до 15–20 строк).
-   - Сделать семантический коммит в фабрику: `feat(sections-xxvi-xxviii): complete Stage 4 batch verification (D008, D010, D006)`.
+   - Сделать семантический коммит в фабрику: `feat(sections-xxx-xxxvi): complete Stage 4 batch verification (D008, D010, D006)`.
