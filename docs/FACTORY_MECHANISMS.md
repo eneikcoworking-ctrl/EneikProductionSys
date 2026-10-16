@@ -9836,7 +9836,7 @@ exclusions are reproducible by command; startup/readiness evidence can name curr
 `grep -RIn 'flyway\|migration\|schema' src/main/java src/main/resources | head -60`.
 
 **Текущий статус** — идеальный. Заслон качества: подтверждено пакетным замером в Docker Maven 3.9.9 Temurin-21 (-m 2g) в `FlywayMigrationValidationTest` (4/4 green, валидированы все 143 миграции Flyway за 00:00.026s, schema up-to-date, 0 migration drift). Строгая демаркация shape-only и behavior-changing миграций подтверждена (Goldman D010, Pearl D003, Popper D008). Ступень 4 закрыта, статус: ideal.
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 15:13 UTC]. Валидация 143 миграций Flyway на старте схемы H2/PostgreSQL заслонена в `FlywayMigrationValidationTest` (4/4 green, DbValidate execution time 00:00.077s, 0 drift). Демаркация shape-only и behavior-changing миграций подтверждена. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 21:19 UTC]. Валидация 143 миграций Flyway на старте схемы H2/PostgreSQL заслонена в `FlywayMigrationValidationTest` (4/4 green, DbValidate execution time 00:00.104s, 0 drift). Демаркация shape-only и behavior-changing миграций подтверждена. Ступень 4 закрыта, статус: ideal.
 
 ## XXIIл.1. Комментарии для Антигравити по механизмам
 
@@ -9858,7 +9858,7 @@ exclusions are reproducible by command; startup/readiness evidence can name curr
 
 ### Итог Секции XXII и XXIII
 
-**Дата:** 2026-10-16 19:32 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 13 тест-сьютов Секций XXII и XXIII («Миграции: запреты, которые исполняет база», подразделы XXII, XXIIб, XXIIв, XXIIг, XXIIд, XXIIе, XXIIж, XXIIз, XXIIи, XXIIк, XXIIл и Секция XXIII «Живой замер фабрики, 7 сентября 2026») со 100% green: **116/116 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:06 min).
+**Дата:** 2026-10-16 21:19 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 13 тест-сьютов Секций XXII и XXIII («Миграции: запреты, которые исполняет база», подразделы XXII, XXIIб, XXIIв, XXIIг, XXIIд, XXIIе, XXIIж, XXIIз, XXIIи, XXIIк, XXIIл и Секция XXIII «Живой замер фабрики, 7 сентября 2026») со 100% green: **116/116 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:02 min).
 - **Схема Flyway и запреты базы (4/4 green, 1 сьют):** `FlywayMigrationValidationTest` (4/4). Целостность цепочки миграций (V30–V143), валидация чексумм при старте (`validate-on-migrate=true`), запрет тихого примирения (`repair-on-startup=false`), фальсификация искажений схемы (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
 - **Тождество в схеме и откат (10/10 green, 2 сьюта):** `CompilerTaskIdentityTest` (3/3), `V25MigrationFalsificationTest` (7/7). Миграция V137: тождество задачи компилятора выводится из содержания работы (`tasks.content_key`), предотвращение тихого размножения задач (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002); структурная нерушимость исторических миграций V25/V33–V40 (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
 - **Агентская схема (1/1 green, 1 сьют):** `AgencySchemaTest` (1/1). Миграция V59: изоляция агентских схем и демаркация ролевых границ (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006).
