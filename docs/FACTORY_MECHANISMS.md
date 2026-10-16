@@ -3387,7 +3387,7 @@ charter content из-за перехода только на parsed fields; вт
 
 ### Итог кластера Секций XII, XIIа и XIII
 
-Все механизмы Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 10:53 UTC]: суммарно 189/189 green (31 тест-сьют, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:50 min):
+Все механизмы Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 18:33 UTC]: суммарно 189/189 green (31 тест-сьют, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:25 min):
 - **Секция XII («Журнал, память, санитария»):** 64/64 green (`LogScopeBufferTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5, `ScopedBufferAppenderFalsificationTest` 13/13, `ProjectEventLogRetentionServiceTest` 10/10, `SystemSettingsServiceTest` 13/13, `RoleCapabilityLoaderTest` 4/4, `ProjectAuditPipelineServiceTest` 4/4, `IdleProjectAdviceServiceTest` 6/6, `RoleAdviceLoopServiceTest` 2/2, `RoleAdviceLoopServiceIntegrationTest` 1/1).
 - **Секция XIIа («Управляющая поверхность API»):** 74/74 green (`GreetingControllerIntegrationTest` 5/5, `LinearSyncControllerTest` 2/2, `InternalTaskControllerTest` 6/6, `AccountControllerIntegrationTest` 5/5, `SettingsControllerIntegrationTest` 8/8, `WishlistControllerIntegrationTest` 8/8, `GithubWebhookControllerTest` 9/9, `SystemStatusControllerTest` 3/3, `DashboardControllerTest` 2/2, `OperationalPolicyDeniedExceptionFalsificationTest` 9/9, `ClaimRightsDutiesMatrixTest` 7/7, `ClaimResultStatusTruthTableFalsificationTest` 5/5, `ClaimServiceRaceGuardTest` 5/5).
 - **Секция XIII («Карта владения состоянием фабрики»):** 51/51 green (`SessionLifecycleServiceTest` 8/8, `SessionLifecycleServiceFalsificationTest` 6/6, `StrandedFinalizingSweepServiceTest` 8/8, `StrandedFinalizingSweepServiceFalsificationTest` 6/6, `AutoMergeLaw20InvariantS4Test` 3/3, `AccountRepositoryFalsificationTest` 8/8, `AccountRepositoryIntegrationTest` 8/8, `TaskRepositoryIntegrationTest` 4/4).
@@ -13847,5 +13847,31 @@ the ceiling by more than the expected delay-window intake.
 
 **комментарий для Антигравити:** считаю механизмы Секций IX, X и XI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (280/280 green: D008, D010, D006, D013, D015, D011, D005, D012, D004).
 
+---
 
+### Итог Пакетного Замера Кластера Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики»)
 
+**Дата:** 2026-10-16 18:33 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 31 тест-сьют Кластера Секций XII, XIIа и XIII со 100% green: **189/189 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:25 min).
+
+1. **Группа 1: Секция XII — Журнал, память, санитария (64 теста, 10 сьютов):**
+   - `LogScopeBufferTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `ScopedBufferAppenderFalsificationTest` (13/13): кольцевой буфер журналов, семантическая изоляция скоупов потока, фильтрация шума и INUS-атрибуция дефектов (`DURDZHON_MJEKKI_03_INUS_CONDITION` / D007, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `ProjectEventLogRetentionServiceTest` (10/10): безопасная подрезка логов без подъема всей таблицы в JVM-память, долговечный аппендер (`ALONZO_CHERCH_03_LAMBDA_CORE_REDUCTION` / D008, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `SystemSettingsServiceTest` (13/13): защита системных настроек фабрики от неавторизованной перезаписи (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `RoleCapabilityLoaderTest` (4/4), `ProjectAuditPipelineServiceTest` (4/4), `IdleProjectAdviceServiceTest` (6/6), `RoleAdviceLoopServiceTest` (2/2), `RoleAdviceLoopServiceIntegrationTest` (1/1): парсинг правил ролей Jules, загрузчик возможностей, поке-йоке аудит и цикл советов без зависания потока (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+
+2. **Группа 2: Секция XIIа — Управляющая поверхность API: чем поток останавливают снаружи (74 теста, 13 сьютов):**
+   - `AccountControllerIntegrationTest` (5/5), `InternalTaskControllerTest` (6/6), `WishlistControllerIntegrationTest` (8/8), `SettingsControllerIntegrationTest` (8/8), `GreetingControllerIntegrationTest` (5/5), `LinearSyncControllerTest` (2/2), `GithubWebhookControllerTest` (9/9), `SystemStatusControllerTest` (3/3), `DashboardControllerTest` (2/2): неизменяемость внешних контрактов API, чистое чтение без побочных эффектов мутации (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `OperationalPolicyDeniedExceptionFalsificationTest` (9/9): типизированный отказ операционной политики с институциональным обоснованием (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006).
+   - `ClaimRightsDutiesMatrixTest` (7/7), `ClaimResultStatusTruthTableFalsificationTest` (5/5), `ClaimServiceRaceGuardTest` (5/5): матрица прав и обязанностей Хофельда-Раза, 5-значная таблица истинности исходов притязаний, заслон от гонок на уровне хранилища (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006).
+
+3. **Группа 3: Секция XIII — Взаимодействие: кто пишет каждое состояние / Карта владения состоянием (51 тест, 8 сьютов):**
+   - `SessionLifecycleServiceTest` (8/8), `SessionLifecycleServiceFalsificationTest` (6/6): строгий конечный автомат жизненного цикла сессий Jules, отказ в недопустимых переходах (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `GILBERT_RAYL_02_CATEGORY_ERROR_SCAN` / D002).
+   - `StrandedFinalizingSweepServiceTest` (8/8), `StrandedFinalizingSweepServiceFalsificationTest` (6/6): автономное восстановление зависших финализаций без внешнего оператора (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` / D007).
+   - `AutoMergeLaw20InvariantS4Test` (3/3): закон 20 — монопольное владение слиянием веток и защита от перезаписи терминальных состояний (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004).
+   - `AccountRepositoryFalsificationTest` (8/8), `AccountRepositoryIntegrationTest` (8/8), `TaskRepositoryIntegrationTest` (4/4): хранилищные заслоны целостности пула аккаунтов и задач (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+*Соблюдение инварианта Ступени 4:* 0 строк изменений рабочего кода сервисов, моделей, сущностей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики») идеальными. Заслон качества: 189/189 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz & Varzi / D013 Wittgenstein / D012 Belnap / D007 Searle & Mackie / D004 Varzi / D002 Ryle / D011 Dretske). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секций XII, XIIа и XIII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (189/189 green: D008, D010, D006, D013, D012, D007, D004, D002, D011).
