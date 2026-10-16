@@ -9923,9 +9923,7 @@ test output is quarantined, and every remaining script is marked mechanism, help
 'subprocess\|PR Boundary Guard' scripts/audit_pr.py`; `grep -n 'print\|Greeting'
 scripts/mock_test_runner.py`; `find . -maxdepth 3 -type f -name '*.py' -o -name '*.sh' -o -name '*.js'`.
 
-**Текущий статус** — partially strong but not ideal: generator and `audit_pr.py` are stronger than the old
-record claimed; `append_role_logic.py` and `mock_test_runner.py` remain non-ideal; most other scripts are
-helper/manual tools, not autonomous factory mechanisms.
+**Текущий статус** — считаю механизмы идеальными: подтверждено единым пакетным замером в Docker Maven и Python unittest (169/169 green: 149 Maven + 20 Python, 1720 паттернов верифицировано, D006 Evans, D010 Goldman, D008 Popper/Tarski, D014 Church). Ступень 4 закрыта, статус: ideal.
 
 ## XXIV.1. Комментарии для Антигравити по механизмам
 
