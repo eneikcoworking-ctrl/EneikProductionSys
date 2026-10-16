@@ -2456,7 +2456,7 @@ an ideal mechanism.
 `V111__permanently_disable_gemini_project_observer.sql:1`;
 `GeminiProjectObserverServiceTest.java:19-39`.
 
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Внешняя AI/RAG/Runtime-граница фабрики:
+*Живое, 16 октября 2026 (20:26 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:24 min]. Внешняя AI/RAG/Runtime-граница фабрики:
 - `GoogleAiResourceService`: типобезопасная граница Google AI interactions и resource matrix, key-gate и fail-closed защита без скрытых мутаций. Заслон качества: 18/18 green (`GoogleAiResourceSecurityIntegrationTest` 12/12, `GoogleAiResourceControllerTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `EmbeddingSimilarityUtil`: чистая детерминированная математическая функция косинусного сходства векторов без побочных эффектов. Заслон качества: 28/28 green в `GeminiContextServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `StitchClient`: JSON-RPC клиент к Stitch MCP сохраняет screenId при отсутствии готового HTML, поддерживает edit/get/download и изоляцию проектов Stitch. Заслон качества: 10/10 green в `StitchClientTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
@@ -2624,7 +2624,7 @@ philosopher rows `RUT_BARKAN_MARKUS_02_ESSENCE_BEFORE_OPTION`,
 `ELVIN_GOLDMAN_20_GROUPING_PROXIMITY_GATE`, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`,
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS`.
 
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Семейство дизайн-цеха, дизайн-системы и live drift подтверждено 113/113 green в единый пакетный проход в Docker Maven:
+*Живое, 16 октября 2026 (20:26 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:24 min]. Семейство дизайн-цеха, дизайн-системы и live drift подтверждено 91/91 green в единый пакетный проход в Docker Maven:
 - `DesignShopOrchestrationService`: старт цикла строго по нарастающему фронту готовности (`isReady && !lastWasReady`), атомарный `claimStartCycle` и запрет деградации до картинок при требовании HTML. Заслон качества: 26/26 green (`DesignShopOrchestrationServiceTest` 13/13, `DesignShopOrchestrationServiceLaw15Test` 7/7, `DesignShopCycleRepositoryIntegrationTest` 6/6) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `DesignConsistencyAuditService`: аудит дизайн-токенов проекта, cross-screen сходство и геометрия вьюпортов с честным `CANNOT_JUDGE` при отсутствии базовых токенов. Заслон качества: 28/28 green (`DesignConsistencyAuditServiceTest` 15/15, `LayoutGeometryAuditServiceTest` 13/13) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `DesignSystemFalsificationService`: фальсификация дизайн-систем эпиков с созданием аудит-трейла в виде dismissed wishlist-записи без порождения фоновых pending-задач. Заслон качества: 6/6 green в `DesignSystemFalsificationServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
@@ -2784,7 +2784,7 @@ reads from mutating value.
 callers/consumers grep: `ContinuousOrchestrationService.java:285`, `ProjectController.java:191-205`,
 `FalsificationCycleService.java:404-405,813`, `DeliveryRealityProducerService.java:1181`.
 
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`). Семейство наблюдения за живым продуктом клиента, апостериорной оценки и подтверждения возможностей:
+*Живое, 16 октября 2026 (20:26 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:24 min]. Семейство наблюдения за живым продуктом клиента, апостериорной оценки и подтверждения возможностей:
 - `ClientRuntimeObservabilityService`: наблюдение выполняется в рамках тика оркестрации без собственного cron, четко отделяет инструментальный сбой от сбоя продукта, удерживает и своевременно очищает ограниченное окно предварительного просмотра (bounded preview window). Заслон качества: 37/37 green (`ClientRuntimeObservabilityServiceTest` 29/29, `ObservationHostingDemarcationLaw26Test` 3/3, `FailureDemarcationLaw22Test` 5/5) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `BetaPosterior`: чистая математическая модель апостериорного бета-распределения, отсекает инструментальные сбои и дубликаты commit SHA, гарантирует обоснованную частоту проверок на основе эмпирических свидетельств. Заслон качества: 9/9 green в `BetaPosteriorTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `RuntimeHealthShiftDetector`: строгий точный биномиальный детектор сдвигов здоровья рантайма продукта во времени без заимствования контрольных карт эпиков, отсекает недостаточный базовый уровень. Заслон качества: 9/9 green в `RuntimeHealthShiftDetectorTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
@@ -2801,7 +2801,7 @@ callers/consumers grep: `ContinuousOrchestrationService.java:285`, `ProjectContr
 
 ### Итог кластера Секций IX, X и XI
 
-Все механизмы Секций IX, X и XI («Внешние системы, Дизайн-цех и Наблюдение за живым продуктом клиента») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 18:25 UTC]: суммарно 280/280 green (26 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:08 min):
+Все механизмы Секций IX, X и XI («Внешние системы, Дизайн-цех и Наблюдение за живым продуктом клиента») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 20:26 UTC]: суммарно 280/280 green (26 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:24 min):
 - **Секция IX (Внешние системы):** 110/110 green (`GoogleAiResourceSecurityIntegrationTest` 12/12, `GoogleAiResourceControllerTest` 6/6, `GeminiContextServiceTest` 28/28, `StitchClientTest` 10/10, `DesignAssetServiceTest` 12/12, `GeminiObserverActionServiceTest` 17/17, `InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9).
 - **Секция X (Дизайн-цех):** 91/91 green (`DesignShopOrchestrationServiceTest` 13/13, `DesignShopOrchestrationServiceLaw15Test` 7/7, `DesignShopCycleRepositoryIntegrationTest` 6/6, `DesignConsistencyAuditServiceTest` 15/15, `LayoutGeometryAuditServiceTest` 13/13, `DesignSystemFalsificationServiceTest` 6/6, `DesignDriftMonitorServiceTest` 7/7, `StrandedDesignCycleSweepServiceTest` 4/4, `DesignImplementationLoopClosureLaw3Test` 2/2, `DesignExcellenceGateTest` 12/12, `DesignExcellenceGateFalsificationTest` 6/6).
 - **Секция XI (Наблюдение за живым продуктом клиента):** 79/79 green (`ClientRuntimeObservabilityServiceTest` 29/29, `ObservationHostingDemarcationLaw26Test` 3/3, `FailureDemarcationLaw22Test` 5/5, `BetaPosteriorTest` 9/9, `RuntimeHealthShiftDetectorTest` 9/9, `ProductCapabilityServiceTest` 18/18, `RuntimeVerdictLayerTest` 6/6).
