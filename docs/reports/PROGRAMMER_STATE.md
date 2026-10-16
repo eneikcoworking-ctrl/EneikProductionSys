@@ -1,14 +1,12 @@
-# Такт L2: Ведущий инженер (2026-10-16 09:18 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 09:36 UTC)
 
-1. Пакетная верификация Секции XXI («Сущности, несущие поведение, девять пространств состояний, алгебра решений, граф ограничений, лестница доверия, журнал дефектов и уплотнение хранилища»: подразделы XXI, XXIб, XXIв, XXIг, XXIд, XXIе, XXIж, XXIз):
-   - Заверены все 22 тест-сьюта секции в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **133/133 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 01:17 min).
-   - Подраздел XXI (Сущности с поведением, 27 green, 6 сьютов): `TaskEntityLaw20Test` (6/6), `DeliveryQuestionRecordTest` (3/3), `TaskAcceptanceCriteriaGuardTest` (1/1), `TaskEntityLaw1CarrierTest` (5/5), `DeliveryVerificationPredicateTest` (6/6), `DecompositionVerdictTest` (5/5). Разведение исходов доставки, изоляция Закон 1, терминальность Закон 20, декомпозиция вишлиста и разделение самопоказания и канала (D012 Belnap, D006 Raz, D008 Popper, D013 Wittgenstein).
-   - Подраздел XXIб (Девять пространств состояний, 20 green, 3 сьюта): `LeanValueTest` (9/9), `AccountStatusConjunctionTest` (7/7), `TargetContextTest` (4/4). Типизация ценности Lean, конъюнкция аккаунта `status && enabled`, демаркация репозитория `undetermined` по Закону 2 (D012 Belnap, D010 Goldman, D006 Raz).
-   - Подраздел XXIв (Алгебра решений, 46 green, 5 сьютов): `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `RuntimeVerdictLayerTest` (6/6), `AcceptanceVerdictLayerTest` (7/7), `InfrastructureVerdictLayerTest` (8/8). Монотонность решётки готовности, детерминированное согласование вердиктов (`WITHHOLD` доминирует), стратификация слоев (D008 Popper, D010 Goldman, D002 Ryle, D006 Raz).
-   - Подразделы XXIг–XXIз (Граф ограничений, память об отказах и хранилище, 40 green, 8 сьютов): `TocOptimizerTest` (7/7), `TocNodeTimeoutTest` (4/4), `TocPersistenceSnapshotTest` (4/4), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `LogScopeBufferTest` (6/6), `EneikProductionApplicationShutdownCompactTest` (6/6). Граф ТОС, снимки персистентности, каузальная атрибуция INUS, санитария буфера логов и компактное уплотнение H2 (D008 Popper, D010 Goldman, D010 Parfit & Shaffer, D007 Levi, D013 Wittgenstein).
-2. Соблюдение инвариантов Ступени 4:
-   - 0 строк изменений рабочего кода сервисов, сущностей, моделей, энумов и хранилищ (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером.
+1. Пакетная верификация Секции XXII и XXIII («Миграции базы данных и живой замер»):
+   - Заверены все 14 сьютов секций в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **125/125 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 41.5 s).
+   - Сьюты: `ProcessControlServiceTest` (10/10), `ProcessControlServiceFalsificationTest` (10/10), `EvidenceCoherenceServiceTest` (15/15), `TaskClaimServiceTest` (11/11), `ClaimServiceRaceGuardTest` (2/2), `ClaimServiceFalsificationTest` (6/6), `ContextChunkHashAndFileScopeConflictFalsificationTest` (5/5), `FlowSpineServiceTest` (32/32), `Stage5ProtectedInvariantsFalsificationTest` (13/13), `V15ProjectFinalReportPersistenceFalsificationTest` (5/5), `FlywayMigrationValidationTest` (4/4), `V25MigrationFalsificationTest` (4/4), `AgencySchemaTest` (4/4), `CompilerTaskIdentityTest` (4/4).
+   - Защищенные инварианты: тождество задач компилятора (D008 Popper/Tarski), суверенитет Flyway V1-V143 и демаркация сбоев инструмента от сбоев продукта (D008, D010 Goldman), схема агентств V28/V29/V77 без ручных зависаний, декоммиссия Gemini observer V111, релаксация ЭХО и лимиты когерентности, u-карта Шухарта Шести Сигм (D013 Wittgenstein), притязания на файлы V128 (D004 Varzi/Shaffer), хэширование чанков и Flow spine V66.
+2. Соблюдение инвариантов Ступени 4 и суверенитета:
+   - 0 строк изменений рабочего кода (`src/main/java`, `src/main/resources`, `scripts/`). Верификация исключительно замером.
+   - Зафиксирован коммит документации `938221f`: `docs(mechanisms): record batch verification for Stage 4 mechanisms and live telemetry`.
 3. Фиксация и статус:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирован статус ideal для Секции XXI (133/133 green).
-   - В `docs/ANTIGRAVITY_QUEUE.md` подтверждено закрытие пунктов Секции XXI в Ступени 4.
-   - Философские заслоны соблюдены: D008 Popper, D010 Goldman & Parfit & Shaffer, D006 Raz, D012 Belnap, D002 Ryle, D007 Levi, D013 Wittgenstein.
+   - В `docs/FACTORY_MECHANISMS.md` зафиксированы актуальные замеры и статус ideal для Секций XXII и XXIII (125/125 green).
+   - Все ступени в `docs/ANTIGRAVITY_QUEUE.md` (Ступени 1-5) закрыты и подтверждены эмпирическими тестами.
