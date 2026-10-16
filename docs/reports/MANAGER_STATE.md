@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-16 12:10 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-16 12:20 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -6,12 +6,12 @@
 - Сайдкары: runtime-launcher-1 UP 12d (healthy), ML sidecar UP 12d (healthy), judgment-proxy-1 UP 4w (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 24G/38G (66%, норма < 70%), свободно 13GB. Память: 2.0Gi/3.7Gi, swap 1.8Gi. Чисто.
+- Диск: 24G/38G (66%, норма < 70%), свободно 13GB. Память: 2.1Gi/3.7Gi, swap 1.8Gi. Чисто.
 
 3. Контроль инженера (L2):
-- L2 успешно закрыл пакетный замер Секций XXXVII–XLIV (коммит 4a3a2dc, 213/213 green, 0 строк изменений кода).
+- L2 успешно закрыл пакетный замер Секции VIII (коммит f7cd4e7, 290/290 green, 0 строк изменений кода).
 - Инвариант суверенитета и принцип Ступени 4 соблюдены: 0 строк изменений рабочего кода.
 
-4. Пакетный Work Order: Секция VIII («Самопроверка, Flow & Metrics, Операционная правда, Кайдзен, Фальсификация и Оркестрация»):
-- Механизмы (290 тестов Docker Maven, 25 сьютов): FalsificationCycleServiceTest, EvidenceCoherenceServiceTest, EvidenceCoherenceV80TerminationFalsificationTest, OpsAuditorServiceTest, PlatformSelfReferenceDetectorTest, FactorySelfHealthServiceTest, KaizenServiceTest, DefectJournalServiceTest, DefectJournalRootCauseAttributionTest, LogScopeAndDefectJournalInusFalsificationTest, FlowMetricsServiceTest, LeverPromotionServiceTest, LeverPromotionServiceFalsificationTest, PlannedWorkRecoveryServiceTest, ContinuousOrchestrationServiceTest, OperationalTruthServiceTest, FlowSpineServiceTest, OperationalFlowCoreServiceTest, OperationalFlowCoreFalsificationTest, OperationalPolicyServiceTest, OperationalPolicyReasonTest, OperationalPolicyDeniedExceptionFalsificationTest, TrustSnapshotServiceTest, MarketResearchServiceTest, MarketResearchServiceFalsificationTest.
-- Базис RAG: Popper D008 (фальсификация), Goldman D010 (лок уровней абстракции и цепочка надежности), Raz D006 (деонтический запрет L2 на модификацию кода, запреты операционной политики), Belnap D012 (4-значная истинность), Wittgenstein D013 (анти-зеркало телеметрии рантайма), Varzi D004 (монопольное владение границами).
+4. Пакетный Work Order: Секции XVI и XXIX («Реестр предписаний L2 и Цех дизайна»):
+- Механизмы (272 теста Docker Maven, 29 сьютов): Секция XVI (159 тестов, 16 сьютов: предписания 1-59, сторож ТОС, LeanValue, TargetContext, StackAnalyzer, OperationalTruth, WishlistSimilarity, Settings, Flyway, Law26); Секция XXIX (113 тестов, 13 сьютов: DesignAsset, ConsistencyAudit, LayoutGeometry, ExcellenceGate, CycleRepo, Orchestration, Sweep, Law3, Stitch).
+- Базис RAG: Popper D008 (фальсификация заслонов дизайна и вишлиста), Goldman D010 (лок уровней абстракции и каузальная цепочка свидетельств), Raz D006 (деонтический запрет L2 на модификацию кода, запрет подмены HTML растром), Belnap D015 (трассировка токенов), Wittgenstein D013/D015 (анти-зеркало рантайма, Жаккар), Clark D011 (геометрия вьюпорта).
