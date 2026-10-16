@@ -1,6 +1,6 @@
-# Пакетная директива L1/L3 -> L2: Секция IV — Ревью, гейт, слияние и GitHub-инварианты
+# Пакетная директива L1/L3 -> L2: Секции V и VI — Свидетельство доставки и Решётка суждения
 
-**Дата:** 2026-10-16 03:05 UTC  
+**Дата:** 2026-10-16 03:12 UTC  
 **Эмитент:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
 **Статус:** Императивный пакетный наряд (Batching Work Order)
@@ -10,46 +10,44 @@
 ## 1. Фундаментальные инварианты оператора Дмитрия Ефремова
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и ручных согласований.
-2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция III («Отправка: задача уходит в работу») успешно закрыта инженером (коммит `fd9f2e6`, 290/290 green в едином Docker Maven прогоне, 0 строк изменений рабочего кода). Настоящая директива охватывает следующий фундаментальный контур фабрики — **Секцию IV («Ревью, гейт, слияние и GitHub-инварианты»)**:
+2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком. Секция IV («Ревью, гейт, слияние и GitHub-инварианты») успешно подтверждена и закрыта инженером (коммит `179e3c1`, 240/240 green в едином Docker Maven прогоне, 0 строк изменений рабочего кода). Настоящая директива охватывает следующий фундаментальный контур фабрики — **Кластер Секции V («Свидетельство доставки») и Секции VI («Суждение: решётка суждения, слой опровержений и продвижение рычагов»)**:
    - **Механизмы ядра и сервисы контура:**
-     * `AutoMergeService`, `GitHubPullRequestService`, `GitHubApiBudgetService`, `GithubAccessService`, `CodeChangeClassifier`, `GateOrchestrator`, `BaseQualityGate`, `BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate`, `EpistemicLayerInvariantGate`, `BranchGarbageCollectorService`, `PrReviewPipelineService`;
-     * Сущности и модели: `PrReviewEntity`, `TaskGateLogEntity`, `TaskEntity`, `TaskConflictEntity`, `GithubAccessStatus`, `CodeChangeClassifier`;
-   - **Заслоны верификации (240 тестов, 100% green):**
-     * `AutoMergeServiceTest`, `AutoMergeServiceFalsificationTest`, `AutoMergePokaYokeTest`, `AutoMergeLaw20InvariantS4Test`, `GitHubPullRequestServiceTest`, `GitHubPullRequestServiceFalsificationTest`, `GitHubApiBudgetServiceTest`, `GitHubApiBudgetServiceFalsificationTest`, `GitHubApiBudgetSpendTest`, `GitHubApiBudgetLaw13Test`, `GithubAccessServiceTest`, `GithubAccessServiceFalsificationTest`, `GithubAccessControllerTest`, `CodeChangeClassifierTest`, `CodeChangeClassifierFalsificationTest`, `GateOrchestratorIntegrationTest`, `GateOrchestratorFalsificationTest`, `BaseQualityGateTest`, `BaseQualityGateFalsificationTest`, `BackendContractGateTest`, `BackendContractGateFalsificationTest`, `DesignExcellenceGateTest`, `DesignExcellenceGateFalsificationTest`, `VerificationEvidenceGateTest`, `VerificationEvidenceGateFalsificationTest`, `EpistemicLayerInvariantGateTest`, `EpistemicLayerInvariantGateFalsificationTest`, `BranchGarbageCollectorServiceTest`, `BranchGarbageCollectorServiceFalsificationTest`, `PrReviewPipelineServiceTest`, `PrReviewPipelineServiceFalsificationTest`, `PrReviewApprovalLaw1Test`, `PrReviewEntityLaw20Test`.
+     * Секция V: `ClientDeliverableReadinessService`, `DeliveryRealityProducerService`, `ProductLaunchabilityService`, связующие предикаты и модели `DeliveryQuestionRecord`, `DeliveryVerificationPredicate`, `DeliveryBriefZoneBoundaryTest`;
+     * Секция VI: `VerdictLayer`, `Verdict`, `Judgement`, `VerdictReconciliation`, `VerdictGate`, `VerdictController`, `AutonomousVerdictObservationService`, `AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `DoctrineVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`, `FactoryJudgmentService`, `JudgmentAgentClient`, `DeliveredWorkJudgmentService`, `CriteriaEvidenceSelector`, `LeverPromotionService`, `LeverStage`, `LeverAgreement`, `LeverObservation`, `TocSubordinationLever`;
+   - **Заслоны верификации (262+ теста, 100% green в едином прогоне Docker Maven):**
+     * `ClientDeliverableReadinessServiceTest`, `ClientDeliverableReadinessServiceFalsificationTest`, `DeliveryPredicateAgreementTest`, `DeliveryRealityLaw3CategoryErrorTest`, `DeliveryRealityLaw8SecondOrderRepairTest`, `DeliveryRealityLaw2CarrierChannelTest`, `DeliveryBriefZoneBoundaryTest`, `DeliveryRealityProducerServiceFalsificationTest`, `ProductLaunchabilityServiceTest`, `ProductLaunchabilityServiceFalsificationTest`, `DeliveryQuestionRecordTest`, `DeliveryVerificationPredicateTest`, `VerdictLayerFalsificationTest`, `VerdictGateTest`, `VerdictReconciliationTest`, `AcceptanceVerdictLayerTest`, `RuntimeVerdictLayerTest`, `InfrastructureVerdictLayerTest`, `AutonomousVerdictObservationServiceTest`, `JudgmentAgentClientTest`, `JudgmentAgentClientLaw17Test`, `DeliveredWorkJudgmentServiceTest`, `DeliveredWorkJudgmentServiceFalsificationTest`, `FactoryJudgmentServiceTest`, `FactoryJudgmentServiceFalsificationTest`, `CriteriaEvidenceSelectorFalsificationTest`, `EvidenceSelectedByCriteriaTest`, `LeverPromotionServiceTest`, `LeverPromotionServiceFalsificationTest`, `UnsettledJudgmentGroundTest`, `DecompositionVerdictTest`, `TaskAcceptanceCriteriaGuardTest`.
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
-   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено вносить любые модификации в рабочий код сервисов, диспетчеров, контроллеров и гейтов (`src/main/java`, `src/main/resources`, `scripts/`) при проходящих тестах!
+   - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено вносить любые модификации в рабочий код сервисов, слоёв суждения, предикатов доставки и контроллеров (`src/main/java`, `src/main/resources`, `scripts/`) при проходящих тестах!
    - Механизмы уже воплощены в кодовой базе фабрики в сильной форме. Задача L2 — подтвердить нерушимость заслонов пакетным замером в рантайме и Docker Maven без единой строки мутации рабочих классов.
 4. **Основательность замеров:** Никаких искусственных спешек и дедлайнов — замеры телеметрии рантайма и заслоны верификации обязаны быть строгими, доказательными и воспроизводимыми в Docker-контейнере Maven.
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D013, D012, D002, D004, D003)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D002, D012, D013, D007)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` & `TIMOTI_UILYAMSON_18_FALSIFICATION_HARNESS` [D008 False green, Popper & Williamson]:**
-  * Попперовская фальсификация гейтов и слияния: клиентский PR может быть слит только при наличии независимых свидетельств. Никакой самоотчет агента не подменяет байты GitHub. Пустые множества проверок (`allMatch` по пустому списку) категорически отвергаются (`applicableChecksByStage > 0`). Периферийная задача, модифицирующая ядро фабрики (`src/main/resources/db/migration/*` или безопасность), обязана фальсифицироваться и отвергаться (`EpistemicLayerInvariantGateTest`).
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green, Popper]:**
+  * Попперовская фальсификация свидетельств доставки и суждений: статус таски `done` не признается доставкой ценности клиенту без доказательства слияния кода в ветку `main` продукта (`hasRequiredMergeEvidence`); если в репозитории продукта отсутствуют рабочие артефакты (`docker-compose.yml`, жизнеспособный рантайм), механизм `ProductLaunchabilityService` обязан фальсифицировать готовность и накладывать блокирующий `REFUSE`/`WITHHOLD`.
 - **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss, Goldman]:**
-  * Лок уровней абстракции и каузальная цепочка свидетельств: гейты (`BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate`) инспектируют реальные байты PR diff, head-ref и файлы репозитория, а не субъективные самоотчеты агентов (payload claims); изоляция бюджетов GitHub API по отпечаткам токенов; нерушимая связь задачи, PR и ревью в `AutoMergeService`.
-- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` & `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` [D006 Authorization ambiguity, Raz]:**
+  * Лок уровней абстракции и цепочка свидетельств: `ClientDeliverableReadinessService` и `DeliveredWorkJudgmentService` проверяют физические артефакты, байты диффов и доказанные свойства коммитов, а не субъективные нарративы агентов; решётка суждения исключает подмену каузальных фактов эвристиками.
+- **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` [D006 Authorization ambiguity, Raz]:**
   * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода фабрики при проходящих тестах;**
-  * Исключающие основания Раза в рантайме: `AutoMergeService` требует предварительной авторизации от `OperationalPolicyService` (`authorize(projectId, OperationalAction.MERGE_PR)`); при запрете политики (`!decision.allowed()`) автослияние прерывается без единого сетевого вызова к GitHub с фиксацией `policy_denied`; `GithubAccessService` блокирует неавторизованные обращения; `GitHubApiBudgetService` останавливает вызовы при исчерпании лимитов токена.
+  * Деонтические запреты в коде: исключающие основания Раза не позволяют слоям суждения выдавать `PERMIT` при наличии активных рефьюзалов (`refusals > 0`); механизм `DeliveryRealityProducerService` изолирует каналы носителей и запрещает порождение фиктивных эпиков на служебные задачи (`carrier tasks`).
+- **`DZHON_OSTIN_02_CATEGORY_ERROR_SCAN` & `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` [D002 Invalid state / category error, Austin & Ryle]:**
+  * Категориальная демаркация: статус выполнения задачи воркером, подтвержденное свидетельство поставки, служебная работа-носитель и запуск продукта — это разнородные категории фактов, подмена которых строго запрещена.
+- **`KARL_POPPER_03_TRUTH_STATUS_TABLE` & `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D012 Policy contradiction, Popper & Belnap]:**
+  * Многозначная решётка истинности вердиктов (`PERMIT`, `WITHHOLD`, `ABSTAIN`, `REFUSE`): суждения слоёв не схлопываются в бинарные флаги; воздержание (`ABSTAIN`) при неполноте свидетельств честно удерживает продвижение (`epistemic debt`).
 - **`LUDVIG_VITGENSHTEYN_01_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift, Wittgenstein]:**
-  * Эмпирическая истина внешнего мира: физическое состояние GitHub API имеет абсолютный приоритет над догадками бэкенда. Если PR закрыт без слияния во внешнем мире (`closed_unmerged`), бесплодные попытки слияния навсегда прекращаются; если PR уже слит (`alreadyMergedExternally = true`), сервис идемпотентно фиксирует факт слияния и завершает задачу, исключая ошибочные 405-вызовы `PUT /merge`.
-- **`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` & `DZHON_OSTIN_01_SPEECH_ACT_FORCE` / `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` [D012 Belnap / D002 Austin & Ryle]:**
-  * 4-значная решетка истинности статусов проверок гейта; категориальная демаркация продуктового кода от служебных артефактов (`CodeChangeClassifier` отделяет код клиента от артефактов `.eneik/*`, runner-скриптов и записей фабрики).
-- **`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` & `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` [D004 / D006, Varzi]:**
-  * Мереологическое владение ветками и сессиями: безопасный сборщик веток (`BranchGarbageCollectorService`) удаляет только те ветки и PR, владение которыми доказано токеном сессии или эксплицитными свидетельствами орфанности.
-- **`UARD_KUAIN_01_ONTOLOGICAL_RELATIVITY` [D003 Contract drift, Quine]:**
-  * Защита онтологического ядра системы от мутаций со стороны периферийных компонентов.
+  * Анти-зеркало телеметрии: реальное состояние продукта на порту 18080/18085 и здоровье БД определяют истинность вердикта рантайма (`RuntimeVerdictLayer`), а не текстовые утверждения в логах.
 
 ---
 
 ## 3. Ожидаемый протокол действий L2
 
-1. Провести строгий единый пакетный замер механизмов Секции IV в Docker Maven:
+1. Провести строгий единый пакетный замер механизмов Секций V и VI в Docker Maven:
    ```bash
-   docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=AutoMergeServiceTest,AutoMergeServiceFalsificationTest,AutoMergePokaYokeTest,AutoMergeLaw20InvariantS4Test,GitHubPullRequestServiceTest,GitHubPullRequestServiceFalsificationTest,GitHubApiBudgetServiceTest,GitHubApiBudgetServiceFalsificationTest,GitHubApiBudgetSpendTest,GitHubApiBudgetLaw13Test,GithubAccessServiceTest,GithubAccessServiceFalsificationTest,GithubAccessControllerTest,CodeChangeClassifierTest,CodeChangeClassifierFalsificationTest,GateOrchestratorIntegrationTest,GateOrchestratorFalsificationTest,BaseQualityGateTest,BaseQualityGateFalsificationTest,BackendContractGateTest,BackendContractGateFalsificationTest,DesignExcellenceGateTest,DesignExcellenceGateFalsificationTest,VerificationEvidenceGateTest,VerificationEvidenceGateFalsificationTest,EpistemicLayerInvariantGateTest,EpistemicLayerInvariantGateFalsificationTest,BranchGarbageCollectorServiceTest,BranchGarbageCollectorServiceFalsificationTest,PrReviewPipelineServiceTest,PrReviewPipelineServiceFalsificationTest,PrReviewApprovalLaw1Test,PrReviewEntityLaw20Test
+   docker run --rm -v /opt/EneikProductionSys:/workspace -w /workspace -v /root/.m2:/root/.m2 -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ClientDeliverableReadinessServiceTest,ClientDeliverableReadinessServiceFalsificationTest,DeliveryPredicateAgreementTest,DeliveryRealityLaw3CategoryErrorTest,DeliveryRealityLaw8SecondOrderRepairTest,DeliveryRealityLaw2CarrierChannelTest,DeliveryBriefZoneBoundaryTest,DeliveryRealityProducerServiceFalsificationTest,ProductLaunchabilityServiceTest,ProductLaunchabilityServiceFalsificationTest,DeliveryQuestionRecordTest,DeliveryVerificationPredicateTest,VerdictLayerFalsificationTest,VerdictGateTest,VerdictReconciliationTest,AcceptanceVerdictLayerTest,RuntimeVerdictLayerTest,InfrastructureVerdictLayerTest,AutonomousVerdictObservationServiceTest,JudgmentAgentClientTest,JudgmentAgentClientLaw17Test,DeliveredWorkJudgmentServiceTest,DeliveredWorkJudgmentServiceFalsificationTest,FactoryJudgmentServiceTest,FactoryJudgmentServiceFalsificationTest,CriteriaEvidenceSelectorFalsificationTest,EvidenceSelectedByCriteriaTest,LeverPromotionServiceTest,LeverPromotionServiceFalsificationTest,UnsettledJudgmentGroundTest,DecompositionVerdictTest,TaskAcceptanceCriteriaGuardTest
    ```
-2. Подтвердить статус `ideal` в `*Живое:*` механизмов Секции IV в `docs/FACTORY_MECHANISMS.md`, подтвердить актуальность блока `### Итог Секции IV`, синхронизировать `docs/ANTIGRAVITY_QUEUE.md` (внести Секцию IV в `## Дальше`).
+2. Подтвердить статус `ideal` в `*Живое:*` механизмов Секций V и VI в `docs/FACTORY_MECHANISMS.md`, подтвердить актуальность блоков `### Итог Секции V` и `### Итог Секции VI`, синхронизировать `docs/ANTIGRAVITY_QUEUE.md` (внести Секции V и VI в `## Дальше`).
 3. Составить краткий отчет в `docs/reports/PROGRAMMER_STATE.md` (не более 15–20 строк).
-4. Закоммитить с семантическим сообщением `feat(automerge-and-gates): complete Section IV batch verification (D008, D010, D006)`.
+4. Закоммитить с семантическим сообщением `feat(delivery-and-verdict): complete Sections V and VI batch verification (D008, D010, D006)`.
