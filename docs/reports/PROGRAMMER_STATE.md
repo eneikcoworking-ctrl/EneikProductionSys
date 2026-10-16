@@ -1,14 +1,18 @@
-# Такт L2: Ведущий инженер (2026-10-16 07:45 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 07:58 UTC)
 
-1. Пакетная верификация Секции XXI («Сущности, пространства состояний и алгебра решений»):
-   - Заверены все механизмы Секции XXI в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **133/133 green** (22 тест-сьюта, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 49.582 s).
-   - Подраздел XXI «Поведенческие сущности ядра» (27 тестов, 6 сьютов): `TaskEntityLaw20Test` (6/6), `DeliveryQuestionRecordTest` (3/3), `TaskAcceptanceCriteriaGuardTest` (1/1), `TaskEntityLaw1CarrierTest` (5/5), `DeliveryVerificationPredicateTest` (6/6), `EneikProductionApplicationShutdownCompactTest` (6/6).
-   - Подраздел XXIб «Девять пространств состояний» (25 тестов, 4 сьюта): `LeanValueTest` (9/9), `AccountStatusConjunctionTest` (7/7), `TargetContextTest` (4/4), `DecompositionVerdictTest` (5/5).
-   - Подраздел XXIв «Алгебра решений и решётка вердиктов» (46 тестов, 5 сьютов): `VerdictGateTest` (14/14), `VerdictReconciliationTest` (11/11), `InfrastructureVerdictLayerTest` (8/8), `AcceptanceVerdictLayerTest` (7/7), `RuntimeVerdictLayerTest` (6/6).
-   - Подразделы XXIг–XXIз «Граф ограничений, буфер и журнал дефектов» (35 тестов, 7 сьютов): `TocOptimizerTest` (7/7), `TocNodeTimeoutTest` (4/4), `TocPersistenceSnapshotTest` (4/4), `LogScopeBufferTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `DefectJournalRootCauseAttributionTest` (6/6), `DefectJournalServiceTest` (3/3).
+1. Пакетная верификация Секций XXII и XXIII («Миграции базы и живой замер фабрики»):
+   - Заверены все механизмы Секций XXII (Слой 3, 137 миграций Flyway, подразделы XXII, XXIIб–XXIIл) и XXIII («Живой замер фабрики, 7 сентября 2026») в едином прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g): **111/111 green** (12 тест-сьютов, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 01:24 min).
+   - Схема Flyway и запреты базы (4 теста, 1 сьют): `FlywayMigrationValidationTest` (4/4).
+   - Тождество в схеме и откат (8 тестов, 2 сьюта): `CompilerTaskIdentityTest` (1/1), `V25MigrationFalsificationTest` (7/7).
+   - Агентская схема (1 тест, 1 сьют): `AgencySchemaTest` (1/1).
+   - Притязания на файлы и изоляция гонок (19 тестов, 3 сьюта): `TaskClaimServiceTest` (8/8), `ClaimServiceRaceGuardTest` (1/1), `ClaimServiceFalsificationTest` (10/10).
+   - Связность свидетельств (21 тест, 1 сьют): `EvidenceCoherenceServiceTest` (21/21).
+   - Надзор за процессом и Шесть сигм (11 тестов, 2 сьюта): `ProcessControlServiceTest` (8/8), `ProcessControlServiceFalsificationTest` (3/3).
+   - Позвоночник потока (32 теста, 1 сьют): `FlowSpineServiceTest` (32/32).
+   - Защищенные инварианты схемы базы (15 тестов, 1 сьют): `Stage5ProtectedInvariantsFalsificationTest` (15/15).
 2. Соблюдение инвариантов Ступени 4:
-   - 0 строк изменений рабочего кода сервисов, сущностей и энумов (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером.
+   - 0 строк изменений рабочего кода сервисов, сущностей и миграций (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером.
 3. Фиксация и статус:
-   - В `docs/FACTORY_MECHANISMS.md` зафиксирован замер Секции XXI (133/133 green, status: ideal).
-   - В `docs/ANTIGRAVITY_QUEUE.md` заверено закрытие пунктов Секции XXI в Ступени 4.
-   - Философские заслоны соблюдены: D008 Popper, D010 Goldman, Parfit & Shaffer, D006 Raz & Varzi, D012 Belnap, D002 Ryle & Wittgenstein, D007 Gilbert.
+   - В `docs/FACTORY_MECHANISMS.md` зафиксирован замер Секций XXII и XXIII (111/111 green, status: ideal).
+   - В `docs/ANTIGRAVITY_QUEUE.md` заверено закрытие пунктов Секций XXII и XXIII в Ступени 4.
+   - Философские заслоны соблюдены: D008 Popper & Tarski, D010 Goldman & Parfit, D006 Raz & Varzi, D004 Shaffer & Varzi, D012 Belnap, D013 Wittgenstein, D011 Dretske, D002 Ryle.
