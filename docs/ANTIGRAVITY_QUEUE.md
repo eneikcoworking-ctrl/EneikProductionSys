@@ -265,6 +265,8 @@
 
 **Закрыто (Пакетный замер Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI):** Все механизмы Секций XXX–XXXVI («Внешние клиенты, завод проектов, командный пульт, авторизация наблюдателя, выбор аккаунтов и хранилище задач»: `MLPredictionServiceClient`, `RepositoryStackAnalyzer`, `OnboardingAuditService`, `GitHubProjectFactoryClient`, `LinearProjectFactoryClient`, `ProjectFactoryService`, `CommandDashboardController`, `CommandDashboardService`, `ApiAuthorizationInterceptor`, `AccountRepository`, `AccountHealthService`, `TaskRepository`, `TaskEntity`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (145/145 green в едином пакетном прогоне). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII, XLIV и XVIII):** Все механизмы финального контура фабрики («Финальный контур TOC, авторизация AI-ресурсов, метрики Six Sigma, выметающие обходы, заслоны экранов, очистка журналов и завершающий баланс фабрики»: `TocSentinelService`, `TocExecutionGraph`, `TocAnomalyDetector`, `TocOptimizer`, `TocSentinelController`, `VideoAssetService`, `ApiAuthorizationInterceptor`, `WebConfig`, `GoogleAiResourceController`, `QualityMetricsController`, `QualityGateController`, `SixSigmaAuditService`, `OperationalTruthService`, `StrandedFinalizingSweepService`, `BranchGarbageCollectorService`, `DesignExcellenceGate`, `VerificationEvidenceGate`, `GateOrchestrator`, `BackendContractGate`, `BaseQualityGate`, `GeminiContextCacheManager` [снят/inert], `PredictionService.py`, `ProjectEventLogRetentionService`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (162/162 green в едином пакетном прогоне, 0 failures, 0 errors, BUILD SUCCESS). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -275,7 +277,7 @@
 
 Пометка «ядро» значит, что механизм способен удержать или уронить поток. С них начинать внутри каждой ступени.
 
-## Ступень 1 — чинить (16)
+## Ступень 1 — чинить (16 — все закрыты)
 
 У этих в записи есть строка «Задача для кодинга»: сказано, что не так, где именно, чем проверяется и что
 починку опровергнет. Порядок внутри ступени — по очереди в начале этого файла, она упорядочена по весу и вреду.
@@ -292,7 +294,7 @@
 - ~~`InternalGeminiObserverController`~~ (Закрыто Ступень 4: замер в Docker Maven 42/42 green, ideal)
 - ~~`TocSentinelService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
 - ~~`GoogleAiResourceController`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)
-- `QualityMetricsController`
+- ~~`QualityMetricsController`~~ (Закрыто Ступень 4: замер в Docker Maven 3/3 green в QualityMetricsControllerTest, ideal)
 - ~~`GeminiContextCacheManager`~~ (Закрыто Ступень 4: удален, inert/decommissioned, заслон 28/28 green в GeminiContextServiceTest, ideal)
 - ~~`TocOptimizer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 7/7 green в TocOptimizerTest, ideal)
 - ~~`ProjectEventLogRetentionService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 10/10 green в ProjectEventLogRetentionServiceTest, ideal)

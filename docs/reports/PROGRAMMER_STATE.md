@@ -1,17 +1,19 @@
-# Такт L2: Ведущий инженер (2026-10-16 00:20 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 00:45 UTC)
 
-1. Пакетная верификация Секций XXX–XXXVI («Внешние клиенты, завод проектов, командный пульт, авторизация наблюдателя, выбор аккаунтов и хранилище задач»):
-   - Секция XXX (Клиент к предсказателю): `MLPredictionServiceClientTest` (9/9 green).
-   - Секция XXXI (Разбор чужого репозитория): `RepositoryStackAnalyzerTest` (6/6), `OnboardingAuditServiceTest` (5/5), `OnboardingAuditServiceFalsificationTest` (4/4) — 15/15 green.
-   - Секция XXXII (Завод репозиториев): `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4), `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6) — 17/17 green.
-   - Секция XXXIII (Пульт управления): `CommandDashboardControllerTest` (4/4), `CommandDashboardServiceTest` (4/4) — 8/8 green.
-   - Секция XXXIV (Вход наблюдателя): `ApiAuthorizationInterceptorTest` — 20/20 green.
-   - Секция XXXV (Выбор аккаунта): `AccountSelectionFairnessTest` (5/5), `AccountHealthServiceTest` (31/31), `AccountHealthServiceFalsificationTest` (6/6), `AccountLifecycleInvariantTest` (5/5), `AccountControllerIntegrationTest` (5/5), `AccountRepositoryIntegrationTest` (8/8), `AccountRepositoryFalsificationTest` (8/8) — 68/68 green.
-   - Секция XXXVI (Хранилище задач): `TaskTerminalOverwriteAuditTest` (4/4), `TaskRepositoryIntegrationTest` (4/4) — 8/8 green.
-   - Итоговый замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 145/145 green (0 failures, 0 errors, BUILD SUCCESS).
-2. Строгое соблюдение инвариантов Ступени 4:
+1. Пакетная верификация Секций XXXVII–XLIV и XVIII («Финальный контур TOC, авторизация AI-ресурсов, метрики Six Sigma, выметающие обходы, заслоны экранов, очистка журналов и завершающий баланс фабрики»):
+   - Секция XXXVII (Сторож ТОС): `TocSentinelServiceTest` (18/18), `TocOptimizerTest` (7/7), `TocSentinelControllerTest` (2/2) — 27/27 green.
+   - Секция XXXVIII (Вход к ресурсам модели): `ApiAuthorizationInterceptorTest` (20/20), `GoogleAiResourceControllerTest` (6/6) — 26/26 green.
+   - Секция XXXIX (Метрики качества): `SixSigmaAuditServiceTest` (26/26), `QualityMetricsControllerTest` (3/3), `QualityGateControllerTest` (2/2) — 31/31 green.
+   - Секция XL (Выметающий обход): `BranchGarbageCollectorServiceTest` (13/13), `BranchGarbageCollectorServiceFalsificationTest` (6/6), `StrandedFinalizingSweepServiceTest` (8/8), `StrandedFinalizingSweepServiceFalsificationTest` (6/6) — 33/33 green.
+   - Секция XLI (Заслон качества экрана): `DesignExcellenceGateTest` (12/12), `BaseQualityGateTest` (10/10), `VerificationEvidenceGateTest` (8/8), `BackendContractGateTest` (5/5) — 35/35 green.
+   - Секция XLII (Кэш постоянного корпуса): `GeminiContextCacheManager` снят/decommissioned (0 в Java, единый кэш в `PredictionService.py`, ideal).
+   - Секция XLIII (Верёвка TOC): `TocOptimizerTest` (7/7), `TocSentinelServiceTest` (18/18) — 25/25 green.
+   - Секция XLIV (Очистка журнала проекта): `ProjectEventLogRetentionServiceTest` (10/10) — 10/10 green.
+   - Секция XVIII (Завершающий баланс фабрики): архитектурная демаркация суверенитета, все 205 механизмов фабрики закрыты (ideal).
+   - Итоговый единый пакетный замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 162/162 green (0 failures, 0 errors, BUILD SUCCESS).
+2. Соблюдение инвариантов Ступени 4:
    - 0 строк модификации рабочего кода (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером, не правкой.
-   - Философский RAG-базис удержан: D008 Popper & Tarski, D010 Goldman, D006 Raz & Varzi, D012 Belnap, D002 Ryle, D013 Wittgenstein & Noë.
+   - RAG-корпус удержан: D008 Popper & Tarski, D010 Goldman, D006 Raz & Varzi, D012 Belnap, D013 Wittgenstein & Noë, D004 Varzi, D011 Dretske & Clark.
 3. Документация и фиксация:
-   - Обновлены строки *Живое:* для Секций XXX–XXXVI, оформлен блок `### Итог Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI` в `docs/FACTORY_MECHANISMS.md` (status: ideal).
-   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md`: `CommandDashboardService` закрыт в Ступени 1, зафиксирован пакетный блок Секций XXX–XXXVI.
+   - Обновлены строки *Живое:* для Секций XXXVII–XLIV и XVIII, оформлен блок `### Итог Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII, XLIV и XVIII` в `docs/FACTORY_MECHANISMS.md` (status: ideal).
+   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md`: закрыт последний пункт Ступени 1 (`QualityMetricsController`), зафиксирован пакетный блок Секций XXXVII–XLIV и XVIII. Все 205 механизмов очереди закрыты.
