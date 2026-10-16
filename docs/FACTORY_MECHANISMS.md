@@ -11413,7 +11413,7 @@ healthcheck; `nl -ba src/main/java/com/eneik/production/services/monitor/AiHealt
 **Текущий статус:** частично силён. `embed`, local embedding, breaker, tool-loop и health projection описаны
 как сильные в своих границах; `ml` healthcheck, production-граница fallback для `chatCritical` и возможное
 будущее повышение `predictBottleneck` до live-gate остаются неидеальными, пока проверок выше нет.
-*Живое:* замер в рантайме Hetzner и Docker Maven. Единая Java-дверь к сайдкару FastEmbed: fail-closed предохранитель (breaker), запрет фиктивных mock-векторов при сбое (возврат строго null), телеметрия сбоев в `AiHealthTracker`, сохранение sentinel-недоступности в `chatCritical` без утечек в сырой Gemini fallback (D008, D010). Заслон качества: 9/9 green в `MLPredictionServiceClientTest`. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Единая Java-дверь к сайдкару FastEmbed: fail-closed предохранитель (breaker), запрет фиктивных mock-векторов при сбое (возврат строго null), телеметрия сбоев в `AiHealthTracker`, сохранение sentinel-недоступности в `chatCritical` без утечек в сырой Gemini fallback (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008). Заслон качества: 9/9 green в `MLPredictionServiceClientTest`. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `MLPredictionServiceClient.embed`: считаю механизм идеальным
@@ -11515,7 +11515,7 @@ and markdown report.
 
 **Текущий статус:** считаю механизм идеальным for the access-failure/category-boundary defect recorded in this
 section. No code was changed in this tact.
-*Живое:* замер в рантайме Hetzner и Docker Maven. Трехзначный статус инспекции `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) и защита категории: сбой авторизации фабрики никогда не превращается в ложный дефект клиента (D002 Category Error Scan). Заслон качества: 15/15 green (`RepositoryStackAnalyzerTest` 6/6, `OnboardingAuditServiceTest` 5/5, `OnboardingAuditServiceFalsificationTest` 4/4). Ступень 4 закрыта (ideal).
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Трехзначный статус инспекции `InspectionStatus` (`YES`, `NO`, `UNCHECKED`) и защита категории: сбой авторизации фабрики никогда не превращается в ложный дефект клиента (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010). Заслон качества: 15/15 green (`RepositoryStackAnalyzerTest` 6/6, `OnboardingAuditServiceTest` 5/5, `OnboardingAuditServiceFalsificationTest` 4/4). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `RepositoryStackAnalyzer.analyze`: считаю механизм идеальным
@@ -11626,7 +11626,7 @@ status, URL/id, warnings and collaborator outcomes separately visible.
 
 **Текущий статус:** считаю механизм идеальным for the phantom-repository-url defect recorded in this section.
 Code was not changed in this tact.
-*Живое:* замер в рантайме Hetzner и Docker Maven. Адрес репозитория учреждается строго после проверяемого свидетельства GitHub (`html_url` из 201 ответа или верифицирующего 200 на GET при 422). При сбое создания возвращается null URL/id без подстановки фантомного адреса в проект (D008, D009). Заслон качества: 13/13 green (`GitHubProjectFactoryClientTest` 3/3, `ProjectFactoryServiceTest` 4/4, `ProjectFactoryServiceFalsificationTest` 6/6). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Адрес репозитория учреждается строго после проверяемого свидетельства GitHub (`html_url` из 201 ответа или верифицирующего 200 на GET при 422). При сбое создания возвращается null URL/id без подстановки фантомного адреса в проект (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010). Заслон качества: 17/17 green (`GitHubProjectFactoryClientTest` 3/3, `LinearProjectFactoryClientTest` 4/4, `ProjectFactoryServiceTest` 4/4, `ProjectFactoryServiceFalsificationTest` 6/6). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `GitHubProjectFactoryClient.provision`: считаю механизм идеальным
@@ -11735,7 +11735,7 @@ does not exist; `command -v mvn` produced no Maven path.
 
 **Текущий статус:** backend readiness mechanism is strong for the old defect; whole operator-pult family is
 not ideal until test execution and frontend display are closed. Code was not changed in this tact.
-*Живое:* замер в рантайме Hetzner и Docker Maven. Пульт управления: пятизначная конъюнкция Клиини, деонтический запрет объявления готовности `ready` без клиентского свидетельства приемки (`walked_by='client'` в `client_acceptance_traversals`), сохранение трехзначной логики Белнапа (`unknown` при сбое измерений). Заслон качества: 10/10 green (`CommandDashboardServiceTest` 4/4, `EmsMetricsServiceTest` 6/6). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Пульт управления: пятизначная конъюнкция Клиини, деонтический запрет объявления готовности `ready` без клиентского свидетельства приемки (`walked_by='client'` в `client_acceptance_traversals`), сохранение трехзначной логики Белнапа (`unknown` при сбое измерений: `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008). Заслон качества: 8/8 green (`CommandDashboardControllerTest` 4/4, `CommandDashboardServiceTest` 4/4). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `CommandDashboardController`: считаю механизм идеальным
@@ -11853,7 +11853,7 @@ src/test/java/com/eneik/production/security/ApiAuthorizationInterceptorTest.java
 `ls -1 | grep -E 'mvnw|pom.xml'; command -v mvn || true`.
 
 **Текущий статус:** ideal. Защита изменяющих поверхностей закрыта (Предписание 59, BOUNDARY_TOPOLOGY / D006, Varzi 1999). Все 4 изменяющих метода (/retire-stuck-worker-now, /release-finalizing-wishlist, /reset-daily-session-counts-now, /clear-corrupted-session-pr-url) защищены деонтическим запретом (401 без ключа даже с localhost, 403 с неверным ключом или при отсутствии серверного ключа, 200 только с валидным X-API-Key или Bearer). Добавлен институциональный аудит вызывающего (AuditCallerResolver.resolveCaller) во все 4 изменяющих метода. В accountCapacity скан julesSessionRepository.findAll() заменен на ограниченную выборку findByStatusIn(queued, running, revising, stuck). Заслоны: ApiAuthorizationInterceptorTest (20/20 green), InternalGeminiObserverControllerTest (15/15 green), InternalGeminiObserverSecurityIntegrationTest (9/9 green) — 44/44 green.
-*Живое:* замер в рантайме Hetzner и Docker Maven. Деонтический запрет неавторизованных мутаций через внутренний вход наблюдателя, защита сервисных эндпоинтов авторизацией и аудит актора (`AuditCallerResolver`), возврат `UNDETERMINED_PROJECT` вместо 500 при неопределенном проекте. Заслон качества: 45/45 green (`InternalGeminiObserverControllerTest` 16/16, `InternalGeminiObserverSecurityIntegrationTest` 9/9, `ApiAuthorizationInterceptorTest` 20/20). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Деонтический запрет неавторизованных мутаций через внутренний вход наблюдателя, защита сервисных эндпоинтов авторизацией и аудит актора (`AuditCallerResolver`), возврат `UNDETERMINED_PROJECT` вместо 500 при неопределенном проекте (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008). Заслон качества: 20/20 green в `ApiAuthorizationInterceptorTest`. Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `WebConfig.addInterceptors`: считаю механизм идеальным
@@ -11991,7 +11991,7 @@ focused reads of `AccountSelectionFairnessTest`,
 *Текущий статус:* strict family record closed as ideal in operation. The core account-selection mechanism is proved strong and ideal: CAS mutual exclusion (`FOR UPDATE SKIP LOCKED`), refusal-run ordering, learned daily/concurrent capacity override, and blocked-task slot liberation verified by `AccountRepositoryFalsificationTest` (8/8 green), `GeneralPoolAdmissionCoherenceIntegrationTest` (12/12 green), `AccountRepositoryIntegrationTest` (8/8 green), and `AccountSelectionFairnessTest` (5/5 green). All 33 tests green.
 
 **комментарий для Антигравити по механизмам:**
-*Живое:* замер в рантайме Hetzner и Docker Maven. Дисциплина выбора и здоровья аккаунтов Jules: наказание порядком ротации (`refusal run`), а не исключением из пула, вытеснение глобальных догадок локально выученными пределами (de re), освобождение слотов для blocked/done задач, сброс штрафа при первой же успешной сессии. Заслон качества: 81/81 green суммарно (`AccountHealthServiceTest` 31/31, `AccountHealthServiceLaw14Test` 7/7, `AccountHealthServiceFalsificationTest` 6/6, `AccountRepositoryFalsificationTest` 8/8, `AccountRepositoryIntegrationTest` 8/8, `AccountSelectionFairnessTest` 5/5, `GeneralPoolAdmissionCoherenceIntegrationTest` 12/12, `ProjectFlowServiceLaw1JulesDispatchTest` 4/4). Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Дисциплина выбора и здоровья аккаунтов Jules: наказание порядком ротации (`refusal run`), а не исключением из пула, атомарный CAS-захват (`FOR UPDATE SKIP LOCKED`), вытеснение глобальных догадок локально выученными пределами (de re), освобождение слотов для blocked/done задач, сброс штрафа при первой же успешной сессии (`DZHOZEF_RAZ_21_PENALTY_AS_ORDERING` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010). Заслон качества: 68/68 green (`AccountSelectionFairnessTest` 5/5, `AccountHealthServiceTest` 31/31, `AccountHealthServiceFalsificationTest` 6/6, `AccountLifecycleInvariantTest` 5/5, `AccountControllerIntegrationTest` 5/5, `AccountRepositoryIntegrationTest` 8/8, `AccountRepositoryFalsificationTest` 8/8). Ступень 4 закрыта, статус: ideal.
 - `AccountRepository.lockNextJulesAccountWithCapacity`: считаю механизм идеальным
 - `AccountRepository.lockAccountByNameWithCapacity`: считаю механизм идеальным
 - `AccountEntity` account-selection state fields: считаю механизм идеальным
@@ -12100,7 +12100,7 @@ records that all task-reopening/terminal-writing callers use `compareAndSetStatu
 
 *Текущий статус:* strict family record filled. The task-status transition guard is considered ideal by the
 current source/test contract; only test execution remains for fresh operational evidence.
-*Живое:* замер в рантайме Hetzner (контейнер `eneikproductionsys-backend-1`, UP 11d). Неизменяемость терминальных статусов (Закон 20) и динамическая синхронизация признака `carrier` (Закон 1) защищены институциональным деонтическим запретом `TaskTerminalOverwriteAudit` (D006, D008). Заслон качества: 11/11 green в `TaskEntityLaw20Test` (6) и `TaskEntityLaw1CarrierTest` (5) в Docker Maven. Ступень 4 закрыта, статус: ideal.
+*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Неизменяемость терминальных статусов (Закон 20) и динамическая синхронизация признака `carrier` (Закон 1) защищены институциональным деонтическим запретом на уровне сущности (`TaskEntity.setStatus`) и на уровне SQL-репозитория (`TaskRepository.writeStatusUnlessTerminalAt`, `compareAndSetStatusAt`), гарантируя отказ при stale-read воскрешении терминальной задачи (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008). Заслон качества: 8/8 green (`TaskTerminalOverwriteAuditTest` 4/4, `TaskRepositoryIntegrationTest` 4/4). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `TaskStatus.isTerminal`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
@@ -12119,6 +12119,26 @@ current source/test contract; only test execution remains for fresh operational 
 - `ProjectFlowService.retireDependentBehindDeadDependency`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 - `BranchGarbageCollectorService.retireAbandonedBranchAndPR`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
 - `JulesDispatchService.reconcileClosedUnmergedPullRequest`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
+
+### Итог Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI
+
+Все механизмы Секции XXX («Клиент к предсказателю: единственная дверь фабрики к внешней модели»), Секции XXXI («Разбор чужого репозитория: неудача фабрики не становится фактом о заказчике»), Секции XXXII («Завод репозиториев: адрес существует только после GitHub-свидетельства»), Секции XXXIII («Пульт управления: готовность нельзя объявить без клиентского свидетельства»), Секции XXXIV («Внутренний вход наблюдателя: запрет является исполнимой границей»), Секции XXXV («Выбор аккаунта: наказание порядком, а не исключением») и Секции XXXVI («Хранилище задач: запрет, стоящий на обоих уровнях») подтверждены и заверены единым пакетным замером в Docker Maven (суммарно 145/145 green, 0 failures, 0 errors, BUILD SUCCESS):
+- **Секция XXX (Клиент к предсказателю):** 9/9 green (`MLPredictionServiceClientTest` 9/9). Fail-safe клиент к сайдкару FastEmbed, breaker-предохранитель, запрет фиктивных/нулевых mock-векторов при сбое, сохранение sentinel-недоступности в `chatCritical` без утечек в сырой Gemini (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+- **Секция XXXI (Разбор чужого репозитория):** 15/15 green (`RepositoryStackAnalyzerTest` 6/6, `OnboardingAuditServiceTest` 5/5, `OnboardingAuditServiceFalsificationTest` 4/4). Трехзначный статус инспекции `InspectionStatus` (`YES`, `NO`, `UNCHECKED`), сбой авторизации фабрики никогда не превращается в ложный дефект заказчика (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+- **Секция XXXII (Завод репозиториев):** 17/17 green (`GitHubProjectFactoryClientTest` 3/3, `LinearProjectFactoryClientTest` 4/4, `ProjectFactoryServiceTest` 4/4, `ProjectFactoryServiceFalsificationTest` 6/6). Адрес репозитория возникает только по факту свидетельства GitHub (201 create или verified 200 на 422), при сбое возвращается `null` без подстановки фантомных URL (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+- **Секция XXXIII (Пульт управления):** 8/8 green (`CommandDashboardControllerTest` 4/4, `CommandDashboardServiceTest` 4/4). Пятизначная конъюнкция Клиини, запрет объявления готовности `ready` без клиентского свидетельства приемки (`client_acceptance_traversals` с `walked_by='client'`), сохранение трехзначной логики Белнапа `unknown` (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+- **Секция XXXIV (Внутренний вход наблюдателя):** 20/20 green (`ApiAuthorizationInterceptorTest` 20/20). Деонтический запрет неавторизованных мутаций через внутренний вход наблюдателя, защита сервисных эндпоинтов авторизацией и аудит актора (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+- **Секция XXXV (Выбор аккаунта):** 68/68 green (`AccountSelectionFairnessTest` 5/5, `AccountHealthServiceTest` 31/31, `AccountHealthServiceFalsificationTest` 6/6, `AccountLifecycleInvariantTest` 5/5, `AccountControllerIntegrationTest` 5/5, `AccountRepositoryIntegrationTest` 8/8, `AccountRepositoryFalsificationTest` 8/8). Наказание порядком ротации (`refusal run`), а не исключением из пула, атомарный CAS-захват (`FOR UPDATE SKIP LOCKED`), вытеснение глобальных догадок локально выученными пределами (de re), освобождение слотов для blocked/done задач (`DZHOZEF_RAZ_21_PENALTY_AS_ORDERING` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+- **Секция XXXVI (Хранилище задач):** 8/8 green (`TaskTerminalOverwriteAuditTest` 4/4, `TaskRepositoryIntegrationTest` 4/4). Неизменяемость терминальных статусов (Закон 20), деонтический запрет перезаписи на уровне сущности (`TaskEntity.setStatus`) и на уровне SQL-репозитория (`TaskRepository.writeStatusUnlessTerminalAt`, `compareAndSetStatusAt`), гарантирующий защиту от stale-read воскрешения (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+
+Строгое правило Ступени 4 соблюдено: не изменено ни одной строки рабочего кода сервисов, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`).
+
+**Текущий статус:** считаю механизмы Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI идеальными. Заслон качества: 145/145 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D002 Ryle / D013 Wittgenstein & Noë). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секций XXX–XXXVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (145/145 green: D008, D010, D006, D012, D002, D013).
+
+---
+
 
 # XXXVII. Сторож ТОС: чтение, которое пересчитывает
 

@@ -261,6 +261,10 @@
 
 **Закрыто (Пакетный замер Секций XXIV и XXV):** Все механизмы Секции XXIV («Скрипты: инструменты, которые запускает рука») и Секции XXV («Позвоночник потока: чем фабрика отвечает, жив ли поток»: `generate_philosopher_patterns.py`, `append_role_logic.py`, `audit_pr.py`, `mock_test_runner.py`, ручная оснастка оператора `deploy.sh`/`linear_sync.py`/`linear_webhook.py`/`check_system_drift.ps1`/`generate_report.py`/`reset_project_data.sql`/`scripts/modules/*`, `FlowSpineService`, `OperationalFlowCoreService`, `SystemStatusService`, `SystemSettingsService`, `SettingsController`, `FlowSpineController`, `OperationalFlowCoreController`, `TocSentinelController`, `TocExecutionGraph`) подтверждены и заверены в едином пакетном прогоне в Docker Maven и Python unittest (169/169 green: 149/149 green в Docker Maven и 20/20 green в Python unittest). Ступень 4 закрыта, статус: ideal.
 
+**Закрыто (Пакетный замер Секций XXVI, XXVII, XXVIII и XXIX):** Все механизмы Секций XXVI, XXVII, XXVIII и XXIX («Служба контекста», «Операционная правда», «Отказ от Gemini: внешняя AI-граница», «Цех дизайна») подтверждены и заверены в единых пакетных прогонах в Docker Maven (215/215 green и 113/113 green). Ступень 4 закрыта, статус: ideal.
+
+**Закрыто (Пакетный замер Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI):** Все механизмы Секций XXX–XXXVI («Внешние клиенты, завод проектов, командный пульт, авторизация наблюдателя, выбор аккаунтов и хранилище задач»: `MLPredictionServiceClient`, `RepositoryStackAnalyzer`, `OnboardingAuditService`, `GitHubProjectFactoryClient`, `LinearProjectFactoryClient`, `ProjectFactoryService`, `CommandDashboardController`, `CommandDashboardService`, `ApiAuthorizationInterceptor`, `AccountRepository`, `AccountHealthService`, `TaskRepository`, `TaskEntity`) подтверждены и заверены единым пакетным замером в рантайме и Docker Maven (145/145 green в едином пакетном прогоне). Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # Полный проход по всем механизмам
@@ -284,7 +288,7 @@
 - ~~`MLPredictionServiceClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 9/9 green в MLPredictionServiceClientTest, ideal)
 - ~~`RepositoryStackAnalyzer`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 6/6 green, ideal)
 - ~~`GitHubProjectFactoryClient`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 3/3 green, ideal)
-- `CommandDashboardService`  ← ядро
+- ~~`CommandDashboardService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 8/8 green в CommandDashboardServiceTest и CommandDashboardControllerTest, ideal)
 - ~~`InternalGeminiObserverController`~~ (Закрыто Ступень 4: замер в Docker Maven 42/42 green, ideal)
 - ~~`TocSentinelService`~~  ← ядро (Закрыто Ступень 4: замер в Docker Maven 25/25 green, ideal)
 - ~~`GoogleAiResourceController`~~ (Закрыто Ступень 4: замер в Docker Maven 18/18 green, ideal)

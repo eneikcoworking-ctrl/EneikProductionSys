@@ -1,13 +1,17 @@
-# Такт L2: Ведущий инженер (2026-10-15 20:55 UTC)
+# Такт L2: Ведущий инженер (2026-10-16 00:20 UTC)
 
-1. Пакетная верификация Секций XXVI, XXVII и XXVIII («Служба контекста», «Операционная правда», «Отказ от Gemini: внешняя AI-граница»):
-   - Секция XXVI (Служба контекста): `GeminiContextServiceTest` (28/28), `InternalGeminiObserverControllerTest` (16/16), `InternalGeminiObserverSecurityIntegrationTest` (9/9), `ContextChunkHashAndFileScopeConflictFalsificationTest` (10/10), `GeminiObserverActionServiceTest` (17/17) — 80/80 green.
-   - Секция XXVII (Операционная правда): `OperationalTruthServiceTest` (17/17), `TrustSnapshotServiceTest` (9/9), `ClientDeliverableReadinessServiceTest` (49/49), `ClientDeliverableReadinessServiceFalsificationTest` (6/6) — 81/81 green.
-   - Секция XXVIII (Внешняя AI-граница): `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12), `StitchClientTest` (10/10), `MLPredictionServiceClientTest` (9/9), `JudgmentAgentClientTest` (6/6), `JudgmentAgentClientLaw17Test` (4/4), `GeminiProjectObserverServiceTest` (1/1), `V58AndV111ObserverDecommissionFalsificationTest` (6/6) — 54/54 green.
-   - Итоговый замер в Docker Maven: 215/215 green (0 failures, 0 errors, BUILD SUCCESS).
-2. Заслон качества и строгое соблюдение инвариантов:
-   - Строгое правило Ступени 4: 0 строк изменений в рабочем коде (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером, не правкой.
-   - Философский RAG-базис удержан: D014 Church (RAG-капсула, порог отсечки), D010 Goldman (асимметрия доверия, каузальная цепь), D012 Belnap (логика истинности), D013 Wittgenstein (анти-зеркало), D006 Raz & Varzi (деонтические запреты 401/403), D009 Floridi (запрет подмены HTML), D008 Popper & Tarski (фальсификационные гейты).
+1. Пакетная верификация Секций XXX–XXXVI («Внешние клиенты, завод проектов, командный пульт, авторизация наблюдателя, выбор аккаунтов и хранилище задач»):
+   - Секция XXX (Клиент к предсказателю): `MLPredictionServiceClientTest` (9/9 green).
+   - Секция XXXI (Разбор чужого репозитория): `RepositoryStackAnalyzerTest` (6/6), `OnboardingAuditServiceTest` (5/5), `OnboardingAuditServiceFalsificationTest` (4/4) — 15/15 green.
+   - Секция XXXII (Завод репозиториев): `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4), `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6) — 17/17 green.
+   - Секция XXXIII (Пульт управления): `CommandDashboardControllerTest` (4/4), `CommandDashboardServiceTest` (4/4) — 8/8 green.
+   - Секция XXXIV (Вход наблюдателя): `ApiAuthorizationInterceptorTest` — 20/20 green.
+   - Секция XXXV (Выбор аккаунта): `AccountSelectionFairnessTest` (5/5), `AccountHealthServiceTest` (31/31), `AccountHealthServiceFalsificationTest` (6/6), `AccountLifecycleInvariantTest` (5/5), `AccountControllerIntegrationTest` (5/5), `AccountRepositoryIntegrationTest` (8/8), `AccountRepositoryFalsificationTest` (8/8) — 68/68 green.
+   - Секция XXXVI (Хранилище задач): `TaskTerminalOverwriteAuditTest` (4/4), `TaskRepositoryIntegrationTest` (4/4) — 8/8 green.
+   - Итоговый замер в Docker Maven 3.9.9 Temurin-21 (-m 2g): 145/145 green (0 failures, 0 errors, BUILD SUCCESS).
+2. Строгое соблюдение инвариантов Ступени 4:
+   - 0 строк модификации рабочего кода (`src/main/java`, `src/main/resources`, `scripts/`). Работа строго замером, не правкой.
+   - Философский RAG-базис удержан: D008 Popper & Tarski, D010 Goldman, D006 Raz & Varzi, D012 Belnap, D002 Ryle, D013 Wittgenstein & Noë.
 3. Документация и фиксация:
-   - Обновлены *Живое:* для Секций XXVI, XXVII и XXVIII, оформлен блок `### Итог Секции XXVI, XXVII и XXVIII` в `docs/FACTORY_MECHANISMS.md` (ideal).
-   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md`: пункты 2 и 11 закрыты (ideal).
+   - Обновлены строки *Живое:* для Секций XXX–XXXVI, оформлен блок `### Итог Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI` в `docs/FACTORY_MECHANISMS.md` (status: ideal).
+   - Синхронизирована очередь `docs/ANTIGRAVITY_QUEUE.md`: `CommandDashboardService` закрыт в Ступени 1, зафиксирован пакетный блок Секций XXX–XXXVI.
