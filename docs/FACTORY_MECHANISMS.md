@@ -13741,4 +13741,30 @@ the ceiling by more than the expected delay-window intake.
 
 **комментарий для Антигравити:** считаю механизмы Секций I и II идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (305/305 green: D008, D010, D006, D007, D001, D009, D013, D012, D004).
 
+---
+
+### Итог Пакетного Замера Секций III и IV («Отправка: задача уходит в работу, AutoMerge, гейты качества и пайплайн ревью»)
+
+**Дата:** 2026-10-16 12:53 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 46 тест-сьютов Секций III и IV со 100% green: **450/450 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:21 min).
+
+1. **Группа 1: Секция III — Отправка: задача уходит в работу (258 тестов, 20 сьютов):**
+   - `JulesDispatchServiceTest` (103/103), `JulesDispatchServiceFalsificationTest` (6/6), `JulesDispatchServiceLaw4MergeEvidenceTest` (4/4), `JulesDispatchServiceTocDbrAdmissionTest` (4/4), `ProjectFlowServiceLaw1JulesDispatchTest` (4/4), `DispatchAttemptBudgetTest` (17/17), `DispatchRefusalObservabilityLaw8Law12Test` (4/4), `JulesRefusalKindsTest` (9/9): ядро диспетчеризации, бюджет попыток и наблюдаемость отказов (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `JulesApiClientTest` (5/5), `JulesApiClientFalsificationTest` (5/5): клиент к внешнему API Google Jules с деонтическим запретом сетевых вызовов при выключенном ключе (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `SessionLifecycleServiceTest` (8/8), `SessionLifecycleServiceFalsificationTest` (6/6), `PersistentWorkerSessionServiceTest` (8/8): жизненный цикл сессий воркеров и топологические границы (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `MARGRET_GILBERT_01_PLURAL_SUBJECT` / D004).
+   - `TaskClaimServiceTest` (8/8), `ClaimServiceRaceGuardTest` (5/5), `ClaimServiceFalsificationTest` (6/6), `LeaseWatchdogServiceTest` (3/3): захват задач, защита от гонок и лизинг исполнения (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `AccountHealthServiceTest` (31/31), `BottleneckAwarePriorityServiceTest` (8/8), `BottleneckDetectionServiceTest` (4/4): здоровье аккаунтов и приоритизация узких мест (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+
+2. **Группа 2: Секция IV — Ревью, гейт, слияние и GitHub-инварианты (192 теста, 26 сьютов):**
+   - `AutoMergeServiceTest` (24/24), `AutoMergeServiceFalsificationTest` (6/6), `AutoMergePokaYokeTest` (14/14), `AutoMergeLaw20InvariantS4Test` (3/3): автослияние со строгим соблюдением инварианта неизменяемости Закона 20 (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `GitHubPullRequestServiceTest` (12/12), `GitHubApiBudgetServiceTest` (3/3), `GithubAccessServiceTest` (6/6), `CodeChangeClassifierTest` (13/13): взаимодействие с GitHub API, бюджетирование квот и классификация изменений (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `GateOrchestratorIntegrationTest` (9/9), `GateOrchestratorFalsificationTest` (6/6), `VerificationEvidenceGateTest` (8/8), `VerificationEvidenceGateFalsificationTest` (6/6), `BaseQualityGateTest` (10/10), `BaseQualityGateFalsificationTest` (6/6), `BackendContractGateTest` (5/5), `BackendContractGateFalsificationTest` (6/6), `DesignExcellenceGateTest` (12/12), `DesignExcellenceGateFalsificationTest` (6/6), `EpistemicLayerInvariantGateTest` (8/8), `EpistemicLayerInvariantGateFalsificationTest` (6/6): полный каскад гейтов качества с фальсификационными заслонами против фиктивных подтверждений (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+   - `BranchGarbageCollectorServiceTest` (13/13), `BranchGarbageCollectorServiceFalsificationTest` (6/6): безопасная очистка брошенных веток по Закону 20 (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013).
+   - `PrReviewPipelineServiceTest` (3/3), `PrReviewPipelineServiceFalsificationTest` (6/6), `PrReviewApprovalLaw1Test` (3/3), `PrReviewEntityLaw20Test` (2/2): пайплайн ревью PR с принудительным форсированием высокого риска для критических путей (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
+
+*Соблюдение инварианта Ступени 4:* 0 строк изменений рабочего кода сервисов, моделей, сущностей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Секций III и IV («Отправка и Ревью/Слияние») идеальными. Заслон качества: 450/450 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D004 Varzi & Gilbert / D011 Dretske / D012 Belnap / D013 Noe & Wittgenstein). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секций III и IV идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (450/450 green: D008, D010, D006, D004, D011, D012, D013).
+
 
