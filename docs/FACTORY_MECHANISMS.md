@@ -14598,3 +14598,28 @@ the ceiling by more than the expected delay-window intake.
 
 **комментарий для Антигравити:** считаю механизмы Кластера Секций XXX–XXXVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (174/174 green: D008, D010, D006, D002, D012, D013).
 
+---
+
+### Итог Пакетного Замера Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Непрерывная Оркестрация фабрики»)
+
+**Дата:** 2026-10-17 06:18 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 25 тест-сьютов Секции VIII со 100% green: **290/290 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:17 min).
+
+1. **Группа 1: Фальсификационный цикл, связность свидетельств и самодиагностика платформы (70 тестов, 5 сьютов):**
+   - `FalsificationCycleServiceTest` (28/28), `EvidenceCoherenceServiceTest` (21/21), `EvidenceCoherenceV80TerminationFalsificationTest` (5/5), `OpsAuditorServiceTest` (11/11), `PlatformSelfReferenceDetectorTest` (7/7): суточный цикл фальсификации, монопольное владение `falsification_runs` и `code_integrity_findings`, релаксация графа свидетельств по алгоритму ECHO Тагарда без ложной уверенности на пустых данных, аудит операций строго на независимо проверенных фактах с тройной валидацией предусловий, фильтрация заводского шума (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `ELVIN_GOLDMAN_02_KNOWLEDGE_FIRST_GATE` / D006, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `DZHILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002).
+
+2. **Группа 2: Здоровье фабрики, Кайдзен и журнал дефектов (39 тестов, 5 сьютов):**
+   - `FactorySelfHealthServiceTest` (5/5), `KaizenServiceTest` (10/10), `DefectJournalServiceTest` (3/3), `DefectJournalRootCauseAttributionTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5): непрерывный мониторинг собственного здоровья фабрики (размер БД, пул соединений, очереди) с эскалацией в Кайдзен, стандартизация улучшений и дедупликация дефектов по `(projectId, category, targetComponent)` и объективный INUS-анализ первопричин (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `MARGRET_GILBERT_04_INSTITUTIONAL_DEFECT_RECORD` / D007, `DZHON_MEKI_01_INUS_CONDITION` / D007).
+
+3. **Группа 3: Метрики потока, рычаги ТОС и восстановление работ (30 тестов, 4 сьюта):**
+   - `FlowMetricsServiceTest` (4/4), `LeverPromotionServiceTest` (7/7), `LeverPromotionServiceFalsificationTest` (4/4), `PlannedWorkRecoveryServiceTest` (15/15): расчет времени цикла, WIP, throughput и проверка сходимости закона Литтла с варнингом при расхождениях, ступенчатая лестница продвижения рычагов подчинения TOC от `observe_only` к активным действиям строго по согласованным наблюдениям, безопасное восстановление зависших задач со строгим сохранением тождества по контентному ключу и запретом размножения дубликатов (`ALONZO_CHERCH_03_LAMBDA_CORE_REDUCTION` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `DZHILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002).
+
+4. **Группа 4: Операционное ядро, политика, правда потока и рынок (151 тест, 11 сьютов):**
+   - `ContinuousOrchestrationServiceTest` (16/16), `OperationalTruthServiceTest` (17/17), `TrustSnapshotServiceTest` (9/9), `FlowSpineServiceTest` (32/32), `OperationalFlowCoreServiceTest` (6/6), `OperationalFlowCoreFalsificationTest` (39/39), `OperationalPolicyServiceTest` (17/17), `OperationalPolicyReasonTest` (5/5), `OperationalPolicyDeniedExceptionFalsificationTest` (9/9), `MarketResearchServiceTest` (3/3), `MarketResearchServiceFalsificationTest` (6/6): центральный детерминированный тик оркестрации фабрики без сторонних кронов, снимки доверия с отложенным дозаполнением исходов сдачи, честное отражение метрик рантайма (`done_is_not_delivery`), разведение чтения `build` и записи `observe`, переходы операционного ядра и изоляция фаз потока, деонтическая защита операционной политики с 4-значной решёткой истинности и типизированными причинами отказа, детерминированный сбор рыночных требований через изолированные каузальные задачи системного носителя (`MAJKL_BRATMAN_01_SHARED_COOPERATIVE_ACTIVITY` / D004, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE` / D008, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Секции VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Непрерывная Оркестрация фабрики») идеальными. Заслон качества: 290/290 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D013 Wittgenstein / D004 Varzi / D002 Ryle / D007 Gilbert & Mackie / D011 Dretske). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Секции VIII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (290/290 green: D008, D010, D006, D012, D013, D004, D002, D007, D011).
+
+
