@@ -13611,7 +13611,7 @@ the ceiling by more than the expected delay-window intake.
    - `SystemStatusServiceTest` дополнен тестами `emsMetricsNullProjectScopesToActiveProjectAndNeverCallsFindAllOrScansAllRows` и `emsMetricsNullProjectAndNoActiveProjectReturnsUndeterminedSectionWithReason` (16/16 green).
    - Все 50 тестов пройдены успешно (`BUILD SUCCESS`).
 
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 23:01 UTC]. Механизмы заслонов качества задач и решётки вердиктов заверены со 100% green: 122/122 green (16 тест-сьютов, 0 failures, 0 errors, BUILD SUCCESS).
+*Живое, 17 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-17 02:42 UTC]. Механизмы заслонов качества задач и решётки вердиктов заверены со 100% green: 122/122 green (16 тест-сьютов, 0 failures, 0 errors, BUILD SUCCESS).
 - Заслоны качества (`GateOrchestratorIntegrationTest` 9/9, `GateOrchestratorFalsificationTest` 6/6, `BaseQualityGateTest` 10/10, `BaseQualityGateFalsificationTest` 6/6, `BackendContractGateTest` 5/5, `BackendContractGateFalsificationTest` 6/6, `DesignExcellenceGateTest` 12/12, `DesignExcellenceGateFalsificationTest` 6/6, `VerificationEvidenceGateTest` 8/8, `VerificationEvidenceGateFalsificationTest` 6/6, `EpistemicLayerInvariantGateTest` 8/8, `EpistemicLayerInvariantGateFalsificationTest` 6/6, `QualityGateControllerTest` 2/2) — 90/90 green. Подтверждены инварианты: пустой список применимых проверок никогда не признается пройденным гейтом (`applicableChecksByStage`), знаменатель формируется per-stage, реальные PR/file evidence превалируют над декларацией в payload, делегирование `/api/quality-gate/defect-rate` в `SixSigmaAuditService` без вызовов `findAll()`.
 - Решётка вердиктов (`VerdictGateTest` 14/14, `VerdictReconciliationTest` 11/11, `VerdictLayerFalsificationTest` 7/7) — 32/32 green. Подтверждены свойства: монотонность решётки готовности (гейт может только ужесточить суждение о готовности, но не ослабить его), трёхзначная логика Белнапа (`undetermined`), отказ при пустой решётке или отключённом флаге без ложных разрешений.
 Ступень 4 для Task Quality Gates & Verdict Surfaces закрыта (ideal).
@@ -13645,7 +13645,7 @@ the ceiling by more than the expected delay-window intake.
 
 *Свидетельства записи:* `git status --short`; `git log -1 --oneline`; `sed -n '1,220p' /home/remotecli/codex-mechanisms-session/SESSION.md`; `sed -n '1,80p' docs/HOW_TO_READ_BEFORE_FIXING.md`; `sed -n '130,176p' docs/reports/FACTORY_MECHANISM_DENOMINATOR.md`; `grep -n "ELVIN_GOLDMAN_01_RELIABILITY_CHAIN\|ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK"` and `grep -n "ACP-061"`; `find src/main/java src/test/java -type f \( -name '*ProjectFactory*' -o -name '*Provisioning*' -o -name '*WorkspaceArtifacts*' \)`; `nl -ba` on `ProjectFactoryService.java`, `ProjectWorkspaceFactoryService.java`, all project-factory result records, `GitHubProjectFactoryClient.java`, `LinearProjectFactoryClient.java`, `ProjectFlowService.java:351-385`, `ProjectEntity.java`, and project-factory tests; `grep -RIn "projectFactoryService.provision\|factoryReport\|factoryStatus" src/main/java`.
 
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 23:01 UTC]. Механизмы провижининга проекта заверены со 100% green: 22/22 green (5 тест-сьютов, 0 failures, 0 errors, BUILD SUCCESS).
+*Живое, 17 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-17 02:42 UTC]. Механизмы провижининга проекта заверены со 100% green: 22/22 green (5 тест-сьютов, 0 failures, 0 errors, BUILD SUCCESS).
 - `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5), `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6), `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4) — 22/22 green.
 - Заслонены инварианты: адрес репозитория появляется только из физического GitHub-свидетельства (201 create / 200 GET), изоляция путей workspace (`boundaryTopologyRejectsPathTraversalOutsideRoot`), сохранение файлов существующего репозитория при brownfield, детерминированный отчёт `factoryReport` без маскировки отказов.
 Ступень 4 для Project Factory Provisioning Result Chain закрыта (ideal).
@@ -13656,7 +13656,7 @@ the ceiling by more than the expected delay-window intake.
 
 ### Итог строгих семейств Ступени 4
 
-Все механизмы строгих семейств Ступени 4 («Task quality gates and verdict surfaces» и «Project factory provisioning result chain»: `GateOrchestrator`, `GateCheck`, `GateStage`, `GateResult`, `BaseQualityGate`, `BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate`, `EpistemicLayerInvariantGate`, `QualityGateController`, `VerdictGate`, `VerdictController`, `VerdictReconciliation`, `Verdict`, `Judgement`, `AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`, `ProjectWorkspaceFactoryService`, `WorkspaceArtifacts`, `WorkspaceProvisioningResult`, `GitHubProjectFactoryClient`, `GitHubProvisioningResult`, `CollaboratorProvisioningResult`, `LinearProjectFactoryClient`, `LinearProvisioningResult`, `ProjectFactoryService`, `ProjectFactoryResult`) подтверждены и заверены в едином пакетном прогоне в Docker Maven (144/144 green, 0 failures, 0 errors, BUILD SUCCESS, время прогона 01:45 min [2026-10-16 23:01 UTC]):
+Все механизмы строгих семейств Ступени 4 («Task quality gates and verdict surfaces» и «Project factory provisioning result chain»: `GateOrchestrator`, `GateCheck`, `GateStage`, `GateResult`, `BaseQualityGate`, `BackendContractGate`, `DesignExcellenceGate`, `VerificationEvidenceGate`, `EpistemicLayerInvariantGate`, `QualityGateController`, `VerdictGate`, `VerdictController`, `VerdictReconciliation`, `Verdict`, `Judgement`, `AcceptanceVerdictLayer`, `RuntimeVerdictLayer`, `InfrastructureVerdictLayer`, `SixSigmaVerdictLayer`, `ProjectWorkspaceFactoryService`, `WorkspaceArtifacts`, `WorkspaceProvisioningResult`, `GitHubProjectFactoryClient`, `GitHubProvisioningResult`, `CollaboratorProvisioningResult`, `LinearProjectFactoryClient`, `LinearProvisioningResult`, `ProjectFactoryService`, `ProjectFactoryResult`) подтверждены и заверены в едином пакетном прогоне в Docker Maven (144/144 green, 0 failures, 0 errors, BUILD SUCCESS, время прогона 01:35 min [2026-10-17 02:42 UTC]):
 - **Task Quality Gates & Gate Orchestrator:** 90/90 green (`GateOrchestratorIntegrationTest` 9/9, `GateOrchestratorFalsificationTest` 6/6, `BaseQualityGateTest` 10/10, `BaseQualityGateFalsificationTest` 6/6, `BackendContractGateTest` 5/5, `BackendContractGateFalsificationTest` 6/6, `DesignExcellenceGateTest` 12/12, `DesignExcellenceGateFalsificationTest` 6/6, `VerificationEvidenceGateTest` 8/8, `VerificationEvidenceGateFalsificationTest` 6/6, `EpistemicLayerInvariantGateTest` 8/8, `EpistemicLayerInvariantGateFalsificationTest` 6/6, `QualityGateControllerTest` 2/2).
 - **Verdict Surfaces & Lattice:** 32/32 green (`VerdictGateTest` 14/14, `VerdictReconciliationTest` 11/11, `VerdictLayerFalsificationTest` 7/7).
 - **Project Factory Provisioning Result Chain:** 22/22 green (`ProjectWorkspaceFactoryServiceFalsificationTest` 5/5, `ProjectFactoryServiceTest` 4/4, `ProjectFactoryServiceFalsificationTest` 6/6, `GitHubProjectFactoryClientTest` 3/3, `LinearProjectFactoryClientTest` 4/4).
@@ -14121,4 +14121,37 @@ the ceiling by more than the expected delay-window intake.
 **Текущий статус:** считаю все механизмы Кластера Секций XIV, XV и XVI («Сверка с корпусом философских образцов, класс дефекта "тихое размножение задач" и реестр 59 архитектурных предписаний L2») идеальными. Заслон качества: 224/224 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz & Varzi / D013 Wittgenstein / D012 Belnap / D002 Ryle / D004 Shaffer / D007 Tarski / D014 Pearl & Church). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити:** считаю механизмы Кластера Секций XIV, XV и XVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (224/224 green: D008, D010, D006, D013, D012, D002, D004, D007, D014).
+
+---
+
+### Итог Пакетного Замера Строгих Семейств Ступени 4 («Заслоны качества задач, решётка вердиктов и провижининг проектов»)
+
+**Дата:** 2026-10-17 02:42 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 21 тест-сьют строгих семейств Ступени 4 со 100% green: **144/144 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:35 min).
+
+1. **Группа 1: Заслоны качества задач и оркестратор гейтов (90 тестов, 13 сьютов):**
+   - `GateOrchestratorIntegrationTest` (9/9), `GateOrchestratorFalsificationTest` (6/6): оркестрация заслонов качества задач без пропуска дефектов (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `BaseQualityGateTest` (10/10), `BaseQualityGateFalsificationTest` (6/6): базовый гейт качества и попперовская фальсификация (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `BackendContractGateTest` (5/5), `BackendContractGateFalsificationTest` (6/6): заслон контракта бэкенда и лок уровней абстракции (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `DesignExcellenceGateTest` (12/12), `DesignExcellenceGateFalsificationTest` (6/6): гейт совершенства дизайна на реальных артефактах (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `VerificationEvidenceGateTest` (8/8), `VerificationEvidenceGateFalsificationTest` (6/6): заслон свидетельств верификации и многозначная решётка истинности (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+   - `EpistemicLayerInvariantGateTest` (8/8), `EpistemicLayerInvariantGateFalsificationTest` (6/6): гейт эпистемических инвариантов слоев (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `QualityGateControllerTest` (2/2): контроллер гейта качества с проверкой деонтических прав (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+
+2. **Группа 2: Решётка вердиктов и согласование исходов (32 теста, 3 сьюта):**
+   - `VerdictGateTest` (14/14): решётка вердиктов качества с монотонным сужением допусков (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `VerdictReconciliationTest` (11/11): детерминированное согласование конфликтующих слоев вердиктов (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `VerdictLayerFalsificationTest` (7/7): фальсификация ложных вердиктов готовности (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+3. **Группа 3: Цепочка результатов провижининга фабрики проектов (22 теста, 5 сьютов):**
+   - `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5): топологическая изоляция путей воркспейса проекта (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6): детерминированный провижининг проектов без маскировки сбоев (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `GitHubProjectFactoryClientTest` (3/3): фиксация URL репозитория строго при наличии GitHub-свидетельства (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `LinearProjectFactoryClientTest` (4/4): клиент фабрики проектов Linear с изоляцией контекста (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы строгих семейств Ступени 4 («Заслоны качества задач, решётка вердиктов и провижининг проектов») идеальными. Заслон качества: 144/144 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D004 Shaffer & Varzi). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы строгих семейств Ступени 4 идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (144/144 green: D008, D010, D006, D012, D004).
+
 
