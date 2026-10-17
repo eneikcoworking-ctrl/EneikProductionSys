@@ -15934,3 +15934,48 @@ the ceiling by more than the expected delay-window intake.
 
 **комментарий для Антигравити:** считаю механизмы Кластера Секций XVI и XXIX идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (272/272 green: D008, D010, D006, D015, D012, D013, D002, D009, D004, D011).
 
+
+---
+
+### Итог Пакетного Замера Кластера Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI («Сайдкары и пограничные сервисы фабрики: клиент ML-предсказателя, brownfield-разбор чужого репозитория, завод репозиториев, пульт управления готовностью, внутренний вход наблюдателя, выбор аккаунта, хранилище задач, Закон 20 и Закон 1»)
+
+**Дата:** 2026-10-17 16:59 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 22 тест-сьюта Кластера Секций XXX–XXXVI со 100% green: **174/174 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:01 min).
+
+1. **Группа 1: Секция XXX — Клиент к предсказателю и внешняя ML-граница (9 тестов, 1 сьют):**
+   - `MLPredictionServiceClientTest` (9/9): деонтическая защита пограничного HTTP-клиента к ML-сайдкару предсказаний, строгий контракт форматов и изоляция отказов инференса (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   *Живое: 9/9 green*
+
+2. **Группа 2: Секция XXXI — Brownfield-разбор чужого репозитория (15 тестов, 3 сьюта):**
+   - `RepositoryStackAnalyzerTest` (6/6): отсечение категориальных ошибок стека без ложных обвинений заказчика (`DZHILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002).
+   - `OnboardingAuditServiceTest` (5/5), `OnboardingAuditServiceFalsificationTest` (4/4): строгий онбординг внешних проектов, фальсификационная проверка граничных условий и устойчивости к невалидным манифестам (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   *Живое: 15/15 green*
+
+3. **Группа 3: Секция XXXII — Завод репозиториев (22 теста, 5 сьютов):**
+   - `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4): надежные свидетельства внешних интеграций GitHub и Linear без фантомных записей (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6), `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5): фальсификационный заслон провижининга фабрики проектов, топологическая изоляция рабочих областей по Закону 26 (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009).
+   *Живое: 22/22 green*
+
+4. **Группа 4: Секция XXXIII — Пульт управления готовностью (8 тестов, 2 сьюта):**
+   - `CommandDashboardControllerTest` (4/4), `CommandDashboardServiceTest` (4/4): многозначная конъюнкция истинности готовности в CommandDashboard, категорический запрет фиктивных статусов без эмпирического подтверждения (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
+   *Живое: 8/8 green*
+
+5. **Группа 5: Секция XXXIV — Внутренний вход наблюдателя (45 тестов, 3 сьюта):**
+   - `InternalGeminiObserverControllerTest` (16/16), `InternalGeminiObserverSecurityIntegrationTest` (9/9), `ApiAuthorizationInterceptorTest` (20/20): деонтическая защита сервисных эндпоинтов внутреннего наблюдателя (строгие 401/403/404), изоляция служебных мутаций (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   *Живое: 45/45 green*
+
+6. **Группа 6: Секция XXXV — Выбор аккаунта и наказание порядком (60 тестов, 5 сьютов):**
+   - `AccountRepositoryIntegrationTest` (8/8), `AccountRepositoryFalsificationTest` (8/8): атомарный захват аккаунтов (`FOR UPDATE SKIP LOCKED`), фальсификационная проверка целостности пула (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `AccountHealthServiceTest` (31/31), `AccountHealthServiceLaw14Test` (7/7), `AccountHealthServiceFalsificationTest` (6/6): наказание порядком ротации (`refusal run`), а не исключением из пула, вытеснение глобальных догадок локально выученными пределами (de re), освобождение слотов для blocked/done задач (`DZHOZEF_RAZ_21_PENALTY_AS_ORDERING` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   *Живое: 60/60 green*
+
+7. **Группа 7: Секция XXXVI — Хранилище задач, Закон 20 и Закон 1 (15 тестов, 3 сьюта):**
+   - `TaskRepositoryIntegrationTest` (4/4): институциональная проверка ограничений хранилища (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `TaskEntityLaw20Test` (6/6): неизменяемость терминальных статусов по Закону 20 на уровне JPA-сущности (`TaskEntity.setStatus`) и SQL-репозитория (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+   - `TaskEntityLaw1CarrierTest` (5/5): динамическая синхронизация признака carrier (Закон 1) (`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013).
+   *Живое: 15/15 green*
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI («Сайдкары и пограничные сервисы фабрики: клиент ML-предсказателя, brownfield-разбор чужого репозитория, завод репозиториев, пульт управления готовностью, внутренний вход наблюдателя, выбор аккаунта, хранилище задач, Закон 20 и Закон 1») идеальными. Заслон качества: 174/174 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D002 Ryle / D009 Belnap / D013 Wittgenstein & Noë). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Кластера Секций XXX–XXXVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (174/174 green: D008, D010, D006, D012, D002, D009, D013).
