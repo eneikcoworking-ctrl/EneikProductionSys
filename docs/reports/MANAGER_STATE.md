@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-17 20:53 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-17 23:15 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -6,7 +6,7 @@
 - Сайдкары: runtime-launcher-1 UP (healthy), ML sidecar UP (healthy), judgment-proxy-1 UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: удержание ресурсов):
-- Диск: 27G/38G (76%, 8.8G свободно). Память: 2.1Gi/3.7Gi, swap 1.9Gi/4.0Gi. Container cache prune исполнен.
+- Диск: 27G/38G (75%, 9.1G свободно). Память: 2.3Gi/3.7Gi, swap 1.8Gi/4.0Gi. Builder/image prune исполнен.
 
 3. Контроль инженера (L2):
 - Проверен коммит 44e6d6e8: Кластер Секций XXXVII–XLIV заверен (206/206 green в 26 сьютах Docker Maven, 0 строк правок рабочего кода).
