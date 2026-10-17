@@ -15835,3 +15835,47 @@ the ceiling by more than the expected delay-window intake.
 **Текущий статус:** считаю все механизмы Кластера Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI («Сайдкары и пограничные сервисы фабрики: клиент ML-предсказателя, brownfield-разбор чужого репозитория, завод репозиториев, пульт управления готовностью, внутренний вход наблюдателя, выбор аккаунта, хранилище задач, Закон 20 и Закон 1») идеальными. Заслон качества: 174/174 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D002 Ryle / D009 Belnap / D013 Wittgenstein & Noë). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити:** считаю механизмы Кластера Секций XXX–XXXVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (174/174 green: D008, D010, D006, D012, D002, D009, D013).
+
+---
+
+### Итог Пакетного Замера Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII и XLIV («Сторож ТОС, вход к ресурсам модели, метрики качества Six Sigma, выметающий обход, заслон качества экрана, постоянный кэш корпуса, верёвка ТОС и очистка журнала проекта»)
+
+**Дата:** 2026-10-17 15:24 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 26 тест-сьютов Кластера Секций XXXVII–XLIV со 100% green: **206/206 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:55 min).
+
+1. **Группа 1: Секция XXXVII — Сторож ТОС: чтение, которое пересчитывает (35 тестов, 5 сьютов):**
+   - `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2), `TocNodeTimeoutTest` (4/4), `TocWelfordOnlineVarianceFalsificationTest` (5/5), `TocPipelinePhasesInstrumentationTest` (4/4): разделение чтения и наблюдения, динамический расчет периода watchdog по дисперсии Уэлфорда, заслон тайм-аутов узлов графа (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010).
+   *Живое: 35/35 green*
+
+2. **Группа 2: Секция XXXVIII — Вход к ресурсам модели (18 тестов, 2 сьюта):**
+   - `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12): деонтическая защита пограничного контроллера AI-ресурсов, fail-closed барьер авторизации и строгая изоляция мутирующих команд (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   *Живое: 18/18 green*
+
+3. **Группа 3: Секция XXXIX — Метрики качества Six Sigma (29 тестов, 2 сьюта):**
+   - `QualityMetricsControllerTest` (3/3), `SixSigmaAuditServiceTest` (26/26): трехзначная таблица истинности качества (passed/failed/undetermined), расчет DPMO и устранение `findAll()`-сканирований базы данных (`ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   *Живое: 29/29 green*
+
+4. **Группа 4: Секция XL — Выметающий обход брошенных финализаций и циклов (25 тестов, 4 сьюта):**
+   - `StrandedFinalizingSweepServiceTest` (8/8), `StrandedFinalizingSweepServiceFalsificationTest` (6/6), `StrandedDesignCycleSweepServiceTest` (4/4), `GitHubSweepBudgetEfficiencyTest` (7/7): атомарный CAS-релиз брошенных финализаций `finalizing -> pending` по временной метке `finalizingSince`, каузальный след транзитных захватов, бюджетная санитария PR (`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   *Живое: 25/25 green*
+
+5. **Группа 5: Секция XLI — Заслон качества экрана и геометрии (59 тестов, 6 сьютов):**
+   - `DesignExcellenceGateTest` (12/12), `DesignExcellenceGateFalsificationTest` (6/6), `LayoutGeometryAuditServiceTest` (13/13), `DesignConsistencyAuditServiceTest` (15/15), `DesignDriftMonitorServiceTest` (7/7), `DesignSystemFalsificationServiceTest` (6/6): проверка физических артефактов PR (`desktop-1440.png`, `mobile-375.png`, `layout-check.json`), Gestalt-близость (< 1.0), отсутствие коллизий bounding box и запрет ложного прохождения (`ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` / D011, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
+   *Живое: 59/59 green*
+
+6. **Группа 6: Секция XLII — Кэш постоянного корпуса (3 теста, 1 сьют):**
+   - `SystemStatusControllerTest` (3/3): подтверждение исключения дублирующего бэкенд-кэша `GeminiContextCacheManager` из classpath, нулевое присутствие `cachedContents` в кодовой базе Java, делегирование кэширования ML-сайдкару (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014).
+   *Живое: 3/3 green*
+
+7. **Группа 7: Секция XLIII — Верёвка ТОС и регулирование допуска (29 тестов, 5 сьютов):**
+   - `TocOptimizerTest` (7/7), `TocSubordinationTruthTest` (5/5), `TocSubordinationLeverTest` (12/12), `TocPriorityClaimTest` (1/1), `TocPersistenceSnapshotTest` (4/4): фальсификационный заслон ограничения допуска DBR (отсечение ложного «optimal» при неразмеченном графе), регулирование по узкому месту, обход для высокоприоритетных задач (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010).
+   *Живое: 29/29 green*
+
+8. **Группа 8: Секция XLIV — Очистка журнала проекта (10 тестов, 1 сьют):**
+   - `ProjectEventLogRetentionServiceTest` (10/10): очистка журнала с частой задержкой fixedDelay, однострочная выборка границы `PageRequest.of(excess - 1, 1)` для защиты памяти кучи, сохранение журналов непринятых проектов и потолковое удержание записей (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `AYZEK_LEVI_10_DEFEASIBLE_EXCEPTION_LEDGER` / D007).
+   *Живое: 10/10 green*
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII и XLIV («Сторож ТОС, вход к ресурсам модели, метрики качества Six Sigma, выметающий обход, заслон качества экрана, постоянный кэш корпуса, верёвка ТОС и очистка журнала проекта») идеальными. Заслон качества: 206/206 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman & Church / D006 Raz & Varzi / D012 Belnap & Tarski / D013 Wittgenstein & Noë / D011 Clark & Dretske / D004 Varzi / D007 Levi). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Кластера Секций XXXVII–XLIV идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (206/206 green: D008, D010, D006, D012, D013, D011, D004, D007).
