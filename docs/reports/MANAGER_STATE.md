@@ -1,17 +1,17 @@
-# Такт L1/L3: Менеджер-философ (2026-10-17 12:44 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-17 12:51 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
-- Продукт: dmitryefremov-frontend-preview UP 3d (порт 18085), dmitryefremov-db UP 3d (healthy).
-- Сайдкары: runtime-launcher-1 UP 13d (healthy), ML sidecar UP 13d (healthy), judgment-proxy-1 UP 5w (healthy).
+- Продукт: dmitryefremov-frontend-preview UP (порт 18085), dmitryefremov-db UP (healthy). Порт 18080 в штатном покое.
+- Сайдкары: runtime-launcher-1 UP (healthy), ML sidecar UP (healthy), judgment-proxy-1 UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: диск строго < 70%):
-- Диск: 26G/38G (73%, 9.9G свободно, prune выполнен). Память: 2.1Gi/3.7Gi, swap 1.8Gi.
+- Диск: 26G/38G (73%, 9.8G свободно, prune выполнен). Память: 2.0Gi/3.7Gi, swap 1.8Gi.
 
 3. Контроль инженера (L2):
-- Проверен статус L2: Секции XXXVII–XLIV заверены (коммит 8a399ed1, 143/143 green в 15 сьютах Docker Maven, BUILD SUCCESS 01:50m, 0 строк правок).
+- Проверен статус L2: Секция VIII заверена (коммит 687d90fc, 290/290 green в 25 сьютах Docker Maven, BUILD SUCCESS 01:16m, 0 строк правок).
 - Соблюдён суверенитет фабрики и принцип Ступени 4: строгий замер в рантайме без модификации рабочего кода.
 
-4. Пакетный Work Order: Секция VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация, Оркестрация»):
-- Механизмы (290 тестов в 25 сьютах Docker Maven): FalsificationCycleService, EvidenceCoherenceService, OpsAuditorService, PlatformSelfReferenceDetector, FactorySelfHealthService, KaizenService, DefectJournalService, FlowMetricsService, LeverPromotionService, PlannedWorkRecoveryService, ContinuousOrchestrationService, OperationalTruthService, TrustSnapshotService, FlowSpineService, OperationalFlowCoreService, OperationalPolicyService, MarketResearchService.
-- Философский базис RAG: Popper D008 (фальсификационные заслоны цикла, ECHO, потока, рынка), Goldman D010 (лок уровней абстракции Литтла и цепь надежности), Raz & Varzi D006 (деонтический запрет мутации рабочего кода при зелёных тестах; матрица прав и причин отказа политики), Belnap & Tarski D012 (4-значная логика истинности), Wittgenstein D013 (телеметрия собственного здоровья и потока без паразитных мутаций), Varzi & Bratman D004 (монопольное владение фальсификацией и единый тик оркестрации), Ryle D002 (отсечение шума фабрики от клиента), Gilbert & Mackie D007 (институциональный журнал дефектов и INUS-анализ).
+4. Пакетный Work Order: Кластер Секций XVI и XXIX («Архитектурные предписания, ТОС, Безопасность и Цех дизайна»):
+- Механизмы (272 теста в 29 сьютах Docker Maven): InternalGeminiObserver, TocSentinel, LeanValue, TargetContext, RepositoryStackAnalyzer, OperationalTruth, Wishlist, Settings, Flyway, ProductNamespaceLaw26, DesignAsset, DesignConsistency, LayoutGeometry, DesignSystem, DesignDrift, DesignExcellenceGate, DesignShopOrchestration, StrandedDesignSweep, StitchClient.
+- Философский базис RAG: Popper D008 (фальсификационные заслоны вишлистов, Flyway, гейтов и дрейфа дизайна), Goldman D010 (лок уровней абстракции вьюпорта и надежность цепи свидетельств), Raz & Varzi D006 (деонтический запрет мутации рабочего кода при зелёных тестах; защита эндпоинтов, Закон 26 суверенитета продукта, Закон 15 оркестрации, запрет подмены HTML картинками), Barcan Marcus D015 (модальный актуализм токенов марки), Wittgenstein D013 (телеметрия ТОС и монитора дрейфа дизайна без побочных эффектов), Belnap D012 (4-значная решётка истинности), Ryle D002 (изоляция ошибок стека), Dretske D011 (замыкание цикла реализации дизайна по Закону 3), Varzi D004 (монопольное владение стартами циклов и атомарный CAS-релиз).
