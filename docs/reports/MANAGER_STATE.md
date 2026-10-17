@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-17 12:57 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-17 13:08 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 26G/38G (73%, 9.8G свободно, prune выполнен). Память: 2.1Gi/3.7Gi, swap 1.8Gi.
 
 3. Контроль инженера (L2):
-- Проверен статус L2: Секции XVI и XXIX заверены (коммит 4aac2191, 272/272 green в 29 сьютах Docker Maven, BUILD SUCCESS 02:11m, 0 строк правок).
+- Проверен статус L2: Секции XXX–XXXVI заверены (коммит 55ce03ae, 174/174 green в 22 сьютах Docker Maven, BUILD SUCCESS 02:08m, 0 строк правок).
 - Соблюдён суверенитет фабрики и принцип Ступени 4: строгий замер в рантайме без модификации рабочего кода.
 
-4. Пакетный Work Order: Кластер Секций XXX–XXXVI («Сайдкары, онбординг, завод проектов, пульт управления, наблюдатель, аккаунты и хранилище задач»):
-- Механизмы (174 теста в 22 сьютах Docker Maven): MLPredictionServiceClient, RepositoryStackAnalyzer, OnboardingAudit, GitHubProjectFactoryClient, LinearProjectFactoryClient, ProjectFactory, ProjectWorkspaceFactory, CommandDashboard, InternalGeminiObserver, ApiAuthorization, AccountRepository, AccountHealth, TaskRepository, TaskEntity (Закон 20, Закон 1).
-- Философский базис RAG: Popper & Tarski D008 (фальсификационные заслоны онбординга, завода проектов, аккаунтов и задач), Goldman D010 (лок уровней абстракции и цепь надежности данных), Raz D006 (деонтический запрет мутации рабочего кода при зелёных тестах; защита входа наблюдателя, ротация аккаунтов порядком refusal run, Закон 20), Belnap D012/D009 (5-значная конъюнкция пульта, запрет фантомных URL), Ryle D002 (изоляция чужого стека от платформы), Wittgenstein & Noë D013 (анти-зеркальная телеметрия свидетельств приёмки и каузальный след переходов).
+4. Пакетный Work Order: Кластер Секций XXXVII–XLIV («Сторож ТОС, AI-ресурсы, метрики, обход финализаций, экраны, кэш, DBR, логи»):
+- Механизмы (143 теста в 15 сьютах Docker Maven): TocSentinelService/Controller, GoogleAiResourceController/Security, SixSigmaAuditService, QualityMetricsController, QualityGateController, StrandedFinalizingSweepService, BranchGarbageCollectorService, DesignExcellenceGate, VerificationEvidenceGate, LayoutGeometryAuditService, SystemStatusController, TocOptimizer, ProjectEventLogRetentionService.
+- Философский базис RAG: Popper & Tarski D008 (фальсификационные заслоны экранов, финализаций, ТОС и DPMO), Goldman & Church D010 (лок уровней абстракции check vs task, деривативный срез лизинга и памяти), Raz & Varzi D006 (деонтический запрет мутации кода при зелёных тестах, защита мутирующих AI-эндпоинтов 401/403), Belnap D012 (4-значные статусы истинности), Wittgenstein D013 (чистые чтения DBR без искажения рантайма), Clark & Dretske D011 (Gestalt-близость и снятие дублирующего кэша), Varzi D004 (инкапсуляция графа TOC и владение ресурсами).
