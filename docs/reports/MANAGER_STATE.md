@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-17 06:22 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-17 06:32 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -9,9 +9,9 @@
 - Диск: 26G/38G (71%, 11G свободно, выполнен docker prune). Память: 2.0Gi/3.7Gi, swap 1.8Gi.
 
 3. Контроль инженера (L2):
-- Проверен статус инженера L2: контур Секции VIII закрыт (290/290 green в 25 сьютах, 0 строк изменений рабочего кода).
+- Проверен статус L2: Кластер Секций XVI и XXIX заверен (коммит e041bf48, 272/272 green в 29 сьютах, 0 строк правок).
 - Соблюдён суверенитет фабрики и принцип Ступени 4: строгий замер в рантайме.
 
-4. Пакетный Work Order: Кластер Секций XVI и XXIX («Реестр 59 предписаний L2» и «Цех дизайна»):
-- Механизмы (272 теста в 29 сьютах Docker Maven): InternalGeminiObserver, TocSentinel, LeanValue, TargetContext, RepositoryStackAnalyzer, OperationalTruth, WishlistService, SystemSettings, FlywayValidation, ProductNamespaceLaw26, DesignAsset, DesignConsistency, LayoutGeometry, DesignDrift, DesignExcellenceGate, DesignShopOrchestration, StrandedDesignSweep, StitchClient.
-- Философский базис RAG: Popper D008 (фальсификационные заслоны сходства, Flyway, дизайна), Goldman D010 (лок уровней абстракции геометрии вьюпортов и операционной правды), Raz D006 (деонтический запрет изменения рабочего кода при зелёных тестах, защита внутренних путей), Barcan Marcus D015 (модальный актуализм токенов), Wittgenstein D013, Belnap D012, Ryle D002, Floridi D009, Varzi D004, Dretske & Clark D011.
+4. Пакетный Work Order: Кластер Секций XXX–XXXVI («ML-граница, brownfield, завод, пульт, вход наблюдателя, аккаунты, задачи»):
+- Механизмы (174 теста в 22 сьютах Docker Maven): MLPredictionClient, RepositoryStackAnalyzer, OnboardingAudit, ProjectFactory, ProjectWorkspaceFactory, CommandDashboard, InternalGeminiObserver, ApiAuthorizationInterceptor, AccountRepository, AccountHealthService, TaskRepository, TaskEntity.
+- Философский базис RAG: Popper D008 (фальсификационные заслоны онбординга, завода проектов, аккаунтов, терминальных статусов Закона 20), Goldman D010 (лок уровней абстракции и цепочка надежности ML-предсказателя), Raz D006 (деонтический запрет мутации кода фабрики при проходящих тестах, наказание порядком ротации), Ryle D002, Belnap D012, Noe D013.
