@@ -12387,7 +12387,7 @@ single-stage unmeasured DBR recommendation.
 `ALONZO_CHERCH_21_DERIVED_CUTOFF` and `ACP-061`.
 
 *Текущий статус:* идеален. Разделение наблюдения и мутации состояния в графе TOC, динамический триггер частоты сторожа, обнаружение дедлоков и инвариант чистых чтений DBR подтверждены замером в Docker Maven (20/20 green, D013, D004, D008).
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Чистые чтения `getDbrStatus()`, отсутствие мутации при чтении, динамический шедулинг частоты и обнаружение дедлоков заверены в Docker Maven (20/20 green, D013, D004, D008): `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Чистые чтения `getDbrStatus()`, отсутствие мутации при чтении, динамический шедулинг частоты и обнаружение дедлоков заверены в Docker Maven (20/20 green, D013, D004, D008): `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `TocSentinelService.startExecution/startExecutionWithId`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
@@ -12617,7 +12617,7 @@ rows `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX`, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
 
 **Текущий статус:** идеален. Защита мутирующих поверхностей ресурсов модели закрыта (Раздел XXXVIII, DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX / D006, Raz; AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY). Все 5 изменяющих путей (/design-drafts-cleanup, /probe-models, /design-assets, /stitch-design-system, /video-assets) покрыты сквозными Spring MockMvc тестами: отказ без ключа 401 UNAUTHORIZED с доказательством изоляции (verifyNoInteractions на сервисах), отказ с неверным ключом/токеном 403 FORBIDDEN, допуск 200 OK только при валидном ключе/токене оператора, сохранение открытых безопасных GET путей. Во все 5 изменяющих методов внедрен институциональный аудит вызывающего (AuditCallerResolver.resolveCaller) с логированием актора, проекта и исхода. Заслоны: ApiAuthorizationInterceptorTest (20/20 green), GoogleAiResourceControllerTest (6/6 green), GoogleAiResourceSecurityIntegrationTest (12/12 green) — 38/38 green.
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Деонтический барьер на все 5 мутирующих путей AI-ресурсов (401/403), нормализация путей и институциональный аудит актора заверены в Docker Maven (18/18 green, D006, D010): `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Деонтический барьер на все 5 мутирующих путей AI-ресурсов (401/403), нормализация путей и институциональный аудит актора заверены в Docker Maven (18/18 green, D006, D010): `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12). Ступень 4 закрыта, статус: ideal.
 
 **комментарий для Антигравити по механизмам:**
 - `ApiAuthorizationInterceptor.preHandle`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
@@ -12755,7 +12755,7 @@ reader to know the old 388 incident.
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `ACP-061`.
 
 **Текущий статус:** идеален. Дефект "388 ложных сбоев" полностью ликвидирован разделением на passed/failed/undetermined/not-applied (D012, Тарский и Белнап), уровни абстракции проверки и задачи разделены (D010, Голдман), делегирование гейта в SixSigma без findAll() подтверждено (31/31 green).
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). 4-значная логика истинности Тарского и Белнапа (passed, failed, undetermined, not-applied), полная ликвидация дефекта «388 ложных сбоев» разделением уровней абстракции проверки и задачи, и делегирование гейта в SixSigma без findAll() подтверждены в Docker Maven (31/31 green, D012, D010): `SixSigmaAuditServiceTest` (26/26), `QualityMetricsControllerTest` (3/3), `QualityGateControllerTest` (2/2). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). 4-значная логика истинности Тарского и Белнапа (passed, failed, undetermined, not-applied), полная ликвидация дефекта «388 ложных сбоев» разделением уровней абстракции проверки и задачи, и делегирование гейта в SixSigma без findAll() подтверждены в Docker Maven (31/31 green, D012, D010): `SixSigmaAuditServiceTest` (26/26), `QualityMetricsControllerTest` (3/3), `QualityGateControllerTest` (2/2). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
 - `QualityMetricsController`: механизм частично идеален: заслонен 3/3 green в `QualityMetricsControllerTest` (пустые проверки дают 0 дефектов), сохранять разделение уровней абстракции (`ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE`, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`).
@@ -12889,7 +12889,7 @@ damage.
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`, `ACP-061`.
 
 **Текущий статус:** считаю механизм идеальным by current source/test contract.
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Атомарный CAS-релиз брошенных финализаций `finalizing -> pending`, динамический расчет лизинга по фактическим выборкам `FINALIZING_DURATION`, иммунитет активных держателей и безопасная сборка мусора веток подтверждены в Docker Maven (21/21 green, D013, D004, D008): `StrandedFinalizingSweepServiceTest` (8/8), `BranchGarbageCollectorServiceTest` (13/13). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Атомарный CAS-релиз брошенных финализаций `finalizing -> pending`, динамический расчет лизинга по фактическим выборкам `FINALIZING_DURATION`, иммунитет активных держателей и безопасная сборка мусора веток подтверждены в Docker Maven (21/21 green, D013, D004, D008): `StrandedFinalizingSweepServiceTest` (8/8), `BranchGarbageCollectorServiceTest` (13/13). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
 - `StrandedFinalizingSweepService.sweep`: считаю механизм идеальным. Ступень 4 закрыта, статус: ideal.
@@ -13023,7 +13023,7 @@ briefs still require `desktop-1440.png`, `mobile-375.png` and `layout-check.json
 `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, `ACP-061`.
 
 **Текущий статус:** считаю механизм идеальным by current source/test contract.
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Проверка реальных физических артефактов и геометрии PR (`desktop-1440.png`, `mobile-375.png`, `layout-check.json`) вместо самоотчётов исполнителя подтверждена в Docker Maven (33/33 green, D011, D008): `DesignExcellenceGateTest` (12/12), `VerificationEvidenceGateTest` (8/8), `LayoutGeometryAuditServiceTest` (13/13). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Проверка реальных физических артефактов и геометрии PR (`desktop-1440.png`, `mobile-375.png`, `layout-check.json`) вместо самоотчётов исполнителя подтверждена в Docker Maven (33/33 green, D011, D008): `DesignExcellenceGateTest` (12/12), `VerificationEvidenceGateTest` (8/8), `LayoutGeometryAuditServiceTest` (13/13). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
 - `DesignExcellenceGate`: считаю механизм идеальным. Заслон качества: 12/12 green в `DesignExcellenceGateTest`. Ступень 4 закрыта, статус: ideal.
@@ -13137,7 +13137,7 @@ observable as fallback rather than orchestration failure.
 `GeminiContextCacheManager|getOrCreateStaticCorpusCache|cachedContents` in `src/main/java` and `src/models`.
 
 **Текущий статус:** идеален: дублирующий бэкенд-кэш удален, владение кэшем передано ML-сайдкару; Java-вызовы используют стандартный flow (D008, D011).
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ликвидация дублирующего бэкенд-кэша `GeminiContextCacheManager` (снят/decommissioned / 0 байт) и сохранение единого кэширования в сайдкаре `PredictionService.py` подтверждены (D008, D011). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ликвидация дублирующего бэкенд-кэша `GeminiContextCacheManager` (снят/decommissioned / 0 байт) и сохранение единого кэширования в сайдкаре `PredictionService.py` подтверждены (D008, D011). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
 - `GeminiContextCacheManager`: механизм снят и не должен воскресать (D011, D004). Заслон: 3/3 green в `SystemStatusControllerTest`. Ступень 4 закрыта, статус: ideal (decommissioned).
@@ -13260,7 +13260,7 @@ caller grep: `startExecution`, `enterStep`, `exitStep` and `endExecution` show t
 `AutoMergeService`, with HTTP controller surfaces as operator/event ingress.
 
 **Текущий статус:** идеален. Механизм верёвки (DBR rope) в ядре TOC полностью верифицирован и защищен от ложного оптимума ("Flow unmeasured" при отсутствии этапов), DBR троттлинг и приоритетный обход заверены.
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ограничение выпуска DBR rope, честный статус `Flow unmeasured` при отсутствии стадий (защита от ложного оптимума), приоритетный обход (`priority >= 80`) и троттлинг низкоприоритетных задач при заполнении буфера подтверждены в Docker Maven (7/7 green, D008, D012): `TocOptimizerTest` (7/7). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Ограничение выпуска DBR rope, честный статус `Flow unmeasured` при отсутствии стадий (защита от ложного оптимума), приоритетный обход (`priority >= 80`) и троттлинг низкоприоритетных задач при заполнении буфера подтверждены в Docker Maven (7/7 green, D008, D012): `TocOptimizerTest` (7/7). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
 - `TocOptimizer.evaluateConstraintsAndDbr`: считаю механизм идеальным. Заслон качества: 7/7 green в `TocOptimizerTest`. Ступень 4 закрыта, статус: ideal.
@@ -13384,7 +13384,7 @@ the ceiling by more than the expected delay-window intake.
 `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md:67`.
 
 **Текущий статус:** считаю механизм идеальным
-*Живое, 17 октября 2026 (02:20 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Очистка журнала проекта с частой задержкой fixedDelay, однострочная выборка границы `PageRequest.of(excess - 1, 1)` для защиты памяти кучи, сохранение журналов непринятых проектов и потолковое удержание записей подтверждены в Docker Maven (13/13 green, D010): `ProjectEventLogRetentionServiceTest` (10/10), `SystemStatusControllerTest` (3/3). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g). Очистка журнала проекта с частой задержкой fixedDelay, однострочная выборка границы `PageRequest.of(excess - 1, 1)` для защиты памяти кучи, сохранение журналов непринятых проектов и потолковое удержание записей подтверждены в Docker Maven (13/13 green, D010): `ProjectEventLogRetentionServiceTest` (10/10), `SystemStatusControllerTest` (3/3). Ступень 4 закрыта, статус: ideal.
 
 **Комментарии для Антигравити по механизмам:**
 - `ProjectEventLogRetentionService.enforceRetention`: считаю механизм идеальным. Заслон качества: 10/10 green в `ProjectEventLogRetentionServiceTest`. Ступень 4 закрыта, статус: ideal.
@@ -13527,11 +13527,11 @@ the ceiling by more than the expected delay-window intake.
 Полное состояние законов и то, какие из них держатся, — в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`.
 Здесь описано **что есть**; там — **каким это обязано быть**.
 
-*Живое, 17 октября 2026 (02:20 UTC):* Архитектурный баланс и демаркация суверенитета фабрики подтверждены. Фронтенд изолирован как отображение состояния, а не механизм; все 205 механизмов фабрики пяти слоев полностью описаны, заверены и заслонены воспроизводимыми тестами в Docker Maven (143/143 green в едином пакетном прогоне 15 сьютов Секций XXXVII–XLIV и XVIII: BUILD SUCCESS, время 01:16 min). Ступень 4 закрыта, статус: ideal.
+*Живое, 17 октября 2026 (04:05 UTC):* Архитектурный баланс и демаркация суверенитета фабрики подтверждены. Фронтенд изолирован как отображение состояния, а не механизм; все 205 механизмов фабрики пяти слоев полностью описаны, заверены и заслонены воспроизводимыми тестами в Docker Maven (143/143 green в едином пакетном прогоне 15 сьютов Секций XXXVII–XLIV и XVIII: BUILD SUCCESS, время 01:33 min). Ступень 4 закрыта, статус: ideal.
 
 ### Итог Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII, XLIV и XVIII
 
-Все механизмы Секции XXXVII («Сторож ТОС: чтение, которое пересчитывает»), Секции XXXVIII («Вход к ресурсам модели: изменяющие запросы под заслоном»), Секции XXXIX («Метрики качества: два счёта одного слова, 388 против нуля»), Секции XL («Выметающий обход: восстановление, которому не нужен держатель»), Секции XLI («Заслон качества экрана: проверка предмета, а не отчёта о нём»), Секции XLII («Кэш постоянного корпуса: два механизма на одно дело, работает один»), Секции XLIII («Верёвка: ограничитель выпуска, который не может сработать»), Секции XLIV («Очистка журнала проекта: предел настоящий, частота выведена из роста») и Секции XVIII («Чего в этом перечне нет: завершающий баланс фабрики») подтверждены и заверены единым пакетным замером в Docker Maven (суммарно 143/143 green в 15 сьютах, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 01:16 min):
+Все механизмы Секции XXXVII («Сторож ТОС: чтение, которое пересчитывает»), Секции XXXVIII («Вход к ресурсам модели: изменяющие запросы под заслоном»), Секции XXXIX («Метрики качества: два счёта одного слова, 388 против нуля»), Секции XL («Выметающий обход: восстановление, которому не нужен держатель»), Секции XLI («Заслон качества экрана: проверка предмета, а не отчёта о нём»), Секции XLII («Кэш постоянного корпуса: два механизма на одно дело, работает один»), Секции XLIII («Верёвка: ограничитель выпуска, который не может сработать»), Секции XLIV («Очистка журнала проекта: предел настоящий, частота выведена из роста») и Секции XVIII («Чего в этом перечне нет: завершающий баланс фабрики») подтверждены и заверены единым пакетным замером в Docker Maven (суммарно 143/143 green в 15 сьютах, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время 01:33 min):
 - **Секция XXXVII (Сторож ТОС):** 20/20 green (`TocSentinelServiceTest` 18/18, `TocSentinelControllerTest` 2/2). Чистые чтения `getDbrStatus()`, отсутствие мутации при чтении, динамический шедулинг частоты и обнаружение дедлоков (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALONZO_CHERCH_21_DERIVED_CUTOFF` / D008).
 - **Секция XXXVIII (Вход к ресурсам модели и медиа-активам):** 18/18 green (`GoogleAiResourceControllerTest` 6/6, `GoogleAiResourceSecurityIntegrationTest` 12/12). Деонтический барьер на все 5 мутирующих путей AI-ресурсов (401/403), нормализация путей и институциональный аудит актора (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
 - **Секция XXXIX (Метрики качества и аудит Six Sigma):** 31/31 green (`SixSigmaAuditServiceTest` 26/26, `QualityMetricsControllerTest` 3/3, `QualityGateControllerTest` 2/2). 4-значная логика истинности Тарского и Белнапа (`passed`, `failed`, `undetermined`, `not-applied`), полная ликвидация дефекта «388 ложных сбоев» разделением уровней абстракции проверки и задачи, делегирование гейта в SixSigma без `findAll()` (`ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE` / D012, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
@@ -14301,3 +14301,42 @@ the ceiling by more than the expected delay-window intake.
 **Текущий статус:** считаю все механизмы Кластера Секций XVI и XXIX («Реестр 59 архитектурных предписаний L2» и «Цех дизайна: порождение экранов, геометрия и дизайн-система») идеальными. Заслон качества: 272/272 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz & Varzi / D015 Barcan Marcus / D012 Belnap / D013 Wittgenstein / D002 Ryle / D009 Belnap / D004 Varzi / D011 Dretske). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити:** считаю механизмы Кластера Секций XVI и XXIX идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (272/272 green: D008, D010, D006, D015, D012, D013, D002, D009, D004, D011).
+
+---
+
+### Итог Пакетного Замера Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII, XLIV и XVIII («Финальный контур TOC, авторизация AI-ресурсов, метрики Six Sigma, выметающие обходы, заслоны экранов, кэш корпуса, верёвка TOC, очистка журналов и завершающий баланс фабрики»)
+
+**Дата:** 2026-10-17 04:05 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 15 тест-сьютов Кластера со 100% green: **143/143 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:33 min).
+
+1. **Группа 1: Секция XXXVII — Сторож ТОС и адаптивный тайминг (20 тестов, 2 сьюта):**
+   - `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2): чистые чтения `getDbrStatus()`, отсутствие мутации при чтении, динамический шедулинг частоты и обнаружение дедлоков (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALONZO_CHERCH_21_DERIVED_CUTOFF` / D008).
+
+2. **Группа 2: Секция XXXVIII — Вход к ресурсам модели и медиа-активам (18 тестов, 2 сьюта):**
+   - `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12): деонтический барьер на все 5 мутирующих путей AI-ресурсов (401/403), нормализация путей и институциональный аудит актора (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+
+3. **Группа 3: Секция XXXIX — Метрики качества и аудит Six Sigma (31 тест, 3 сьюта):**
+   - `SixSigmaAuditServiceTest` (26/26), `QualityMetricsControllerTest` (3/3), `QualityGateControllerTest` (2/2): 4-значная логика истинности Тарского и Белнапа (`passed`, `failed`, `undetermined`, `not-applied`), полная ликвидация дефекта «388 ложных сбоев» разделением уровней абстракции проверки и задачи, делегирование гейта в SixSigma без `findAll()` (`ALFRED_TARSKIY_02_TRUTH_STATUS_TABLE` / D012, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+4. **Группа 4: Секция XL — Выметающий обход и сборка мусора веток (21 тест, 2 сьюта):**
+   - `StrandedFinalizingSweepServiceTest` (8/8), `BranchGarbageCollectorServiceTest` (13/13): атомарный CAS-релиз брошенных финализаций `finalizing -> pending`, динамический расчет лизинга по фактическим выборкам `FINALIZING_DURATION`, иммунитет активных держателей и безопасная сборка мусора веток (`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008).
+
+5. **Группа 5: Секция XLI — Заслон качества экрана и геометрия (33 теста, 3 сьюта):**
+   - `DesignExcellenceGateTest` (12/12), `VerificationEvidenceGateTest` (8/8), `LayoutGeometryAuditServiceTest` (13/13): проверка реальных физических артефактов и геометрии PR (`desktop-1440.png`, `mobile-375.png`, `layout-check.json`) вместо самоотчётов исполнителя (`ANDI_KLARK_10_EMBODIED_INTERFACE_PREDICTION` / D011, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+6. **Группа 6: Секция XLII — Кэш постоянного корпуса:**
+   - Ликвидация дублирующего бэкенд-кэша `GeminiContextCacheManager` (снят/decommissioned / 0 байт) и сохранение единого кэширования в сайдкаре `PredictionService.py` (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+7. **Группа 7: Секция XLIII — Верёвка TOC (7 тестов, 1 сьют):**
+   - `TocOptimizerTest` (7/7): ограничение выпуска DBR rope, честный статус `Flow unmeasured` при отсутствии стадий (защита от ложного оптимума), приоритетный обход (`priority >= 80`) и троттлинг низкоприоритетных задач при заполнении буфера (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+
+8. **Группа 8: Секция XLIV — Очистка журнала проекта (13 тестов, 2 сьюта):**
+   - `ProjectEventLogRetentionServiceTest` (10/10), `SystemStatusControllerTest` (3/3): частая задержка `fixedDelay`, однострочная выборка границы `PageRequest.of(excess - 1, 1)` для защиты памяти кучи, сохранение журналов непринятых проектов и потолковое удержание записей (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+9. **Группа 9: Секция XVIII — Чего в этом перечне нет: завершающий баланс фабрики:**
+   - Полная картина архитектурных границ, демаркация исключённых сущностей, отсутствие фронтенда и окончательное подтверждение суверенитета фабрики. Все 205 механизмов фабрики закрыты (ideal).
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII, XLIV и XVIII («Финальный контур TOC, авторизация AI-ресурсов, метрики Six Sigma, выметающие обходы, заслоны экранов, кэш корпуса, верёвка TOC, очистка журналов и завершающий баланс фабрики») идеальными. Заслон качества: 143/143 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D011 Clark & Dretske / D012 Belnap / D013 Wittgenstein & Noë / D004 Varzi). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII, XLIV и XVIII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (143/143 green: D008, D010, D006, D011, D012, D013, D004).
