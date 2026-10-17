@@ -15851,7 +15851,7 @@ the ceiling by more than the expected delay-window intake.
 
 ### Итог Пакетного Замера Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII и XLIV («Сторож ТОС, вход к ресурсам модели, метрики качества Six Sigma, выметающий обход, заслон качества экрана, постоянный кэш корпуса, верёвка ТОС и очистка журнала проекта»)
 
-**Дата:** 2026-10-17 15:57 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 26 тест-сьютов Кластера Секций XXXVII–XLIV со 100% green: **206/206 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:06 min).
+**Дата:** 2026-10-17 16:35 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 26 тест-сьютов Кластера Секций XXXVII–XLIV со 100% green: **206/206 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:00 min).
 
 1. **Группа 1: Секция XXXVII — Сторож ТОС: чтение, которое пересчитывает (33 теста, 5 сьютов):**
    - `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2), `TocNodeTimeoutTest` (4/4), `TocWelfordOnlineVarianceFalsificationTest` (5/5), `TocPipelinePhasesInstrumentationTest` (4/4): разделение чтения и наблюдения, динамический расчет периода watchdog по дисперсии Уэлфорда, заслон тайм-аутов узлов графа (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010).
