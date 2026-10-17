@@ -1,4 +1,4 @@
-# Директивы и наряд для L2 (2026-10-17 00:46 UTC)
+# Директивы и наряд для L2 (2026-10-17 00:54 UTC)
 
 **От:** Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
@@ -10,31 +10,24 @@
 
 1. **Полная автономия:** Непрерывный замкнутый цикл фабрики без ожидания внешних подтверждений, пауз и ручных согласований.
 2. **ПАКЕТНЫЙ РЕЖИМ (Batching):** Выдавать Work Order сразу на всю следующую незакрытую секцию механизмов целиком.
-   - Секция VIII («Самопроверка, Flow & Metrics, Операционная Правда, Кайдзен, Фальсификация и Непрерывная Оркестрация фабрики») полностью заверена инженером (коммит `fe70d07b`, 290/290 green в 25 тест-сьютах Docker Maven, строго 0 строк изменений рабочего кода).
-   - Настоящая директива открывает пакетный замер следующего стратегического кластера — **Кластер Секций IX, X и XI («Внешние системы: AI/RAG/Runtime-граница фабрики, Цех дизайна и Наблюдение за живым продуктом клиента»)** целиком (**280 тестов в 26 тест-сьютах в едином пакетном прогоне в Docker Maven**):
-     * **Группа 1: Секция IX — Внешние системы и внешняя AI/RAG/Runtime-граница фабрики (110 тестов, 8 сьютов):**
-       - `GoogleAiResourceSecurityIntegrationTest` (12/12 green), `GoogleAiResourceControllerTest` (6/6 green): безопасность API Google AI, закрытие path traversal за пределами `./data/video-assets`, key-gate и fail-closed защита (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006);
-       - `GeminiContextServiceTest` (28/28 green): RAG постоянного контекста, косинусная близость векторов `EmbeddingSimilarityUtil`, lazy-load содержимого документов (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` / D014);
-       - `StitchClientTest` (10/10 green): JSON-RPC клиент к Stitch MCP, сохранение `screenId` и изоляция сессий (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010);
-       - `DesignAssetServiceTest` (12/12 green): оркестрация дизайн-артефактов, отсечение офф-токен экранов до коммита в git (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015);
-       - `GeminiObserverActionServiceTest` (17/17 green), `InternalGeminiObserverControllerTest` (16/16 green), `InternalGeminiObserverSecurityIntegrationTest` (9/9 green): авторизация действий наблюдателя через политики с категорическим запретом мутации кода (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
-     * **Группа 2: Секция X — Цех дизайна: экраны, марка, геометрия и дизайн-система (91 тест, 11 сьютов):**
-       - `DesignShopOrchestrationServiceTest` (13/13 green), `DesignShopOrchestrationServiceLaw15Test` (7/7 green), `DesignShopCycleRepositoryIntegrationTest` (6/6 green): полный жизненный цикл дизайн-цеха со строгим соблюдением Закона 15 (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015);
-       - `DesignConsistencyAuditServiceTest` (15/15 green): строгий аудит соответствия токенов дизайн-системы марке (`BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015);
-       - `LayoutGeometryAuditServiceTest` (13/13 green): геометрия экранов, взаимное расположение и отступы (`ENDI_KLARK_05_LAYOUT_PROXIMITY` / D011);
-       - `DesignSystemFalsificationServiceTest` (6/6 green): фальсификационные заслоны целостности дизайн-системы (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
-       - `DesignDriftMonitorServiceTest` (7/7 green): детектор дрейфа дизайн-токенов (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013);
-       - `StrandedDesignCycleSweepServiceTest` (4/4 green): выметающий сборщик зависших дизайн-циклов (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
-       - `DesignImplementationLoopClosureLaw3Test` (2/2 green): замыкание цикла реализации по Закону 3 (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011);
-       - `DesignExcellenceGateTest` (12/12 green), `DesignExcellenceGateFalsificationTest` (6/6 green): гейт совершенства дизайна с попперовской фальсификацией ложных подтверждений (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
-     * **Группа 3: Секция XI — Наблюдение за живым продуктом клиента (79 тестов, 7 сьютов):**
-       - `ClientRuntimeObservabilityServiceTest` (29/29 green): демаркация сбоя инструмента наблюдения (`observed=false`) от сбоя продукта клиента (`answered=false`) (`ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013);
-       - `ObservationHostingDemarcationLaw26Test` (3/3 green): демаркация хостинга наблюдений по Закону 26 (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
-       - `FailureDemarcationLaw22Test` (5/5 green): фальсификация ложных отказов по Закону 22 (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
-       - `BetaPosteriorTest` (9/9 green): байесовская апостериорная оценка жизнеспособности продукта (`RICHARD_DZHEFFRI_02_DECISION_EXPECTED_LOSS` / D005);
-       - `RuntimeHealthShiftDetectorTest` (9/9 green): детектор статистического сдвига здоровья рантайма (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011);
-       - `ProductCapabilityServiceTest` (18/18 green): эмпирическая способность продукта отвечать на запросы без подмены декларациями (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011);
-       - `RuntimeVerdictLayerTest` (6/6 green): вердиктный слой рантайма в многозначной решётке суждений (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012).
+   - Кластер Секций IX, X и XI («Внешние системы: AI/RAG/Runtime-граница фабрики, Цех дизайна и Наблюдение за живым продуктом клиента») полностью заверен инженером (коммит `1d151487`, 280/280 green в 26 тест-сьютах Docker Maven, строго 0 строк изменений рабочего кода).
+   - Настоящая директива открывает пакетный замер следующего стратегического кластера — **Кластер Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики»)** целиком (**193 теста в 32 тест-сьютах в едином пакетном прогоне в Docker Maven**):
+     * **Группа 1: Секция XII — Журнал, память, санитария (64 теста, 10 сьютов):**
+       - `LogScopeBufferTest` (6/6 green), `LogScopeAndDefectJournalInusFalsificationTest` (5/5 green), `ScopedBufferAppenderFalsificationTest` (13/13 green): кольцевой буфер журнала, INUS-анализ первопричин дефектов, потокобезопасное накопление без переполнения памяти JVM (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `DZHON_MEKI_01_INUS_CONDITION` / D007);
+       - `ProjectEventLogRetentionServiceTest` (10/10 green): очистка журнала с частотой, выведенной из темпа роста, исключающая подъём излишка в память JVM (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+       - `SystemSettingsServiceTest` (13/13 green): неизменяемость ключевых системных настроек (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
+       - `RoleCapabilityLoaderTest` (4/4 green): детерминированная загрузка ролевых полномочий (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010);
+       - `ProjectAuditPipelineServiceTest` (4/4 green): пайплайн аудита проектов (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010);
+       - `IdleProjectAdviceServiceTest` (6/6 green), `RoleAdviceLoopServiceTest` (2/2 green), `RoleAdviceLoopServiceIntegrationTest` (1/1 green): контур ролевых советов для простаивающих проектов без зацикливания и деградации производительности (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011).
+     * **Группа 2: Секция XIIа — Управляющая поверхность API (78 тестов, 14 сьютов):**
+       - `AccountControllerIntegrationTest` (5/5 green), `InternalTaskControllerTest` (6/6 green), `WishlistControllerIntegrationTest` (8/8 green), `SettingsControllerIntegrationTest` (8/8 green), `GreetingControllerIntegrationTest` (5/5 green), `LinearSyncControllerTest` (2/2 green), `GithubWebhookControllerTest` (9/9 green), `SystemStatusControllerTest` (3/3 green), `DashboardControllerTest` (2/2 green), `CommandDashboardControllerTest` (4/4 green): чистое чтение без скрытых побочных эффектов мутации данных, сохранение контрактов API (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013);
+       - `OperationalPolicyDeniedExceptionFalsificationTest` (9/9 green): отказ операционной политики с типизированной институциональной причиной (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006);
+       - `ClaimRightsDutiesMatrixTest` (7/7 green), `ClaimResultStatusTruthTableFalsificationTest` (5/5 green), `ClaimServiceRaceGuardTest` (5/5 green): матрица прав и обязанностей при захвате задач, 5-значная решётка истинности исходов притязаний, защита от параллельных гонок (`DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006, `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006).
+     * **Группа 3: Секция XIII — Взаимодействие и карта владения состоянием (51 тест, 8 сьютов):**
+       - `SessionLifecycleServiceTest` (8/8 green), `SessionLifecycleServiceFalsificationTest` (6/6 green): конечный автомат жизненного цикла сессий Jules без категориальных ошибок (`DZHILBERT_RAYL_02_CATEGORY_ERROR_SCAN` / D002);
+       - `StrandedFinalizingSweepServiceTest` (8/8 green), `StrandedFinalizingSweepServiceFalsificationTest` (6/6 green): атомарный CAS-сброс зависших состояний финализации (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `DZHON_SERL_01_SPEECH_ACT_REGISTRATION` / D007);
+       - `AutoMergeLaw20InvariantS4Test` (3/3 green): Закон 20 монопольного владения слиянием PR (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004);
+       - `AccountRepositoryFalsificationTest` (8/8 green), `AccountRepositoryIntegrationTest` (8/8 green), `TaskRepositoryIntegrationTest` (4/4 green): строгое разграничение прав записи сущностей аккаунтов и задач (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006).
 3. **ПРИНЦИП ANTIGRAVITY_QUEUE (Ступени 3 и 4):**
    - **СТРОГО ЗАМЕР В РАНТАЙМЕ, А НЕ ПРАВКА КОДА.**
    - **КАТЕГОРИЧЕСКИЙ ДЕОНТИЧЕСКИЙ ЗАПРЕТ (Раз D006):** Запрещено вносить любые изменения в рабочий код сервисов, контроллеров, репозиториев, сущностей и скриптов (`src/main/java`, `src/main/resources`, `scripts/`) при проходящих тестах!
@@ -43,34 +36,34 @@
 
 ---
 
-## 2. Философский базис RAG-корпуса (D008, D010, D006, D015, D013, D012, D004, D011, D005)
+## 2. Философский базис RAG-корпуса (D008, D010, D006, D013, D012, D002, D004, D007, D011)
 
-- **`KARL_POPPER_01_FALSIFICATION_HARNESS` [D008 False green / Popper]:**
-  * Попперовские фальсификационные заслоны гейтов совершенства дизайна (`DesignExcellenceGateFalsificationTest`), целостности дизайн-системы (`DesignSystemFalsificationServiceTest`), демаркации сбоев по Закону 22 (`FailureDemarcationLaw22Test`) и демаркации сбоя инструмента наблюдения от сбоя продукта (`ClientRuntimeObservabilityServiceTest`).
+- **`KARL_POPPER_01_FALSIFICATION_HARNESS` & `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` [D008 False green / Popper & Tarski]:**
+  * Попперовские фальсификационные заслоны целостности схемы Flyway, сессий (`SessionLifecycleServiceFalsificationTest`), финализации (`StrandedFinalizingSweepServiceFalsificationTest`), буферов (`ScopedBufferAppenderFalsificationTest`) и исключений политик (`OperationalPolicyDeniedExceptionFalsificationTest`).
 - **`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` & `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` [D010 Data lineage loss / Goldman]:**
-  * Строгий лок уровней абстракции векторного индекса и изоляция проекций от чтения контента (`GeminiContextServiceTest`), каузальная трассируемость токенов и непрерывная цепь свидетельств Stitch (`StitchClientTest`).
+  * Строгий лок уровней абстракции кольцевого буфера журнала, семантическая изоляция скоупов потока, надежная очистка журнала без подъёма излишков в JVM и детерминированная загрузка ролевых уставов.
 - **`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` & `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` [D006 Authorization ambiguity / Raz]:**
   * **Императивный деонтический запрет инженеру L2 на модификацию рабочего кода фабрики при проходящих тестах (exclusionary reasons);**
-  * Кодифицированные запреты: демаркация полномочий наблюдателя без доступа к коду (`GeminiObserverActionServiceTest`), отсечение офф-токен экранов (`DesignAssetServiceTest`), изоляция хостинга наблюдений по Закону 26 (`ObservationHostingDemarcationLaw26Test`).
-- **`BARKAN_MARKUS_01_MODAL_ACTUALISM` [D015 Aesthetic drift / Barcan Marcus]:**
-  * Модальный актуализм дизайн-системы: соответствие токенов реальной марке в репозитории (`DesignConsistencyAuditServiceTest`, `DesignShopOrchestrationServiceLaw15Test`).
+  * Кодифицированные запреты: отказ операционных политик с институциональной причиной, неизменяемость системных настроек, матрица прав и обязанностей при захвате задач (`ClaimRightsDutiesMatrixTest`).
 - **`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` [D013 Runtime drift / Wittgenstein]:**
-  * Анти-зеркальная телеметрия: объективное наблюдение за живым рантаймом продукта без подмены желаемым (`ProductCapabilityServiceTest`, `DesignDriftMonitorServiceTest`).
+  * Анти-зеркальная телеметрия: неизменяемость внешних контрактов API, чистое чтение контроллеров GET без скрытых побочных эффектов записи.
 - **`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` [D012 Truth status / Belnap]:**
-  * Многозначная логика вердиктов рантайма (`RuntimeVerdictLayerTest`).
+  * 5-значная решётка истинности исходов притязаний на задачи (`ClaimResultStatusTruthTableFalsificationTest`).
+- **`DZHILBERT_RAYL_02_CATEGORY_ERROR_SCAN` [D002 Category error / Ryle]:**
+  * Конечный автомат жизненного цикла Jules-сессий без категориальных ошибок и смешения стадий.
 - **`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` & `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` [D004 Mereology & D006 Boundary / Varzi]:**
-  * Атомарный CAS-клейм владения циклами дизайн-цеха (`DesignShopCycleRepositoryIntegrationTest`), топологическая граница внешних ресурсов (`GoogleAiResourceSecurityIntegrationTest`).
-- **`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` & `ENDI_KLARK_05_LAYOUT_PROXIMITY` [D011 Teleosemantic feedback / Dretske & Clark]:**
-  * Телеосемантическая обратная связь детекции сдвига здоровья (`RuntimeHealthShiftDetectorTest`), замыкание цикла реализации (`DesignImplementationLoopClosureLaw3Test`), геометрия и отступы макетов (`LayoutGeometryAuditServiceTest`).
-- **`RICHARD_DZHEFFRI_02_DECISION_EXPECTED_LOSS` [D005 Bayesian decision / Jeffrey]:**
-  * Байесовская апостериорная оценка жизнеспособности продукта (`BetaPosteriorTest`).
+  * Закон 20 монопольного владения слиянием PR (`AutoMergeLaw20InvariantS4Test`), атомарный CAS-сброс зависшей финализации, топологическая изоляция гонок аренды задач (`ClaimServiceRaceGuardTest`).
+- **`DZHON_MEKI_01_INUS_CONDITION` & `DZHON_SERL_01_SPEECH_ACT_REGISTRATION` [D007 Institutional defect & fact register / Mackie & Searle]:**
+  * Атрибуция первопричин дефектов в журнале дефектов (INUS-анализ) и институциональная регистрация фактов финализации.
+- **`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` [D011 Teleosemantic feedback / Dretske]:**
+  * Телеосемантическая обратная связь: цикл ролевых советов без зависания и деградации потока.
 
 ---
 
 ## 3. Ожидаемый результат такта L2
 
-1. Провести единый непрерывный пакетный прогон тестов Кластера Секций IX, X и XI в Docker Maven 3.9.9 Temurin-21 (`-m 2g`):
-   - Заверить все 26 тест-сьютов Кластера (280 тестов: 0 failures, 0 errors, 0 skipped).
+1. Провести единый непрерывный пакетный прогон тестов Кластера Секций XII, XIIа и XIII в Docker Maven 3.9.9 Temurin-21 (`-m 2g`):
+   - Заверить все 32 тест-сьюта Кластера (193 теста: 0 failures, 0 errors, 0 skipped).
 2. Соблюсти фундаментальный инвариант Ступени 4:
    - **СТРОГО 0 СТРОК ИЗМЕНЕНИЙ РАБОЧЕГО КОДА** (`src/main/java`, `src/main/resources`, `scripts/`).
 3. Зафиксировать результаты замера в `docs/FACTORY_MECHANISMS.md` и `docs/ANTIGRAVITY_QUEUE.md`.
