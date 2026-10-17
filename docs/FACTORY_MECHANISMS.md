@@ -2945,7 +2945,7 @@ charter content из-за перехода только на parsed fields; вт
 `ProjectAuditPipelineService.java:23-199`; `IdleProjectAdviceServiceTest.java`,
 `RoleAdviceLoopServiceTest.java`, `RoleAdviceLoopServiceIntegrationTest.java`.
 
-*Живое, 16 октября 2026 (23:30 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:30 min]. Семейство журнала, памяти, настроек, уставов и санитарии подтверждено 64/64 green в единый пакетный проход в Docker Maven:
+*Живое, 17 октября 2026 (00:58 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:23 min]. Семейство журнала, памяти, настроек, уставов и санитарии подтверждено 64/64 green в единый пакетный проход в Docker Maven:
 - `LogScope`: строгая демаркация контекстов MDC (`PROJECT:{id}` против `SYSTEM`), защита от утечки системного шума в проектный буфер, отсечение DEBUG/TRACE. Заслон качества: 24/24 green (`LogScopeBufferTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5, `ScopedBufferAppenderFalsificationTest` 13/13) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `ProjectLogFlushQueue`: ограниченная очередь сброса с безопасным отсечением избытка при переполнении без риска OOM и без блокировки рабочих потоков. Заслон качества подтвержден тестами журнала и декоммиссии. Ступень 4 закрыта (ideal).
 - `ProjectEventLogRetentionService`: каузальная цепочка надёжности Голдмана (D010), удаление по жизненному циклу (grace period для accepted) и соблюдение per-project ceiling для active/frozen. Заслон качества: 10/10 green в `ProjectEventLogRetentionServiceTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
@@ -3106,7 +3106,7 @@ charter content из-за перехода только на parsed fields; вт
 сделал» ни по одному из них не имеет ответа. Чинится это не по одному эндпоинту, а одним движением на
 границе — предписание 24.
 
-*Живое, 16 октября 2026 (23:30 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:30 min]. Семейство управляющей поверхности, мутирующих эндпоинтов и авторизационных заслонов подтверждено 78/78 green в единый пакетный проход в Docker Maven:
+*Живое, 17 октября 2026 (00:58 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:23 min]. Семейство управляющей поверхности, мутирующих эндпоинтов и авторизационных заслонов подтверждено 78/78 green в единый пакетный проход в Docker Maven:
 - `AccountController`: маскирование секретов в DTO, аудит мутаций и фиксация пула ролей. Заслон качества: 5/5 green в `AccountControllerIntegrationTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `ProjectController`: деонтические запреты невалидных переходов (HTTP 409 Conflict) и факт-регистр смены статусов. Заслон качества: 9/9 green в `OperationalPolicyDeniedExceptionFalsificationTest` в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
 - `ClaimController`: конструктивные доказательства терминальных исходов, матрица прав и обязанностей и атомарные CAS-предикаты. Заслон качества: 17/17 green (`ClaimRightsDutiesMatrixTest` 7/7, `ClaimResultStatusTruthTableFalsificationTest` 5/5, `ClaimServiceRaceGuardTest` 5/5) в Docker-контейнере Maven. Ступень 4 закрыта (ideal).
@@ -3366,7 +3366,7 @@ charter content из-за перехода только на parsed fields; вт
   `src/main/java/com/eneik/production/services/jules/JulesDispatchService.java`; grep по
   `julesSessionRepository.(save|delete)`.
 * **Текущий статус** — считаю механизм идеальным: подтверждено замером в Docker Maven (14/14 green, D004, D010).
-* *Живое, 16 октября 2026 (23:30 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:30 min]. Семейство владения состоянием, жизненного цикла сессий и хранилищ подтверждено 51/51 green в единый пакетный проход в Docker Maven:
+* *Живое, 17 октября 2026 (00:58 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:23 min]. Семейство владения состоянием, жизненного цикла сессий и хранилищ подтверждено 51/51 green в единый пакетный проход в Docker Maven:
   - `SessionLifecycleService`: модель владения жизненным циклом `JulesSessionEntity` исключает гонки при захвате workflow-lease `pr_opened`, закрытии и завершении сессий. Заслон качества: 14/14 green в `SessionLifecycleServiceTest` (8/8) и `SessionLifecycleServiceFalsificationTest` (6/6) в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
   - `StrandedFinalizingSweepService`: автономное восстановление зависших финализаций `finalizing -> pending` без внешнего оператора, CAS-предикаты. Заслон качества: 14/14 green в `StrandedFinalizingSweepServiceTest` (8/8) и `StrandedFinalizingSweepServiceFalsificationTest` (6/6) в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
   - `AutoMergeLaw20`: монопольное владение слиянием веток по Закону 20 и защита от перезаписи терминальных состояний. Заслон качества: 3/3 green в `AutoMergeLaw20InvariantS4Test` в Docker-контейнере Maven. Ступень 4 закрыта, статус: ideal.
@@ -3395,7 +3395,7 @@ charter content из-за перехода только на parsed fields; вт
 
 ### Итог кластера Секций XII, XIIа и XIII
 
-Все механизмы Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 23:30 UTC]: суммарно **193/193 green** (32 тест-сьюта, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:30 min):
+Все механизмы Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики») подтверждены и заверены в едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-17 00:58 UTC]: суммарно **193/193 green** (32 тест-сьюта, 0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:23 min):
 - **Секция XII («Журнал, память, санитария»):** 64/64 green (10 сьютов: `LogScopeBufferTest` 6/6, `LogScopeAndDefectJournalInusFalsificationTest` 5/5, `ScopedBufferAppenderFalsificationTest` 13/13, `ProjectEventLogRetentionServiceTest` 10/10, `SystemSettingsServiceTest` 13/13, `RoleCapabilityLoaderTest` 4/4, `ProjectAuditPipelineServiceTest` 4/4, `IdleProjectAdviceServiceTest` 6/6, `RoleAdviceLoopServiceTest` 2/2, `RoleAdviceLoopServiceIntegrationTest` 1/1).
 - **Секция XIIа («Управляющая поверхность API»):** 78/78 green (14 сьютов: `GreetingControllerIntegrationTest` 5/5, `LinearSyncControllerTest` 2/2, `InternalTaskControllerTest` 6/6, `AccountControllerIntegrationTest` 5/5, `SettingsControllerIntegrationTest` 8/8, `WishlistControllerIntegrationTest` 8/8, `GithubWebhookControllerTest` 9/9, `SystemStatusControllerTest` 3/3, `DashboardControllerTest` 2/2, `CommandDashboardControllerTest` 4/4, `OperationalPolicyDeniedExceptionFalsificationTest` 9/9, `ClaimRightsDutiesMatrixTest` 7/7, `ClaimResultStatusTruthTableFalsificationTest` 5/5, `ClaimServiceRaceGuardTest` 5/5).
 - **Секция XIII («Карта владения состоянием фабрики»):** 51/51 green (8 сьютов: `SessionLifecycleServiceTest` 8/8, `SessionLifecycleServiceFalsificationTest` 6/6, `StrandedFinalizingSweepServiceTest` 8/8, `StrandedFinalizingSweepServiceFalsificationTest` 6/6, `AutoMergeLaw20InvariantS4Test` 3/3, `AccountRepositoryFalsificationTest` 8/8, `AccountRepositoryIntegrationTest` 8/8, `TaskRepositoryIntegrationTest` 4/4).
@@ -13874,7 +13874,7 @@ the ceiling by more than the expected delay-window intake.
 
 ### Итог Пакетного Замера Кластера Секций XII, XIIа и XIII («Журнал, память, санитария, управляющая поверхность API и карта владения состоянием фабрики»)
 
-**Дата:** 2026-10-16 23:30 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 32 тест-сьюта Кластера Секций XII, XIIа и XIII со 100% green: **193/193 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:30 min).
+**Дата:** 2026-10-17 00:58 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 32 тест-сьюта Кластера Секций XII, XIIа и XIII со 100% green: **193/193 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:23 min).
 
 1. **Группа 1: Секция XII — Журнал, память, санитария (64 теста, 10 сьютов):**
    - `LogScopeBufferTest` (6/6), `LogScopeAndDefectJournalInusFalsificationTest` (5/5), `ScopedBufferAppenderFalsificationTest` (13/13): кольцевой буфер журналов, семантическая изоляция скоупов потока, фильтрация шума и INUS-атрибуция дефектов (`DURDZHON_MJEKKI_03_INUS_CONDITION` / D007, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
