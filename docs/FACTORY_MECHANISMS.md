@@ -15590,3 +15590,40 @@ the ceiling by more than the expected delay-window intake.
 **Текущий статус:** считаю все механизмы Кластера Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI («Сайдкары и пограничные сервисы: клиент ML-предсказателя, brownfield-разбор чужого репозитория, завод репозиториев, пульт управления готовностью, внутренний вход наблюдателя, выбор аккаунта, хранилище задач, Закон 20 и Закон 1») идеальными. Заслон качества: 174/174 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D002 Ryle / D009 Belnap / D012 Belnap / D013 Wittgenstein & Noë). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити:** считаю механизмы Кластера Секций XXX–XXXVI идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (174/174 green: D008, D010, D006, D002, D009, D012, D013).
+
+---
+
+### Итог Пакетного Замера Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII и XLIV («Сторож ТОС, авторизационная граница AI-ресурсов, метрики Six Sigma и операционная правда, выметающий обход зависших финализаций, заслоны экранов и верстки, кэш постоянного корпуса RAG, верёвка DBR и очистка журнала проектов»)
+
+**Дата:** 2026-10-17 13:44 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 15 тест-сьютов Кластера Секций XXXVII–XLIV со 100% green: **143/143 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:44 min).
+
+1. **Группа 1: Секция XXXVII — Сторож ТОС: чтение, которое пересчитывает (20 тестов, 2 сьюта):**
+   - `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2): чистое чтение кэшированного DBR-снимка `getDbrStatus()` без паразитной мутации наблюдаемого графа, адаптивный динамический шедулинг частоты сторожа (`[250ms, 10000ms]`), HTTP 429 при троттлинге, инкапсуляция внутренних компонентов (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `ALONZO_CHERCH_21_DERIVED_CUTOFF` / D008, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004).
+
+2. **Группа 2: Секция XXXVIII — Вход к ресурсам модели: изменяющие запросы под заслоном (18 тестов, 2 сьюта):**
+   - `GoogleAiResourceControllerTest` (6/6), `GoogleAiResourceSecurityIntegrationTest` (12/12): деонтический запрет неавторизованных мутаций ресурсов модели (401/403), защита от directory traversal, институциональный аудит актора (`AuditCallerResolver`), безопасные GET-эндпоинты остаются чистым чтением (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006).
+
+3. **Группа 3: Секция XXXIX — Метрики качества: два счёта одного слова, 388 против нуля (31 тест, 3 сьюта):**
+   - `SixSigmaAuditServiceTest` (26/26), `QualityMetricsControllerTest` (3/3), `QualityGateControllerTest` (2/2): 4-значная решётка истинности Тарского и Белнапа (`passed`, `failed`, `undetermined`, `not-applied`), полная ликвидация дефекта «388 ложных сбоев» разделением уровней проверки и задачи, защита от NPE при пустых предикатах, расчет Six Sigma DPMO (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+4. **Группа 4: Секция XL — Выметающий обход зависших финализаций и ветки-сироты (21 тест, 2 сьюта):**
+   - `StrandedFinalizingSweepServiceTest` (8/8), `BranchGarbageCollectorServiceTest` (13/13): атомарный CAS-релиз брошенных финализаций `finalizing -> pending` по временной метке `finalizingSince`, динамический расчет лизинга по выборкам `FINALIZING_DURATION`, безопасная очистка неактивных веток (`ALVA_NOE_17_CAUSAL_PROCESS_TRACE` / D013, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+
+5. **Группа 5: Секция XLI — Заслон качества экрана и геометрии верстки (33 теста, 3 сьюта):**
+   - `DesignExcellenceGateTest` (12/12), `VerificationEvidenceGateTest` (8/8), `LayoutGeometryAuditServiceTest` (13/13): телеосемантическая сверка физических артефактов и DOM-геометрии PR (`desktop-1440.png`, `mobile-375.png`, `layout-check.json`), Gestalt-близость (< 1.0), выявление перекрытий и микро-шрифтов, запрет самоотчетов UI (`ENDI_KLARK_02_GROUPING_PROXIMITY_GATE` / D011, `FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+
+6. **Группа 6: Секция XLII — Кэш постоянного корпуса: два механизма на одно дело, работает один (3 теста, 1 сьют):**
+   - `SystemStatusControllerTest` (3/3): подтверждение снятия дублирующего бэкенд-кэша `GeminiContextCacheManager` (0 байт), изоляция сайдкар-кэша (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004).
+
+7. **Группа 7: Секция XLIII — Верёвка: ограничитель выпуска, который не может сработать (7 тестов, 1 сьют):**
+   - `TocOptimizerTest` (7/7): ограничение выпуска DBR-верёвки, субординация рычагов ТОС, допуск задач по емкости аккаунтов, отсутствие ложной оптимальности при одностадийном потоке (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+8. **Группа 8: Секция XLIV — Очистка журнала проекта: предел настоящий, частота выведена из роста (10 тестов, 1 сьют):**
+   - `ProjectEventLogRetentionServiceTest` (10/10): потолковое удержание записей журнала проекта, однострочная выборка границы `PageRequest.of(excess - 1, 1)` для защиты памяти кучи, сохранение журналов непринятых проектов (`ALONZO_CHERCH_21_DERIVED_CUTOFF` / D010, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII и XLIV («Сторож ТОС, авторизационная граница AI-ресурсов, метрики Six Sigma и операционная правда, выметающий обход зависших финализаций, заслоны экранов и верстки, кэш постоянного корпуса RAG, верёвка DBR и очистка журнала проектов») идеальными. Заслон качества: 143/143 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman & Church / D006 Raz & Varzi / D012 Belnap / D013 Wittgenstein & Noë / D011 Clark & Dretske / D004 Varzi). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Кластера Секций XXXVII–XLIV идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (143/143 green: D008, D010, D006, D012, D013, D011, D004).
+
