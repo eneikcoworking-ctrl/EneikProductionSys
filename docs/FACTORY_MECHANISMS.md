@@ -16496,7 +16496,7 @@ the ceiling by more than the expected delay-window intake.
 
 ### Итог Пакетного Замера Кластера Секций XXX, XXXI, XXXII, XXXIII, XXXIV, XXXV и XXXVI («Клиент предсказателя, Разбор чужого репозитория, Завод репозиториев, Пульт управления, Внутренний вход наблюдателя, Выбор аккаунта, Хранилище задач»)
 
-**Дата:** 2026-10-17 19:12 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 22 тест-сьюта Кластера Секций XXX–XXXVI со 100% green: **174/174 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:02 min).
+**Дата:** 2026-10-17 19:45 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 22 тест-сьюта Кластера Секций XXX–XXXVI со 100% green: **174/174 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:59 min).
 
 1. **Группа 1: Секция XXX — Клиент к предсказателю и внешняя ML-граница (9 тестов, 1 сьют):**
    - `MLPredictionServiceClientTest` (9/9): деонтическая защита пограничного HTTP-клиента к ML-сайдкару предсказаний, строгий контракт форматов и изоляция отказов инференса (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
