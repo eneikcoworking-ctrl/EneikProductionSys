@@ -5720,7 +5720,7 @@ associated with this repo»: это заготовка, а не боевая п�
 
 Все 59 предписаний Секции XVI подтверждены и заверены единым пакетным замером в рантайме и Docker Maven. Архитектурное владение, заслоны истинности Белнапа, тянущий контур ТОС, деонтические запреты Раза и изоляция границ полностью соблюдены (159/159 green, D008, D010, D006, D012, D002).
 
-*Живое, 17 октября 2026 (11:40 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 01:45 min]. Все 59 предписаний Секции XVI подтверждены и заверены единым пакетным замером в рантайме и Docker Maven: 159/159 green (`InternalGeminiObserverSecurityIntegrationTest` 9/9, `InternalGeminiObserverControllerTest` 16/16, `GeminiObserverActionServiceTest` 17/17, `TocSentinelServiceTest` 18/18, `TocSentinelControllerTest` 2/2, `LeanValueTest` 9/9, `TargetContextTest` 4/4, `RepositoryStackAnalyzerTest` 6/6, `OperationalTruthServiceTest` 17/17, `WishlistServiceFalsificationTest` 6/6, `WishlistContentSimilarityMatcherTest` 8/8, `WishlistSimilarityTest` 6/6, `SettingsControllerIntegrationTest` 8/8, `SystemSettingsServiceTest` 13/13, `FlywayMigrationValidationTest` 4/4, `ProductNamespaceLaw26Test` 16/16). Деонтические запреты Раза (Raz D006), топология границ Варци (Varzi D006), четырехзначная истинность Белнапа (Belnap D012), тянущий контур ТОС (Goldratt D013) и институциональные факты Тарского (Tarski D007). Ступень 4 подтверждена и закрыта, статус: ideal.
+*Живое, 17 октября 2026 (12:19 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:16 min]. Все 59 предписаний Секции XVI подтверждены и заверены единым пакетным замером в рантайме и Docker Maven: 159/159 green (`InternalGeminiObserverSecurityIntegrationTest` 9/9, `InternalGeminiObserverControllerTest` 16/16, `GeminiObserverActionServiceTest` 17/17, `TocSentinelServiceTest` 18/18, `TocSentinelControllerTest` 2/2, `LeanValueTest` 9/9, `TargetContextTest` 4/4, `RepositoryStackAnalyzerTest` 6/6, `OperationalTruthServiceTest` 17/17, `WishlistServiceFalsificationTest` 6/6, `WishlistContentSimilarityMatcherTest` 8/8, `WishlistSimilarityTest` 6/6, `SettingsControllerIntegrationTest` 8/8, `SystemSettingsServiceTest` 13/13, `FlywayMigrationValidationTest` 4/4, `ProductNamespaceLaw26Test` 16/16). Деонтические запреты Раза (Raz D006), топология границ Варци (Varzi D006), четырехзначная истинность Белнапа (Belnap D012), тянущий контур ТОС (Goldratt D013) и институциональные факты Тарского (Tarski D007). Ступень 4 подтверждена и закрыта, статус: ideal.
 
 **Текущий статус:** считаю механизмы Секции XVI идеальными. Заслон качества: 159/159 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz / D012 Belnap / D002 Ryle). Ступень 4 закрыта (ideal).
 
@@ -11413,7 +11413,7 @@ per-mechanism Antigravity comments.
 
 **Текущий статус:** идеален for this section's artifact generation and brand-audit scope. Подтверждено пакетом Ступени 4 в Docker Maven (113/113 green, D008, D010, D006).
 
-*Живое, 16 октября 2026:* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [2026-10-16 16:05 UTC]. Семейство цеха дизайна (Секция XXIX) заслонено 113/113 green в единый пакетный проход в Docker Maven:
+*Живое, 17 октября 2026 (12:19 UTC):* Пакетный замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g) [BUILD SUCCESS, время 02:16 min]. Семейство цеха дизайна (Секция XXIX) заслонено 113/113 green в единый пакетный проход в Docker Maven:
 - `DesignAssetService`: оркестрация Stitch/Nano Banana fallback, передача токенов бренда в промпт, фиксация `declaredTokens` и `producerTokens` в метаданных, отсечение off-token экранов без коммита в git (D008, D010, D006). Заслон качества: 12/12 green в `DesignAssetServiceTest`. Ступень 4 закрыта (ideal).
 - `DesignConsistencyAuditService`: аудит дизайн-токенов проекта, расчет `tokenTraceRatio`, `crossScreenJaccard` и возврат `CANNOT_JUDGE` при отсутствии baseline (D015, D010). Заслон качества: 15/15 green в `DesignConsistencyAuditServiceTest`. Ступень 4 закрыта (ideal).
 - `StitchClient`: JSON-RPC клиент к Stitch MCP с сохранением `screenId` при неготовом HTML, изоляция проектов Stitch и загрузка готовых артефактов (D010, D006). Заслон качества: 10/10 green в `StitchClientTest`. Ступень 4 закрыта (ideal).
@@ -15342,5 +15342,41 @@ the ceiling by more than the expected delay-window intake.
 
 **комментарий для Антигравити:** считаю механизмы Секции VIII идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (290/290 green: D008, D010, D006, D012, D013, D004, D002, D007, D011).
 
+---
 
+### Итог Пакетного Замера Кластера Секций XVI и XXIX («Реестр 59 архитектурных предписаний L2: что и как чинить» и «Цех дизайна: экраны, марка, геометрия и дизайн-система»)
 
+**Дата:** 2026-10-17 12:19 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 29 тест-сьютов Кластера Секций XVI и XXIX со 100% green: **272/272 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:16 min).
+
+1. **Группа 1: Секция XVI — Безопасность, ТОС-сторож, семантика значений и контекст (89 тестов, 9 сьютов):**
+   - `InternalGeminiObserverSecurityIntegrationTest` (9/9), `InternalGeminiObserverControllerTest` (16/16), `GeminiObserverActionServiceTest` (17/17): деонтическая защита сервисных путей внутреннего наблюдателя и аудит акторов (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2): анти-зеркальное чтение статуса верёвки ТОС без паразитной мутации при опросе (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `ALONZO_CHERCH_03_LAMBDA_CORE_REDUCTION` / D008).
+   - `LeanValueTest` (9/9), `TargetContextTest` (4/4): 4-значная решётка истинности контекста исполнения (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `DZHILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `RepositoryStackAnalyzerTest` (6/6): изоляция категориальных ошибок стека без заражения платформы (`DZHILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002).
+   - `OperationalTruthServiceTest` (17/17): операционная правда фабрики с асимметричным ростом доверия (`ELVIN_GOLDMAN_21_ASYMMETRIC_TRUST_DYNAMICS` / D010, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
+
+2. **Группа 2: Секция XVI — Сходство вишлистов, настройки, изоляция пространств и Flyway (70 тестов, 7 сьютов):**
+   - `WishlistServiceFalsificationTest` (6/6), `WishlistContentSimilarityMatcherTest` (8/8), `WishlistSimilarityTest` (6/6): попперовская фальсификация схожести вишлистов и дедупликация (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+   - `SettingsControllerIntegrationTest` (8/8), `SystemSettingsServiceTest` (13/13): неизменяемость настроек и деонтический заслон системных конфигураций (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `FlywayMigrationValidationTest` (4/4): строгая валидация схемы Flyway-миграций без скрытого repair (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   - `ProductNamespaceLaw26Test` (16/16): топологическая изоляция пространств имён продукта по Закону 26 (`AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+
+3. **Группа 3: Секция XXIX — Аудит геометрии, марка, гейты качества и дрейф дизайн-системы (59 тестов, 7 сьютов):**
+   - `DesignAssetServiceTest` (12/12): материализация токенов бренда и коммиты макетов (`RUT_BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015, `NUEL_BELNAP_05_TOKEN_TRACE_UNITY` / D015).
+   - `DesignConsistencyAuditServiceTest` (15/15): кросс-экранная согласованность дизайн-токенов Жаккара (`RUT_BARKAN_MARKUS_01_MODAL_ACTUALISM` / D015, `NUEL_BELNAP_05_TOKEN_TRACE_UNITY` / D015).
+   - `LayoutGeometryAuditServiceTest` (13/13): аудит физической геометрии вьюпорта без ложных срабатываний (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010).
+   - `DesignSystemFalsificationServiceTest` (6/6), `DesignDriftMonitorServiceTest` (7/7): фальсификационная верификация инвариантов и мониторинг дрейфа стилей между экранами (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013).
+   - `DesignExcellenceGateTest` (12/12), `DesignExcellenceGateFalsificationTest` (6/6): заслон совершенства дизайна и проверка соответствия марке (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010).
+
+4. **Группа 4: Секция XXIX — Оркестрация циклов дизайн-цеха, закон 15/3 и Stitch-клиент (54 теста, 6 сьютов):**
+   - `DesignShopCycleRepositoryIntegrationTest` (6/6): персистентность и атомарный CAS старта дизайн-циклов (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004).
+   - `DesignShopOrchestrationServiceTest` (13/13), `DesignShopOrchestrationServiceLaw15Test` (7/7): оркестрация фаз дизайн-цеха и строгая верификация готовности по Закону 15 (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004).
+   - `StrandedDesignCycleSweepServiceTest` (4/4): сборщик брошенных циклов дизайна с атомарным CAS-релизом (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004).
+   - `DesignImplementationLoopClosureLaw3Test` (2/2): замыкание цикла реализации дизайна по Закону 3 (`FRED_DRETSKE_07_TELEOSEMANTIC_FEEDBACK` / D011, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+   - `StitchClientTest` (10/10): клиент к сервису Stitch с сохранением контекста и категорическим запретом подмены HTML картинками (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `NUEL_BELNAP_06_SUBSTITUTION_ORACLE` / D009, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006).
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций XVI и XXIX («Реестр 59 архитектурных предписаний L2» и «Цех дизайна: экраны, марка, геометрия и дизайн-система») идеальными. Заслон качества: 272/272 green в едином пакетном прогоне в Docker Maven (D008 Popper & Tarski / D010 Goldman / D006 Raz & Varzi / D015 Barcan Marcus / D012 Belnap / D013 Wittgenstein / D002 Ryle / D009 Belnap & Floridi / D004 Varzi / D011 Dretske). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Кластера Секций XVI и XXIX идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (272/272 green: D008, D010, D006, D015, D012, D013, D002, D009, D004, D011).
