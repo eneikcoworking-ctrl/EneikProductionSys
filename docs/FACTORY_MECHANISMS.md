@@ -16677,7 +16677,7 @@ the ceiling by more than the expected delay-window intake.
 
 ### Итог Пакетного Замера Кластера Секций XXXVII, XXXVIII, XXXIX, XL, XLI, XLII, XLIII и XLIV («Сторож ТОС, Вход к ресурсам модели, Метрики качества Six Sigma, Выметающий обход, Заслон качества экрана, Постоянный кэш корпуса, Верёвка ТОС и Очистка журнала проекта»)
 
-**Дата:** 2026-10-17 20:47 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 26 тест-сьютов Кластера Секций XXXVII–XLIV со 100% green: **206/206 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:58 min).
+**Дата:** 2026-10-23 11:16 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 26 тест-сьютов Кластера Секций XXXVII–XLIV со 100% green: **206/206 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 01:40 min).
 
 1. **Группа 1: Секция XXXVII — Сторож ТОС: чтение, которое пересчитывает (33 теста, 5 сьютов):**
    - `TocSentinelServiceTest` (18/18), `TocSentinelControllerTest` (2/2): чистое анти-зеркальное чтение `getDbrStatus()` без мутаций внутреннего состояния при HTTP-опросе (`LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` / D013);
