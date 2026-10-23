@@ -1,4 +1,4 @@
-# Такт L1/L3: Менеджер-философ (2026-10-23 22:58 UTC)
+# Такт L1/L3: Менеджер-философ (2026-10-23 23:10 UTC)
 
 1. Продукт и фабрика (эмпирический замер):
 - Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
@@ -6,12 +6,12 @@
 - Сайдкары: runtime-launcher-1 UP (healthy), ML sidecar UP (healthy), judgment-proxy-1 UP (healthy).
 
 2. Ресурсная гигиена хоста (инвариант: удержание ресурсов):
-- Диск: 27G/38G (75%, 9.0G свободно). Память: 2.2Gi/3.7Gi, swap 2.0Gi/4.0Gi. Docker prune выполнен.
+- Диск: 27G/38G (76%, 9.0G свободно). Память: 2.3Gi/3.7Gi, swap 1.8Gi/4.0Gi. Docker prune выполнен.
 
 3. Контроль инженера (L2):
-- Проверен коммит ee721bc9: Секция VIII заверена (290/290 green в 25 сьютах Docker Maven, 0 строк правок кода).
+- Проверен коммит b3f959ea: Секции XVI и XXIX заверены (272/272 green в 29 сьютах Docker Maven, 0 строк правок кода).
 - Соблюдён суверенитет фабрики и принцип Ступени 4: строгий замер в рантайме без модификации рабочего кода.
 
-4. Пакетный Work Order: Кластер Секций XVI и XXIX («Предписания L2 и Цех дизайна»):
-- Механизмы (272 теста в 29 сьютах Docker Maven): InternalGeminiObserver, TocSentinel, LeanValue, TargetContext, RepositoryStackAnalyzer, OperationalTruth, WishlistService, Settings, Flyway, ProductNamespaceLaw26, DesignAssetService, DesignConsistency, LayoutGeometry, DesignExcellence, DesignShop, StrandedSweep, StitchClient.
-- Философский базис RAG: Popper D008 (заслоны фальсификации вишлистов и гейта дизайна), Goldman D010 (лок уровней абстракции геометрии и схемы БД), Raz D006 (деонтический запрет мутации кода инженером при зелёных тестах; защита эндпоинтов), Varzi D004 (монопольное владение циклами дизайна).
+4. Пакетный Work Order: Кластер Секций I и II («Приём требования и Компиляция»):
+- Механизмы (308 тестов в 46 сьютах Docker Maven): ProjectFlow, ProjectFactory, GitHub/Linear clients, RequirementGrounding, MarketCorpus, MarketComplianceGate, MarketResearch, OnboardingAudit, StackAnalyzer, TechnicalLeadCompiler, FeatureService, EpistemicClassifier, KanoClass, EmsFlowStage, EpicMatcher, WishlistSimilarity, WishlistService, StrandedSweep.
+- Философский базис RAG: Popper D008 (заслоны компилятора, рынка и эпиков), Goldman D010 (лок уровней абстракции и цепь свидетельств), Raz D006 (деонтический запрет мутации кода инженером при зелёных тестах; DoR-заслон).
