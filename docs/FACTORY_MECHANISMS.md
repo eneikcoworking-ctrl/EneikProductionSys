@@ -16775,3 +16775,36 @@ the ceiling by more than the expected delay-window intake.
 **Текущий статус:** считаю все механизмы Кластера Секций XVI и XXIX («Реестр 59 архитектурных предписаний L2: что и как чинить» и «Цех дизайна: порождение экранов, марка, геометрия и дизайн-система») идеальными. Заслон качества: 272/272 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman / D006 Raz & Varzi / D012 Belnap / D015 Barcan Marcus & Belnap / D013 Wittgenstein / D004 Varzi / D002 Ryle / D011 Dretske / D009 Belnap). Ступень 4 закрыта (ideal).
 
 **комментарий для Антигравити:** считаю механизмы Кластера Секций XVI и XXIX идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (272/272 green: D008, D010, D006, D012, D015, D013, D004, D002, D011, D009).
+
+
+---
+
+### Итог Пакетного Замера Кластера Секций I и II («Приём требования, онбординг, рынок, топология проектов» и «Компиляция: требование становится задачами»)
+
+**Дата:** 2026-10-23 23:13 UTC. В едином непрерывном пакетном прогоне в Docker Maven 3.9.9 Temurin-21 (-m 2g) подтверждены и заверены все 46 тест-сьютов Кластера Секций I и II со 100% green: **308/308 green** (0 failures, 0 errors, 0 skipped, BUILD SUCCESS, время прогона 02:13 min).
+
+1. **Группа 1: Секция I — Приём требования, онбординг, рынок и топология проектов (165 тестов, 22 сьюта):**
+   - `ProjectFlowServiceTest` (44/44), `ProjectFlowServiceFalsificationTest` (6/6), `ProjectFlowServiceLaw1JulesDispatchTest` (4/4), `ProjectFlowServiceResetTest` (3/3), `ProjectFlowServiceDbrRopeTest` (4/4), `ProjectFlowIntegrationTest` (5/5): непрерывный поток проектов, субординация верёвки DBR и защита от застревания в финальных состояниях (`ALONZO_CHERCH_03_LAMBDA_CORE_REDUCTION` / D008, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006);
+   - `ProjectFactoryServiceTest` (4/4), `ProjectFactoryServiceFalsificationTest` (6/6), `GitHubProjectFactoryClientTest` (3/3), `LinearProjectFactoryClientTest` (4/4), `ProjectWorkspaceFactoryServiceFalsificationTest` (5/5): онтологический заслон создания репозиториев (адрес существует только после GitHub-свидетельства), топологическая изоляция рабочих директорий (`ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` / D006);
+   - `RequirementGroundingServiceTest` (6/6), `RequirementGroundingServiceFalsificationTest` (5/5): семантическое приземление требований и защита от абстрактных галлюцинаций (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008, `SOL_KRIPKE_01_RIGID_DESIGNATOR` / D001);
+   - `MarketCorpusServiceTest` (19/19), `MarketCorpusServiceFalsificationTest` (6/6), `MarketComplianceGateTest` (12/12), `MarketComplianceGateFalsificationTest` (5/5), `MarketResearchServiceTest` (3/3), `MarketResearchServiceFalsificationTest` (6/6): соответствие рыночному корпусу и уставный гейт соответствия (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE` / D012, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+   - `OnboardingAuditServiceTest` (5/5), `OnboardingAuditServiceFalsificationTest` (4/4): аудит онбординга репозитория заказчика (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+   - `RepositoryStackAnalyzerTest` (6/6): категоризация ошибок чужого стека без ложных обвинений заказчика (`DZHILBERT_RAYL_03_CATEGORY_ERROR_SCAN` / D002).
+   *Живое: 165/165 green*
+
+2. **Группа 2: Секция II — Компиляция: требование становится задачами (143 теста, 24 сьюта):**
+   - `TechnicalLeadCompilerTest` (4/4), `TechnicalLeadCompilerIntegrationTest` (11/11), `TechnicalLeadCompilerFalsificationTest` (6/6), `CompilerTaskIdentityTest` (3/3): детерминированная компиляция требований в атомарные задачи, контентный ключ задачи sha256 (`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` / D010, `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` / D010, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+   - `FeatureServiceTest` (5/5), `FeatureServiceFalsificationTest` (6/6), `EpistemicMetadataClassifierTest` (5/5), `EpistemicMetadataClassifierFalsificationTest` (5/5): классификация эпистемических метаданных и поддержка трассируемости фич (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010);
+   - `KanoClassTest` (5/5), `KanoClassFalsificationTest` (6/6): модель Кано (Must-have, Performance, Delighter, Reverse) с фальсификацией ложных дефолтов (`SOL_KRIPKE_01_RIGID_DESIGNATOR` / D001, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+   - `EmsFlowStageTest` (5/5), `EmsFlowStageFalsificationTest` (6/6): стадии графа EMS и лок абстракций потока (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` / D010);
+   - `SelfFalsificationEpicMatcherTest` (6/6), `SelfFalsificationEpicMatcherFalsificationTest` (6/6): связывание задач с эпиками под заслоном самофальсификации (`KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+   - `WishlistContentSimilarityMatcherTest` (8/8), `WishlistContentSimilarityMatcherFalsificationTest` (6/6), `WishlistSimilarityTest` (6/6), `WishlistSimilarityKripkeIntensionFalsificationTest` (5/5): семантическая дедупликация требований, устойчивость к синонимии и интенсиональная эквивалентность Крипке (`NUEL_BELNAP_05_TOKEN_TRACE_UNITY` / D015, `SOL_KRIPKE_01_RIGID_DESIGNATOR` / D001, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008);
+   - `WishlistServiceFalsificationTest` (6/6), `WishlistControllerIntegrationTest` (8/8), `WishlistCompileBudgetLaw9Test` (6/6): управление жизненным циклом требований, лимит бюджета по Закону 9 (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` / D006, `DZHOZEF_RAZ_02_RIGHTS_DUTIES_MATRIX` / D006);
+   - `StrandedFinalizingSweepServiceTest` (8/8), `StrandedFinalizingSweepServiceFalsificationTest` (6/6), `StrandedFinalizingDynamicTimeoutFalsificationTest` (5/5): CAS-свип зависших в финализации вишлистов с динамическим таймаутом без держателя (`AHILLE_VARTSI_02_PART_WHOLE_OWNERSHIP` / D004, `KARL_POPPER_01_FALSIFICATION_HARNESS` / D008).
+   *Живое: 143/143 green*
+
+*Соблюдение инварианта Ступени 4:* Строго 0 строк изменений рабочего кода сервисов, сущностей, моделей, контроллеров и конфигураций фабрики (`src/main/java`, `src/main/resources`, `scripts/`, `runtime-launcher/`, `judgment-proxy/`, `src/models/ml/`). Верификация выполнена строго пакетным замером в рантайме и Docker Maven.
+
+**Текущий статус:** считаю все механизмы Кластера Секций I и II («Приём требования, онбординг, рынок, топология проектов» и «Компиляция: требование становится задачами») идеальными. Заслон качества: 308/308 green в едином пакетном прогоне в Docker Maven (D008 Popper / D010 Goldman & Parfit / D006 Raz & Varzi / D004 Varzi / D002 Ryle / D001 Kripke / D012 Belnap / D015 Belnap). Ступень 4 закрыта (ideal).
+
+**комментарий для Антигравити:** считаю механизмы Кластера Секций I и II идеальными. Ступень 4 зафиксирована пакетным замером в Docker Maven (308/308 green: D008, D010, D006, D004, D002, D001, D012, D015).
