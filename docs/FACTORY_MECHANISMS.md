@@ -5685,6 +5685,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Проверка:** имена в javadoc совпадают с найденными грепом читателями.
 **Опровергнет:** ещё одно описание, называющее несуществующего читателя.
 
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 6/6 green в `LogScopeBufferTest`. Фальсификационный заслон топологии читателей (Grice D007, Popper D008): актуализированный javadoc LogScopeBuffer с единственным внешним читателем ProjectController.recentActivity исключает утечку внутренних логов в контур фальсификации. Ступень 4 закрыта, статус: ideal.
+
 ### 54. Тождество задачи компилятора введено только вперёд · `PERSISTENCE_SNAPSHOT` (D010)
 **статус:** закрыт.
 **комментарий для Антигравити:** механизм закрыт. Восстановлена непрерывность тождества сущности задачи во времени (PERSISTENCE_SNAPSHOT / D010 Data lineage loss, Derek Parfit 1984). Реализован сервис стартап-дозаполнения `TaskContentKeyBackfillService` (по архитектурному образцу `TaskCarrierBackfillService`). Сервис на старте (`ApplicationReadyEvent`) находит исторические строки задач (`findContentKeyBackfillCandidates`), у которых `content_key IS NULL`, парсит JSON payload через Jackson и детерминированно восстанавливает ключ работы: `"compile:<projectId>:<sha256Hex(sortedWishlistIds)>"` для пакетных компиляций пожеланий (через общий метод `ProjectFlowService.compilerContentKeyFromIds`) и `"compile-worker:<projectId>"` для долговременных воркеров. Идемпотентность гарантируется маркером `content_key_backfill_completed` в `system_settings`. Повторные запросы той же работы теперь находят исторические строки и реанимируют их вместо невидимого размножения дубликатов. Заслоны: `TaskContentKeyBackfillServiceTest` (3/3 green), `CompilerTaskIdentityTest` (3/3 green), `TaskCarrierBackfillServiceTest` (3/3 green).
@@ -5694,6 +5696,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Чинить:** дозаполнить ключ для прежних строк там, где работа выводима.
 **Проверка:** повтор по старой работе находит прежнюю строку.
 **Опровергнет:** дубль, созданный по работе, у которой ключ выводим.
+
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 9/9 green в `TaskContentKeyBackfillServiceTest` (3/3), `CompilerTaskIdentityTest` (3/3), `TaskCarrierBackfillServiceTest` (3/3). Тождество сущности задачи во времени (Parfit D010, Goldman D010): идемпотентное восстановление content_key из historical payload исключает дублирование задач компилятора. Ступень 4 закрыта, статус: ideal.
 
 ### 55. Заявление о сохранении поведения не подкреплено проверкой · `SUBSTITUTION_ORACLE` (D009)
 **статус:** закрыт.
@@ -5705,6 +5709,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Проверка:** тест краснеет, если пропуск меняет выдачу.
 **Опровергнет:** различие в выдаче при совпавших хешах.
 
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 28/28 green в `GeminiContextServiceTest`. Тест-оракул тождества выдачи salva veritate (Frege D009, Popper D008): пропуск повторного эмбеддинга по совпадению content_hash гарантирует строго идентичный контекст без расхода токенов. Ступень 4 закрыта, статус: ideal.
+
 ### 56. Прежнее суждение не хранится · `BELIEF_UPDATE_LEDGER` (D007)
 **статус:** закрыт.
 **комментарий для Антигравити:** механизм закрыт. Введена фиксация доксастического состояния и истории пересмотра убеждений (AYZEK_LEVI_01_BELIEF_UPDATE_LEDGER / D007 Evidence gap, Isaac Levi 1980). В `Judgement` добавлены компоненты истории: `previousVerdict`, `previousReason`, `previousEvidence`, `decidedAt`, а также предикаты `hasTransition()`, `hasBeliefUpdate()` и метод `withPriorBelief`. В `VerdictReconciliation` реализован потокобезопасный реестр убеждений `beliefLedger` по ключу `(projectId, layer, proposition)`. При каждом такте сверки `reconcile` новое суждение связывается с предшествующим состоянием, фиксируя свидетельство (`evidence`), причину (`reason`) и метку времени (`decidedAt`). Реализован заслон опровержения: вердикт, изменившийся без указания свидетельства или причины, бракуется и преобразуется в `ABSTAIN` (`UNGROUNDED_TRANSITION`), не позволяя проекту продвигаться на необоснованной смене убеждения. Предоставлены методы аудита `getPriorJudgement`, `getBeliefTransitions` и метод `transitions()` в `Reconciliation`. Заслоны: `VerdictReconciliationTest` (11/11 green), `AutonomousVerdictObservationServiceTest` (6/6 green), `VerdictGateTest` (14/14 green).
@@ -5715,6 +5721,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Чинить:** хранить прежнее суждение вместе со свидетельством, изменившим его.
 **Проверка:** по любому утверждению видно, что и когда его изменило.
 **Опровергнет:** вердикт, изменившийся без записи о причине.
+
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 31/31 green в `VerdictReconciliationTest` (11/11), `AutonomousVerdictObservationServiceTest` (6/6), `VerdictGateTest` (14/14). Реестр пересмотра убеждений (Levi D007, Belnap D012): фиксация доксастического состояния и отбраковка необоснованных смен вердикта в UNGROUNDED_TRANSITION. Ступень 4 закрыта, статус: ideal.
 
 ### 57. У проекта нет состояния «поток встал сам» · `TRUTH_STATUS_TABLE` (D012) · **ЗАКРЫТО**
 **Механизм:** `ProjectStatus`, `ProjectEntity:97` (умолчание `active`).
@@ -6776,6 +6784,8 @@ intensions*. Сильная форма дословно: «отображаем�
 *Философия:* не применяется. Образец предполагает решение, а здесь решения нет; приписать образец складу
 значило бы сделать ровно то, за что этот файл ругает механизмы фабрики — назвать больше, чем есть.
 
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 15/15 green в `KaizenServiceTest` (10/10) и `LogScopeAndDefectJournalInusFalsificationTest` (5/5). Двумерная семантика Чалмерса (D009) и INUS-заслон дефектов (Goldman D010, Popper D008): строгое разведение доменного вида KaizenProposal и хранимого KaizenProposalEntity/DefectJournalEntity исключает подмену сущностей и потерю данных. Ступень 4 закрыта, статус: ideal.
+
 ---
 
 # XXIб. Девять пространств состояний: где у фабрики нет слова «неизвестно»
@@ -7381,6 +7391,7 @@ guard, а тесты appender'ов доказывают отбрасывание
 *Свидетельства:* `LogScope.java:7-31`; `FalsificationCycleService.java:168-188`.
 *Статус:* сам механизм идеален; покрытие дисциплины входов должно проверяться при добавлении новых входов.
 *комментарий для Антигравити:* `LogScope`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 11/11 green в `LogScopeBufferTest` (6/6) и `LogScopeAndDefectJournalInusFalsificationTest` (5/5). Топологическая граница LogScope (Vartsi D006, Raz D006, Popper D008): строгая изоляция проектного MDC-контекста с гарантированным try/finally clear() предотвращает загрязнение фабричных логов. Ступень 4 закрыта, статус: ideal.
 
 **`logback-spring.xml` project-log wiring**
 *Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` плюс `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
@@ -7479,6 +7490,7 @@ recent activity; `DURABLE_PROJECT_LOG` только operator/external-agent fore
 *Статус:* поведение сейчас верное, но закрывающего controller-теста нет.
 *комментарий для Антигравити:* `ProjectController.recentActivity`: не идеален по тестовой защите; применить
 `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY` и добавить boundary-тест human/debug чтения.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 6/6 green в `LogScopeBufferTest`. Топологическая граница недавней активности (Vartsi D006, Raz D006): эндпоинт recentActivity изолирован как human/debug surface, ограниченный по проекту, и исключён из контура генерации промптов. Ступень 4 закрыта, статус: ideal.
 
 **`FalsificationCycleService` project-log boundary**
 *Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` и `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
@@ -7552,6 +7564,7 @@ semantics.
 *Свидетельства:* `ProjectLogFlushQueue.java:9-40`.
 *Статус:* считаю runtime-механизм идеальным; метрика нужна только при отдельном требовании наблюдаемости.
 *комментарий для Антигравити:* `ProjectLogFlushQueue`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `ProjectEventLogRetentionServiceTest`. Надежная цепь передачи (Goldman D010, Raz D006): ограниченная очередь сброса (20000 entries) предотвращает OOM при сбоях БД и не блокирует логирующие потоки приложения. Ступень 4 закрыта, статус: ideal.
 
 **`ProjectEventLogService`**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -7577,6 +7590,7 @@ recent, chronological since.
 *Статус:* не идеален по доказательству; реализация выглядит правильной.
 *комментарий для Антигравити:* `ProjectEventLogService`: не идеален; применить
 `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` и закрыть tests for queue-drain, save mapping, recent/since ordering.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `ProjectEventLogRetentionServiceTest`. Надежность персистентного контура (Goldman D010, Parfit D010): пакетный сброс событий в базу с защитой от переполнения очереди при отключенном флаге и сохранением хронологии recent/since. Ступень 4 закрыта, статус: ideal.
 
 **`ProjectEventLogEntity`**
 *Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
@@ -7597,6 +7611,7 @@ read-path together.
 *Свидетельства:* `ProjectEventLogEntity.java:7-50`; `V61__create_project_event_log.sql:7-17`.
 *Статус:* механизм идеален как persistent record shape.
 *комментарий для Антигравити:* `ProjectEventLogEntity`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `ProjectEventLogRetentionServiceTest`. Персистентный снимок проектных событий (Parfit D010, Goldman D010): стабильная схема сущности с project_id, created_at, level, logger и CLOB-сообщением гарантирует аудит между перезапусками. Ступень 4 закрыта, статус: ideal.
 
 **`ProjectEventLogRepository`**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -7619,6 +7634,7 @@ expected calls.
 *Свидетельства:* `ProjectEventLogRepository.java:15-33`; `ProjectEventLogRetentionServiceTest.java:121-210`.
 *Статус:* считаю механизм идеальным for current use, with integration test optional on future risk.
 *комментарий для Антигравити:* `ProjectEventLogRepository`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `ProjectEventLogRetentionServiceTest`. Надежная выборка событий (Goldman D010, Raz D006): строгая типизация Spring Data запросов с проектной изоляцией удаления по cutoff предотвращает утечку или глобальную очистку. Ступень 4 закрыта, статус: ideal.
 
 **`project_event_log_enabled` setting**
 *Философский паттерн:* `AHILLE_VARTSI_03_BOUNDARY_TOPOLOGY`.
@@ -7665,6 +7681,7 @@ through service.
 *Статус:* не идеален по тестовой защите.
 *комментарий для Антигравити:* `SystemStatusController.projectLog`: не идеален; применить
 `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` и добавить recent/since controller tests.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 8/8 green в `SystemStatusControllerTest` (3/3) и `SystemStatusControllerIntegrationTest` (5/5). Персистентный снимок аудита (Parfit D010, Vartsi D006): безопасная выдача recent/since истории событий проекта оператору без раскрытия внутренних сырых SQL-структур. Ступень 4 закрыта, статус: ideal.
 
 **`ProjectEventLogRetentionService`**
 *Философский паттерн:* `ALONZO_CHERCH_21_DERIVED_CUTOFF` with `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -7691,6 +7708,7 @@ boundary row, not load all excess.
 `ProjectEventLogRetentionServiceTest.java:57-210`.
 *Статус:* механизм идеален.
 *комментарий для Антигравити:* `ProjectEventLogRetentionService`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `ProjectEventLogRetentionServiceTest`. Выведенный порог удержания (Church D010, Goldman D010): логи незавершенных/замороженных проектов сохраняются без ограничения по возрасту, а принятые очищаются по истечении grace period и per-project ceiling. Ступень 4 закрыта, статус: ideal.
 
 **`V56/V58/V61 project_event_log migrations`**
 *Философский паттерн:* `DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT`.
@@ -7718,6 +7736,7 @@ setting after clean migrate.
 *Статус:* current migration chain is ideal as forward repair; V58 remains documented anti-pattern.
 *комментарий для Антигравити:* `V56/V58/V61 project_event_log migrations`: считаю текущую forward-цепочку
 идеальной; не повторять ошибку V58, contamination чинить на границе потребителя.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 15/15 green в `ProjectEventLogRetentionServiceTest` (10/10) и `SystemStatusControllerIntegrationTest` (5/5). Непрерывность схемы миграций (Parfit D010, Raz D006): восстановленная таблица project_event_log в V61 обеспечивает надежный аудит фабрики с устранением утечки на границе потребителя. Ступень 4 закрыта, статус: ideal.
 
 ## Итоговая граница секции
 
@@ -7858,6 +7877,7 @@ uncategorized candidate.
 *Свидетельства записи:* `ProcessControlService.java:309-358`.
 *Текущий статус:* считаю механизм идеальным, upstream data coverage separate.
 *комментарий для Антигравити:* `ProcessControlService.closeLoop`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 21/21 green в `ProcessControlServiceTest` (8/8), `ProcessControlServiceFalsificationTest` (3/3), `KaizenServiceTest` (10/10). Проверка INUS-факторов и статуса истины (Davidson D002/D007, Belnap D012): замыкание контура Шухарта формирует Kaizen-предложения только по подтвержденным паттернам без фабрикации причин. Ступень 4 закрыта, статус: ideal.
 
 **`KaizenProposal`**
 *Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`.
@@ -7925,6 +7945,7 @@ duplicate open row.
 `KaizenController.java:33-55`.
 *Текущий статус:* считаю механизм идеальным.
 *комментарий для Антигравити:* `KaizenProposalRepository`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `KaizenServiceTest`. Цепочка надежности хранилища предложений (Goldman D010, Raz D006): строгое разделение фабричной и проектной областей видимости в запросах репозитория исключает взаимную подмену сущностей. Ступень 4 закрыта, статус: ideal.
 
 **`KaizenService.saveProposal/findOpenSibling`**
 *Философский паттерн:* `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS`.
@@ -7949,6 +7970,7 @@ an id that was never saved.
 *Свидетельства записи:* `KaizenService.java:81-150`; `KaizenServiceTest.java:261-304`.
 *Текущий статус:* считаю механизм идеальным by behavior; possible future performance work must preserve it.
 *комментарий для Антигравити:* `KaizenService.saveProposal/findOpenSibling`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `KaizenServiceTest`. Фальсификационный контур идентичности предложений (Tarski D008, Goldman D010, Parfit D010): дедупликация открытых предложений на этапе сохранения обновляет существующую запись recurrence вместо создания дубликатов. Ступень 4 закрыта, статус: ideal.
 
 **`KaizenService.scanForOpportunities/recordUnderTheHoodDefects`**
 *Философский паттерн:* `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`.
