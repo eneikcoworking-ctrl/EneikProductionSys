@@ -370,7 +370,7 @@ public class AutoMergeService {
                 if (taskOpt.isPresent()) {
                     var project = taskOpt.get().getProject();
                     if (project != null) {
-                        return project.getStatus() == ProjectStatus.active;
+                        return project.isOperational();
                     }
                 }
             }
@@ -381,10 +381,10 @@ public class AutoMergeService {
         if (target != null && projectRepository != null) {
             java.util.Optional<com.eneik.production.models.persistence.ProjectEntity> directMatch = projectRepository.findFirstByRepositoryNameIgnoreCase(target.repo());
             if (directMatch.isPresent() && matchesRepository(directMatch.get(), target)) {
-                return directMatch.get().getStatus() == ProjectStatus.active;
+                return directMatch.get().isOperational();
             }
-            var activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
-            if (activeProjects != null && activeProjects.stream().anyMatch(p -> matchesRepository(p, target))) {
+            var activeProjects = findOperationalProjects();
+            if (activeProjects.stream().anyMatch(p -> matchesRepository(p, target))) {
                 return true;
             }
             var allProjects = projectRepository.findAllByOrderByCreatedAtDesc();
@@ -396,7 +396,7 @@ public class AutoMergeService {
                         .filter(p -> matchesRepository(p, target))
                         .findFirst();
                 if (matchingProject.isPresent()) {
-                    return matchingProject.get().getStatus() == ProjectStatus.active;
+                    return matchingProject.get().isOperational();
                 }
             }
         }
@@ -498,8 +498,7 @@ public class AutoMergeService {
                 // 2026-07-26: same guard as resurrectEscalatedConflictsWithRealCode below - a frozen/
                 // accepted/cancelled project gets no further automated work, not even a housekeeping-file
                 // sync commit.
-                if (task.getProject() == null
-                        || task.getProject().getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
+                if (task.getProject() == null || !task.getProject().isOperational()) {
                     continue;
                 }
                 String branch = gitHubPullRequestService.fetchPullRequestByNumber(
@@ -586,8 +585,8 @@ public class AutoMergeService {
                 // (test-thirty-third) - dispatching a brand new Jules session to push a fix into a project
                 // the client already took delivery of. Never resurrect conflicts for a project that isn't
                 // active - a frozen/accepted/cancelled project gets no further automated work, period.
-                if (task.getProject().getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
-                    log.info("Poka-yoke: skipping real-code resurrection for conflict {} (task {}) - project {} is {}, not active",
+                if (!task.getProject().isOperational()) {
+                    log.info("Poka-yoke: skipping real-code resurrection for conflict {} (task {}) - project {} is {}, not operational",
                             conflict.getId(), task.getId(), task.getProject().getId(), task.getProject().getStatus());
                     continue;
                 }
@@ -651,8 +650,7 @@ public class AutoMergeService {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return;
         }
-        List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = projectRepository
-                .findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+        List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = findOperationalProjects();
         for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
             for (FeatureThreadEntity thread : featureThreadRepository.findByProjectIdAndMergedToMainAtIsNullAndAbandonedAtIsNull(project.getId())) {
                 try {
@@ -906,8 +904,7 @@ public class AutoMergeService {
             return;
         }
         try {
-            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
-                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = findOperationalProjects();
             for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
                 var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
                 if (snapshot != null && snapshot.available() && snapshot.open() != null) {
@@ -2055,8 +2052,7 @@ public class AutoMergeService {
             // already correctly retired weeks ago) was still getting its ~20 already-merged PRs fully
             // re-walked on every single cycle (repaired=false every time - pure waste), same guard as the
             // frozen/accepted/cancelled check already used elsewhere in this file (see line ~385 above).
-            if (task.getProject() == null
-                    || task.getProject().getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
+            if (task.getProject() == null || !task.getProject().isOperational()) {
                 continue;
             }
             repairTaskForConfirmedMerge(task, winningSession, mergedReview.getPrUrl());
@@ -2083,8 +2079,7 @@ public class AutoMergeService {
             return;
         }
         try {
-            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
-                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = findOperationalProjects();
             for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
                 var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
                 if (snapshot == null || !snapshot.available() || snapshot.closed() == null) {
@@ -2184,8 +2179,7 @@ public class AutoMergeService {
             return;
         }
         try {
-            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
-                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = findOperationalProjects();
             for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
                 var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
                 if (snapshot == null || !snapshot.available() || snapshot.open() == null || snapshot.open().isEmpty()) {
@@ -2337,7 +2331,7 @@ public class AutoMergeService {
                             java.util.List.of(com.eneik.production.models.persistence.TaskStatus.review,
                                     com.eneik.production.models.persistence.TaskStatus.pending_review,
                                     com.eneik.production.models.persistence.TaskStatus.claimed)).stream()
-                    .filter(t -> t.getProject() != null && t.getProject().getStatus() == com.eneik.production.models.persistence.ProjectStatus.active)
+                    .filter(t -> t.getProject() != null && t.getProject().isOperational())
                     .filter(t -> !"chaotic".equalsIgnoreCase(t.getCynefinDomain()) && !"complex".equalsIgnoreCase(t.getCynefinDomain()))
                     .filter(t -> t.getStatus() == com.eneik.production.models.persistence.TaskStatus.review 
                               || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review 
@@ -3085,6 +3079,24 @@ public class AutoMergeService {
                             + "the requirement re-enters the flow, not the task identity.",
                     wishlist.getId(), task.getId(), mergedPrUrl);
         });
+    }
+
+    private List<com.eneik.production.models.persistence.ProjectEntity> findOperationalProjects() {
+        java.util.List<com.eneik.production.models.persistence.ProjectEntity> operational = new java.util.ArrayList<>();
+        if (projectRepository == null) {
+            return operational;
+        }
+        List<com.eneik.production.models.persistence.ProjectEntity> active =
+                projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        if (active != null) {
+            operational.addAll(active);
+        }
+        List<com.eneik.production.models.persistence.ProjectEntity> stalled =
+                projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled);
+        if (stalled != null) {
+            operational.addAll(stalled);
+        }
+        return operational;
     }
 
 }

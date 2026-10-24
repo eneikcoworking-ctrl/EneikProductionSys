@@ -91,10 +91,20 @@ public class OperationalPolicyService {
         TICK_SNAPSHOT.remove();
     }
 
+    /**
+     * GILBERT_RAYL_03_CATEGORY_ERROR_SCAN / DZHON_OSTIN_02_CATEGORY_ERROR_SCAN [D002]:
+     * A stalled project is a telemetry verdict demanding autonomous forward recovery, never an
+     * eviction from operational policy authorization. Frozen, accepted, archived, waiting, and
+     * analyzing projects remain non-operational.
+     */
+    public static boolean isOperationalProjectStatus(String projectStatus) {
+        return "active".equalsIgnoreCase(projectStatus) || "stalled".equalsIgnoreCase(projectStatus);
+    }
+
     public OperationalDecision authorize(FlowCoreDto core, OperationalAction action) {
         FlowSpineDto snapshot = core.snapshot();
         FlowCoreDto.Authorization authorization = core.authorization();
-        boolean activeProject = "active".equalsIgnoreCase(core.project().status());
+        boolean activeProject = isOperationalProjectStatus(core.project().status());
         boolean hardBlocked = isHardBlocked(snapshot.currentState());
         boolean terminal = isTerminal(snapshot.currentState());
         boolean hasPendingScope = snapshot.evidence().pendingWishlist() > 0
@@ -175,7 +185,11 @@ public class OperationalPolicyService {
             // quality gate) - those really do mean nothing in this project should move.
             case MERGE_PR -> activeProject
                     && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState())
-                    && (authorization.mergeAllowed() || snapshot.evidence().openReviews() > 0);
+                    && (authorization.mergeAllowed()
+                            || snapshot.evidence().openReviews() > 0
+                            || snapshot.counts().reviewTasks() > 0
+                            || "UNDER_REVIEW".equals(snapshot.currentState())
+                            || "VERIFYING_DELIVERY".equals(snapshot.currentState()));
             // 2026-08-27 (Eneik Actualism restoration): Operability is sampled continuously on active projects
             // via adaptive Beta-Posterior cadence (ClientRuntimeObservabilityService.maybeObserve), matching
             // §1 and §2 of LIVE_PRODUCT_PLAN_2026-08-19.md ("The factory keeps a running product under permanent
@@ -282,7 +296,7 @@ public class OperationalPolicyService {
     static boolean stateBlocks(String state, String projectStatus) {
         return GLOBALLY_BLOCKING_STATES.contains(state)
                 || isHardBlocked(state)
-                || !"active".equalsIgnoreCase(projectStatus);
+                || !isOperationalProjectStatus(projectStatus);
     }
 
     /**
@@ -295,7 +309,7 @@ public class OperationalPolicyService {
      * that does not block this action.
      */
     static boolean stateBlocks(OperationalAction action, String state, String projectStatus) {
-        if (!"active".equalsIgnoreCase(projectStatus)) {
+        if (!isOperationalProjectStatus(projectStatus)) {
             return true;
         }
         if (action == null) {

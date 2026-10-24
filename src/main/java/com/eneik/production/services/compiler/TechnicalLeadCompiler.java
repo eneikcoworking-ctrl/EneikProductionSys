@@ -425,7 +425,7 @@ public class TechnicalLeadCompiler {
         ProjectEntity project = projectRepository.findById(wishlist.getProjectId())
                 .orElseThrow(() -> new IllegalStateException("Project not found: " + wishlist.getProjectId()));
 
-        if (project.getStatus() != ProjectStatus.active) {
+        if (!project.isOperational()) {
             throw new IllegalStateException("project is frozen, task compilation paused until reactivated");
         }
 

@@ -156,7 +156,12 @@ public class StrandedFinalizingSweepService {
 
     @Scheduled(cron = "${stranded-finalizing.cron:0 * * * * ?}")
     public void sweep() {
-        for (ProjectEntity project : projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)) {
+        java.util.List<ProjectEntity> operational = new java.util.ArrayList<>();
+        java.util.List<ProjectEntity> act = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        if (act != null) operational.addAll(act);
+        java.util.List<ProjectEntity> stl = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled);
+        if (stl != null) operational.addAll(stl);
+        for (ProjectEntity project : operational) {
             LogScope.project(project.getId());
             try {
                 self.sweepProject(project);

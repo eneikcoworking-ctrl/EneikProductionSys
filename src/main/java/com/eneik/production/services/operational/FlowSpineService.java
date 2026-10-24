@@ -1512,9 +1512,7 @@ public class FlowSpineService {
                         task, task.getSourceWishlistId() == null ? null : briefById.get(task.getSourceWishlistId())))
                 .filter(com.eneik.production.services.PlannedWorkRecoveryService::hasResumeBudgetLeft)
                 .filter(task -> !com.eneik.production.services.PlannedWorkRecoveryService.isDeadForGood(
-                        task.getDependsOn(),
-                        task.getDependsOn() == null || task.getDependsOn().getSourceWishlistId() == null
-                                ? null : briefById.get(task.getDependsOn().getSourceWishlistId())))
+                        task.getDependsOn(), briefById))
                 .count();
     }
 

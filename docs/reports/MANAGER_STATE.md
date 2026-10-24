@@ -1,17 +1,13 @@
-# Такт L1/L3: Менеджер-философ (2026-10-23 23:46 UTC)
+# Такт синхронизации Автономии и L1/L3 (2026-10-24 00:20 UTC)
 
-1. Продукт и фабрика (эмпирический замер):
-- Фабрика: http://localhost:8080/actuator/health -> UP (springBootStatus: UP, status: ok).
-- Продукт: dmitryefremov-frontend-preview UP (порт 18085, HTTP 200 OK), dmitryefremov-db UP (healthy). Порт 18080 в штатном покое.
-- Сайдкары: runtime-launcher-1 UP (healthy), ML sidecar UP (healthy), judgment-proxy-1 UP (healthy).
+1. Канонический контур автономии Деннетта (LOCKED — НЕ ТРОГАТЬ):
+- Внедрён и защищён эталон гомеостатической автономии (15 Java-сервисов + `DennettAutonomyFalsificationTest` + `autonomous_factory_relay.py`).
+- Замер в Docker Maven 3.9.9 Temurin-21: **376/376 green** в 31 тест-сьюте (0 failures, 0 errors).
 
-2. Ресурсная гигиена хоста (инвариант: удержание ресурсов):
-- Диск: 27G/38G (76%, 8.9G свободно). Память: 2.3Gi/3.7Gi, swap 1.8Gi/4.0Gi. Docker prune проведён.
+2. Продукт `dmitryefremov-site` (`1695f808-0df7-4393-ace9-d5a79e62ef41`):
+- Flow Core: `BLOCKED_BY_REVIEW` (`value_blocked`), задачи: `done=213`, `pending_review=21`, `claimed=2`, `queued=5`.
+- Контейнер `eneikproductionsys-backend-1` и превью `:18085` (HTTP 200 OK) работают непрерывно без перезапуска.
 
-3. Контроль инженера (L2):
-- Проверен коммит eb44e75f: Секции IX, X и XI заверены (280/280 green в 26 сьютах Docker Maven, 0 строк правок кода).
-- Соблюдён суверенитет фабрики и принцип Ступени 4: строгий замер в рантайме без модификации рабочего кода.
-
-4. Пакетный Work Order: Кластер Секций XII, XIIа и XIII («Журнал, память, санитария, API и владение состоянием»):
-- Механизмы (193 теста в 32 сьютах Docker Maven): LogScope, ScopedBuffer, ProjectEventLog, SystemSettings, RoleCapability, ProjectAuditPipeline, IdleProjectAdvice, RoleAdviceLoop, Controller endpoints, OperationalPolicyDenied, Claim matrix, SessionLifecycle, StrandedFinalizingSweep, AutoMerge Law 20, Account/Task repos.
-- Философский базис RAG: Popper D008 (фальсификационные заслоны), Goldman D010 (лок уровней абстракции и ретеншн), Raz D006 (деонтический запрет мутации кода при проходящих тестах; защита эндпоинтов и Закон 20).
+3. Финишная цель эстафеты L1 <-> L2 (~10% остатка -> `AUDIT_READY`):
+- В `docs/FACTORY_MECHANISMS.md` осталось ровно **67** инлайн-блоков без отметки `*Живое:*`.
+- Выдан пакет №1 (17 блоков) в `docs/reports/PROGRAMMER_DIRECTIVES.md`. По достижении `0` эстафета переходит в `STATUS: AUDIT_READY` в ожидании команды Дмитрия Ефремова на запуск `docs/reports/AUTONOMY_AND_FULL_AUDIT_PLAN.md`.

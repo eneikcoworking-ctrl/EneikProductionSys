@@ -30,8 +30,14 @@ import java.util.Set;
 public class PlannedWorkRecoveryService {
     private static final Logger log = LoggerFactory.getLogger(PlannedWorkRecoveryService.class);
     private static final String RESUME_COUNT_KEY = "ems_bounded_plan_resume_count";
+    private static final String HOMEOSTATIC_EPOCH_KEY = "ems_homeostatic_recovery_epoch";
+    private static final String HOMEOSTATIC_EPOCH_AT_KEY = "ems_homeostatic_recovery_at";
     @org.springframework.beans.factory.annotation.Value("${project.failed-plan-frontier-resume-limit:3}")
     private int frontierResumeLimit;
+    @org.springframework.beans.factory.annotation.Value("${project.homeostatic-recovery-max-epochs:3}")
+    private int maxHomeostaticEpochs = 3;
+    @org.springframework.beans.factory.annotation.Value("${project.homeostatic-recovery-base-cooldown-minutes:15}")
+    private int homeostaticBaseCooldownMinutes = 15;
 
     private final TaskRepository taskRepository;
     private final WishlistRepository wishlistRepository;
@@ -315,22 +321,54 @@ public class PlannedWorkRecoveryService {
      * durable predicate the BLOCKED_BY_FAILED_FRONTIER gate itself uses, so the two cannot disagree.
      */
     public static boolean isDeadForGood(TaskEntity dependency, WishlistEntity dependencyBrief) {
-        return dependency != null
-                && dependency.getStatus() == TaskStatus.failed
-                && (!isProductWorkThisMayResume(dependency, dependencyBrief)
-                        || !hasResumeBudgetLeft(dependency));
+        return isDeadForGood(dependency, dependencyBrief, null);
+    }
+
+    public static boolean isDeadForGood(TaskEntity dependency,
+                                        java.util.Map<java.util.UUID, WishlistEntity> briefById) {
+        WishlistEntity directBrief = (dependency == null || dependency.getSourceWishlistId() == null || briefById == null)
+                ? null
+                : briefById.get(dependency.getSourceWishlistId());
+        return isDeadForGood(dependency, directBrief, briefById);
+    }
+
+    private static boolean isDeadForGood(TaskEntity dependency,
+                                         WishlistEntity directBrief,
+                                         java.util.Map<java.util.UUID, WishlistEntity> briefById) {
+        if (dependency == null || dependency.getStatus() != TaskStatus.failed) {
+            return false;
+        }
+        java.util.Set<java.util.UUID> visited = new java.util.HashSet<>();
+        TaskEntity cur = dependency;
+        boolean first = true;
+        while (cur != null) {
+            if (cur.getId() != null && !visited.add(cur.getId())) {
+                break;
+            }
+            if (cur.getStatus() == TaskStatus.done || cur.getStatus() == TaskStatus.spike_completed) {
+                break;
+            }
+            if (cur.getStatus() == TaskStatus.blocked) {
+                return true;
+            }
+            if (cur.getStatus() == TaskStatus.failed) {
+                WishlistEntity brief = first
+                        ? directBrief
+                        : (briefById == null || cur.getSourceWishlistId() == null
+                                ? null
+                                : briefById.get(cur.getSourceWishlistId()));
+                if (!isProductWorkThisMayResume(cur, brief) || !hasResumeBudgetLeft(cur)) {
+                    return true;
+                }
+            }
+            first = false;
+            cur = cur.getDependsOn();
+        }
+        return false;
     }
 
     boolean isDeadForGood(TaskEntity dependency) {
-        // Two ways nothing will ever revive it, and both end the wait. Either it is not work this service
-        // resumes at all, or it is - and its single automatic resume is already spent. The second was
-        // missing and is the common case: this service's own measurement recorded 17 tasks resumable in
-        // principle and 13 of them already past their only resume. Measured 04.09 on test-fiftieth, the
-        // dependency holding the whole project appeared in NO refusal bucket, which by this class's own
-        // filter means exactly that its budget was gone.
-        return dependency != null
-                && dependency.getStatus() == TaskStatus.failed
-                && (!isEligibleRetiredPlanTask(dependency) || !hasResumeBudgetLeft(dependency));
+        return dependency != null && dependency.getStatus() == TaskStatus.failed && !mayStillBeResumed(dependency);
     }
 
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
@@ -383,7 +421,171 @@ public class PlannedWorkRecoveryService {
      * claim, a live session, an unsatisfied dependency of its own) say "not right now", not "never again".
      */
     public boolean mayStillBeResumed(TaskEntity task) {
-        return task != null && isEligibleRetiredPlanTask(task) && hasResumeBudgetLeft(task);
+        if (task == null || !isEligibleRetiredPlanTask(task) || !hasResumeBudgetLeft(task)) {
+            return false;
+        }
+        java.util.Set<java.util.UUID> visited = new java.util.HashSet<>();
+        if (task.getId() != null) {
+            visited.add(task.getId());
+        }
+        TaskEntity ancestor = task.getDependsOn();
+        while (ancestor != null) {
+            if (ancestor.getId() != null && !visited.add(ancestor.getId())) {
+                break;
+            }
+            if (ancestor.getStatus() == TaskStatus.done
+                    || ancestor.getStatus() == TaskStatus.spike_completed
+                    || (readinessService != null && readinessService.isDependencySatisfied(ancestor))) {
+                break;
+            }
+            if (ancestor.getStatus() == TaskStatus.blocked) {
+                return false;
+            }
+            if (ancestor.getStatus() == TaskStatus.failed
+                    && (!isEligibleRetiredPlanTask(ancestor) || !hasResumeBudgetLeft(ancestor))) {
+                return false;
+            }
+            ancestor = ancestor.getDependsOn();
+        }
+        return true;
+    }
+
+    /**
+     * Homeostatic stall-epoch recovery (ENDI_KLARK_01_PERCEPTION_ACTION_LOOP [D011] &
+     * ALONZO_CHERCH_21_DERIVED_CUTOFF [D010]):
+     * When a project is starving (zero in-flight tasks, zero dispatchable queued tasks, zero movable wishlists)
+     * while planned features remain undelivered, grants bounded exponential recovery epochs (15m, 60m, 240m,
+     * capped at {@code maxHomeostaticEpochs}) to exhausted root frontier tasks. Once the epoch ceiling is
+     * reached, returns 0 so ContinuousOrchestrationService hands off immediately to DeliveryRealityProducerService
+     * (Multiple Drafts re-decomposition) with zero Cartesian Theater.
+     */
+    @Transactional
+    public int recoverStarvingFrontierForAutonomy(ProjectEntity project) {
+        return recoverStarvingFrontierForAutonomy(project, Instant.now());
+    }
+
+    @Transactional
+    public int recoverStarvingFrontierForAutonomy(ProjectEntity project, Instant now) {
+        if (project == null || !project.isOperational() || maxHomeostaticEpochs <= 0) {
+            return 0;
+        }
+        ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
+        if (readiness != null
+                && readiness.decompositionComplete()
+                && readiness.totalFeatures() > 0
+                && readiness.completeFeatures() >= readiness.totalFeatures()
+                && readiness.mergedDeliverables() >= readiness.totalDeliverables()) {
+            return 0;
+        }
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .sorted(java.util.Comparator.comparing(t -> t.getCreatedAt() == null ? Instant.EPOCH : t.getCreatedAt()))
+                .toList();
+
+        boolean hasLiveExecution = tasks.stream().anyMatch(t ->
+                t.getStatus() == TaskStatus.claimed
+                        || t.getStatus() == TaskStatus.in_progress
+                        || t.getStatus() == TaskStatus.pending_review
+                        || t.getStatus() == TaskStatus.review);
+        if (hasLiveExecution) {
+            return 0;
+        }
+
+        boolean hasDispatchableQueued = tasks.stream()
+                .filter(t -> t.getStatus() == TaskStatus.queued)
+                .anyMatch(t -> t.getDependsOn() == null || readinessService.isDependencySatisfied(t.getDependsOn()));
+        if (hasDispatchableQueued) {
+            return 0;
+        }
+
+        boolean hasMovableWishlist = wishlistRepository.findByProjectId(project.getId()).stream()
+                .anyMatch(w -> w.getStatus() == WishlistStatus.compiling
+                        || (w.getStatus() == WishlistStatus.pending && w.movable()));
+        if (hasMovableWishlist) {
+            return 0;
+        }
+
+        int resumed = 0;
+        int limit = Math.max(1, frontierResumeLimit);
+        java.util.Map<String, java.util.List<java.util.UUID>> refusals = new java.util.LinkedHashMap<>();
+        for (TaskEntity task : tasks) {
+            if (resumed >= limit) {
+                break;
+            }
+            if (!isEligibleRetiredPlanTask(task) || resumeCount(task) < 1) {
+                continue;
+            }
+            int epoch = homeostaticEpoch(task);
+            if (epoch >= maxHomeostaticEpochs) {
+                continue;
+            }
+            TaskEntity dep = task.getDependsOn();
+            if (dep != null && !readinessService.isDependencySatisfied(dep)) {
+                continue;
+            }
+            if (claimService.hasActiveClaim(task.getId()) || hasActiveSession(task) || readinessService.isTaskMerged(task.getId())) {
+                continue;
+            }
+            Instant lastAttempt = lastRecoveryReferenceTime(task);
+            java.time.Duration cooldown = homeostaticCooldownForEpoch(epoch);
+            if (lastAttempt != null && now != null && java.time.Duration.between(lastAttempt, now).compareTo(cooldown) < 0) {
+                continue;
+            }
+
+            ObjectNode payload = objectPayload(task.getPayload());
+            payload.put(RESUME_COUNT_KEY, 0);
+            payload.put(HOMEOSTATIC_EPOCH_KEY, epoch + 1);
+            payload.put(HOMEOSTATIC_EPOCH_AT_KEY, (now != null ? now : Instant.now()).toString());
+            task.setPayload(payload);
+
+            if (resumeEligibleTask(task, project.getId(), resumed, refusals)) {
+                ObjectNode updated = objectPayload(task.getPayload());
+                updated.put(HOMEOSTATIC_EPOCH_KEY, epoch + 1);
+                updated.put(HOMEOSTATIC_EPOCH_AT_KEY, (now != null ? now : Instant.now()).toString());
+                task.setPayload(updated);
+                task.setJulesDispatchStatus("Homeostatic autonomy epoch " + (epoch + 1) + "/" + maxHomeostaticEpochs
+                        + ": bounded frontier recovery from clean main");
+                taskRepository.save(task);
+                resumed++;
+                log.warn("PlannedWorkRecoveryService: granted homeostatic recovery epoch {}/{} to root task {} for starving project {}",
+                        epoch + 1, maxHomeostaticEpochs, task.getId(), project.getId());
+            }
+        }
+        return resumed;
+    }
+
+    public int homeostaticEpoch(TaskEntity task) {
+        return task == null || task.getPayload() == null ? 0 : task.getPayload().path(HOMEOSTATIC_EPOCH_KEY).asInt(0);
+    }
+
+    public boolean hasRemainingHomeostaticEpoch(TaskEntity task) {
+        return task != null && homeostaticEpoch(task) < maxHomeostaticEpochs;
+    }
+
+    java.time.Duration homeostaticCooldownForEpoch(int currentEpoch) {
+        int safeEpoch = Math.max(0, Math.min(currentEpoch, 10));
+        long multiplier = 1L << (2 * safeEpoch);
+        return java.time.Duration.ofMinutes(Math.max(1L, (long) homeostaticBaseCooldownMinutes * multiplier));
+    }
+
+    private Instant lastRecoveryReferenceTime(TaskEntity task) {
+        if (task.getPayload() != null) {
+            String epochAt = task.getPayload().path(HOMEOSTATIC_EPOCH_AT_KEY).asText(null);
+            if (epochAt != null && !epochAt.isBlank()) {
+                try {
+                    return Instant.parse(epochAt);
+                } catch (Exception ignored) {
+                }
+            }
+            String resumeAt = task.getPayload().path("ems_bounded_plan_resume_at").asText(null);
+            if (resumeAt != null && !resumeAt.isBlank()) {
+                try {
+                    return Instant.parse(resumeAt);
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return task.getUpdatedAt() != null ? task.getUpdatedAt() : task.getCreatedAt();
     }
 
     /**

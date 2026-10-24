@@ -30,4 +30,14 @@ public enum ProjectStatus {
     public boolean isTerminal() {
         return this == accepted || this == archived;
     }
+
+    /**
+     * Operational project domain (GILBERT_RAYL_03_CATEGORY_ERROR_SCAN / DZHON_OSTIN_02_CATEGORY_ERROR_SCAN [D002]
+     * and NUEL_BELNAP_03_TRUTH_STATUS_TABLE [D012]):
+     * {@link #stalled} distinguishes lack of recent forward progress from {@link #active} in telemetry,
+     * while keeping the project inside autonomous recovery, PR reconciliation, merge, and dispatch loops.
+     */
+    public boolean isOperational() {
+        return this == active || this == stalled;
+    }
 }

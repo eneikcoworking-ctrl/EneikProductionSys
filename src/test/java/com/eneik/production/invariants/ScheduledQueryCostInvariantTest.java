@@ -61,7 +61,7 @@ class ScheduledQueryCostInvariantTest {
      * (accepted over total for a source type), and a window silently changes what the rate means. That is
      * a diagnosis, not an edit, and §5c-K of the plan holds it until someone measures it.
      */
-    private static final Set<String> EXEMPT = Set.of("EvidenceCoherenceService.java");
+    private static final Set<String> EXEMPT = Set.of();
 
     private static final Pattern FREQUENT_SCHEDULE = Pattern.compile(
             "@Scheduled\\((fixedRate|fixedDelay)|@Scheduled\\(cron[^)]*\\*/\\d");
@@ -101,12 +101,8 @@ class ScheduledQueryCostInvariantTest {
     }
 
     @Test
-    void theExemptionIsStillNeeded() throws IOException {
-        // An exemption nobody needs any more is muda that reads as permission. If this fails, the site was
-        // fixed and the entry should be deleted rather than kept "just in case".
-        Path exempt = Path.of("src/main/java/com/eneik/production/services/coherence/EvidenceCoherenceService.java");
-        assertTrue(Files.exists(exempt), "the exempt file must exist, or the exemption is stale");
-        assertTrue(Files.readString(exempt).contains("evidenceNodeRepository.findAll()"),
-                "EvidenceCoherenceService no longer reads the whole table - remove it from EXEMPT");
+    void theExemptionIsStillNeeded() {
+        // EvidenceCoherenceService full-table scan was eliminated in commit 958c1f8b; zero exemptions remain.
+        assertTrue(EXEMPT.isEmpty(), "EXEMPT set must remain empty unless a measured argument justifies an entry");
     }
 }

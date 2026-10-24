@@ -181,8 +181,15 @@ public class ContinuousOrchestrationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DeliveryRealityProducerService deliveryRealityProducerService;
+
     public void setTocSentinelService(com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
         this.tocSentinelService = tocSentinelService;
+    }
+
+    public void setDeliveryRealityProducerService(DeliveryRealityProducerService deliveryRealityProducerService) {
+        this.deliveryRealityProducerService = deliveryRealityProducerService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -334,17 +341,41 @@ public class ContinuousOrchestrationService {
                     }
                 }
 
+                boolean workMutatedThisTick = false;
                 if (isAllowed(project, flowSnapshot, OperationalAction.RECOVER_FAILED_FRONTIER)) {
                     int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
                     if (resumedPlanTasks > 0) {
+                        workMutatedThisTick = true;
                         log.warn("Continuous Orchestration: Resumed {} existing planned task(s) for project {}; "
                                         + "no new task or wishlist identity was created",
                                 resumedPlanTasks, project.getName());
                     }
                 }
 
-                plannedWorkRecoveryService.recoverStuckCompilingWishlists(project);
+                int recoveredCompiling = plannedWorkRecoveryService.recoverStuckCompilingWishlists(project);
+                if (recoveredCompiling > 0) {
+                    flowSnapshot = refreshFlowSnapshot(project, flowSnapshot);
+                }
                 plannedWorkRecoveryService.cleanoutOrphanedMetaTasksWhenProductComplete(project);
+
+                // ENDI_KLARK_01_PERCEPTION_ACTION_LOOP [D011] & RUT_MILLIKEN_06_TELEOSEMANTIC_FEEDBACK [D011]:
+                // When a project is starving with unfinished product scope, attempt bounded homeostatic epoch
+                // recovery first; if all epochs are cooling down or exhausted, trigger immediate Multiple Drafts
+                // delivery-gap wishlist generation before ORCHESTRATE runs in this very tick.
+                if (isProjectStarvingForAutonomy(flowSnapshot)) {
+                    try {
+                        int epochResumed = plannedWorkRecoveryService.recoverStarvingFrontierForAutonomy(project);
+                        if (epochResumed > 0) {
+                            workMutatedThisTick = true;
+                            flowSnapshot = refreshFlowSnapshot(project, flowSnapshot);
+                        } else if (deliveryRealityProducerService != null) {
+                            deliveryRealityProducerService.produceForProject(project);
+                            flowSnapshot = refreshFlowSnapshot(project, flowSnapshot);
+                        }
+                    } catch (Exception e) {
+                        log.error("Continuous Orchestration: Homeostatic autonomy recovery failed for project {}", project.getId(), e);
+                    }
+                }
 
                 // Compile any pending wishlist items into tasks. This is the step that used to only run when a
                 // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation
@@ -355,9 +386,13 @@ public class ContinuousOrchestrationService {
                 try {
                     if (isAllowed(project, flowSnapshot, OperationalAction.ORCHESTRATE)) {
                         OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
-                        if (orchestration.processedWishlistItems() > 0) {
+                        if (orchestration != null && (orchestration.processedWishlistItems() > 0
+                                || (orchestration.createdTasks() != null && !orchestration.createdTasks().isEmpty()))) {
+                            workMutatedThisTick = true;
                             log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
-                                    orchestration.processedWishlistItems(), orchestration.createdTasks().size(), project.getName());
+                                    orchestration.processedWishlistItems(),
+                                    orchestration.createdTasks() == null ? 0 : orchestration.createdTasks().size(),
+                                    project.getName());
                         }
                     } else {
                         log.warn("Continuous Orchestration: Flow policy denies wishlist compilation for project {}; skipping",
@@ -373,8 +408,12 @@ public class ContinuousOrchestrationService {
                 try {
                     int recovered = projectFlowService.recoverBlockedWork(project.getId());
                     if (recovered > 0) {
+                        workMutatedThisTick = true;
                         log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
                                 recovered, project.getName());
+                    }
+                    if (workMutatedThisTick) {
+                        flowSnapshot = refreshFlowSnapshot(project, flowSnapshot);
                     }
                     if (isAllowed(project, flowSnapshot, OperationalAction.DISPATCH_QUEUED_TASKS)) {
                         projectFlowService.dispatchQueuedTasks(project.getId());
@@ -727,7 +766,7 @@ public class ContinuousOrchestrationService {
                 .flatMap(project -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream())
                 .toList();
         long queuedTasks = activeProjectTasks.stream()
-                .filter(task -> task.getStatus() == TaskStatus.queued)
+                .filter(ContinuousOrchestrationService::isDispatchableQueuedWorkForStallCheck)
                 .count();
         long pendingWishlists = targetProjects.stream()
                 .flatMap(project -> wishlistRepository.findByProjectId(project.getId()).stream())
@@ -760,6 +799,64 @@ public class ContinuousOrchestrationService {
                         .anyMatch(session -> session.getPrUrl() != null && !session.getPrUrl().isBlank()))
                 .count();
         return new SystemWorkSnapshot(queuedTasks, pendingWishlists, activeNonTerminalTasks, reviewTasksWithPr);
+    }
+
+    static boolean isDispatchableQueuedWorkForStallCheck(TaskEntity task) {
+        if (task == null || task.getStatus() != TaskStatus.queued) {
+            return false;
+        }
+        TaskEntity dep = task.getDependsOn();
+        if (dep == null) {
+            return true;
+        }
+        TaskStatus depStatus = dep.getStatus();
+        return depStatus == null
+                || depStatus == TaskStatus.done
+                || depStatus == TaskStatus.spike_completed
+                || depStatus == TaskStatus.failed
+                || depStatus == TaskStatus.blocked;
+    }
+
+    private com.eneik.production.dto.operational.FlowCoreDto refreshFlowSnapshot(
+            ProjectEntity project,
+            com.eneik.production.dto.operational.FlowCoreDto previous) {
+        try {
+            com.eneik.production.dto.operational.FlowCoreDto refreshed = operationalPolicyService.snapshot(project.getId());
+            return refreshed != null ? refreshed : previous;
+        } catch (Exception e) {
+            log.debug("Continuous Orchestration: flow snapshot refresh failed for project {}: {}",
+                    project.getId(), e.getMessage());
+            return previous;
+        }
+    }
+
+    static boolean isProjectStarvingForAutonomy(com.eneik.production.dto.operational.FlowCoreDto flowSnapshot) {
+        if (flowSnapshot == null || flowSnapshot.snapshot() == null) {
+            return false;
+        }
+        var counts = flowSnapshot.snapshot().counts();
+        var evidence = flowSnapshot.snapshot().evidence();
+        if (counts == null || evidence == null) {
+            return false;
+        }
+        if ("GITHUB_RATE_LIMITED".equals(flowSnapshot.snapshot().currentState())
+                || "BLOCKED_BY_DUPLICATE_CONTENT".equals(flowSnapshot.snapshot().currentState())) {
+            return false;
+        }
+        boolean nothingInFlight = counts.activeTasks() == 0
+                && counts.queuedTasks() == 0
+                && counts.reviewTasks() == 0
+                && evidence.openSessions() == 0
+                && evidence.pendingWishlist() == 0
+                && evidence.compilingWishlist() == 0;
+        if (!nothingInFlight) {
+            return false;
+        }
+        boolean incompleteProduct = !counts.decompositionComplete()
+                || (counts.totalFeatures() > 0 && counts.completeFeatures() < counts.totalFeatures())
+                || (counts.totalDeliverables() > 0 && counts.mergedDeliverables() < counts.totalDeliverables())
+                || counts.failedTasksTotal() > 0;
+        return incompleteProduct && !"DELIVERED".equals(flowSnapshot.snapshot().currentState());
     }
 
     record SystemWorkSnapshot(long queuedTasks, long pendingWishlists, long activeNonTerminalTasks, long reviewTasksWithPr) {

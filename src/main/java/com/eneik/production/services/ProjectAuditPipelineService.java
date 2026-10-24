@@ -99,7 +99,7 @@ public class ProjectAuditPipelineService {
     @Transactional
     public void executeSequentialAuditPipeline(UUID projectId) {
         ProjectEntity project = projectRepository.findById(projectId).orElse(null);
-        if (project == null || project.getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
+        if (project == null || !project.isOperational()) {
             return;
         }
 

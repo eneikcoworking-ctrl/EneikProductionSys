@@ -111,7 +111,7 @@ public class OperationalFlowCoreService {
         flowSpineEventRepository.save(event);
     }
 
-    static FlowCoreDto.Decision decide(FlowSpineDto snapshot) {
+    public static FlowCoreDto.Decision decide(FlowSpineDto snapshot) {
         FlowSpineDto.Transition transition = snapshot.nextRequiredTransition();
         ActionSpec spec = actionSpec(snapshot.currentState());
         String evidenceHash = evidenceHash(snapshot);
@@ -146,9 +146,9 @@ public class OperationalFlowCoreService {
         );
     }
 
-    static FlowCoreDto.Authorization authorization(FlowSpineDto snapshot, FlowCoreDto.Decision decision) {
+    public static FlowCoreDto.Authorization authorization(FlowSpineDto snapshot, FlowCoreDto.Decision decision) {
         String state = snapshot.currentState();
-        boolean activeProject = "active".equalsIgnoreCase(snapshot.project().status());
+        boolean activeProject = OperationalPolicyService.isOperationalProjectStatus(snapshot.project().status());
         boolean terminal = isTerminalState(state);
         boolean hardBlocked = isHardStopState(state);
         boolean controlledMutationAllowed = activeProject && !terminal && !hardBlocked;

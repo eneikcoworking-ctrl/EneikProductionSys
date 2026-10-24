@@ -362,7 +362,7 @@ public class GitHubPullRequestService {
         // spending real GitHub calls on a project that isn't active, without needing to remember the check
         // itself. Confirmed live (2026-07-30/31): frozen/accepted projects' leftover work was consuming the
         // large majority of the shared rate-limit budget every hour.
-        if (project.getStatus() != ProjectStatus.active) {
+        if (!project.isOperational()) {
             return PullRequestSnapshot.unavailable("", "", "Project is not active");
         }
         if (!settingsService.effectiveBoolean("github_enabled")) {
@@ -1451,7 +1451,7 @@ public class GitHubPullRequestService {
     }
 
     public java.util.List<GitHubPullRequest> fetchOpenPullRequests(ProjectEntity project) {
-        if (project == null || project.getStatus() != ProjectStatus.active
+        if (project == null || !project.isOperational()
                 || !settingsService.effectiveBoolean("github_enabled")) return java.util.List.of();
         String token = settingsService.effectiveValue("github_token");
         if (token == null || token.isBlank()) return java.util.List.of();

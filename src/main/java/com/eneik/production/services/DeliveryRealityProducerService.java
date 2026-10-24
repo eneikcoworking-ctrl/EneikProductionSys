@@ -995,14 +995,17 @@ public class DeliveryRealityProducerService {
 
     @Scheduled(cron = "${delivery-reality-producer.cron:0 20 * * * ?}")
     public void produce() {
-        List<ProjectEntity> active = null;
+        List<ProjectEntity> active = new java.util.ArrayList<>();
         try {
-            active = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+            List<ProjectEntity> act = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+            if (act != null) active.addAll(act);
+            List<ProjectEntity> stl = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled);
+            if (stl != null) active.addAll(stl);
         } catch (Exception ignored) {
         }
-        if (active == null || active.isEmpty()) {
+        if (active.isEmpty()) {
             active = projectRepository.findAll().stream()
-                    .filter(p -> p.getStatus() == ProjectStatus.active)
+                    .filter(ProjectEntity::isOperational)
                     .toList();
         }
         for (ProjectEntity project : active) {
@@ -1018,7 +1021,7 @@ public class DeliveryRealityProducerService {
         }
     }
 
-    private void produceForProject(ProjectEntity project) {
+    public void produceForProject(ProjectEntity project) {
         produceRuntimeObservationEvidence(project);
         int recorded = 0;
         int alreadyKnown = 0;

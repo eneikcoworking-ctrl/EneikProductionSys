@@ -350,8 +350,8 @@ public class JulesDispatchService {
         // guard the same night this was found, but this is the one choke point EVERY caller goes through -
         // checking here too means a frozen/accepted/cancelled project can never again get an untracked,
         // uncancellable session dispatched into it, regardless of which future caller forgets its own guard.
-        if (project != null && project.getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
-            log.warn("JulesDispatchService: refusing ad-hoc session dispatch for project {} (status {}, not active) - branch {}",
+        if (project != null && !project.isOperational()) {
+            log.warn("JulesDispatchService: refusing ad-hoc session dispatch for project {} (status {}, not operational) - branch {}",
                     project.getId(), project.getStatus(), branchName);
             return;
         }
@@ -2097,7 +2097,7 @@ public class JulesDispatchService {
             TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
             if (task == null || task.getStatus() != TaskStatus.claimed
                     || session.getPrUrl() == null || session.getPrUrl().isBlank()
-                    || task.getProject() == null || task.getProject().getStatus() != ProjectStatus.active) {
+                    || task.getProject() == null || !task.getProject().isOperational()) {
                 continue;
             }
             // A persistent worker intentionally parks at pr_opened between batches. Its carrier task is
@@ -5398,7 +5398,7 @@ public class JulesDispatchService {
             // reasoning and the live-measured numbers. This is the highest-frequency sweep of the three
             // (every minute) and the most likely single biggest source of GitHub calls spent on projects
             // nobody is working on anymore.
-            if (task.getProject() == null || task.getProject().getStatus() != ProjectStatus.active) {
+            if (task.getProject() == null || !task.getProject().isOperational()) {
                 continue;
             }
             if (isTerminalTask(task)) {
@@ -5567,7 +5567,7 @@ public class JulesDispatchService {
                     && !implementerPhaseComplete;
             if (task.getProject() == null
                     || claimStillVetoes
-                    || task.getProject().getStatus() != ProjectStatus.active) {
+                    || !task.getProject().isOperational()) {
                 continue;
             }
             // Operator directive (2026-07-25): scope every log line in this sweep to the task's own

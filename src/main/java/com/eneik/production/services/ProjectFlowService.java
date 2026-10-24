@@ -81,6 +81,12 @@ public class ProjectFlowService {
     private final ProjectFactoryService projectFactoryService;
     private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
     private final SystemSettingsService settingsService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
+
+    public void setSystemProgressTracker(com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker) {
+        this.systemProgressTracker = systemProgressTracker;
+    }
     // Versioned market knowledge (market-corpus/) - what products of a kind must contain, independent of
     // what this particular client thought to ask for. Nullable by construction so the several test call
     // sites that build this service by hand keep working, and so a missing corpus degrades the compiler
@@ -571,16 +577,22 @@ public class ProjectFlowService {
             return toProjectDto(project);
         }
 
-        // Freeze other active projects
-        projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)
-                .forEach(p -> {
-                    if (!p.getId().equals(projectId)) {
-                        freezeProjectAndCancelWork(p, "Project frozen: superseded by another project being activated");
-                    }
-                });
+        // Freeze other operational (active or stalled) projects
+        java.util.List<ProjectEntity> operationalOthers = new java.util.ArrayList<>();
+        java.util.List<ProjectEntity> otherActive = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        if (otherActive != null) operationalOthers.addAll(otherActive);
+        java.util.List<ProjectEntity> otherStalled = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled);
+        if (otherStalled != null) operationalOthers.addAll(otherStalled);
+        operationalOthers.forEach(p -> {
+            if (!p.getId().equals(projectId)) {
+                freezeProjectAndCancelWork(p, "Project frozen: superseded by another project being activated");
+            }
+        });
 
         project.setStatus(ProjectStatus.active);
-        return toProjectDto(projectRepository.save(project));
+        ProjectEntity saved = projectRepository.save(project);
+        resetStallTelemetryOnActivation();
+        return toProjectDto(saved);
     }
 
     // Frozen means zero background activity in any form, not just "orchestrator stops picking new work"
@@ -631,9 +643,24 @@ public class ProjectFlowService {
         ProjectEntity project = requireProject(projectId);
         if (project.getStatus() == ProjectStatus.stalled) {
             project.setStatus(ProjectStatus.active);
-            return toProjectDto(projectRepository.save(project));
+            ProjectEntity saved = projectRepository.save(project);
+            resetStallTelemetryOnActivation();
+            return toProjectDto(saved);
         }
         return toProjectDto(project);
+    }
+
+    private void resetStallTelemetryOnActivation() {
+        try {
+            if (systemProgressTracker != null) {
+                systemProgressTracker.recordProgress();
+            }
+            if (settingsService != null) {
+                settingsService.save("system_stall_status", "ok");
+            }
+        } catch (Exception e) {
+            log.debug("ProjectFlowService: could not reset stall telemetry on activation: {}", e.getMessage());
+        }
     }
 
     // 2026-08-07 (operator directive: "the results of the first decomposition must be deleted there and a
@@ -1524,7 +1551,7 @@ public class ProjectFlowService {
     }
 
     public void syncClientBriefToRepository(ProjectEntity project) {
-        if (project == null || project.getStatus() != ProjectStatus.active) {
+        if (project == null || !project.isOperational()) {
             return;
         }
         java.util.List<WishlistEntity> clientWishes = wishlistRepository.findByProjectId(project.getId()).stream()
