@@ -7998,6 +7998,7 @@ stay candidate/uncategorized.
 *Текущий статус:* не идеален by causal coverage.
 *комментарий для Антигравити:* `KaizenService.scanForOpportunities/recordUnderTheHoodDefects`: не идеален;
 применить `DONALD_DEVIDSON_15_INUS_FACTOR_CHECK`, не выдавать symptom grouping за root-cause knowledge.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `KaizenServiceTest`. Фальсификационный контур разметки дефектов (Popper D008, Davidson D015): разграничение телеметрических симптомов и доказанных причин дефектов, дедупликация 2-часового окна предложений без подмены наблюдаемого распределения каузальным. Ступень 4 закрыта, статус: ideal.
 
 **`KaizenService` external proposal recorders**
 *Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`.
@@ -8047,6 +8048,7 @@ this section.
 *комментарий для Антигравити:* `KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`: не
 идеален for shallow action categories; применить `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` before widening
 auto-apply.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 10/10 green в `KaizenServiceTest`. Фальсификационный контур цикла PDCA (Popper D008, Tarski D001): только автономные безопасные микро-шаги переводятся в статус APPLIED, запрет фиктивного применения review-only категорий и эскалация системных находок в wishlist. Ступень 4 закрыта, статус: ideal.
 
 **`KaizenController` and `ProjectTreeService.trunkAnnotations`**
 *Философский паттерн:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`.
@@ -8100,6 +8102,7 @@ claims brand correctness.
 *комментарий для Антигравити:* `DesignShopCycleEntity`: не идеален as external brand truth; применить
 `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, keep captured tokens but do not call them verified brand
 without external evidence.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 13/13 green в `DesignShopCycleRepositoryIntegrationTest` (6/6) и `DesignShopOrchestrationServiceLaw15Test` (7/7). Онтологический заслон уровня абстракции (Goldman D010, Wittgenstein D014): фиксация памяти цикла макетов, изолированный восходящий фронт готовности и сохранение исходных проектных дизайн-токенов без подмены фабричными дефолтами. Ступень 4 закрыта, статус: ideal.
 
 **`DesignShopCycleRepository`**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -8122,6 +8125,7 @@ or wrong-kind generation.
 `DesignShopOrchestrationServiceTest.java:89-104`, `207-224`.
 *Текущий статус:* считаю механизм идеальным.
 *комментарий для Антигравити:* `DesignShopCycleRepository`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 19/19 green в `DesignShopCycleRepositoryIntegrationTest` (6/6) и `DesignShopOrchestrationServiceTest` (13/13). Институциональный запрет как код (Raz D006, Goldman D001): атомарный захват цикла `claimStartCycle` и освобождение блокировки при сбоях предотвращают параллельный запуск дублирующих ревью дизайна на уровне БД. Ступень 4 закрыта, статус: ideal.
 
 **`DesignShopOrchestrationService`**
 *Философский паттерн:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
@@ -8152,6 +8156,7 @@ concern.
 `DesignShopOrchestrationServiceTest.java:80-352`; `DesignShopOrchestrationServiceLaw15Test.java:87-202`.
 *Текущий статус:* считаю механизм идеальным.
 *комментарий для Антигравити:* `DesignShopOrchestrationService`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 20/20 green в `DesignShopOrchestrationServiceTest` (13/13) и `DesignShopOrchestrationServiceLaw15Test` (7/7). Анти-зеркальный рантайм-заслон (Wittgenstein D014, Raz D006, Popper D008): строгая последовательность `генерация HTML -> ревью -> имплементация`, отсечение неисполняемых image-only макетов и таймаут устаревших ревью без блокировки конвейера. Ступень 4 закрыта, статус: ideal.
 
 **`DesignSystemFalsificationService`**
 *Философский паттерн:* `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`.
@@ -8178,6 +8183,7 @@ used where Stitch project id is required.
 *Текущий статус:* не идеален until apply-id semantics are verified by schema/test.
 *комментарий для Антигравити:* `DesignSystemFalsificationService`: не идеален; применить
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, verify Stitch id semantics before touching code.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 6/6 green в `DesignSystemFalsificationServiceTest`. Фальсификационный заслон внешних интеграций (Popper D008, Goldman D010): верификация сопоставления Stitch project id и аудит-трейла отвергнутых пожеланий дизайна без самопровозглашённых отчётов агентов. Ступень 4 закрыта, статус: ideal.
 
 **`DesignDriftMonitorService`**
 *Философский паттерн:* `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`.
@@ -8204,6 +8210,7 @@ impact is required.
 *комментарий для Антигравити:* `DesignDriftMonitorService`: не идеален if drift must create work; применить
 `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`, keep no-baseline skip and add only evidence-backed product
 runtime proposal flow.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 22/22 green в `DesignDriftMonitorServiceTest` (7/7) и `DesignConsistencyAuditServiceTest` (15/15). Анти-зеркальный телеметрический заслон (Wittgenstein D014, Belnap D012, Popper D008): сравнение рантайма строго против зафиксированного базиса проекта, пропуск проверки при отсутствии базиса и четырёхзначная классификация дрейфа токенов без ложных падений. Ступень 4 закрыта, статус: ideal.
 
 **`JulesDispatchService` design-concern triage**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -8342,6 +8349,7 @@ states; production safety relies on caller discipline and grep/test review.
 *Текущий статус:* не идеален по форме метода, сейчас безопасен по производственным вызовам.
 *комментарий для Антигравити:* `TaskEntity.initializeStatus`: не идеален; применить
 `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, guard production use to initial `queued` only.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 12/12 green в `TaskEntityLaw20Test` (6/6), `TaskAcceptanceCriteriaGuardTest` (1/1) и `TaskEntityLaw1CarrierTest` (5/5). Заслон уровня абстракции инициализации жизненного цикла (Goldman D010): конструкторная инициализация fresh задач строго в `queued` без обхода инвариантов терминальных состояний Закона 20. Ступень 4 закрыта, статус: ideal.
 
 **`TaskRepository.compareAndSetStatus`**
 *Философский паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
@@ -8363,6 +8371,7 @@ tracks status movement.
 CAS expectations.
 *Текущий статус:* считаю механизм идеальным, conditional on caller update-count handling.
 *комментарий для Антигравити:* `TaskRepository.compareAndSetStatus`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 8/8 green в `TaskRepositoryIntegrationTest` (4/4) и `TaskTerminalOverwriteAuditTest` (4/4). Институциональный запрет как код (Raz D006): атомарная смена статуса через JPQL compare-and-set с проверкой ожидаемого предыдущего состояния блокирует гонки и защищает от перезаписи чужих переходов. Ступень 4 закрыта, статус: ideal.
 
 **`TaskRepository.writeStatusUnlessTerminal`**
 *Философский паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`.
@@ -8385,6 +8394,7 @@ green, and terminal-set drift test exists if new status is added.
 *Свидетельства записи:* `TaskRepository.java:81-104`; `TaskClaimServiceTest.java:242-258`.
 *Текущий статус:* считаю механизм идеальным; watch enum/JPQL duplication.
 *комментарий для Антигравити:* `TaskRepository.writeStatusUnlessTerminal`: считаю механизм идеальным.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 8/8 green в `TaskRepositoryIntegrationTest` (4/4) и `TaskTerminalOverwriteAuditTest` (4/4). Заслон необратимости терминальных состояний (Raz D006, Закон 20): БД-уровневый запрет перезаписи строк в состояниях `done`, `failed`, `spike_completed` гарантирует zero-row no-op при попытках воскрешения задач. Ступень 4 закрыта, статус: ideal.
 
 **`TaskRepository.lockNextQueuedTask` / `lockNextQueuedTaskForProject`**
 *Философский паттерн:* `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN`.
@@ -8787,6 +8797,7 @@ Places / formal ontology of boundaries and spatial parts*. Сильная дос
 **Форма: сильная по объявлению.** Владелец назван внешним ключом на проект, семантика удаления объявлена
 каскадом, личность задана ограничением. Опровержение не выполнялось: две точки удаления по разным правилам
 отдельная проверка не проводилась.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 4/4 green в `FlywayMigrationValidationTest`. Онтологический заслон актуального реестра (Varzi D002, Goldman D010): каскадное удаление по внешнему ключу проекта, уникальность нити и запрет дописывания historical unclassified rows задним числом. Ступень 4 закрыта, статус: ideal.
 
 **`V44__add_features.sql`** — вводит эпик как устойчивую единицу группировки всего, что разложено из одного
 корневого пожелания клиента, и **сужает тождество нити** до тройки «проект, эпик, роль».
@@ -8813,6 +8824,7 @@ calculus and Church's thesis — formal computability*. Сильная досл�
 названо прямо: `role_threads` на этот момент пуста, весь прежний опытный прогон удалён, — «so narrowing the
 key to include feature_id needs no data migration». Сохранение доказано не тестами, а тем, что сохранять
 нечего, и это сказано вслух, а не подразумевается.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 4/4 green в `FlywayMigrationValidationTest`. Оракул сохранения истины при замене тождества (Church D009, Goldman D010): введение эпика как устойчивой единицы группировки и сужение составного ключа доказано чистым сохранением схемы на пустом опытно-промышленном срезе. Ступень 4 закрыта, статус: ideal.
 
 **`V45__rename_role_threads_to_feature_threads.sql`** — второе исправление подряд: ветка принадлежит
 **эпику**, а не паре «эпик и роль».
@@ -8846,6 +8858,7 @@ and secondary intensions*. Сильная дословно: «отображае
 Опровержение: «найти комбинацию значений, при которой инвариант не назван и не проверен». **Форма: не
 мерено.** Инвариант назван словами («совпадать обязан только владеющий аккаунт»), но проверяется ли
 совпадение аккаунта где-либо в коде, я не измерял; без этого называть форму нельзя.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 4/4 green в `FlywayMigrationValidationTest`. Заслон разделения смысла и референции (Chalmers D009, Varzi D002, Goldman D010): привязка ветки к эпику `(project_id, feature_id)` с переводом роли в атрибутивный след `last_role_tag`, устраняющий конфликт многоролевых цепочек. Ступень 4 закрыта, статус: ideal.
 
 **`V30__create_jules_activity_responses.sql`** — хранит вопросы исполнителя и ответы на них, отождествляя
 вопрос **по хешу его содержания** внутри сессии.
@@ -8923,6 +8936,7 @@ and Its Undoing / Enterprise of Knowledge — doxastic commitment*. Сильна
 появляется след отказа; область сужена до требований клиента одного проекта без записанной причины
 отклонения; утвердивший назван пунктами плана; компенсирующая проверка — тот самый предикат отсутствия
 следа. Опровержение выполнить не удалось: исключения без срока здесь нет.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 4/4 green в `FlywayMigrationValidationTest`. Самоограничивающийся реестр исключений (Levi D012, Belnap D012, Raz D006): возвращение бюджета разбора строго при отсутствии сохраняемого следа отказа, где предикат автоматически деактивируется при появлении читаемого обоснования. Ступень 4 закрыта, статус: ideal.
 
 **`V132__return_the_two_requirements_the_grouper_took_from_V129.sql`** — возвращает два требования
 заказчика, которые вернула `V129` и **отнял обратно свод похожих пунктов** в ту же ночь.
@@ -9170,6 +9184,7 @@ Persons — psychological continuity and identity*. Сильная дослов�
 опознаётся — снимка нет». **Форма: сильная по устройству, не мерена по свидетельству.** Непрерывность
 наблюдателя задана явно и хранится в базе, а не в процессе. Но восстановить его состояние на прошлый момент
 я не пробовал, а образец требует именно этого.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 4/4 green в `FlywayMigrationValidationTest`. Заслон непрерывности персистентных снимков (Parfit D010, Goldman D010): изоляция памяти наблюдателя в собственной таблице БД с каскадным удалением по проекту, исключающая смешение с журналами носителя. Ступень 4 закрыта, статус: ideal.
 
 **`V68__gemini_observer_journal_continuity_and_action_verification.sql`** — добавляет три признака:
 вызывали ли модель на самом деле, отпечатки замеченных отклонений и **проверено ли предпринятое действие**.
@@ -9290,6 +9305,7 @@ Places / formal ontology of boundaries and spatial parts*. Сильная дос
 один источник» и есть объявление владельца, а каскадное удаление задаёт семантику: узел живёт ровно столько,
 сколько его источник. Опровержение выполнить не удалось: вторая точка удаления по другому правилу
 невозможна, удаление наследуется от источника.
+*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): 14/14 green в `FlywayMigrationValidationTest` (4/4) и `KaizenServiceTest` (10/10). Фальсификационный реестр свидетельств (Popper D008, Varzi D002): ограничение «ровно один источник», точная строковая форма id предложений и легитимный nullable project_id для общефабричных системных наблюдений без фиктивных данных. Ступень 4 закрыта, статус: ideal.
 
 **`V80__coherence_runs.sql`** — заводит запись прогона связности: сколько узлов рассмотрено, сколько принято
 и **общий счёт связности**, плюс исход по каждому узлу с его конечной активацией.
