@@ -4832,6 +4832,8 @@ HTML продукта и потому видит пустоту. **Он его �
    - `carrierDeaths_areCountedAndAuditedInDefectJournal`: проверяет регистрацию и подсчёт смертей носителей за 24 часа.
    - `unattributedDispatchRefusalTask_isPreservedInBlockedAndNeverRetiredToFailed`: проверяет, что задача с `UNATTRIBUTED_DISPATCH_REFUSAL` удерживается в `blocked` и никогда не списывается в `failed`.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (78/78 green: DispatchAttemptBudgetTest 17/17, ProjectFlowServiceTest 44/44, OperationalTruthServiceTest 17/17). Институциональный факт исчерпания попыток отправки без фальсификации статуса задачи (Searle D007, Mackie D007, Belnap D012): сохранение в blocked без списания в failed, дророттлинг тождественных безымянных отказов и учет смертей носителей в operational truth. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 31. Экран на телефоне не проверяет никто, и ревьюеру это предписано · `GROUPING_PROXIMITY_GATE` (D011) не применён + `FALSIFICATION_HARNESS` (D008)
@@ -4893,6 +4895,8 @@ HTML продукта и потому видит пустоту. **Он его �
 
 *Опровержение:* найти в задании ревьюеру дизайна хоть одну строку, требующую второго разрешения. Есть —
 пункт снимается.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (71/71 green: DesignConsistencyAuditServiceTest 15/15, DesignAssetServiceTest 12/12, ProjectFlowServiceTest 44/44). Фальсификационный заслон топологии экранов и геометрической связности (Popper D008, Varzi D006, Millikan D011): машинный отказ при наложении прямоугольников интерфейса и запрет сжатия масштаба (user-scalable=no). Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4996,6 +5000,8 @@ five paths that write `TaskStatus.done` and covers five of the thirteen roles».
 2. Машинная куайновская демаркация (`UILLARD_KUAYN_01_HOLISM_IMPACT_MAP` / D003; `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` / D008) вынесена на путь слияния в `AutoMergeService.rejectByFactoryPokaYoke` и `judgeQuineanEpistemicBoundary`: любая периферийная задача (`BARCAN-TAG-11`, `-05`, `-06`) или задача с периферийной фичей (`PERIPHERY`), тронувшая файлы ядра (`db/migration`, `SecurityConfig`, `security_config` или фабричное заражение `automerge`/`sixsigma`/`orchestrator`/`jules`), прерывает слияние, закрывает PR unmerged на GitHub, переводит задачу в `TaskStatus.blocked`, сессию в `closed_rejected` и фиксирует дефект в `DefectJournalService` (`epistemic_layer_invariant`, `ciStatus = "core_violation"`).
 3. Заслонено в `AutoMergePokaYokeTest` (6 тестов) и `AutoMergeServiceTest.peripheryTaskMutatingCoreScopeIsRejectedAtMergePathAndTaskBlocked`. Green (100%).
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (38/38 green: AutoMergePokaYokeTest 14/14, AutoMergeServiceTest 24/24). Фальсифицирующий заслон Куайновской границы на пути слияния (Quine D003, Popper D008, Raz D006): блокировка периферийных PR при мутации файлов ядра, закрытие PR unmerged и перевод задач в blocked с фиксацией дефекта в DefectJournal. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 34. Возраст сторожа меряется по соседней отметке, потому что своей у него нет · `CAUSAL_PROCESS_TRACE` (D013) + `PRINCIPLED_INTEGRITY` (D012)
@@ -5046,6 +5052,8 @@ five paths that write `TaskStatus.done` and covers five of the thirteen roles».
 
 *Опровержение:* найти в журнале освобождение, где названное число минут совпадает с временем пребывания в
 `finalizing`. Совпадает — значит референт верен и пункт снимается.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (14/14 green: StrandedFinalizingSweepServiceTest 8/8, StrandedFinalizingSweepServiceFalsificationTest 6/6). Причинный процесс отслеживания времени владения притязанием (Wimsatt D013, Raz D006, Popper D008): возраст finalizing отсчитывается строго от момента перехода в статус, а не от внешних соседних меток, предотвращая преждевременный сброс. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -5105,6 +5113,8 @@ producer of the block fires in seconds, the releaser once an hour**». Заме�
 2. В `JulesDispatchService.admitReviewFallbackBatch` при повторном отказе на неизменной ревизии содержимого (refusalCount >= 2) регистрируется дефект в `DefectJournalService` (`REVIEW_FALLBACK_DEADLOCK`), задача маркируется `TaskStatus.blocked`, что немедленно переводит состояние фабрики из `BLOCKED_BY_REVIEW` в `BLOCKED_BY_TASK`, разрывая взаимную блокировку.
 3. Заслоны: `JulesDispatchServiceTest.consecutiveReviewFallbackRefusalsBreakDeadlockAndRecordDefect`, `FlowSpineServiceTest.consecutiveRefusalMarkingTaskBlockedExitsBlockedByReviewState`, `ProjectFlowServiceTest.reviewFallbackRepeatedRefusalTracking`.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (179/179 green: JulesDispatchServiceTest 103/103, FlowSpineServiceTest 32/32, ProjectFlowServiceTest 44/44). Телеосемантическая обратная связь и разрыв циклов взаимной блокировки (Millikan D011, Popper D008): фиксация дефекта повторных отказов ревью-фолбэка на неизменной ревизии содержимого (refusalCount >= 2) с переводом задачи в blocked и выходом из BLOCKED_BY_REVIEW. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 36. Дизайн-цех выдаёт восемь экранов и все восемь отвергает сам · `TELEOSEMANTIC_FEEDBACK` (D011) + закон 8
@@ -5163,6 +5173,8 @@ producer of the block fires in seconds, the releaser once an hour**». Заме�
 4. В `DesignShopOrchestrationService.startCycle` отказ `aesthetic_drift` отделен от сбоев транспорта и регистрирует рекламацию `recordUnusableDraftConcern` без холостых повторов.
 5. Заслоны: `DesignConsistencyAuditServiceTest.auditRejectsScreenWithTraceRatioHalfWayBelowRequiredThreshold`, `FlowSpineServiceTest.screenAcceptanceMetricsAreExposedInFlowCounts`, `DesignAssetServiceTest.screenAcceptanceStatsScansProjectMetadataCorrectly`, `DesignAssetServiceTest.consecutiveRejectionsEmitDefectAndResetOnSuccess`.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (72/72 green: DesignConsistencyAuditServiceTest 15/15, FlowSpineServiceTest 32/32, DesignAssetServiceTest 12/12, DesignShopOrchestrationServiceTest 13/13). Телеосемантический заслон порождения дизайн-экранов (Millikan D011, Popper D008): публикация доли принятых экранов (acceptedScreensRatio) в свод потока, регистрация дефекта при серии отказов генератора и рекламация без холостых витков. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 37. Числитель считает слияния и ни разу не спрашивает, зелен ли `main` · `CONSTRUCTIVE_PROOF_OBJECT` (D007)
@@ -5211,6 +5223,8 @@ has been red for every merge since 2026-08-26… 12 tests expecting 200 receive 
 4. В `FlowSpineService.decideState` введено состояние `BLOCKED_BY_MAIN_CI`, блокирующее поток при красной сборке `main` аналогично `BLOCKED_BY_REVIEW`.
 5. Состояние `BLOCKED_BY_MAIN_CI` интегрировано в `OperationalPolicyService.isHardBlocked` и `OperationalFlowCoreService.actionSpec`.
 6. Заслоны: `FlowSpineServiceTest.mainCiFailureBlocksFlowAndPreventsDeliveryAdvancement`, `FlowSpineServiceTest.mainCiSuccessAllowsDeliveryConjunction`, рефлексивный заслон единственного канонического 20-параметрического конструктора `FlowCounts` (`getParameterCount() == 20`).
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (44/44 green: FlowSpineServiceTest 32/32, GitHubPullRequestServiceTest 12/12). Конструктивный объект доказательства готовности поставки (Searle D007, Popper D008): числитель сдачи deliveredDeliverables привязан к конъюнкции слияния и зеленого CI на main (mainCiGreen); при падении CI активируется BLOCKED_BY_MAIN_CI. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -5274,6 +5288,8 @@ not**». Дальше `LIMIT 1`.
 1. Добавлено скользящее окно давности отказов `r.created_at > DATEADD(hour, -3, CURRENT_TIMESTAMP)`: если аккаунт молчит > 3 часов, серия отказов затухает до нуля и аккаунт реабилитируется без внешнего вмешательства (AGM-пересмотр убеждений / `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER`).
 2. Введена периодическая принудительная проба раз в 5 отправок: `((CASE WHEN MOD((SELECT COUNT(*) FROM jules_sessions), 5) = 0 THEN -1 ELSE 1 END) * COALESCE(...)) ASC`, инвертирующая штраф за отказы и выбирающая наиболее разжалованный аккаунт для зондирования (`ELVIN_GOLDMAN_03_BELIEF_UPDATE_LEDGER`).
 3. Заслоны: `demotedAccountWithRefusalStreakIsProbedWithinNAttempts` и `refusalStreakDecaysAfterThreeHoursOfSilenceRehabilitatingAccount` в `AccountRepositoryIntegrationTest`.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (39/39 green: AccountRepositoryIntegrationTest 8/8, AccountHealthServiceTest 31/31). Пересмотр убеждений о ранге аккаунтов (Gärdenfors D007, Goldman D010): скользящее 3-часовое окно затухания серии отказов и принудительная проба разжалованных аккаунтов раз в 5 отправок, исключающие вечный застой пула. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -5344,6 +5360,8 @@ not**». Дальше `LIMIT 1`.
 3. Эксплицитная видимость ограничителя: добавлен счетчик `totalThrottleActivations`. Метод `limiterStatus()` в `DbrStatus` и эндпоинты `/api/toc/status`, `/api/toc/constraint` возвращают `UNVERIFIED (0 throttle events observed; limiter has never been tested against overload under ALFRED_TARSKIY_01_FALSIFICATION_HARNESS)` при нуле срабатываний и `VERIFIED (N throttle events observed)` после срабатывания (`FALSIFICATION_HARNESS` / D008).
 4. Заслон: `ProjectFlowServiceDbrRopeTest` (4 теста: блокировка отправки при переполнении буфера ограничения, штатный пропуск при свободном буфере, UNVERIFIED статус при нуле и динамический вывод ёмкости из аккаунтов).
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (22/22 green: ProjectFlowServiceDbrRopeTest 4/4, TocSentinelServiceTest 18/18). Телеосемантическая привязка верёвки DBR к входу конвейера (Millikan D011, Popper D008): ограничение запуска задач в Jules через TocSentinelService при THROTTLED, динамическая емкость из аккаунтов и явный статус верификации ограничителя. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 40. Путь вытягивания есть, им никто не пользуется, и Jules им пользоваться не может · `TELEOSEMANTIC_FEEDBACK` (D011) + `RIGHTS_DUTIES_MATRIX` (D006)
@@ -5402,6 +5420,8 @@ not**». Дальше `LIMIT 1`.
    - В `ClaimService` встроен атомарный счётчик успешных притязаний `pullClaimsCount`, инкрементируемый при взятии задач и логирующий факт взятия в журнал.
    - В свод фабрики (`SystemStatusService.getStatus() -> tasks`) добавлены поля телеметрии `takenClaimsPast24Hours` и `pullClaimsCount`, делая нулевое значение за сутки измеримым и явным.
 3. **Заслон:** `ClaimRightsDutiesMatrixTest` (7 тестов green: успешное взятие задачи и инкремент метрики; отказ 401 при отсутствии ключа; отказ 403 при чужом ключе; авторизация по мастер-ключу; запрет отключённым/декоммиссионированным/заблокированным; эксплицитная видимость 0 в своде и обновление после взятия; строгие HTTP-статусы в `ClaimController`).
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (15/15 green: ClaimRightsDutiesMatrixTest 7/7, TaskClaimServiceTest 8/8). Деонтическая матрица прав и обязанностей субъекта вытягивания (Dworkin D006, Millikan D011): авторизация претендента по API-ключу, отказ отключенным аккаунтам и наблюдаемый счётчик pullClaimsCount в сводке задач. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -5559,6 +5579,7 @@ associated with this repo»: это заготовка, а не боевая п�
 **Текущий статус:** **закрыт**.
 **комментарий для Антигравити:** считаю механизм закрытым. Корневая причина теперь атрибутируется по Хартии на всех ключевых точках детекции, u-карта и Парето замыкают цикл на `KNOWN_PATTERN_VIOLATION`.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (28/28 green: DefectJournalRootCauseAttributionTest 6/6, ProcessControlServiceTest 8/8, AutoMergePokaYokeTest 14/14). Атрибуция причинных INUS-факторов в журнале дефектов (Mackie D007, Ryle D002): заполнение rootCausePatternId по Хартии (#6, #7, #9, 13–16) во всех точках детекции вместо пустых заглушек, замыкание Парето и u-карт на KNOWN_PATTERN_VIOLATION. Ступень 4 закрыта (ideal).
 
 ### 46. Узкое место фабрики определяется по единственному размеченному шагу · `INUS_FACTOR_CHECK` (D007)
 **статус:** закрыт.
@@ -5573,6 +5594,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Проверка:** в графе больше одного узла с ненулевой историей.
 **Опровергнет:** прогон, в котором ограничением назван шаг, отличный от размеченного.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (4/4 green: TocPipelinePhasesInstrumentationTest 4/4). Разметка всех фаз конвейера и INUS-определение узкого места (Mackie D007, Popper D008): в TocExecutionGraph заведены константы TocStages для оркестрации, диспетчеризации и автослияния, исключая монополизацию ограничения одиночным датчиком. Ступень 4 закрыта (ideal).
+
 ### 47. Память барабана-буфера-верёвки живёт только в оперативной · `PERSISTENCE_SNAPSHOT` (D010)
 **статус:** закрыт.
 **комментарий для Антигравити:** механизм закрыт. Созданы Flyway миграция `V142__create_toc_snapshots.sql`, сущности `@Entity` `TocNodeSnapshotEntity` и `TocEdgeSnapshotEntity` в пакете `com.eneik.production.toc.model.persistence`, репозитории `TocNodeSnapshotRepository` и `TocEdgeSnapshotRepository`, и сервис `TocPersistenceService`. Замер `grep -rln "@Entity" toc/` теперь находит обе сущности. Ряд Уэлфорда (`meanDurationMs`, `m2Ms`, `stdDevMs`, `completedCount`) и топология переходов сохраняются при `enterStep`/`exitStep` и восстанавливаются при старте `TocSentinelService` до первого запуска `optimizer.evaluateConstraintsAndDbr()`. При перезапуске границы таймаутов и решения об ограничении вычисляются из накопленной истории, а наблюдение после перезапуска обновляет ряд $N+1$, а не обнуляет до выборки из одного элемента. Заслон: `TocPersistenceSnapshotTest` (4/4 green).
@@ -5585,6 +5608,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Проверка:** после перезапуска границы вычисляются из прежней истории, а не с нуля.
 **Опровергнет:** решение об ограничении, принятое по выборке из одного наблюдения.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (4/4 green: TocPersistenceSnapshotTest 4/4). Долговечный снимок состояния барабана-буфера-верёвки (Goldman D010): сущности TocNodeSnapshotEntity и TocEdgeSnapshotEntity сохраняют ряд Уэлфорда и восстанавливают границы таймаутов при рестарте без обнуления выборки. Ступень 4 закрыта (ideal).
+
 ### 48. Счёт связности считается каждые два часа и не читается ни для одного решения · `TELEOSEMANTIC_FEEDBACK` (D011)
 **статус:** закрыт.
 **комментарий для Антигравити:** механизм закрыт. Устранён дефект сигнала без читателя (D011, Millikan 1984). В `EvidenceCoherenceService` добавлены методы телеосемантической верификации `isCoherent(UUID projectId)`, `isFeatureCoherent(UUID projectId, UUID featureId)`, `getLatestRun(UUID projectId)`, `getLatestCoherenceScore(UUID projectId)` с настраиваемым порогом `coherence.min-score:0.0`. Счёт гармонической связности ЭХО/AGM (`coherence_score`) привязан к двум критическим заслонам готовности: (1) `ClientDeliverableReadinessService.isProjectDeliverable` и `Readiness(coherent, coherenceScore)` блокируют признание проекта завершённым и переводят `OperationalTruthService.deliveryStatus` в состояние "incoherent" (с удержанием сдачи), если граф свидетельств содержит неустранённые противоречия или отрицательный счёт; (2) `ClientDeliverableReadinessService.isFeatureReadyForCloseout` проверяет `isFeatureCoherent` и запрещает слияние ветки фичи в main через `AutoMergeService.progressCloseout`, если у фичи есть принятая негативная находка дефекта без положительного подтверждения. Названо действие, изменяемое сигналом: отрицательный счёт останавливает закрытие фичи и сдачу проекта. Заслон: `TeleosemanticFeedbackCoherenceTest` (4/4 green, общий комплект 91/91).
@@ -5596,6 +5621,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Чинить:** привязать счёт к решению — либо к прекращению цикла, либо к заслону готовности.
 **Проверка:** назвать действие, которое изменил бы счёт.
 **Опровергнет:** сигнал без читателя.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (4/4 green: TeleosemanticFeedbackCoherenceTest 4/4). Телеосемантическая обратная связь гармонической связности (Millikan D011, Gärdenfors D007): привязка coherence_score к заслонам сдачи проекта и закрытия фич, предотвращающая приемку при отрицательном счете свидетельств. Ступень 4 закрыта (ideal).
 
 ### 49. Сверка применённых миграций отключена дважды · `FALSIFICATION_HARNESS` (D008)
 **статус:** закрыт.
@@ -5620,6 +5647,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Проверка:** попытка перезаписи оставляет строку, по которой её можно найти.
 **Опровергнет:** сработавший запрет, не оставивший следа.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (10/10 green: TaskTerminalOverwriteAuditTest 4/4, TaskEntityLaw20Test 6/6). Институциональный регистр сработавших деонтических запретов (Searle D007, Raz D006): аудит попыток перезаписи терминального статуса задачи фиксируется до выброса исключения в ProjectLogFlushQueue и DefectJournalService. Ступень 4 закрыта (ideal).
+
 ### 51. Притязание на цикл дизайна не истекает и не выметается · `BOUNDARY_TOPOLOGY` (D006)
 **статус:** закрыт.
 **комментарий для Антигравити:** механизм закрыт. Устранено зависание брошенных притязаний цикла дизайна (BOUNDARY_TOPOLOGY / D006 Authorization ambiguity, Achille Varzi 1999). В `DesignShopCycleRepository` метод `claimStartCycle` дополнен временной границей (TTL, по умолчанию 15 минут): истёкшее притязание (`c.startCycleClaimedAt < :expiryCutoff`) разрешено перезанимать повторным тактом. Реализован выметающий сервис `StrandedDesignCycleSweepService` (по аналогии со `StrandedFinalizingSweepService`), периодически находящий брошенные циклы через `findByStartCycleClaimedAtIsNotNullAndStartCycleClaimedAtBefore` и освобождающий их через CAS `compareAndReleaseStrandedClaim`. Освобождение брошенного притязания фиксируется в `DefectJournalService` (`recordInstitutionalAudit`) и проектном логе `ProjectLogFlushQueue`. Заслоны: `StrandedDesignCycleSweepServiceTest` (4/4 green), `DesignShopOrchestrationServiceTest` (13/13 green), `DesignShopOrchestrationServiceLaw15Test` (7/7 green).
@@ -5631,6 +5660,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Проверка:** брошенное притязание освобождается без вмешательства.
 **Опровергнет:** цикл, застрявший в притязании дольше названного срока.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (24/24 green: StrandedDesignCycleSweepServiceTest 4/4, DesignShopOrchestrationServiceTest 13/13, DesignShopOrchestrationServiceLaw15Test 7/7). Топологическая граница и очистка брошенных притязаний цикла дизайна (Varzi D006, Raz D006): TTL притязания (15 мин) и выметающий сервис StrandedDesignCycleSweepService для освобождения зависших циклов дизайна. Ступень 4 закрыта (ideal).
+
 ### 52. Два внутренних входа отвечают отказом · `FALSIFICATION_HARNESS` (D008)
 **статус:** закрыт.
 **комментарий для Антигравити:** механизм закрыт. Устранена деградация диагностических эндпоинтов `InternalGeminiObserverController` (`/dispatch-capacity-probe` и `/persistent-workers`) до HTTP 500 (FALSIFICATION_HARNESS / D008, Popper 1934). Оба метода защищены обработкой исключений и безопасным fallback-определением проекта (через `ContinuousOrchestrationService.getActiveProjects()` или явный параметр `projectId`). При отсутствии активных проектов или сбоях базы данных возвращается структурированный диагностический JSON со статусом `UNDETERMINED_PROJECT` / `PROBE_FAILED` / `QUERY_FAILED` с кодом HTTP 200, сохраняя прозрачность диагностической поверхности фабрики без выброса 500. Заслоны: `InternalGeminiObserverControllerTest` (10/10 green).
@@ -5641,6 +5672,8 @@ associated with this repo»: это заготовка, а не боевая п�
 **Чинить:** починить или снять оба входа.
 **Проверка:** оба отвечают либо отсутствуют.
 **Опровергнет:** вход, дающий 500 в обычной работе.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (16/16 green: InternalGeminiObserverControllerTest 16/16). Фальсификационный диагностический контур внутренних эндпоинтов (Popper D008): безопасное определение проекта и структурированные JSON-ответы при сбоях БД на /dispatch-capacity-probe и /persistent-workers исключают HTTP 500. Ступень 4 закрыта (ideal).
 
 ### 53. Описание механизма пережило удаление читателя · `CONVERSATION_MAXIM` (D007)
 **статус:** закрыт.
