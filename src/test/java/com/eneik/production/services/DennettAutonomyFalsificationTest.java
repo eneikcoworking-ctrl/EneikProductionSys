@@ -424,4 +424,44 @@ class DennettAutonomyFalsificationTest {
                 new FlowCoreDto.Journal(null, null, false, 0)
         );
     }
+
+    @Test
+    @DisplayName("D008/D010: mayStillBeResumed resolves detached/uninitialized HibernateProxy ancestor chains without LazyInitializationException")
+    void mayStillBeResumedResolvesUninitializedHibernateProxyAncestorsWithoutSessionCrash() {
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        PlannedWorkRecoveryService recoveryService = new PlannedWorkRecoveryService(
+                taskRepository,
+                mock(WishlistRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(ClaimService.class),
+                mock(ClientDeliverableReadinessService.class),
+                objectMapper
+        );
+
+        UUID rootId = UUID.randomUUID();
+        TaskEntity managedRoot = new TaskEntity();
+        managedRoot.setId(rootId);
+        managedRoot.setStatus(TaskStatus.done);
+        when(taskRepository.findById(rootId)).thenReturn(Optional.of(managedRoot));
+
+        TaskEntity proxyAncestor = mock(TaskEntity.class,
+                org.mockito.Mockito.withSettings().extraInterfaces(org.hibernate.proxy.HibernateProxy.class));
+        org.hibernate.proxy.LazyInitializer lazyInit = mock(org.hibernate.proxy.LazyInitializer.class);
+        when(((org.hibernate.proxy.HibernateProxy) proxyAncestor).getHibernateLazyInitializer()).thenReturn(lazyInit);
+        when(lazyInit.isUninitialized()).thenReturn(true);
+        when(lazyInit.getIdentifier()).thenReturn(rootId);
+        when(proxyAncestor.getStatus()).thenThrow(new org.hibernate.LazyInitializationException("no Session"));
+
+        UUID depId = UUID.randomUUID();
+        TaskEntity failedDep = new TaskEntity();
+        failedDep.setId(depId);
+        failedDep.setFeatureId(UUID.randomUUID());
+        failedDep.setStatus(TaskStatus.failed);
+        failedDep.setJulesDispatchStatus("auto-recovery is disabled; dependent task retired");
+        failedDep.setDependsOn(proxyAncestor);
+        when(taskRepository.findById(depId)).thenReturn(Optional.of(failedDep));
+
+        assertTrue(recoveryService.mayStillBeResumed(failedDep),
+                "mayStillBeResumed must resolve uninitialized HibernateProxy ancestors via TaskRepository without LazyInitializationException");
+    }
 }

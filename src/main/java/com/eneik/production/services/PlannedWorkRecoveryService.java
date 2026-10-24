@@ -420,15 +420,35 @@ public class PlannedWorkRecoveryService {
      * 10 forbids. Deliberately durable-only: the transient reasons resumeEligibleTask also checks (a live
      * claim, a live session, an unsatisfied dependency of its own) say "not right now", not "never again".
      */
+    private TaskEntity resolveInSession(TaskEntity candidate) {
+        if (candidate == null) {
+            return null;
+        }
+        if (candidate instanceof org.hibernate.proxy.HibernateProxy proxy
+                && proxy.getHibernateLazyInitializer().isUninitialized()) {
+            Object rawId = proxy.getHibernateLazyInitializer().getIdentifier();
+            if (rawId instanceof java.util.UUID uuid && taskRepository != null) {
+                return taskRepository.findById(uuid).orElse(null);
+            }
+            return null;
+        }
+        if (candidate.getId() != null && taskRepository != null) {
+            return taskRepository.findById(candidate.getId()).orElse(candidate);
+        }
+        return candidate;
+    }
+
+    @Transactional(readOnly = true)
     public boolean mayStillBeResumed(TaskEntity task) {
-        if (task == null || !isEligibleRetiredPlanTask(task) || !hasResumeBudgetLeft(task)) {
+        TaskEntity resolvedTask = resolveInSession(task);
+        if (resolvedTask == null || !isEligibleRetiredPlanTask(resolvedTask) || !hasResumeBudgetLeft(resolvedTask)) {
             return false;
         }
         java.util.Set<java.util.UUID> visited = new java.util.HashSet<>();
-        if (task.getId() != null) {
-            visited.add(task.getId());
+        if (resolvedTask.getId() != null) {
+            visited.add(resolvedTask.getId());
         }
-        TaskEntity ancestor = task.getDependsOn();
+        TaskEntity ancestor = resolveInSession(resolvedTask.getDependsOn());
         while (ancestor != null) {
             if (ancestor.getId() != null && !visited.add(ancestor.getId())) {
                 break;
@@ -445,7 +465,7 @@ public class PlannedWorkRecoveryService {
                     && (!isEligibleRetiredPlanTask(ancestor) || !hasResumeBudgetLeft(ancestor))) {
                 return false;
             }
-            ancestor = ancestor.getDependsOn();
+            ancestor = resolveInSession(ancestor.getDependsOn());
         }
         return true;
     }
