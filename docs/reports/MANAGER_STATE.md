@@ -1,13 +1,15 @@
-# Такт синхронизации Автономии и L1/L3 (2026-10-24 00:20 UTC)
+# Такт синхронизации Автономии и L1/L3 (2026-10-24 00:25 UTC)
 
 1. Канонический контур автономии Деннетта (LOCKED — НЕ ТРОГАТЬ):
-- Внедрён и защищён эталон гомеостатической автономии (15 Java-сервисов + `DennettAutonomyFalsificationTest` + `autonomous_factory_relay.py`).
-- Замер в Docker Maven 3.9.9 Temurin-21: **376/376 green** в 31 тест-сьюте (0 failures, 0 errors).
+- Защищён эталон гомеостатической автономии (15 Java-сервисов + `DennettAutonomyFalsificationTest` + `ScheduledQueryCostInvariantTest` + `autonomous_factory_relay.py`).
+- 376/376 green в 31 тест-сьюте Maven Docker. Изменения канонических файлов запрещены.
 
 2. Продукт `dmitryefremov-site` (`1695f808-0df7-4393-ace9-d5a79e62ef41`):
 - Flow Core: `BLOCKED_BY_REVIEW` (`value_blocked`), задачи: `done=213`, `pending_review=21`, `claimed=2`, `queued=5`.
-- Контейнер `eneikproductionsys-backend-1` и превью `:18085` (HTTP 200 OK) работают непрерывно без перезапуска.
+- Контейнер `eneikproductionsys-backend-1` и превью `:18085` (HTTP 200 OK) стабильны.
 
-3. Финишная цель эстафеты L1 <-> L2 (~10% остатка -> `AUDIT_READY`):
-- В `docs/FACTORY_MECHANISMS.md` осталось ровно **67** инлайн-блоков без отметки `*Живое:*`.
-- Выдан пакет №1 (17 блоков) в `docs/reports/PROGRAMMER_DIRECTIVES.md`. По достижении `0` эстафета переходит в `STATUS: AUDIT_READY` в ожидании команды Дмитрия Ефремова на запуск `docs/reports/AUTONOMY_AND_FULL_AUDIT_PLAN.md`.
+3. Финишная эстафета L1 <-> L2 к полной готовности аудита (`AUDIT_READY`):
+- В `docs/FACTORY_MECHANISMS.md` зафиксирован исходный остаток: ровно **67** блоков без `*Живое:*`.
+- Выдан детальный Work Order в `docs/reports/PROGRAMMER_DIRECTIVES.md` на первый пакет из 17 блоков (L728, #8, #9, #12, #13, #14, #15, #17, #18, #19, #21, #23, #24, #25, #26, #28, #29).
+- Регламент Ступени 4: строгий замер рантайма в Docker Maven без изменения продакшн-кода, точечная инлайн-простановка свидетельств `*Живое:*`, запрет сводных аппендиксов в конце файла.
+- После верификации 17 блоков остаток составит 50 блоков на пути к 0 и статусу `AUDIT_READY`.
