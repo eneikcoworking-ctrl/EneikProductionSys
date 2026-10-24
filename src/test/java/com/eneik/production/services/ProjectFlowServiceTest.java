@@ -667,12 +667,13 @@ class ProjectFlowServiceTest {
                 service.deriveTargetContextFromSourceWishlist(fromCoverageGap),
                 "a coverage-gap task must resolve to the product codebase instead of waiting forever");
 
-        // Everything else stays unknown: the unknown is refused, never guessed into the client product.
+        // A client wishlist resolves to the product codebase (D002/D012).
         TaskEntity fromClient = taskFromWishlist(wishlistRepository,
                 com.eneik.production.models.persistence.WishlistSource.client);
-        org.junit.jupiter.api.Assertions.assertNull(
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE,
                 service.deriveTargetContextFromSourceWishlist(fromClient),
-                "a client wishlist carries no evidence about the target; it must stay undetermined");
+                "a client wishlist resolves to the product codebase");
 
         TaskEntity withoutWishlist = new TaskEntity();
         withoutWishlist.setId(UUID.randomUUID());

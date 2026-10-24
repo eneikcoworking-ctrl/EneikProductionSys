@@ -1663,7 +1663,7 @@ public class ProjectFlowService {
             return null;
         }
         return wishlistRepository.findById(task.getSourceWishlistId())
-                .filter(wishlist -> wishlist.getSource() == WishlistSource.coverage_gap)
+                .filter(wishlist -> wishlist.getSource() == WishlistSource.coverage_gap || wishlist.getSource() == WishlistSource.client)
                 .map(wishlist -> TargetContext.PRODUCT_CODEBASE)
                 .orElse(null);
     }
@@ -6150,6 +6150,16 @@ public class ProjectFlowService {
         return ids;
     }
 
+    public boolean reviewFallbackTargetsAreTerminal(TaskEntity reviewTask) {
+        if (!isReviewFallbackTask(reviewTask)) {
+            return false;
+        }
+        List<UUID> targetIds = reviewFallbackTargetTaskIds(reviewTask);
+        return !targetIds.isEmpty() && targetIds.stream()
+                .map(taskRepository::findById)
+                .allMatch(target -> target.isPresent() && target.get().isTerminal());
+    }
+
     // Parallel to reviewFallbackTargetTaskIds - see PR_REVIEW_FALLBACK_PR_URLS_KEY. Absent (older tasks
     // predating this field, or a malformed entry) yields "" at that index rather than shifting the array,
     // so callers can still zip this 1:1 against reviewFallbackTargetTaskIds by index.
@@ -6755,6 +6765,13 @@ public class ProjectFlowService {
             }
 
             if (isReviewFallbackTask(task) || isDesignReviewTask(task)) {
+                if (isReviewFallbackTask(task) && reviewFallbackTargetsAreTerminal(task)) {
+                    log.info("Poka-yoke: retiring obsolete review fallback task {} because all target tasks are terminal", task.getId());
+                    task.initializeStatus(TaskStatus.done);
+                    task.setJulesDispatchStatus("Poka-yoke: retired obsolete review fallback; all targets are terminal");
+                    taskRepository.save(task);
+                    continue;
+                }
                 // These fire once per PR / per mockup - real per-project traffic, not
                 // rare housekeeping - so they use the general round-robin pool like implementer tasks do.
                 // Review-fallback excludes the implementer's own account (Charter Pattern #12 -
