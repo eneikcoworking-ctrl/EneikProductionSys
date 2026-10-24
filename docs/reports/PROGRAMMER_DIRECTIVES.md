@@ -1,8 +1,8 @@
-# Императивный наряд для L2: Синхронизация Автономии и Пакет инлайн-замера №1 (2026-10-24 00:25 UTC)
+# Императивный наряд для L2: Пакет инлайн-замера №2 (17 из 50 оставшихся) (2026-10-24 00:35 UTC)
 
 **От:** Архитектурный контур Antigravity & Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** Каноническая блокировка контура автономии + финишная доводка оставшихся 67 записей (~10%) до `AUDIT_READY`
+**Статус:** Каноническая блокировка контура автономии + финишная доводка оставшихся 50 записей (~10%) до `AUDIT_READY`
 
 ---
 
@@ -32,103 +32,103 @@
 
 ---
 
-## 2. ПАКЕТ ИНЛАЙН-ВЕРИФИКАЦИИ №1 (17 из 67 оставшихся блоков в `docs/FACTORY_MECHANISMS.md`)
+## 2. ПАКЕТ ИНЛАЙН-ВЕРИФИКАЦИИ №2 (17 из 50 оставшихся блоков в `docs/FACTORY_MECHANISMS.md`)
 
 Ступень 4 — **СТРОГО ЗАМЕР В РАНТАЙМЕ** (Docker Maven с кэшем `-v /root/.m2:/root/.m2 -m 2g`), **А НЕ ПРАВКА РАБОЧЕГО КОДА** при зелёных тестах! 0 строк изменений в `src/main`.
 
 Инженеру L2 надлежит запустить указанные тест-сьюты в Docker-контейнере и вписать строгую формулу:
 `*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (<N>/<N> green, <SuiteNames>). <Формулировка заслона по философскому паттерну>. Ступень 4 закрыта (ideal).`
-**СТРОГО ВНУТРЬ КАЖДОГО ИЗ СЛЕДУЮЩИХ 17 БЛОКОВ** (перед завершающим разделителем `---` или заголовком следующего механизма):
+**СТРОГО ВНУТРЬ КАЖДОГО ИЗ СЛЕДУЮЩИХ 17 БЛОКОВ** (перед завершающим разделителем `---` или заголовком следующего блока):
 
-1. **L728–L803** (mechanism): `JulesApiClient` — **`JulesApiClient`**, **`SessionLifecycleService`**, **`PersistentWorkerSessionService`**, **`ClaimService`**, `LeaseWatchdogService`, `AccountHealthService`, `BottleneckAwarePriorityService`, `BottleneckDetectionService`
-   - *Паттерны:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008), `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=JulesApiClientTest,JulesRefusalKindsTest,SessionLifecycleServiceTest,AccountHealthServiceLaw14Test,DispatchRefusalObservabilityLaw8Law12Test,DeadDependencyEndsTheWaitTest,LeaseWatchdogServiceTest,LeaseWatchdogServiceFalsificationTest,BottleneckAwarePriorityServiceTest,BottleneckDetectionServiceTest`
-   - *Место вставки:* перед L804 (`**LeaseWatchdogService**`).
+1. **L4772–L4836** (prescription #30): Исчерпание нашего доступа становится вердиктом о носителе · `INSTITUTIONAL_FACT_REGISTER` (D007) + `INUS_FACTOR_CHECK` (D007)
+   - *Паттерны:* `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` (D007), `DZH_L_MAKKI_02_INUS_FACTOR_CHECK` (D007), `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DispatchAttemptBudgetTest,ProjectFlowServiceTest,OperationalTruthServiceTest`
+   - *Место вставки:* перед L4835 (`---`).
 
-2. **L3939–L3959** (prescription #8): `DoctrineVerdictLayer` судит, и его не слышат · `TELEOSEMANTIC_FEEDBACK` (D011)
-   - *Паттерны:* `RUT_MILLIKEN_01_TELEOSEMANTIC_FEEDBACK` (D011), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=AutonomousVerdictObservationServiceTest,VerdictReconciliationTest`
-   - *Место вставки:* перед L3958 (`---`).
+2. **L4837–L4898** (prescription #31): Экран на телефоне не проверяет никто, и ревьюеру это предписано · `GROUPING_PROXIMITY_GATE` (D011) не применён + `FALSIFICATION_HARNESS` (D008)
+   - *Паттерны:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008), `AHILLE_VARTSI_01_BOUNDARY_TOPOLOGY` (D006), `RUT_MILLIKEN_01_TELEOSEMANTIC_FEEDBACK` (D011)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DesignConsistencyAuditServiceTest,DesignAssetServiceTest,ProjectFlowServiceTest`
+   - *Место вставки:* перед L4897 (`---`).
 
-3. **L3960–L3971** (prescription #9): `VerdictGate` ограничивает только сообщаемое · `PROHIBITION_AS_CODE` (D006)
-   - *Паттерны:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=VerdictGateTest`
-   - *Место вставки:* перед L3970 (`---`).
+3. **L4947–L5000** (prescription #33): Единственная машинная проверка куайновской границы стоит на пути, куда не приходят · `FALSIFICATION_HARNESS` (D008)
+   - *Паттерны:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008), `UILLARD_KUAYN_01_HOLISM_IMPACT_MAP` (D003), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=AutoMergePokaYokeTest,AutoMergeServiceTest`
+   - *Место вставки:* перед L4999 (`---`).
 
-4. **L4006–L4020** (prescription #12): `BottleneckAwarePriorityService` переупорядочивает, но не подчиняет · `DECISION_EXPECTED_LOSS` (D005)
-   - *Паттерны:* `FRENK_RAMSEY_01_DECISION_EXPECTED_LOSS` (D005)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=BottleneckAwarePriorityServiceTest`
-   - *Место вставки:* перед L4019 (`---`).
-
-5. **L4021–L4034** (prescription #13): `SixSigmaAuditService` классифицирует подстрокой · `CATEGORY_ERROR_SCAN` (D002)
-   - *Паттерны:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=SixSigmaAuditServiceTest`
-   - *Место вставки:* перед L4033 (`---`).
-
-6. **L4035–L4051** (prescription #14): Откат не знает периода пополнения · `RELIABILITY_CHAIN` (D010), закон 9
-   - *Паттерны:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=AccountHealthServiceLaw14Test,AccountHealthServiceTest`
-   - *Место вставки:* перед L4050 (`---`).
-
-7. **L4052–L4069** (prescription #15): Исчерпание попыток становится вердиктом о требовании · `INSTITUTIONAL_FACT_REGISTER` (D007), закон 12
-   - *Паттерны:* `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` (D007), `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DispatchAttemptBudgetTest,DispatchRefusalObservabilityLaw8Law12Test`
-   - *Место вставки:* перед L4068 (`---`).
-
-8. **L4101–L4114** (prescription #17): Аренда чистильщика назначена, а не выведена · `BELIEF_UPDATE_LEDGER` (D007)
-   - *Паттерны:* `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` (D007), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
+4. **L5001–L5051** (prescription #34): Возраст сторожа меряется по соседней отметке, потому что своей у него нет · `CAUSAL_PROCESS_TRACE` (D013) + `PRINCIPLED_INTEGRITY` (D012)
+   - *Паттерны:* `UILIYAM_UIMSATT_01_CAUSAL_PROCESS_TRACE` (D013), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=StrandedFinalizingSweepServiceTest,StrandedFinalizingSweepServiceFalsificationTest`
-   - *Место вставки:* перед L4113 (`---`).
+   - *Место вставки:* перед L5050 (`---`).
 
-9. **L4115–L4130** (prescription #18): Запрет на заводские файлы можно молча выключить · `TRUTH_STATUS_TABLE` (D012) · **СДЕЛАНО (держится)**
-   - *Паттерны:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
-   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DeliveryRealityLaw2CarrierChannelTest,GitHubPullRequestServiceTest`
-   - *Место вставки:* перед L4129 (`---`).
+5. **L5052–L5109** (prescription #35): Производитель блокировки бьёт за секунды, освободитель ходит раз в час · `PERCEPTION_ACTION_LOOP` (D011) + закон 8
+   - *Паттерны:* `RUT_MILLIKEN_01_TELEOSEMANTIC_FEEDBACK` (D011), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=JulesDispatchServiceTest,FlowSpineServiceTest,ProjectFlowServiceTest`
+   - *Место вставки:* перед L5108 (`---`).
 
-10. **L4131–L4166** (prescription #19): Детектор дубликатов не может увидеть главный случай · `CATEGORY_ERROR_SCAN` (D002) · **СДЕЛАНО (держится)**
-    - *Паттерны:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=TaskDuplicateDetectorTest,FlowSpineServiceTest,ContinuousOrchestrationServiceTest`
-    - *Место вставки:* перед L4165 (`---`).
+6. **L5110–L5167** (prescription #36): Дизайн-цех выдаёт восемь экранов и все восемь отвергает сам · `TELEOSEMANTIC_FEEDBACK` (D011) + закон 8
+   - *Паттерны:* `RUT_MILLIKEN_01_TELEOSEMANTIC_FEEDBACK` (D011), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DesignConsistencyAuditServiceTest,FlowSpineServiceTest,DesignAssetServiceTest,DesignShopOrchestrationServiceTest`
+   - *Место вставки:* перед L5166 (`---`).
 
-11. **L4206–L4233** (prescription #21): Два рычага останавливают фабрику без следа · `INSTITUTIONAL_FACT_REGISTER` (D007) · **СДЕЛАНО (держится)**
-    - *Паттерны:* `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` (D007)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=SystemSettingsServiceTest,SettingsControllerIntegrationTest,AccountLifecycleInvariantTest,AccountControllerIntegrationTest`
-    - *Место вставки:* перед L4232 (`---`).
+7. **L5168–L5216** (prescription #37): Числитель считает слияния и ни разу не спрашивает, зелен ли `main` · `CONSTRUCTIVE_PROOF_OBJECT` (D007)
+   - *Паттерны:* `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` (D007), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=FlowSpineServiceTest,GitHubPullRequestServiceTest`
+   - *Место вставки:* перед L5215 (`---`).
 
-12. **L4290–L4357** (prescription #23): Выключенный аккаунт — дверь в одну сторону · `INSTITUTIONAL_FACT_REGISTER` (D007) / `ACTUAL_OBJECT_REGISTER` (D002)
-    - *Паттерны:* `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` (D007), `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=AccountLifecycleInvariantTest,GeneralPoolAdmissionCoherenceIntegrationTest,AccountHealthServiceTest,ProjectFlowServiceLaw1JulesDispatchTest`
-    - *Место вставки:* перед L4356 (`---`).
+8. **L5217–L5279** (prescription #38): Аккаунт, разжалованный отказами, не может вернуться: повышение требует успеха, которого ему не дадут · `BELIEF_UPDATE_LEDGER` (D007) + закон 8
+   - *Паттерны:* `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` (D007), `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=AccountRepositoryIntegrationTest,AccountHealthServiceTest`
+   - *Место вставки:* перед L5278 (`---`).
 
-13. **L4358–L4411** (prescription #24): Пульт управления фабрикой открыт в интернет без пароля · `BOUNDARY_TOPOLOGY` (D006) · **ЗАКРЫТО**
-    - *Паттерны:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006), `AHILLE_VARTSI_01_BOUNDARY_TOPOLOGY` (D006)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ApiAuthorizationInterceptorTest,WebConfigCorsTest,SystemSettingsServiceTest`
-    - *Место вставки:* перед L4410 (`---`).
+9. **L5280–L5348** (prescription #39): Верёвка ТОС построена, соблюдается — и привязана не к тому концу · `TELEOSEMANTIC_FEEDBACK` (D011) + `FALSIFICATION_HARNESS` (D008)
+   - *Паттерны:* `RUT_MILLIKEN_01_TELEOSEMANTIC_FEEDBACK` (D011), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
+   - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ProjectFlowServiceDbrRopeTest,TocSentinelServiceTest`
+   - *Место вставки:* перед L5347 (`---`).
 
-14. **L4412–L4467** (prescription #25): Сорок три вопроса в час, ответ на который известен · `INUS_FACTOR_CHECK` (D007) · **расход бюджета**
-    - *Паттерны:* `DZH_L_MAKKI_02_INUS_FACTOR_CHECK` (D007), `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ProductCapabilityServiceTest,SixSigmaAuditServiceTest`
-    - *Место вставки:* перед L4466 (`---`).
+10. **L5349–L5407** (prescription #40): Путь вытягивания есть, им никто не пользуется, и Jules им пользоваться не может · `TELEOSEMANTIC_FEEDBACK` (D011) + `RIGHTS_DUTIES_MATRIX` (D006)
+    - *Паттерны:* `RONALD_DVORKIN_02_RIGHTS_DUTIES_MATRIX` (D006), `RUT_MILLIKEN_01_TELEOSEMANTIC_FEEDBACK` (D011)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ClaimRightsDutiesMatrixTest,TaskClaimServiceTest`
+    - *Место вставки:* перед L5406 (`---`).
 
-15. **L4468–L4513** (prescription #26): Хостинг и наблюдение исполняет один механизм · `CATEGORY_ERROR_SCAN` (D002)
-    - *Паттерны:* `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=ObservationHostingDemarcationLaw26Test,ClientRuntimeObservabilityServiceTest`
-    - *Место вставки:* перед L4512 (`---`).
+11. **L5545–L5562** (prescription #45): Поле корневой причины дефекта не заполняется никогда · `INUS_FACTOR_CHECK` (D007)
+    - *Паттерны:* `DZH_L_MAKKI_02_INUS_FACTOR_CHECK` (D007), `GILBERT_RAYL_03_CATEGORY_ERROR_SCAN` (D002)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DefectJournalRootCauseAttributionTest,ProcessControlServiceTest,AutoMergePokaYokeTest`
+    - *Место вставки:* перед L5562.
 
-16. **L4595–L4672** (prescription #28): Два механизма дизайна числятся сильными: один ни разу не сработал, другой читает не то · `FALSIFICATION_HARNESS` (D008) + `LEVEL_OF_ABSTRACTION_LOCK` (D010)
-    - *Паттерны:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008), `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DesignConsistencyAuditServiceTest,DesignDriftMonitorServiceTest,DesignAssetServiceTest`
-    - *Место вставки:* перед L4671 (`---`).
+12. **L5563–L5575** (prescription #46): Узкое место фабрики определяется по единственному размеченному шагу · `INUS_FACTOR_CHECK` (D007)
+    - *Паттерны:* `DZH_L_MAKKI_02_INUS_FACTOR_CHECK` (D007), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=TocPipelinePhasesInstrumentationTest`
+    - *Место вставки:* перед L5575.
 
-17. **L4673–L4737** (prescription #29): Поле `failedTasks` в общедоступном своде значит не то, что говорит · `SENSE_REFERENCE_SPLIT` (D009) + `CONVERSATION_MAXIM` (D007)
-    - *Паттерны:* `DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT` (D009), `POL_GRAYS_01_CONVERSATION_MAXIM` (D007)
-    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=FlowSpineServiceTest`
-    - *Место вставки:* перед L4736 (`---`).
+13. **L5576–L5587** (prescription #47): Память барабана-буфера-верёвки живёт только в оперативной · `PERSISTENCE_SNAPSHOT` (D010)
+    - *Паттерны:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=TocPersistenceSnapshotTest`
+    - *Место вставки:* перед L5587.
+
+14. **L5588–L5599** (prescription #48): Счёт связности считается каждые два часа и не читается ни для одного решения · `TELEOSEMANTIC_FEEDBACK` (D011)
+    - *Паттерны:* `RUT_MILLIKEN_01_TELEOSEMANTIC_FEEDBACK` (D011), `PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER` (D007)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=TeleosemanticFeedbackCoherenceTest`
+    - *Место вставки:* перед L5599.
+
+15. **L5613–L5622** (prescription #50): Запрет на перезапись конечного состояния не оставляет следа · `INSTITUTIONAL_FACT_REGISTER` (D007)
+    - *Паттерны:* `DZHON_SERL_01_INSTITUTIONAL_FACT_REGISTER` (D007), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=TaskTerminalOverwriteAuditTest,TaskEntityLaw20Test`
+    - *Место вставки:* перед L5622.
+
+16. **L5623–L5633** (prescription #51): Притязание на цикл дизайна не истекает и не выметается · `BOUNDARY_TOPOLOGY` (D006)
+    - *Паттерны:* `AHILLE_VARTSI_01_BOUNDARY_TOPOLOGY` (D006), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=StrandedDesignCycleSweepServiceTest,DesignShopOrchestrationServiceTest,DesignShopOrchestrationServiceLaw15Test`
+    - *Место вставки:* перед L5633.
+
+17. **L5634–L5644** (prescription #52): Два внутренних входа отвечают отказом · `FALSIFICATION_HARNESS` (D008)
+    - *Паттерны:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
+    - *Тест-сьют:* `docker run --rm -v /root/.m2:/root/.m2 -v $(pwd):/app -w /app -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=InternalGeminiObserverControllerTest`
+    - *Место вставки:* перед L5644.
 
 ---
 
 ## 3. ДЕОНТИЧЕСКИЕ ЗАПРЕТЫ ИСПОЛНЕНИЯ (`DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` D006, `KARL_POPPER_01_FALSIFICATION_HARNESS` D008, `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` D010):
 1. **Запрещено** модифицировать или откатывать любой из 19 защищённых файлов контура автономии Деннетта.
-2. **КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО** дописывать новые сводные блоки `### Итог Пакетного Замера` в конец `docs/FACTORY_MECHANISMS.md` — свидетельство `*Живое:*` вписывается исключительно точечно инлайн внутрь каждого из перечисленных 17 блоков.
+2. **КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО** дописывать новые сводные блоки `### Итог Пакетного Замера` в конец `docs/FACTORY_MECHANISMS.md` — свидетельство `*Живое:*` вписывается исключительно точечно инлайн внутрь каждого из перечисленных 17 блоков (Lstart–Lend).
 3. **Запрещено** править рабочий Java-код (`src/main`) при зелёных тестах — Ступень 4 требует строгого подтверждающего замера поведения в рантайме.
 4. **Запрещено** перезапускать живой контейнер `eneikproductionsys-backend-1` или инициировать аудит до персональной команды оператора Дмитрия Ефремова.
