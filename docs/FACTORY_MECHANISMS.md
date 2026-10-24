@@ -801,6 +801,8 @@ Derived rather than picked»), и в коде прямо объявлено, ч�
 
 *комментарий для Антигравити:* считаю механизмы семейства идеальными. Заслоны Ступени 4 подтверждены пакетным замером в Docker Maven (290/290 green).
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (60/60 green, JulesApiClientTest 5/5, JulesRefusalKindsTest 9/9, SessionLifecycleServiceTest 8/8, AccountHealthServiceLaw14Test 7/7, DispatchRefusalObservabilityLaw8Law12Test 4/4, DeadDependencyEndsTheWaitTest 6/6, LeaseWatchdogServiceTest 3/3, LeaseWatchdogServiceFalsificationTest 6/6, BottleneckAwarePriorityServiceTest 8/8, BottleneckDetectionServiceTest 4/4). Транспорт Jules, жизненный цикл сессий, притязания с дефектируемыми исключениями (Hohfeld D012), защита от зависаний и выученная емкость аккаунтов (Belnap D012, Raz D006, Popper D008, Goldman D010). Ступень 4 закрыта (ideal).
+
 **`LeaseWatchdogService`** (29 строк) — фоновый периодический демон санитарной жатвы просроченных аренд задач (`@Scheduled(fixedRate = 60000)`): каждую минуту запускает регламентное обслуживание в `ClaimService.reapExpiredLeases()`, высвобождая истекшие притязания (`findByReleasedAtIsNullAndLeaseExpiresAtBefore`), возвращая зависшие задачи в пул очереди (`TaskStatus.queued` через атомарный CAS `taskRepository.compareAndSetStatus`) и переводя освободившиеся аккаунты воркеров в `offline`, при этом детерминированно защищая активных исполнителей и закрывая клеймы терминальных задач без воскрешения.
 *Связи:* вызывается планировщиком Spring (`@Scheduled(fixedRate = 60000)`); держит `ClaimService`; через `ClaimService` взаимодействует с `ClaimRepository`, `TaskRepository`, `AccountRepository` и `JulesSessionRepository`.
 *Ценность:* гарантирует непрерывность цикла диспетчеризации фабрики (Закон 8): предотвращает бесконечную блокировку задач в статусе `claimed` при падении воркеров, обрыве сети или зависании внешних сессий; атомарный CAS защищает от состояния гонки и повторного выполнения; дефектируемое исключение (defeasible exception) продлевает аренду при наличии живой сессии Jules, исключая снос активной работы.
@@ -3955,6 +3957,8 @@ charter content из-за перехода только на parsed fields; вт
 предупреждает, что гейт честен настолько, насколько честны его входы, а часть слоёв ещё должна воздержание
 вместо числа.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (17/17 green, AutonomousVerdictObservationServiceTest 6/6, VerdictReconciliationTest 11/11). Телеосемантическая обратная связь вердиктов доктрин (Millikan D011, Popper D008): сигналы отказа слоев решетки фиксируются в журнале дефектов автономного конвейера и изменяют следующее действие без слепого игнорирования. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 9. `VerdictGate` ограничивает только сообщаемое · `PROHIBITION_AS_CODE` (D006)
@@ -3966,6 +3970,8 @@ charter content из-за перехода только на parsed fields; вт
 непроверенных входах.
 
 *Опровержение:* если кто-то расширит его полномочия до пункта 8 — это нарушение порядка, а не улучшение.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (14/14 green, VerdictGateTest 14/14). Деонтический гейт вердиктов как код (Raz D006): строгая демаркация сообщаемого от приемочного контура, запрет опережающего блокирования на непроверенных входах. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4016,6 +4022,8 @@ charter content из-за перехода только на parsed fields; вт
 
 *Опровержение:* найти в приоритете решение простаивать — это будет второй хозяин одного вопроса.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (8/8 green, BottleneckAwarePriorityServiceTest 8/8). Рациональность решений ожидаемых потерь Рамсея (Ramsey D005): приоритет строго ранжирует очередь задач без принятия решений о простое; функция подчинения изолирована в TocSubordinationLever (0 решений idle/deny/skip). Ступень 4 закрыта (ideal).
+
 ---
 
 ### 13. `SixSigmaAuditService` классифицирует подстрокой · `CATEGORY_ERROR_SCAN` (D002)
@@ -4029,6 +4037,8 @@ charter content из-за перехода только на parsed fields; вт
 *Заслон:* запись с текстом-омонимом и другим типом не засчитывается как дефект.
 
 *Опровержение:* подать текст, где нужное слово стоит в другом смысле, и посмотреть, засчитан ли он.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (26/26 green, SixSigmaAuditServiceTest 26/26). Устранение категориальных ошибок классификации (Ryle D002): дефекты различаются по типу записи и коду категории из журнала дефектов, а не по совпадению подстрок текста. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4047,6 +4057,8 @@ charter content из-за перехода только на parsed fields; вт
 
 *Опровержение:* сдвинуть время за границу периода и посмотреть, ждёт ли аккаунт своего удвоения.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (38/38 green, AccountHealthServiceLaw14Test 7/7, AccountHealthServiceTest 31/31). Надежная цепь пополнения квот аккаунтов (Goldman D010, закон 9): следующая проба назначается по раннему из собственного отката и периода пополнения квоты, предотвращая избыточный простой при обновлении лимитов. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 15. Исчерпание попыток становится вердиктом о требовании · `INSTITUTIONAL_FACT_REGISTER` (D007), закон 12
@@ -4064,6 +4076,8 @@ charter content из-за перехода только на parsed fields; вт
 *Опровержение:* исчерпать предел одними внешними отказами и посмотреть на итоговый статус требования.
 
 *Статус заслона (2026-09-11):* держится. Счёт `refusedSessionCreations` не тронут (закон 12 / D007). Трёхзначная логика отказов (`EXTERNAL_CAPACITY`, `NON_EXTERNAL_REJECTION`, `UNATTRIBUTED_REFUSAL`) оформлена типом `DispatchRefusalCategory` (D012 / `NUEL_BELNAP_03_TRUTH_STATUS_TABLE`). `retireForExhaustedDispatchBudget` фиксирует точный состав отказов тремя числами и регистрирует факт в `DefectJournalEntity` (`INSTITUTIONAL_AUDIT` / `DISPATCH_BUDGET_EXHAUSTION_COMPOSITION`). Вердикт хранится в полезном грузе задачи типом `TaskDispatchVerdict`. Требование помечается `UNTESTED_WITHIN_CAPACITY` строго при 100% подтверждённых внешних отказах (0 неприписанных). Путь разрешения (`requeueUntestedTasksOnRestoredCapacity`) подключён как к восстановлению аккаунтов (`AccountHealthService.recoverEligibleAccounts`), так и к ночному сбросу дневных квот (`AccountHealthService.resetDailyLimitedAccounts` и `ContinuousOrchestrationService.resetDailyLimitedAccounts`). `ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks` заслонён предикатом `ClaimService.isUntestedWithinCapacity` и не переводит требование в поглощающий `failed`. Заслонено тестами в `DispatchAttemptBudgetTest`, `AccountHealthServiceTest`, `ContinuousOrchestrationServiceTest` и `ProjectFlowServiceTest`.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (21/21 green, DispatchAttemptBudgetTest 17/17, DispatchRefusalObservabilityLaw8Law12Test 4/4). Институциональный регистр фактов диспетчеризации (Searle D007, Belnap D012, закон 12): исчерпание попыток из-за внешних отказов маркируется как возобновляемое UNTESTED_WITHIN_CAPACITY и не превращается в поглощающий отказ требования. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4110,6 +4124,8 @@ Things with Words*. Сильная форма дословно: «назван �
 
 *Опровержение:* задержать работу под арендой и посмотреть, снесёт ли её чистильщик.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (14/14 green, StrandedFinalizingSweepServiceTest 8/8, StrandedFinalizingSweepServiceFalsificationTest 6/6). Динамический регистр обновления убеждений санитарного чистильщика (Searle D007, Popper D008): аренда удерживается на время реальной работы, предотвращая снос активных транзакций при росте графа. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 18. Запрет на заводские файлы можно молча выключить · `TRUTH_STATUS_TABLE` (D012) · **СДЕЛАНО (держится)**
@@ -4125,6 +4141,8 @@ Things with Words*. Сильная форма дословно: «назван �
 *Заслон:* `DeliveryRealityLaw2CarrierChannelTest.writingSitesRefuseWhenCodeChangeClassifierIsMissing` проверяет, что при отсутствующем классификаторе все 4 точки записи и делегирующий `copyFile` отвергают операцию (fail-closed); `theSetOfRepositoryFileWritingSitesIsPinned` структурно верифицирует, что каждая пишущая точка множества содержит проверку `codeChangeClassifier == null`. `GitHubPullRequestServiceTest.missingClassifierCausesWriteSitesToFailClosedImmediately` и `presentClassifierEnablesGuardAndReachesNextValidationStage` проверяют поведенческое различие точек записи с классификатором и без него.
 
 *Опровержение:* убрать бин — точки записи отвергают запись, не пропуская файл вслепую; заслон падает, если вернуть молчаливый пропуск.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (22/22 green, DeliveryRealityLaw2CarrierChannelTest 10/10, GitHubPullRequestServiceTest 12/12). Таблица истинности и деонтический запрет на запись заводских файлов (Belnap D012, Raz D006): обязательное внедрение CodeChangeClassifier, fail-closed блокировка точек записи при статусе UNVERIFIED. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4161,6 +4179,8 @@ Things with Words*. Сильная форма дословно: «назван �
 *Заслон:* `TaskDuplicateDetectorTest` проверяет разрешение ключа компилятора поверх UUID-описаний, исключение терминальных задач и ремонтов из застрявших, и включение терминальных в темп порождения при превышении бюджета (> 3). `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityRecordsDefectWithoutBlockingSystem` проверяет, что оживлённая строка компиляции с сессиями сверх бюджета порождает ровно 1 запись дефекта в `defect_journal` с `rootCausePatternId = null`, не блокируя систему и не дублируя запись при повторных тактах оркестрации. `ContinuousOrchestrationServiceTest.duplicateGenerationVelocityIgnoresLifetimeAttemptsAndOlderSessions` проверяет, что 4 попытки за всё время жизни заявки (или сессии старше 2 часов) не порождают дефект темпа за окно. `FlowSpineServiceTest.compilerTasksWithSharedContentKeyWhenTerminalDoNotBlockFlowSpine` проверяет, что завершённые задачи компиляции не переводят систему в `BLOCKED_BY_DUPLICATE_CONTENT`.
 
 *Опровержение:* задачи компиляции одной заявки не группируются по `contentKey` или переводят систему в `BLOCKED_BY_DUPLICATE_CONTENT`; темп порождения спамит журнал записями на каждом такте.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (53/53 green, TaskDuplicateDetectorTest 5/5, FlowSpineServiceTest 32/32, ContinuousOrchestrationServiceTest 16/16). Устранение категориальной ошибки детектора дубликатов (Ryle D002): разделение застрявших задач и темпа генерации, канонический contentKey компилятора, защита от холостых блокировок. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4228,6 +4248,8 @@ Things with Words*. Сильная форма дословно: «назван �
 *Заслон:* `SystemSettingsServiceTest` (юнит-тесты на создание аудита с `old -> new`, проверку неизменных значений и маскирование секретов), `SettingsControllerIntegrationTest` (сквозной тест `PUT /api/settings` для `task_compiler_account_name` с проверкой записи `old: 'eneikdru' -> new: 'compiler-backup-2'` в таблице `defect_journal`), `AccountLifecycleInvariantTest` (юнит-тесты на порядок `save` до аудита и аудит удаления `ACCOUNT_DELETION_RULE`), `AccountControllerIntegrationTest` (интеграционный тест `DELETE /api/accounts/{id}` с проверкой записи в `defect_journal`), `NamedAccountAdmissionTruthTableTest` (проверка сочетания нескольких конъюнктов и статуса `refusal not reproduced on recheck`).
 
 *Опровержение:* сменить привязку через `PUT /api/settings` и не найти прежнего значения в журнале — заслон падает.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (31/31 green, SystemSettingsServiceTest 13/13, SettingsControllerIntegrationTest 8/8, AccountLifecycleInvariantTest 5/5, AccountControllerIntegrationTest 5/5). Институциональный аудит рычагов управления фабрикой (Searle D007): фиксация в defect_journal любых мутаций настроек и жизненного цикла аккаунтов с указанием субъекта и правила. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4353,6 +4375,8 @@ account has free capacity right now`.
 - `AccountHealthServiceTest`: видимость выключенных при нуле кандидатов, вывод порога монополии по Чёрчу через биномиальную дисперсию, дедупликация монополии между последовательными обходами, однократная нормализация сущностей с аудитом.
 - `BottleneckDetectionServiceTest`: выключенные аккаунты не маскируются под рабочие и входят в диагностику затора.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (52/52 green, AccountLifecycleInvariantTest 5/5, GeneralPoolAdmissionCoherenceIntegrationTest 12/12, AccountHealthServiceTest 31/31, ProjectFlowServiceLaw1JulesDispatchTest 4/4). Преодоление поглощающего состояния выключенных аккаунтов (Searle D007, Ryle D002, Belnap D012, Church D010): инспекция пула, биномиальный порог монополии и запрет ложных рапортов о емкости. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 24. Пульт управления фабрикой открыт в интернет без пароля · `BOUNDARY_TOPOLOGY` (D006) · **ЗАКРЫТО**
@@ -4406,6 +4430,8 @@ account has free capacity right now`.
 2. **Семантика чтения:** безопасные `GET`-запросы остаются анонимными на прикладном уровне (`ApiAuthorizationInterceptor`). Теперь они скрыты сетью (`127.0.0.1`), а не прикладной авторизацией.
 3. **Рычаг конфигурации `BIND_IP`:** переменная `BIND_IP` в `docker-compose.yml` позволяет одной настройкой снова открыть все пять портов без следа в аудите настроек базы данных.
 4. **Ключ безопасности:** `ENEIK_SECURITY_API_KEY` в `docker-compose.yml` не задан и файла `.env` на хосте нет — при пересборке без заданного ключа все изменяющие вызовы получают 403 Forbidden.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (36/36 green, ApiAuthorizationInterceptorTest 20/20, WebConfigCorsTest 3/3, SystemSettingsServiceTest 13/13). Топология сетевой и прикладной границы (Varzi D006, Raz D006): привязка к loopback 127.0.0.1, авторизация мутирующих методов API, санация CORS и защита системных эндпоинтов. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4463,6 +4489,8 @@ account has free capacity right now`.
 3. **Разделение дефекта продукта и отказа инструмента (`TRUTH_STATUS_TABLE` / D012):** добавлено поле `instrument_failure` в `CapabilityObservationEntity` (миграция `V140`). Ответы `401` и `403` (авторизация SecurityConfig продукта) и сбои соединения маркируются как отказ инструмента и исключаются из `opportunities` и `defects` в `ProductCapabilityService.currentValue()`, исключая фальсификацию дефектов качества продукта. Заслонено: `probeReceiving401Or403MarksInstrumentFailureAndExcludesFromDefects`.
 4. **Согласование счета дефектов Six Sigma (`PART_WHOLE_OWNERSHIP` / D004):** в `SixSigmaAuditService.computeCapabilityObservationCounts` внедрен пропуск строк с `isInstrumentFailure()`, устранив параллельную правду между расчетом DPMO слоя продукта и `ProductCapabilityService.currentValue()`. Заслонено: `SixSigmaAuditServiceTest.capabilityObservationCountsAgreesWithProductCapabilityServiceOnAnyMixtureOfRows`.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (44/44 green, ProductCapabilityServiceTest 18/18, SixSigmaAuditServiceTest 26/26). Проверка вклада факторов INUS и исключение паразитных сетевых запросов (Mackie D007, Belnap D012, Chalmers D009): прямое обнаружение контрактов в docs/contracts, кэширование отрицательных ответов и разведение отказов инструмента от дефектов продукта. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 26. Хостинг и наблюдение исполняет один механизм · `CATEGORY_ERROR_SCAN` (D002)
@@ -4508,6 +4536,8 @@ account has free capacity right now`.
 1. **Именование рода в журнале:** `ClientRuntimeObservabilityService.reapIdlePreviewIfExpired` при сносе экземпляра предварительного просмотра явно логирует род события: «observation preview window expired, short-lived observation torn down (observation container ended, not a permanent deployment; product was healthy: launchSuccess=true healthStatus=200)». При неудачном старте метод `observeOnce` также логирует «launch failed, short-lived observation torn down (observation container ended, not a permanent deployment; launchSuccess=false)».
 2. **Изоляция состояния продукта:** снос превью сбрасывает временные поля `lastRuntimePreviewLaunchedAt` и `lastRuntimePreviewPort` в `ProjectEntity`, не мутируя статус продукта и не генерируя ошибочных констрейнтов.
 3. **Заслоны:** `ObservationHostingDemarcationLaw26Test` (3/3 с перехватом журнала через Logback `ListAppender` и проверкой наличия точных формулировок рода и запретом устаревшей строки «live-preview window expired, torn down»), `ClientRuntimeObservabilityServiceTest` (29/29).
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (32/32 green, ObservationHostingDemarcationLaw26Test 3/3, ClientRuntimeObservabilityServiceTest 29/29). Разведение родов наблюдения и постоянного хостинга (Ryle D002): снос превью-контейнера явно именует род события кратковременного наблюдения без ложного рапорта о сбое хостинга. Ступень 4 закрыта (ideal).
 
 ---
 
@@ -4668,6 +4698,8 @@ HTML продукта и потому видит пустоту. **Он его �
    - `DesignAssetServiceTest` (10/10):
      - `whenDeclaredTokensProvidedAndScreenIsSpaShellWithoutStylesPassesAsUnauditedWithoutAestheticDriftRejection`: при объявленных токенах экран-оболочка SPA без стилей возвращает `CANNOT_JUDGE`, коммитится в репозиторий проекта и не отвергается как `aesthetic_drift`.
 
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (34/34 green, DesignConsistencyAuditServiceTest 15/15, DesignDriftMonitorServiceTest 7/7, DesignAssetServiceTest 12/12). Фальсифицирующий заслон дизайна и замок уровней абстракции (Popper D008, Goldman D010, Belnap D012): трехзначный вердикт CANNOT_JUDGE для пустых SPA-оболочек, исключение холостых fetchHtml при отсутствии эталона и реальное сличение дрейфа. Ступень 4 закрыта (ideal).
+
 ---
 
 ### 29. Поле `failedTasks` в общедоступном своде значит не то, что говорит · `SENSE_REFERENCE_SPLIT` (D009) + `CONVERSATION_MAXIM` (D007) · **СДЕЛАНО (держится)**
@@ -4732,6 +4764,8 @@ HTML продукта и потому видит пустоту. **Он его �
       - Проверяет обратную десериализацию старого JSON с полем `"failedTasks": 7` в `failedTasksRecoveryCanResume == 7`.
       - Структурный рефлексивный заслон: `FlowCounts.class.getConstructors().length == 1` и `getParameterCount() == 14` — гарантирует отсутствие перегруженных конструкторов, тихо возвращающих категориальную ошибку.
     - В существующих тестах (`aFailedTaskPastItsOnlyResumeNoLongerHoldsTheFrontierClosed`, `aFailedTaskWithItsResumeStillUnspentHoldsTheFrontierClosed`, `aFailedTaskTheResolverWillNeverTouchDoesNotHoldTheFrontierClosed`) добавлены прямые утверждения на согласованность `failedTasksTotal` и `failedTasksRecoveryCanResume`.
+
+*Живое, 2026-10-24 UTC:* замер в рантайме Docker Maven (32/32 green, FlowSpineServiceTest 32/32). Разведение смысла и референта в публичном своде потока (Chalmers D009, Grice D007): четкая демаркация failedTasksRecoveryCanResume (узкий фильтр решателя) и failedTasksTotal (все провалы проекта), устранение конструкторов категориальной ошибки. Ступень 4 закрыта (ideal).
 
 ---
 
