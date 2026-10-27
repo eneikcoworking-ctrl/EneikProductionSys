@@ -1,127 +1,78 @@
-# Императивный наряд для L2: Финальный пакет инлайн-замера №4 (16 из 16 оставшихся) (2026-10-24 00:56 UTC)
-
-**От:** Архитектурный контур Antigravity & Менеджер-философ (L1/L3)  
+# ИМПЕРАТИВНЫЙ НАРЯД ДЛЯ L2 (ИНЖЕНЕР): ВЕРХОВЕНСТВО КЛИЕНТСКОЙ ЦЕННОСТИ И КОНТУР КОГНИТИВНОЙ ОЧИСТКИ (COGNITIVE FLUSH)
+**Дата:** 2026-10-27 07:05 UTC+4 (03:05 UTC)  
+**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1)  
 **Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** Каноническая блокировка контура автономии + завершающая доводка финальных 16 блоков до 100% `AUDIT_READY`
+**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #1)
 
 ---
 
-## 1. КАНОНИЧЕСКИЙ ЗАЩИЩЁННЫЙ КОНТУР АВТОНОМИИ ДЕННЕТТА (LOCKED — КАТЕГОРИЧЕСКИ НЕ ТРОГАТЬ И НЕ ОТКАТЫВАТЬ):
-Оператор Дмитрий Ефремов утвердил и ввёл в ядро фабрики эталонную архитектуру гомеостатической автономии («Множественные наброски» Деннетта без картезианского театра, 376/376 тестов green в 31 тест-сьюте).
-Категорически запрещено модифицировать, откатывать или ослаблять следующие канонические файлы:
-- src/main/java/com/eneik/production/models/persistence/ProjectStatus.java
-- src/main/java/com/eneik/production/models/persistence/ProjectEntity.java
-- src/main/java/com/eneik/production/services/operational/OperationalPolicyService.java
-- src/main/java/com/eneik/production/services/operational/OperationalFlowCoreService.java
-- src/main/java/com/eneik/production/services/operational/FlowSpineService.java
-- src/main/java/com/eneik/production/services/PlannedWorkRecoveryService.java
-- src/main/java/com/eneik/production/services/ContinuousOrchestrationService.java
-- src/main/java/com/eneik/production/services/DeliveryRealityProducerService.java
-- src/main/java/com/eneik/production/services/ProjectFlowService.java
-- src/main/java/com/eneik/production/services/github/GitHubPullRequestService.java
-- src/main/java/com/eneik/production/services/AutoMergeService.java
-- src/main/java/com/eneik/production/services/jules/JulesDispatchService.java
-- src/main/java/com/eneik/production/services/compiler/TechnicalLeadCompiler.java
-- src/main/java/com/eneik/production/services/StrandedFinalizingSweepService.java
-- src/main/java/com/eneik/production/services/ProjectAuditPipelineService.java
-- src/test/java/com/eneik/production/services/DennettAutonomyFalsificationTest.java
-- src/test/java/com/eneik/production/invariants/ScheduledQueryCostInvariantTest.java
-- scripts/autonomous_factory_relay.py
-- docs/reports/AUTONOMY_AND_FULL_AUDIT_PLAN.md
-Впредь L1 и L2 обязаны никогда не допускать потери автономии фабрики!
+## 1. ФУНДАМЕНТАЛЬНЫЙ ПРИНЦИП: ЭЛИМИНАЦИЯ КАРТЕЗИАНСКОГО ТЕАТРА И ПРИЗРАКА В МАШИНЕ
+Вся фабрика строится строго на материализме и теории сознания Деннетта, Кларка и Хёрли.
+Категорически запрещено создавать искусственные надстройки («призрак в машине»), которые пытаются вручную зарегулировать конвейер и замораживают задачи. Система обязана работать как естественный самосогласованный кибернетический контур.
 
 ---
 
-## 2. ФИНАЛЬНЫЙ ПАКЕТ ИНЛАЙН-ВЕРИФИКАЦИИ №4 (16 из 16 оставшихся блоков в `docs/FACTORY_MECHANISMS.md`)
+## 2. МЕХАНИЗМ №1: БЕЗУСЛОВНЫЙ ПРИОРИТЕТ КЛИЕНТСКОЙ ЦЕННОСТИ (TOC CLIENT VALUE PRIMACY)
 
-Ступень 4 — **СТРОГО ЗАМЕР В РАНТАЙМЕ** (Docker Maven с кэшем `-v /root/.m2:/root/.m2 -m 2g`), **А НЕ ПРАВКА РАБОЧЕГО КОДА** при зелёных тестах! 0 строк изменений в `src/main`.
-КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО дописывать новые сводные блоки `### Итог Пакетного Замера` в конец `docs/FACTORY_MECHANISMS.md` — только точечная инлайн-простановка `*Живое:*` строго внутри перечисленных блоков перед их завершением!
-
-Инженеру L2 надлежит подтвердить результаты тест-сьютов в Docker-контейнере Maven (замерено L1/L3: 88/88 green в 13 тест-сьютах) и вписать строгую формулу свидетельства:
-`*Живое, 2026-10-24 UTC:* Замер Ступени 4 в Docker Maven 3.9.9 Temurin-21 (-m 2g): <N>/<N> green в <SuiteNames>. <Формулировка заслона по философскому паттерну>. Ступень 4 закрыта, статус: ideal.`
-**СТРОГО ВНУТРЬ КАЖДОГО ИЗ СЛЕДУЮЩИХ 16 БЛОКОВ**:
-
-1. **L7975–L8025**: `KaizenService.scanForOpportunities/recordUnderTheHoodDefects`
-   - *Паттерн:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
-   - *Тест-сьют:* `KaizenServiceTest` (10/10 green)
-   - *Место вставки:* перед строкой 8025 (в конце блока `KaizenService.scanForOpportunities/recordUnderTheHoodDefects`).
-
-2. **L8026–L8074**: `KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`
-   - *Паттерн:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
-   - *Тест-сьют:* `KaizenServiceTest` (10/10 green)
-   - *Место вставки:* перед строкой 8074 (в конце блока `KaizenService.applyMicroStep/evaluateAndStandardize/periodicKaizenCycle`).
-
-3. **L8075–L8103**: `DesignShopCycleEntity`
-   - *Паттерн:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-   - *Тест-сьюты:* `DesignShopCycleRepositoryIntegrationTest` (6/6 green), `DesignShopOrchestrationServiceLaw15Test` (7/7 green)
-   - *Место вставки:* перед строкой 8103 (в конце блока `DesignShopCycleEntity`).
-
-4. **L8104–L8125**: `DesignShopCycleRepository`
-   - *Паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
-   - *Тест-сьюты:* `DesignShopCycleRepositoryIntegrationTest` (6/6 green), `DesignShopOrchestrationServiceTest` (13/13 green)
-   - *Место вставки:* перед строкой 8125 (в конце блока `DesignShopCycleRepository`).
-
-5. **L8126–L8155**: `DesignShopOrchestrationService`
-   - *Паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006), `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
-   - *Тест-сьюты:* `DesignShopOrchestrationServiceTest` (13/13 green), `DesignShopOrchestrationServiceLaw15Test` (7/7 green)
-   - *Место вставки:* перед строкой 8155 (в конце блока `DesignShopOrchestrationService`).
-
-6. **L8156–L8181**: `DesignSystemFalsificationService`
-   - *Паттерн:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
-   - *Тест-сьют:* `DesignSystemFalsificationServiceTest` (6/6 green)
-   - *Место вставки:* перед строкой 8181 (в конце блока `DesignSystemFalsificationService`).
-
-7. **L8182–L8232**: `DesignDriftMonitorService`
-   - *Паттерны:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008), `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012)
-   - *Тест-сьюты:* `DesignDriftMonitorServiceTest` (7/7 green), `DesignConsistencyAuditServiceTest` (15/15 green)
-   - *Место вставки:* перед строкой 8232 (в конце блока `DesignDriftMonitorService`).
-
-8. **L8323–L8345**: `TaskEntity.initializeStatus`
-   - *Паттерн:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-   - *Тест-сьюты:* `TaskEntityLaw20Test` (6/6 green), `TaskAcceptanceCriteriaGuardTest` (1/1 green), `TaskEntityLaw1CarrierTest` (5/5 green)
-   - *Место вставки:* перед строкой 8345 (в конце блока `TaskEntity.initializeStatus`).
-
-9. **L8346–L8366**: `TaskRepository.compareAndSetStatus`
-   - *Паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
-   - *Тест-сьюты:* `TaskRepositoryIntegrationTest` (4/4 green), `TaskTerminalOverwriteAuditTest` (4/4 green)
-   - *Место вставки:* перед строкой 8366 (в конце блока `TaskRepository.compareAndSetStatus`).
-
-10. **L8367–L8412**: `TaskRepository.writeStatusUnlessTerminal`
-    - *Паттерн:* `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
-    - *Тест-сьюты:* `TaskRepositoryIntegrationTest` (4/4 green), `TaskTerminalOverwriteAuditTest` (4/4 green)
-    - *Место вставки:* перед строкой 8412 (в конце блока `TaskRepository.writeStatusUnlessTerminal`).
-
-11. **L8770–L8790**: `V42__add_pr_review_has_code_and_role_threads.sql`
-    - *Паттерн:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-    - *Тест-сьют:* `FlywayMigrationValidationTest` (4/4 green)
-    - *Место вставки:* перед строкой 8790 (в конце блока `V42__add_pr_review_has_code_and_role_threads.sql`).
-
-12. **L8791–L8816**: `V44__add_features.sql`
-    - *Паттерн:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-    - *Тест-сьют:* `FlywayMigrationValidationTest` (4/4 green)
-    - *Место вставки:* перед строкой 8816 (в конце блока `V44__add_features.sql`).
-
-13. **L8817–L8849**: `V45__rename_role_threads_to_feature_threads.sql`
-    - *Паттерн:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-    - *Тест-сьют:* `FlywayMigrationValidationTest` (4/4 green)
-    - *Место вставки:* перед строкой 8849 (в конце блока `V45__rename_role_threads_to_feature_threads.sql`).
-
-14. **L8896–L8926**: `V126__return_the_budget_of_a_brief_refused_without_a_readable_reason.sql`
-    - *Паттерны:* `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (D012), `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (D006)
-    - *Тест-сьют:* `FlywayMigrationValidationTest` (4/4 green)
-    - *Место вставки:* перед строкой 8926 (в конце блока `V126__return_the_budget_of_a_brief_refused_without_a_readable_reason.sql`).
-
-15. **L9153–L9173**: `V59__create_gemini_observer_journal.sql`
-    - *Паттерн:* `ELVIN_GOLDMAN_03_LEVEL_OF_ABSTRACTION_LOCK` (D010)
-    - *Тест-сьют:* `FlywayMigrationValidationTest` (4/4 green)
-    - *Место вставки:* перед строкой 9173 (в конце блока `V59__create_gemini_observer_journal.sql`).
-
-16. **L9265–L9293**: `V79__kaizen_proposals_and_evidence_nodes.sql`
-    - *Паттерн:* `KARL_POPPER_01_FALSIFICATION_HARNESS` (D008)
-    - *Тест-сьюты:* `FlywayMigrationValidationTest` (4/4 green), `KaizenServiceTest` (10/10 green)
-    - *Место вставки:* перед строкой 9293 (в конце блока `V79__kaizen_proposals_and_evidence_nodes.sql`).
+### 2.1. Инвариант деонтического превосходства (`D006: CLIENT_VALUE_DOMINANCE`)
+* **Суть дефекта прошлого:** Из 110 задач проекта 62% были рождены дизайн-ролью на полировку мокапа (`mockup.html`), который даже не поставлялся клиенту. Пул Jules сжигал ресурсы на внутреннюю бюрократию, а задачи ТЗ клиента мертво стояли в очереди.
+* **Требование к L2 в `JulesDispatchService` и `ProjectFlowService`:**
+  1. **Приоритет магистрали (Priority Preemption):** Задачи источника `WishlistSource.client` обладают абсолютным квантовым приоритетом. Пока в очереди есть хотя бы одна продуктовая задача ТЗ клиента, 100% свободных слотов пула Jules (из 7 доступных) выделяются исключительно под продуктовый код (`src/main`, `src/components`).
+  2. **TOC-квота на ролевые задачи (Kaizen Throttling):** Задачи источника `WishlistSource.role` (дизайн-полировка, мета-ревью) классифицируются как фоновый кайдзен. На них разрешено тратить **не более 1 слота пула**, и только при абсолютно пустой клиентской очереди.
+  3. **Запрет самопорождения на ветке `APPROVED`:** В `processDesignVerdict()` при `status == APPROVED` категорически **запретить** создание новых `WishlistEntity` по консернам. Консерны одобренного дизайна фиксируются как информационные заметки, но не превращаются в блокирующие задачи.
 
 ---
 
-## 3. ИТОГОВАЯ ЦЕЛЬ ТАКТА L2
-После закрытия этих 16 блоков каталог `docs/FACTORY_MECHANISMS.md` достигает **100% готовности к аудиту (`AUDIT_READY`)** без единого пропущенного механизма.
+## 3. МЕХАНИЗМ №2: КОНТУР КОГНИТИВНОЙ ОЧИСТКИ (COGNITIVE FLUSH / ATTENTION HYGIENE)
+
+Оператор Дмитрий Ефремов утвердил внедрение механизма «когнитивной очистки» — сброса всего мусора и шума, который отвлекает агентов и рассеивает их контекстное внимание.
+
+### 3.1. Три уровня когнитивной очистки:
+
+#### Уровень 1: Сброс контекстного шума в промптах агентов (Prompt Tabula Rasa)
+* **Проблема:** При повторных попытках решения задачи (retry) агент часто получает накопленную историю прошлых ошибок, логи сбоев и споры с оркестратором. Агент начинает «галлюцинировать вокруг ошибки», а не решать задачу.
+* **Решение:** При перезапуске сессии контур когнитивной очистки производит **Prompt Flush**:
+  - Стирается весь шлейф предыдущих диалоговых реплик и оправданий.
+  - Агенту передается кристально чистый контекст: **Атомарная цель (Atomic Goal) + Критерии приемки (DoD) + Актуальный diff ветки `origin/main`**.
+  - Никакого когнитивного мусора из прошлых итераций.
+
+#### Уровень 2: Сброс файлового мусора (Workspace Hygiene Flush)
+* **Проблема:** Генерация локальных отчетов (`playwright-report`, `coverage`, `test-results`, `node_modules`, `.next`) засоряет рабочую директорию. Агент делает `git status`, пугается сотен сгенерированных файлов, коммитит их и попадает в бан гигиены репозитория.
+* **Решение:** Перед запуском сессии агента и сразу после ее завершения запускается автоматический хук очистки:
+  `git clean -fdX --exclude=!node_modules` (или целевое удаление временных отчетов). В рабочей области агента не должно быть ни одного отвлекающего временного артефакта.
+
+#### Уровень 3: Сброс сессионного шума (Zombie & Dormant Review Flush)
+* **Проблема:** 24 задачи fallback-ревью висели в очереди на проверку PR, которые уже были смерджены часами ранее.
+* **Решение:** Механизм **Cascading Terminal Flush**:
+  - Как только продуктовая фича смерджена в `main` и подтверждена системным тестом, все сопутствующие вспомогательные задачи ревью, запросы мнений и драфты вишлистов мгновенно аннулируются (`FLUSHED_AS_SUPERSEDED`).
+  - Система не тратит ни секунды внимания агентов на то, что уже потеряло актуальность.
+
+
+
+## 4. МЕХАНИЗМ №3: ЭТАП ОЧИСТКИ ДИЗАЙНА ОТ ВИЗУАЛЬНОГО ШУМА (VISUAL NOISE DETOXIFICATION GATE)
+
+Оператор Дмитрий Ефремов ввел категорический запрет на псевдотехнический и декоративный визуальный мусор:
+
+### 4.1. Деонтический гейт BARCAN-TAG-11 (CLIENT-PERCEPTION & SENSORY PURITY):
+* **КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО (Forbidden):**
+  1. **Псевдотехнические надписи на фото/портретах:** Запрет любых характеристик оптики (LEICA, 50MM, f/1.4), ISO, фейковых GPS-координат, псевдостатусов (STATUS: ACTIVE, SYS.01), технических городов и дат на медиа-контенте.
+  2. **Искажающие монохромные фильтры:** Запрет на агрессивную постобработку студийных портретов (grayscale, contrast-125). Человек должен подаваться естественно и аутентично.
+  3. **Псевдофутуристический декор:** Запрет на декоративные видоискатели, фальшивые угловые скобки (corner brackets), рамки со штрих-пунктиром вокруг живых фотографий.
+  4. **Фальшивая пульсация:** Запрет на nimate-pulse, если элемент не отображает реальный физический процесс (например, активный аудиострим).
+* **ОБЯЗАТЕЛЬНО (Obligatory):**
+  1. Чистая пространственная архитектура (Bauhaus / Mies van der Rohe).
+  2. Достоинство студийного портрета: лаконичный контейнер (
+rounded-2xl, чистая микро-граница, естественная мягкая глубина).
+  3. Типографическая выразительность и функциональный минимализм.
+
+### 4.2. Место в конвейере Stitch Design Workflow:
+В docs/STITCH_DESIGN_WORKFLOW.md закрепляется **Шаг 2.5: Visual Noise Detoxification**. Макет Stitch не допускается к декомпозиции на Svelte-компоненты Джулсами, пока автоматический фильтр или ревьюер не вычистит псевдотехнические плашки и фильтры.
+
+---
+
+## 5. ПОРЯДОК ВНЕДРЕНИЯ И ПРИЕМКИ ДЛЯ ИНЖЕНЕРА (L2)
+1. Разработать сервисные методы и заслоны в соответствии с инвариантами выше (Клиентская ценность, Когнитивная очистка, Детоксикация визуального шума).
+2. Покрыть фальсификационными тестами (с проверкой невозможности повторения дедлоков `test-twenty-eighth`).
+3. Зафиксировать замеры в рантайме Docker Maven 3.9.9 (`-m 2g`) без превышения лимитов памяти.
+4. Доложить оператору в `docs/reports/ENGINEER_EXPLANATION_AND_PROPOSAL.md`.
+
