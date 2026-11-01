@@ -76,6 +76,18 @@ public class AccountEntity {
     @Column(name = "estimated_daily_capacity")
     private Integer estimatedDailyCapacity;
 
+    @Column(name = "provider", nullable = false)
+    private String provider = "GOOGLE_JULES";
+
+    @Column(name = "tpm_limit")
+    private Integer tpmLimit = 60000;
+
+    @Column(name = "rpm_limit")
+    private Integer rpmLimit = 60;
+
+    @Column(name = "tokens_used_today", nullable = false)
+    private long tokensUsedToday = 0L;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public ProjectEntity getProject() { return project; }
@@ -166,4 +178,16 @@ public class AccountEntity {
     public String getAvailabilitySummary() {
         return isAvailable() ? "available" : getUnavailabilityReason();
     }
+
+    public String getProvider() { return provider; }
+    public void setProvider(String provider) { this.provider = provider != null ? provider : "GOOGLE_JULES"; }
+
+    public Integer getTpmLimit() { return tpmLimit; }
+    public void setTpmLimit(Integer tpmLimit) { this.tpmLimit = tpmLimit; }
+
+    public Integer getRpmLimit() { return rpmLimit; }
+    public void setRpmLimit(Integer rpmLimit) { this.rpmLimit = rpmLimit; }
+
+    public long getTokensUsedToday() { return tokensUsedToday; }
+    public void setTokensUsedToday(long tokensUsedToday) { this.tokensUsedToday = tokensUsedToday; }
 }

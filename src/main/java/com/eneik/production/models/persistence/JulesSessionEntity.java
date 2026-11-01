@@ -105,6 +105,30 @@ public class JulesSessionEntity {
     @Column(name = "pr_opened_workflow_claimed_at")
     private Instant prOpenedWorkflowClaimedAt;
 
+    @Column(name = "worker_engine", nullable = false, length = 32)
+    private String workerEngine = "JULES";
+
+    @Column(name = "model_name", length = 64)
+    private String modelName;
+
+    @Column(name = "cached_tokens")
+    private Integer cachedTokens = 0;
+
+    @Column(name = "prompt_tokens")
+    private Integer promptTokens = 0;
+
+    @Column(name = "completion_tokens")
+    private Integer completionTokens = 0;
+
+    @Column(name = "worktree_path", length = 256)
+    private String worktreePath;
+
+    @Column(name = "severe_test_passed")
+    private Boolean severeTestPassed = Boolean.FALSE;
+
+    @Column(name = "belnap_status", length = 32)
+    private String belnapStatus = "NEITHER";
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -155,6 +179,30 @@ public class JulesSessionEntity {
 
     public Instant getPrOpenedWorkflowClaimedAt() { return prOpenedWorkflowClaimedAt; }
     public void setPrOpenedWorkflowClaimedAt(Instant prOpenedWorkflowClaimedAt) { this.prOpenedWorkflowClaimedAt = prOpenedWorkflowClaimedAt; }
+
+    public String getWorkerEngine() { return workerEngine; }
+    public void setWorkerEngine(String workerEngine) { this.workerEngine = workerEngine != null ? workerEngine : "JULES"; }
+
+    public String getModelName() { return modelName; }
+    public void setModelName(String modelName) { this.modelName = modelName; }
+
+    public Integer getCachedTokens() { return cachedTokens; }
+    public void setCachedTokens(Integer cachedTokens) { this.cachedTokens = cachedTokens; }
+
+    public Integer getPromptTokens() { return promptTokens; }
+    public void setPromptTokens(Integer promptTokens) { this.promptTokens = promptTokens; }
+
+    public Integer getCompletionTokens() { return completionTokens; }
+    public void setCompletionTokens(Integer completionTokens) { this.completionTokens = completionTokens; }
+
+    public String getWorktreePath() { return worktreePath; }
+    public void setWorktreePath(String worktreePath) { this.worktreePath = worktreePath; }
+
+    public Boolean getSevereTestPassed() { return severeTestPassed; }
+    public void setSevereTestPassed(Boolean severeTestPassed) { this.severeTestPassed = severeTestPassed; }
+
+    public String getBelnapStatus() { return belnapStatus; }
+    public void setBelnapStatus(String belnapStatus) { this.belnapStatus = belnapStatus != null ? belnapStatus : "NEITHER"; }
 
     @PreUpdate
     public void preUpdate() {

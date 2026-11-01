@@ -1,9 +1,11 @@
-# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-01 21:00 UTC)
+# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-01 22:30 UTC)
 
-- **Выполнение директивы Фазы 1: Проектирование суверенной замены Jules (DeepSeek API + Git Worktree):**
-  - **Раздел 2 спецификации (`DEEPSEEK_WORKER_REPLACEMENT_PLAN.md`):** Сформирован исчерпывающий инженерный проект замены облачного Jules на локально-гибридный суверенный пул исполнения.
-  - **Компонентная архитектура:** Спроектированы `WorkerExecutionEngine`, `DeepSeekApiClient` (OpenAI REST API с поддержкой Context Caching системного промпта BARCAN-TAG), `GitWorktreeExecutionManager` (изоляция чекаутов на базе `.git/objects`), деонтический арбитр `FileScopeEnforcer` (D006 `PROHIBITION_AS_CODE` через `git status --porcelain`), и `LocalVerificationRunner`.
-  - **Ресурсная защита хоста (Anti-OOM & Anti-Freeze):** На сервере с 2.2 GiB свободной памяти гарантируется $\ge 1.5$ GiB резерва за счёт строгого `Semaphore(1)` на компиляцию, Docker cgroup лимитов (`-m 1.2g --cpus 1.5`), ограничения $\le 2$ параллельных worktree и делегирования тяжелых E2E/Spring тестов в GitHub Actions CI.
-  - **Cynefin & Экономика:** `deepseek-chat` (V3) для Clear/Complicated, `deepseek-reasoner` (R1) для Complex. С кэшированием префикса стоимость 1 задачи составляет **~$0.001** (экономия > 95% относительно Jules).
-  - **Дорожная карта и верификация:** 5 фаз внедрения, спецификация 7 обязательных тестов-заслонов Поппера (D008).
-  - **Инвариант фазы соблюдён:** Каталог `src/` неприкосновенен. План ожидает согласования Оператора.
+- **Боевая реализация суверенного пула воркеров DeepSeek (Фазы 2–3) с автономией Деннетта:**
+  - **Полиморфный контур воркеров:** Реализован `WorkerExecutionEngine`, `WorkerExecutionRouter` (режимы `JULES`, `DEEPSEEK_WORKTREE`, `HYBRID` с фоллбэком Cranes not Skyhooks при 401/402/429/503).
+  - **Суверенный клиент с Context Caching и Fallback-Clutch:** `DeepSeekApiClient` (Java 21 `HttpClient`, ролевой префикс BARCAN-TAG >1024 токенов для скидки 90% и TTFT <500мс, Cynefin-маршрутизация V3/R1, переключение на резервный прокси при сбоях 5xx).
+  - **Хирургический патчер и Anti-Truncation Gate:** `DeepSeekPatchParser` (`FULL_CONTENT` и `PATCH_BLOCKS`/`SEARCH_REPLACE` для файлов любого размера + детерминированный отказ при ленивых стоп-маркерах).
+  - **Мульти-проектный пул Git Worktree:** `GitWorktreeExecutionManager` (поддержка фабрики `ORCHESTRATOR_SYSTEM` и bare-зеркал клиентских репо в `/var/lib/eneik/mirrors/`, изоляция ворктри, гарантированный teardown в `finally`).
+  - **Деонтический заслон Раза (D006):** `FileScopeEnforcer` (физический pre-commit аудит `git status --porcelain`, мгновенный `git reset --hard` при выходе за `fileScope`, обработка сигнала `SCOPE_INSUFFICIENT`).
+  - **Слепой Арбитр и Попперовский заслон (D008):** `LocalVerificationRunner` с `Semaphore(1)` для защиты RAM Hetzner хоста (<1.2G cgroups), разделением Синтезатора и Арбитра, детектором циклов Дюэма-Куайна и отбором Множественных Набросков Деннетта.
+  - **Схема данных:** Создана миграция `V144__add_worker_engine_and_token_accounting.sql`, обновлены `AccountEntity` и `JulesSessionEntity` с 4-значной логикой Белнапа (D012).
+  - **Верификация Поппера в Docker Maven:** 13 тестов-заслонов (38 тестовых сценариев) выполнены в `maven:3.9.9-eclipse-temurin-21` (-m 2g) со 100% успехом (0 failures, 0 errors). Регрессионная база зелёная.

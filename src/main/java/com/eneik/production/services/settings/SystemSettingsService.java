@@ -481,6 +481,17 @@ public class SystemSettingsService {
         // Off by default: SystemStatusController's /sql endpoint is an unauthenticated raw JDBC executor
         // (SELECT and DML both). Must be explicitly opted into per-environment, never assumed safe.
         definitions.put("debug_sql_endpoint_enabled", flag("debug_sql_endpoint_enabled", "DEBUG_SQL_ENDPOINT_ENABLED", "debug.sql-endpoint.enabled"));
+
+        // Sovereign DeepSeek Worker pool settings (GEMINI.md §0, Dennett Autonomy Architecture)
+        definitions.put("worker_engine_mode", plain("worker_engine_mode", "WORKER_ENGINE_MODE", "worker.engine.mode"));
+        definitions.put("deepseek_enabled", flag("deepseek_enabled", "DEEPSEEK_ENABLED", "deepseek.enabled"));
+        definitions.put("deepseek_api_key", secret("deepseek_api_key", "DEEPSEEK_API_KEY", "deepseek.api-key"));
+        definitions.put("deepseek_base_url", plain("deepseek_base_url", "DEEPSEEK_BASE_URL", "deepseek.base-url"));
+        definitions.put("deepseek_fallback_url", plain("deepseek_fallback_url", "DEEPSEEK_FALLBACK_URL", "deepseek.fallback-url"));
+        definitions.put("deepseek_fallback_api_key", secret("deepseek_fallback_api_key", "DEEPSEEK_FALLBACK_API_KEY", "deepseek.fallback-api-key"));
+        definitions.put("deepseek_chat_model", plain("deepseek_chat_model", "DEEPSEEK_CHAT_MODEL", "deepseek.chat-model"));
+        definitions.put("deepseek_reasoner_model", plain("deepseek_reasoner_model", "DEEPSEEK_REASONER_MODEL", "deepseek.reasoner-model"));
+
         return definitions;
     }
 
