@@ -99,12 +99,72 @@ rounded-2xl, чистая микро-граница, естественная м
 ---
 
 ## 6. ПОРЯДОК ВНЕДРЕНИЯ И ПРИЕМКИ ДЛЯ ИНЖЕНЕРА (L2)
-1. Разработать сервисные методы и заслоны в соответствии с 4 утвержденными механизмами:
+1. Разработать сервисные методы и заслоны в соответствии с утвержденными механизмами:
    - Механизм №1: Превосходство клиентской ценности (`TOC Client Value Dominance`).
    - Механизм №2: Контур когнитивной очистки (`Cognitive Flush`).
    - Механизм №3: Заслон детоксикации дизайна от визуального шума (`Visual Noise Elimination Gate`).
    - Механизм №4: Суверенный дизайн-агент Фабрики (`SovereignDesignSynthesisService`).
-2. Покрыть фальсификационными тестами (с проверкой невозможности повторения дедлоков `test-twenty-eighth` и сбоев генерации макетов без Stitch).
+   - Механизм №5: Демаркация уровней Kaizen и защита суверенитета продукта (`Kaizen Scope Separation & Stall Immunity`).
+2. Покрыть фальсификационными тестами (с проверкой невозможности повторения дедлоков `test-twenty-eighth`, сбоев генерации макетов без Stitch и 5-суточного ступора `designer-eneik`).
 3. Зафиксировать замеры в рантайме Docker Maven 3.9.9 (`-m 2g`) без превышения лимитов памяти.
 4. Доложить оператору в `docs/reports/ENGINEER_EXPLANATION_AND_PROPOSAL.md`.
+
+---
+
+## 7. МЕХАНИЗМ №5: ДЕМАРКАЦИЯ УРОВНЕЙ KAIZEN И ЗАЩИТА СУВЕРЕНИТЕТА ПРОДУКТА (KAIZEN SCOPE SEPARATION & STALL IMMUNITY)
+**Дата:** 2026-11-01 20:05 UTC  
+**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1/L3)  
+**Адресат:** Ведущий инженер фабрики (L2)  
+**Статус:** ОБЯЗЫВАЮЩИЙ НАРЯД АВТОНОМИИ (PRIORITY #1 HOTFIX)
+
+### 7.1. Эпистемический диагноз инцидента 2026-11-01 (Root Cause & RAG Grounding)
+1. **Категориальная ошибка Райла (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`, D002 Invalid state):**
+   Фабрика спутала процесс работы собственного классификатора (`rootCausePatternId`) с объектом поставки клиенту. Внутренний цеховой сбой фабрики был ошибочно упакован в форму вишлиста продуктового репозитория.
+2. **Нарушение теории типов Рассела (`BERTRAN_RASSEL_08_CATEGORY_ERROR_SCAN`, `BERTRAN_RASSEL_09_LEVEL_OF_ABSTRACTION_LOCK`, D010 Data lineage loss):**
+   Мета-уровень (станок / фабрика) не может быть элементом объектного уровня (деталь / продукт). Возникла путаница уровней абстракции: задача на патчинг кода бэкенда фабрики (`EneikProductionSys`) была скомпилирована в проект `designer-eneik`.
+3. **Нарушение суверенного барьера (GEMINI.md §0 The Sovereign Boundary Invariant):**
+   Фабрика и продукт разделены непреодолимой границей. Продуктовый вишлист предназначен исключительно для инкремента клиентской ценности продукта, а не для авторемонта фабрики через агентов продукта.
+4. **Семантическое загрязнение (`GEORG_HENRIK_FON_VRIGT_08_CATEGORY_CONSISTENCY_WALTON`, `GARET_EVANS_02_ANCHOR_BOUND_NAME`, D001 Semantic drift):**
+   В текст клиентского артефакта (`WishlistEntity`) утёк внутренний технический жаргон («No underlying defect event carries a rootCausePatternId yet»), неприемлемый для продукта.
+5. **Системный коллапс из-за рассогласования предикатов готовности (D012 Policy contradiction):**
+   - `KaizenService.applyMicroStep` (ветка `SYSTEMIC_DEFECT`, поток `reviewConcerns`) создал вишлист с источником `design_review_concern_pattern`.
+   - Компилятор создал задачу `46531a8b-2ba1-4c43-a269-c664908069a8` с `targetContext = UNDETERMINED`.
+   - `ProjectFlowService.deriveTargetContextFromSourceWishlist` выводит контекст только для `client` и `coverage_gap`, поэтому диспетчер ежеминутно отклонял задачу: `Dispatch rejected: target context is undetermined`.
+   - `ContinuousOrchestrationService.isDispatchableQueuedWorkForStallCheck` считала эту недопустимую задачу «работой в очереди» (`queuedTasks=1`), заморозив фабрику в состоянии `SYSTEM STALLED` на 7591 минуту (~5 суток) и заблокировав запуск `FalsificationCycleService` (работающего только по `active` проектам).
+
+### 7.2. Императивное решение Оператора Дмитрия Ефремова:
+> «Kaizen не может писать в вишлист на уровне фабрики или поставки — только на уровне качества продукта. Уровень поставки продукта или качества самих цехов — отправлять в вишлист инженера.»
+
+### 7.3. Обязательные требования к L2 для реализации Механизма №5:
+
+#### Требование 1: Двухуровневая сепарация Kaizen в `KaizenService.java` и `ProcessControlService.java`
+1. **Строгая классификация скоупа (Scope Discriminator):**
+   - **Уровень качества продукта (Product Quality Scope):** Сюда относятся только реальные повторяющиеся дефекты пользовательского интерфейса, API или логики самого продукта. При эскалации в продуктовый вишлист:
+     - Контент обязан формулироваться исключительно в терминах продукта (без системного жаргона вроде `rootCausePatternId`, `u-chart`, `Western Electric`, `sequence index`).
+     - Обязательно выставляется явный валидный `targetContext` (`TargetContext.PRODUCT_CODEBASE`).
+   - **Уровень поставки продукта и качества цехов/фабрики (Factory / Workshop / Delivery Scope):**
+     - Отсутствие маппинга паттернов корневых причин (`rootCausePatternId`), несформированные инварианты, дефекты классификаторов, сбои конвейера поставки и оркестрации.
+     - **КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО** создавать `WishlistEntity` в БД продуктового проекта (`wishlistRepository.save(wishlist)` с `projectId != null`).
+     - Такие дефекты обязаны маршрутизироваться **исключительно в вишлист инженера**:
+       - сохраняться как фабричные пропозалы (`KaizenProposalEntity` со скоупом фабрики: `projectId = null`, `projectName = "Factory"`, `targetContext = FACTORY_CODEBASE`),
+       - либо передаваться в наряд инженера L2 (`docs/reports/PROGRAMMER_DIRECTIVES.md` / `docs/ANTIGRAVITY_QUEUE.md`).
+
+#### Требование 2: Полнота вывода целевого контекста в `ProjectFlowService.java`
+1. Метод `deriveTargetContextFromSourceWishlist` обязан детерминированно определять контекст для всех легитимных продуктовых источников вишлиста (включая `design_review_concern_pattern` и любые другие разрешённые продуктовые кайдзен-источники), возвращая `TargetContext.PRODUCT_CODEBASE`.
+2. Ни одна продуктовая задача не должна оставаться в подвешенном состоянии `targetContext = UNDETERMINED` при наличии валидного продуктового источника.
+
+#### Требование 3: Защита конвейера от зависаний (Anti-Stall Immunity) в `ContinuousOrchestrationService.java`
+1. Метод `isDispatchableQueuedWorkForStallCheck(TaskEntity task)` обязан проверять не только `task.getStatus() == TaskStatus.queued` и зависимости, но и диспетчеризуемость задачи:
+   - Задача с `targetContext == TargetContext.UNDETERMINED` или `targetContext == null` не является диспетчеризуемой (`isDispatchable == false`).
+   - Задача, перманентно получающая отказ диспетчеризации (`Dispatch rejected`), не должна учитываться как активная очередь, блокирующая признание системы зависшей или загоняющая проект в ложный `stalled`.
+2. При обнаружении недиспетчеризуемой задачи с нарушенным контрактом она должна переводиться в терминальный/изолированный статус (`TaskStatus.blocked` / `TaskStatus.failed`) с фиксацией инцидента, чтобы не блокировать весь цикл фабрики и `FalsificationCycleService`.
+
+#### Требование 4: Заслоны Поппера (Обязательные тесты-фальсификаторы)
+1. **Тест демаркации Kaizen (`KaizenServiceTest`):**
+   - Проверка: при возникновении сигнала `reviewConcerns` без `rootCausePatternId` (цеховой дефект классификатора) вишлист в продуктовом проекте **НЕ создаётся**; событие эскалируется в контур фабрики/инженера.
+2. **Тест очистки от жаргона (`WishlistSanitizationTest` / `KaizenServiceTest`):**
+   - Проверка: текст продуктового вишлиста не содержит строк вида `rootCausePatternId`, `u-chart`, `Western Electric`.
+3. **Тест антифриза (`ContinuousOrchestrationServiceTest`):**
+   - Проверка: задача с `targetContext = UNDETERMINED` не приводит к застреванию системы в `SYSTEM_STALLED` и не блокирует жизненный цикл проекта.
+
 
