@@ -205,3 +205,82 @@ rounded-2xl, чистая микро-граница, естественная м
    - Список обязательных модульных и интеграционных тестов-заслонов (без выполнения в `src/` на текущем шаге).
 
 > **ВНИМАНИЕ:** До официального согласования плана Оператором Дмитрием Ефремовым **КАТЕГОРИЧЕСКИ ЗАПРЕЩАЕТСЯ** изменять код в каталоге `src/`. Работа ведётся исключительно в документе `docs/reports/DEEPSEEK_WORKER_REPLACEMENT_PLAN.md`.
+
+---
+
+## 9. БОЕВОЙ ИМПЕРАТИВНЫЙ WORK ORDER ДЛЯ L2 (ИНЖЕНЕР): РЕАЛИЗАЦИЯ СУВЕРЕННОГО ПУЛА ВОРКЕРОВ DEEPSEEK + GIT WORKTREE (ФАЗЫ 2–3)
+**Дата:** 2026-11-01 22:15 UTC  
+**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1/L3)  
+**Адресат:** Ведущий инженер фабрики (L2)  
+**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ — ПЛАН УТВЕРЖДЁН ОПЕРАТОРОМ ДМИТРИЕМ ЕФРЕМОВЫМ. РАЗРЕШЕНЫ ИЗМЕНЕНИЯ В `src/` И `db/migration`.
+
+### 9.1. Директива перехода к Фазам 2–3 в исходном коде
+Оператор Дмитрий Ефремов утвердил план перехода на суверенный пул воркеров DeepSeek с тремя обязательными инженерными дополнениями и пятью механизмами автономии Дэниела Деннетта.
+**Инженер L2 приступает к непосредственной реализации в Java-коде (`src/main/java`, `src/test/java`, `src/main/resources/db/migration`).**
+
+### 9.2. Архитектурный скоуп реализации Фаз 2–3:
+
+#### 1. Двухэшелонный транспорт `DeepSeekApiClient` (с Fallback-Clutch):
+- **Основной канал:** `https://api.deepseek.com/chat/completions` (OpenAI-compatible JSON API) с Context Caching (фиксированный префикс ролевой онтологии BARCAN-TAG > 1024 токенов).
+- **Резервный канал (Fallback-Clutch):** При получении сетевого таймаута, кодов `5xx` или `503 Service Unavailable` клиент автоматически переключается на настроенный резервный эндпоинт (OpenRouter / совместимый OpenAI-прокси).
+- Настраиваемые таймауты: `connectTimeout = 15s`, `readTimeout = 90s` (V3) / `180s` (R1).
+
+#### 2. Хирургический парсер патчей `DeepSeekPatchParser` с `Anti-Truncation Gate`:
+- **Двухрежимный контракт применения модификаций:**
+  - `FULL_CONTENT`: для создания новых файлов (`operation == CREATE`) и файлов малого размера (< 150 строк).
+  - `PATCH_BLOCKS` (`SEARCH_REPLACE`): массив точных пар `{ "search": "<точный фрагмент>", "replace": "<новый фрагмент>" }` для модификации существующих файлов любого размера без риска усечения по токенам.
+- **Anti-Truncation Gate (Заслон против ленивых купюр):**
+  - Детерминированное отклонение патча при обнаружении стоп-маркеров: `// ... rest of`, `// ... existing code`, `/* ... existing code ... */`, `// TODO: rest of implementation`, `/* ... */`.
+  - При срабатывании заслона выбрасывается `LazyTruncationDetectedException` и задача немедленно отправляется на рефлексию без запуска тяжёлого контейнера сборщика.
+
+#### 3. Мульти-проектный пул Bare-зеркал `GitWorktreeExecutionManager`:
+- Разрешение целевого базового репозитория:
+  - `ORCHESTRATOR_SYSTEM` $\to$ `/opt/EneikProductionSys`.
+  - Внешние клиентские проекты $\to$ локальный клон `/opt/{repoName}` либо управляемое bare-зеркало в `/var/lib/eneik/mirrors/{owner}__{repo}.git` с `git fetch origin --prune`.
+- Создание изолированного эфемерного ворктри в `/var/lib/eneik/worktrees/task-{taskId}`:
+  `git worktree add -B worker/{taskId} /var/lib/eneik/worktrees/task-{taskId} origin/{startingBranch}`.
+- Детерминированное удаление в блоке `finally`: `git worktree remove --force` и `git worktree prune`.
+
+#### 4. Деонтический заслон Раза `FileScopeEnforcer` (D006):
+- Физическая проверка `git status --porcelain` внутри ворктри перед коммитом.
+- Сверка $F_{\text{actual}} \subseteq task.getFileScope()$.
+- При любом нарушении: откат `git reset --hard && git clean -fd`, отказ в коммите и эскалация.
+
+#### 5. Попперовский фальсификатор и Слепой Арбитр `LocalVerificationRunner` (D008):
+- Гомункулярный функционализм Деннетта: LLM лишена права назначать команду проверки. Слепой Арбитр определяет команду верификации и целевые тесты по измененным классам задачи.
+- Контейнерный запуск: Docker `-m 1.2g --cpus 1.5`, таймаут до 5 минут.
+- Хостовый семафор: `Semaphore(1)` гарантирует строго одну параллельную сборку на сервере Hetzner.
+
+#### 6. Деннеттовские механизмы автономии:
+- **Множественные наброски (Multiple Drafts):** генерация альтернативного черновика при сбое первого или для сложных задач (`complex`).
+- **Анти-петля Дюэма — Куайна (Anti-Looping):** прерывание цикла при совпадении хэша диффа или сигнатуры ошибки сборщика 2 раза подряд.
+- **Эскалация узкого скоупа (`SCOPE_INSUFFICIENT`):** возврат структурированного запроса на расширение скоупа в `TechnicalLeadCompiler` без падения в `SYSTEM_STALLED`.
+- **Гомеостаз ключей и квот (Cranes, not Skyhooks):** при `401/402/429/503` аккаунт маркируется `cooldown`/`exhausted`, а задача перемаршрутизируется в `WorkerExecutionRouter` на следующий рабочий ключ/движок.
+- **Эпистемический след (Narrative Pulse):** обновление статусов на шкале Голдмана для защиты от ложного `detectStuck`.
+
+#### 7. Схема данных: Flyway-миграция `V144__add_worker_engine_and_token_accounting.sql`:
+- Расширение таблицы `accounts`: поля `provider` (`GOOGLE_JULES`, `DEEPSEEK`), `tpm_limit`, `rpm_limit`, `tokens_used_today`.
+- Обеспечение обратной совместимости с существующими сессиями и задачами.
+
+### 9.3. Обязательные попперовские тесты-заслоны (D008 Severe Tests):
+Каждая правка обязана сопровождаться падающим и зеленеющим тестом в `src/test/java/...`:
+1. `DeepSeekApiClientCacheTest`
+2. `DeepSeekPatchParserAntiTruncationTest`
+3. `DeepSeekSearchReplacePatchTest`
+4. `BareMirrorPoolLifecycleTest`
+5. `FallbackClutchTransportTest`
+6. `FileScopeEnforcerDeonticTest`
+7. `LocalVerificationRunnerResourceTest`
+8. `DennettMultipleDraftsSelectorTest`
+9. `DuhemQuineAntiLoopingTest`
+10. `DennettCranesHomeostasisTest`
+11. `BelnapStateMachineTransitionTest`
+12. `EndToEndSovereignWorkerIntegrationTest`
+
+### 9.4. Регламент исполнения тактов L2:
+- **Квантование шага:** Ровно **один механизм за такт**. Реализовать компонент $\to$ покрыть тестом $\to$ прогнать в Docker Maven:
+  ```bash
+  docker run --rm -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/app -w /app maven:3.9-eclipse-temurin-21 -m 2g mvn test -Dtest=<TargetTest>
+  ```
+- **Фиксация:** Семантический коммит в фабрику (`feat(worker): ...`, `fix(worker): ...`).
+- **Отчёт:** Краткая запись (не более 15–20 строк) в `docs/reports/PROGRAMMER_STATE.md`.
