@@ -736,21 +736,38 @@ public class KaizenService {
                 if (proposal.getTitle() != null
                         && proposal.getTitle().contains(com.eneik.production.services.quality.ProcessControlService.STREAM_REVIEW_CONCERNS)
                         && proposal.getProjectId() != null) {
+                    if (!isProductQualityScope(proposal)) {
+                        log.warn("[KAIZEN-SCOPE-GUARD] Systemic defect proposal '{}' is not in product quality scope (factory/workshop issue). "
+                                + "Routing to engineer/factory scope and refusing product wishlist creation.", proposal.getId());
+                        KaizenProposal factoryScope = new KaizenProposal(
+                                proposal.getId(),
+                                proposal.getTitle(),
+                                proposal.getCategory(),
+                                proposal.getTargetComponent() != null ? proposal.getTargetComponent() : "Factory",
+                                proposal.getActionDescription(),
+                                proposal.getExpectedGainPercent(),
+                                null,
+                                "Factory"
+                        );
+                        saveProposal(factoryScope);
+                        return false;
+                    }
                     com.eneik.production.models.persistence.WishlistEntity wishlist =
                             new com.eneik.production.models.persistence.WishlistEntity();
                     wishlist.setProjectId(proposal.getProjectId());
                     wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.design_review_concern_pattern);
                     wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
                     wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.valuable);
-                    wishlist.setContent("Statistically confirmed pattern of design review concerns (Six Sigma "
-                            + "u-chart out of control): " + proposal.getActionDescription());
-                    wishlist.setJtbd("When design review concerns keep recurring beyond normal variance for "
-                            + proposal.getProjectName() + ", I want the underlying pattern addressed, so that "
+                    wishlist.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
+                    wishlist.setContent(sanitizeProductWishlistContent(proposal.getActionDescription(), proposal.getProjectName()));
+                    wishlist.setJtbd("When design review concerns keep recurring for "
+                            + proposal.getProjectName() + ", address the underlying design pattern so that "
                             + "future reviews stop flagging the same class of issue");
                     wishlist.setSixSigmaMetric(com.eneik.production.services.quality.ProcessControlService.STREAM_REVIEW_CONCERNS);
                     wishlistRepository.save(wishlist);
                     log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' (reviewConcerns) escalated to a real "
-                            + "wishlist item for project {} - no human action required.", proposal.getId(), proposal.getProjectId());
+                            + "wishlist item for project {} with targetContext=PRODUCT_CODEBASE - no human action required.",
+                            proposal.getId(), proposal.getProjectId());
                 } else {
                     // No human applies anything here (operator, standing directive; plan §4.34). This
                     // factory is autonomous, so a state whose only exit is a person is a state with no
@@ -864,10 +881,78 @@ public class KaizenService {
                     && p.getCategory() == KaizenProposal.KaizenCategory.SYSTEMIC_DEFECT
                     && p.getTitle() != null
                     && p.getTitle().contains(com.eneik.production.services.quality.ProcessControlService.STREAM_REVIEW_CONCERNS)
-                    && p.getProjectId() != null) {
+                    && p.getProjectId() != null
+                    && isProductQualityScope(p)) {
                 applyMicroStep(p.getId());
             }
         }
+    }
+
+    /**
+     * Determines whether a Kaizen proposal belongs strictly to the Product Quality Scope
+     * (real recurring defects of product user interface, API, or logic) vs Factory / Workshop / Delivery Scope
+     * (absence of rootCausePatternId mapping, classifier defects, delivery pipeline errors, orchestrator defects).
+     *
+     * <p>Sovereign boundary rule per Operator Dmitry Efremov:
+     * "Kaizen cannot write to wishlist at factory or delivery level - only at product quality level.
+     * Product delivery level or workshop quality must go to engineer wishlist."
+     */
+    public boolean isProductQualityScope(KaizenProposal proposal) {
+        if (proposal == null || proposal.getProjectId() == null) {
+            return false;
+        }
+        String title = proposal.getTitle() == null ? "" : proposal.getTitle().toLowerCase();
+        String desc = proposal.getActionDescription() == null ? "" : proposal.getActionDescription().toLowerCase();
+        String target = proposal.getTargetComponent() == null ? "" : proposal.getTargetComponent().toLowerCase();
+
+        // Factory / workshop / classifier indicators:
+        if (title.contains("rootcausepatternid") || desc.contains("rootcausepatternid")
+                || title.contains("invariant pattern") || desc.contains("invariant pattern")
+                || title.contains("uncategorized") || desc.contains("uncategorized")
+                || title.contains("classifier") || desc.contains("classifier")
+                || title.contains("pipeline") || desc.contains("pipeline")
+                || desc.contains("factory")) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
+     * Sanitizes product wishlist content by eliminating factory and Six Sigma internal jargon
+     * (such as rootCausePatternId, u-chart, Western Electric, sequence index, centerline, control limits)
+     * so that client-facing product artifacts remain purely in terms of product quality.
+     */
+    public String sanitizeProductWishlistContent(String actionDescription, String projectName) {
+        if (actionDescription == null || actionDescription.isBlank()) {
+            return "Recurring design review concerns detected in product components; address underlying UI/UX patterns.";
+        }
+
+        // Extract quality target if present
+        java.util.regex.Matcher targetMatcher = java.util.regex.Pattern.compile(
+                "quality target:\\s*\"([^\"]+)\"",
+                java.util.regex.Pattern.CASE_INSENSITIVE
+        ).matcher(actionDescription);
+        String targetClause = "";
+        if (targetMatcher.find()) {
+            targetClause = ": " + targetMatcher.group(1).trim();
+        }
+
+        // Strip known system phrases and jargon
+        String cleaned = actionDescription;
+        cleaned = cleaned.replaceAll("(?i)\\[Western Electric:[^\\]]+\\]", "");
+        cleaned = cleaned.replaceAll("(?i)Stream\\s+'[^']+'\\s+u=[0-9\\.]+\\s+outside\\s+\\[[^\\]]+\\]\\s*\\(centerline\\s+[0-9\\.]+\\)", "");
+        cleaned = cleaned.replaceAll("(?i)at epic sequence\\s*#[0-9]+", "");
+        cleaned = cleaned.replaceAll("(?i)No underlying defect event carries a rootCausePatternId yet[^.]*\\.", "");
+        cleaned = cleaned.replaceAll("(?i)candidate new invariant pattern[^.]*\\.", "");
+        cleaned = cleaned.replaceAll("(?i)u-chart\\s+(out of control)?", "");
+        cleaned = cleaned.replaceAll("(?i)Western Electric", "");
+        cleaned = cleaned.replaceAll("(?i)rootCausePatternId", "");
+        cleaned = cleaned.replaceAll("\\s{2,}", " ").trim();
+
+        if (cleaned.isEmpty() || cleaned.equals(".")) {
+            return "Address recurring design review feedback to meet product quality standards" + targetClause;
+        }
+        return "Recurring design review concerns detected: " + cleaned;
     }
 
     public Collection<KaizenProposal> getAllProposals() {

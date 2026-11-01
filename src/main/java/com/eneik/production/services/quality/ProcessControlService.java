@@ -446,7 +446,10 @@ public class ProcessControlService {
             String patternName = CHARTER_PATTERN_NAMES.getOrDefault(dominant, "uncatalogued");
             kaizenService.recordKnownPatternViolationProposal(projectId, projectName, dominant, patternName, title, description);
         } else {
-            kaizenService.recordSystemicDefectProposal(projectId, projectName, title,
+            // Uncategorized / missing rootCausePatternId on defect events is a defect in the factory's own classifier/workshops,
+            // NOT product deliverable work. Per Operator Dmitry Efremov's directive and GEMINI.md Sovereign Boundary:
+            // Route to factory / engineer proposal (projectId = null, projectName = "Factory"), never product project.
+            kaizenService.recordSystemicDefectProposal(null, "Factory", title,
                     description + " No underlying defect event carries a rootCausePatternId yet - candidate new invariant pattern, uncategorized.");
         }
     }

@@ -765,6 +765,7 @@ public class ContinuousOrchestrationService {
         List<TaskEntity> activeProjectTasks = targetProjects.stream()
                 .flatMap(project -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream())
                 .toList();
+        quarantineUndispatchableQueuedTasks(activeProjectTasks);
         long queuedTasks = activeProjectTasks.stream()
                 .filter(ContinuousOrchestrationService::isDispatchableQueuedWorkForStallCheck)
                 .count();
@@ -801,8 +802,32 @@ public class ContinuousOrchestrationService {
         return new SystemWorkSnapshot(queuedTasks, pendingWishlists, activeNonTerminalTasks, reviewTasksWithPr);
     }
 
+    private void quarantineUndispatchableQueuedTasks(List<TaskEntity> tasks) {
+        for (TaskEntity task : tasks) {
+            if (task.getStatus() == TaskStatus.queued) {
+                boolean targetUndetermined = task.getTargetContext() == null || task.getTargetContext().isUndetermined();
+                boolean dispatchRejected = task.getJulesDispatchStatus() != null && task.getJulesDispatchStatus().startsWith("Dispatch rejected");
+                if (targetUndetermined || dispatchRejected) {
+                    log.warn("Continuous Orchestration: Quarantining non-dispatchable queued task {} (targetContext={}, dispatchStatus={}) to BLOCKED",
+                            task.getId(), task.getTargetContext(), task.getJulesDispatchStatus());
+                    task.setStatus(TaskStatus.blocked);
+                    if (task.getJulesDispatchStatus() == null || !task.getJulesDispatchStatus().startsWith("Dispatch rejected")) {
+                        task.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
+                    }
+                    taskRepository.save(task);
+                }
+            }
+        }
+    }
+
     static boolean isDispatchableQueuedWorkForStallCheck(TaskEntity task) {
         if (task == null || task.getStatus() != TaskStatus.queued) {
+            return false;
+        }
+        if (task.getTargetContext() == null || task.getTargetContext().isUndetermined()) {
+            return false;
+        }
+        if (task.getJulesDispatchStatus() != null && task.getJulesDispatchStatus().startsWith("Dispatch rejected")) {
             return false;
         }
         TaskEntity dep = task.getDependsOn();

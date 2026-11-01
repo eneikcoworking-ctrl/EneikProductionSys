@@ -349,8 +349,8 @@ public class ProcessControlServiceTest {
         assertThat(saved.get(2).isOutOfControl()).isTrue();
         assertThat(saved.get(0).isOutOfControl()).isFalse();
 
-        // Loop-closing: no rootCausePatternId on record for f3 -> systemic defect, not a known pattern
-        verify(kaizenService, times(1)).recordSystemicDefectProposal(eq(projectId), any(), any(), any());
+        // Loop-closing: no rootCausePatternId on record for f3 -> systemic defect routed to Factory / engineer scope
+        verify(kaizenService, times(1)).recordSystemicDefectProposal(isNull(), eq("Factory"), any(), any());
     }
 
     @Test
@@ -442,7 +442,7 @@ public class ProcessControlServiceTest {
         // The out-of-control proposal for f3's excursion must surface f3's OWN metric text, not f1/f2's -
         // a human reviewer needs to know what quality target was actually missed.
         org.mockito.ArgumentCaptor<String> descriptionCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(kaizenService, times(1)).recordSystemicDefectProposal(eq(projectId), any(), any(), descriptionCaptor.capture());
+        verify(kaizenService, times(1)).recordSystemicDefectProposal(isNull(), eq("Factory"), any(), descriptionCaptor.capture());
         assertThat(descriptionCaptor.getValue()).contains("Zero unauthorized document access incidents");
     }
 

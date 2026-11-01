@@ -779,6 +779,81 @@ class ContinuousOrchestrationServiceTest {
         verify(projectFlowService).requeueUntestedTasksOnRestoredCapacity();
     }
 
+    @Test
+    void isDispatchableQueuedWorkRequiresValidTargetContextAndNonRejectedStatus() {
+        ProjectEntity project = project(UUID.randomUUID(), "test-project", ProjectStatus.active);
+
+        TaskEntity validTask = task(project, TaskStatus.queued);
+        validTask.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
+        assertTrue(ContinuousOrchestrationService.isDispatchableQueuedWorkForStallCheck(validTask));
+
+        TaskEntity undeterminedTask = task(project, TaskStatus.queued);
+        undeterminedTask.setTargetContext(com.eneik.production.models.persistence.TargetContext.UNDETERMINED);
+        org.junit.jupiter.api.Assertions.assertFalse(ContinuousOrchestrationService.isDispatchableQueuedWorkForStallCheck(undeterminedTask));
+
+        TaskEntity nullTargetTask = new TaskEntity();
+        nullTargetTask.setStatus(TaskStatus.queued);
+        nullTargetTask.setTargetContext(null);
+        org.junit.jupiter.api.Assertions.assertFalse(ContinuousOrchestrationService.isDispatchableQueuedWorkForStallCheck(nullTargetTask));
+
+        TaskEntity rejectedTask = task(project, TaskStatus.queued);
+        rejectedTask.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
+        rejectedTask.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
+        org.junit.jupiter.api.Assertions.assertFalse(ContinuousOrchestrationService.isDispatchableQueuedWorkForStallCheck(rejectedTask));
+    }
+
+    @Test
+    void systemWorkSnapshotQuarantinesUndispatchableQueuedTasksAndAvoidsFalseStall() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+
+        ProjectEntity activeProject = project(UUID.randomUUID(), "active", ProjectStatus.active);
+
+        // Queued task with broken contract (undetermined targetContext and dispatch rejected)
+        TaskEntity brokenTask = new TaskEntity();
+        brokenTask.setId(UUID.randomUUID());
+        brokenTask.setProject(activeProject);
+        brokenTask.setStatus(TaskStatus.queued);
+        brokenTask.setTargetContext(com.eneik.production.models.persistence.TargetContext.UNDETERMINED);
+        brokenTask.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(activeProject));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(activeProject.getId())).thenReturn(List.of(brokenTask));
+        when(wishlistRepository.findByProjectId(activeProject.getId())).thenReturn(List.of());
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository,
+                mock(ProjectFlowService.class),
+                mock(AccountRepository.class),
+                julesSessionRepository,
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                wishlistRepository,
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                taskRepository,
+                new SystemProgressTracker(),
+                mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class)
+        );
+
+        ContinuousOrchestrationService.SystemWorkSnapshot snapshot = service.systemWorkSnapshot();
+
+        assertEquals(0, snapshot.queuedTasks());
+        org.junit.jupiter.api.Assertions.assertFalse(snapshot.hasActionableWork());
+        assertEquals(TaskStatus.blocked, brokenTask.getStatus());
+        verify(taskRepository).save(brokenTask);
+    }
+
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {
         ProjectEntity project = new ProjectEntity();
         project.setId(id);
@@ -792,6 +867,7 @@ class ContinuousOrchestrationServiceTest {
         task.setId(UUID.randomUUID());
         task.setProject(project);
         task.setStatus(status);
+        task.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
         return task;
     }
 

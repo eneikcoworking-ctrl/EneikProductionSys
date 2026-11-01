@@ -169,6 +169,46 @@ public class KaizenServiceTest {
         assertThat(captor.getValue().getSource())
                 .isEqualTo(com.eneik.production.models.persistence.WishlistSource.design_review_concern_pattern);
         assertThat(captor.getValue().getStatus()).isEqualTo(com.eneik.production.models.persistence.WishlistStatus.pending);
+        assertThat(captor.getValue().getTargetContext())
+                .isEqualTo(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
+        assertThat(captor.getValue().getContent())
+                .doesNotContain("u-chart", "Western Electric", "rootCausePatternId");
+    }
+
+    @Test
+    void reviewConcernsWithoutRootCausePatternIdDoesNotCreateProductWishlistAndRoutesToEngineerScope() {
+        // Incident 2026-11-01 replication: reviewConcerns with missing rootCausePatternId is a factory/classifier defect,
+        // not product deliverable work. Must NOT create WishlistEntity in product project, must route to factory scope.
+        UUID projectId = UUID.randomUUID();
+        KaizenProposal proposal = kaizenService.recordSystemicDefectProposal(projectId, "designer-eneik",
+                "u-chart out of control: reviewConcerns (epic abc-123)",
+                "Stream 'reviewConcerns' u=0.9000 outside [0.1000, 0.5000] (centerline 0.3000) [Western Electric: 8_CONSECUTIVE_SAME_SIDE] at epic sequence #3. "
+                        + "No underlying defect event carries a rootCausePatternId yet - candidate new invariant pattern, uncategorized.");
+
+        boolean applied = kaizenService.applyMicroStep(proposal.getId());
+
+        assertThat(applied).isFalse();
+        org.mockito.Mockito.verifyNoInteractions(wishlistRepository);
+
+        // Verify routed to factory scope (projectId = null, projectName = "Factory")
+        java.util.Collection<KaizenProposal> factoryProposals = kaizenService.getFactoryProposals();
+        assertThat(factoryProposals).anyMatch(p -> p.getId().equals(proposal.getId()) && p.getProjectId() == null);
+    }
+
+    @Test
+    void productWishlistContentPurgesInternalSixSigmaAndClassifierJargon() {
+        String rawDesc = "Stream 'reviewConcerns' u=0.8500 outside [0.1000, 0.4000] (centerline 0.2500) "
+                + "[Western Electric: 8_CONSECUTIVE_SAME_SIDE] at epic sequence #4. "
+                + "The epic's own quality target: \"Refined modal dialogue styling\".";
+        String sanitized = kaizenService.sanitizeProductWishlistContent(rawDesc, "designer-eneik");
+
+        assertThat(sanitized).doesNotContain("u-chart");
+        assertThat(sanitized).doesNotContain("Western Electric");
+        assertThat(sanitized).doesNotContain("rootCausePatternId");
+        assertThat(sanitized).doesNotContain("centerline");
+        assertThat(sanitized).doesNotContain("outside [");
+        assertThat(sanitized).doesNotContain("epic sequence #");
+        assertThat(sanitized).contains("Refined modal dialogue styling");
     }
 
     /**

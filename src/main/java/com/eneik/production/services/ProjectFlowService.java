@@ -1663,9 +1663,44 @@ public class ProjectFlowService {
             return null;
         }
         return wishlistRepository.findById(task.getSourceWishlistId())
-                .filter(wishlist -> wishlist.getSource() == WishlistSource.coverage_gap || wishlist.getSource() == WishlistSource.client)
-                .map(wishlist -> TargetContext.PRODUCT_CODEBASE)
+                .map(wishlist -> {
+                    if (wishlist.getTargetContext() != null && !wishlist.getTargetContext().isUndetermined()) {
+                        return wishlist.getTargetContext();
+                    }
+                    if (isProductWishlistSource(wishlist.getSource())) {
+                        return TargetContext.PRODUCT_CODEBASE;
+                    }
+                    return null;
+                })
                 .orElse(null);
+    }
+
+    static boolean isProductWishlistSource(WishlistSource source) {
+        if (source == null) {
+            return false;
+        }
+        return switch (source) {
+            case client,
+                 coverage_gap,
+                 design_review_concern_pattern,
+                 design_system_falsification,
+                 runtime_observability_gap,
+                 dockerfile_missing_build_stage,
+                 frontend_not_deployed,
+                 datastore_artifacts_disagree,
+                 frontend_unbacked_records,
+                 product_not_launchable,
+                 delivery_refuted,
+                 auditor_unresolved,
+                 delivery_never_reached_main,
+                 role,
+                 role_mismatch_followup,
+                 chaotic_debt,
+                 self_falsification,
+                 onboarding_finding,
+                 philosophical_falsification -> true;
+            case gemini_observer, closeout_abandoned -> false;
+        };
     }
 
     /**
@@ -6633,7 +6668,8 @@ public class ProjectFlowService {
                     task.setTargetContext(derived);
                     taskRepository.save(task);
                 } else {
-                    log.warn("Task {} has undetermined targetContext; skipping dispatch until target context is resolved", task.getId());
+                    log.warn("Task {} has undetermined targetContext and cannot be derived; blocking dispatch and setting status blocked", task.getId());
+                    task.setStatus(TaskStatus.blocked);
                     task.setJulesDispatchStatus("Dispatch rejected: target context is undetermined");
                     taskRepository.save(task);
                     continue;

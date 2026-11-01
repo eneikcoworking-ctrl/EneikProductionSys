@@ -675,6 +675,14 @@ class ProjectFlowServiceTest {
                 service.deriveTargetContextFromSourceWishlist(fromClient),
                 "a client wishlist resolves to the product codebase");
 
+        // Kaizen design review concern pattern resolves to product codebase
+        TaskEntity fromDesignConcern = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.design_review_concern_pattern);
+        org.junit.jupiter.api.Assertions.assertEquals(
+                com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE,
+                service.deriveTargetContextFromSourceWishlist(fromDesignConcern),
+                "a design_review_concern_pattern wishlist resolves to the product codebase");
+
         TaskEntity withoutWishlist = new TaskEntity();
         withoutWishlist.setId(UUID.randomUUID());
         org.junit.jupiter.api.Assertions.assertNull(

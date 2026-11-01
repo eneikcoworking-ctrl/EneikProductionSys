@@ -1,13 +1,8 @@
-# Состояние Ведущего инженера L2 (Синхронизировано 2026-10-24 01:01 UTC)
+# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-01 20:26 UTC)
 
-- **Канонический контур гомеостатической автономии Деннетта (LOCKED):**
-  - Архитектура «Множественных набросков» Деннетта без картезианского театра полностью защищена.
-  - 19 канонических файлов и тестов заблокированы от любых модификаций или откатов.
-- **Исполнение Финального Пакетного Инлайн-Замера №4 (16 из 16 блоков в `docs/FACTORY_MECHANISMS.md`):**
-  - Замерено поведение в рантайме Docker Maven 3.9.9 Temurin-21 (`-m 2g`, кэш `/root/.m2`): **88/88 тестов green** в 13 тест-сьютах (`BUILD SUCCESS`, 0 failures, 0 errors, 0 skipped).
-  - Строго соблюдён инвариант Ступени 4: **0 строк изменений рабочего Java-кода и скриптов** (`src/main`).
-  - Все 16 блоков (`KaizenService` 2 блока, `DesignShopCycleEntity`, `DesignShopCycleRepository`, `DesignShopOrchestrationService`, `DesignSystemFalsificationService`, `DesignDriftMonitorService`, `TaskEntity.initializeStatus`, `TaskRepository.compareAndSetStatus`, `TaskRepository.writeStatusUnlessTerminal`, `V42`, `V44`, `V45`, `V126`, `V59`, `V79`) точечно снабжены инлайн-свидетельством `*Живое, 2026-10-24 UTC:*` с закрытием Ступени 4 (status: ideal).
-  - Сводные блоки в хвост файла не добавлялись.
-- **Статус каталога механизмов фабрики:**
-  - Закрыто в текущем пакете: 16 блоков. Все 67 блоков каталога покрыты замерами Ступени 4.
-  - Каталог `docs/FACTORY_MECHANISMS.md` достиг **100% готовности к аудиту (`AUDIT_READY`)** без единого пропущенного механизма.
+- **Выполнение Work Order Механизма №5 (Демаркация Kaizen и защита суверенитета продукта):**
+  - **Демаркация Kaizen (`KaizenService`, `ProcessControlService`):** Внедрён сепаратор скоупов `isProductQualityScope`. Сигналы без `rootCausePatternId` и цеховые дефекты маршрутизируются строго в вишлист инженера/фабрики (`projectId = null`, `projectName = "Factory"`). Запрещено создание продуктовых вишлистов по цеховым сбоям.
+  - **Санация вишлистов продукта (`sanitizeProductWishlistContent`):** Текст продуктового вишлиста полностью очищается от внутреннего жаргона (`rootCausePatternId`, `u-chart`, `Western Electric`, `sequence index`, `centerline`).
+  - **Полнота вывода целевого контекста (`ProjectFlowService`):** `deriveTargetContextFromSourceWishlist` детерминированно выводит `TargetContext.PRODUCT_CODEBASE` для всех продуктовых источников (включая `design_review_concern_pattern`); неразрешимые задачи изолируются в `TaskStatus.blocked`.
+  - **Антифриз оркестратора (`ContinuousOrchestrationService`):** `isDispatchableQueuedWorkForStallCheck` фильтрует задачи с нарушенным контекстом (`UNDETERMINED`, `Dispatch rejected`), а `quarantineUndispatchableQueuedTasks` переводит их в `blocked`, предотвращая ложный `SYSTEM STALLED`.
+  - **Верификация в Docker Maven Temurin-21 (-m 2g):** 82/82 теста green (`KaizenServiceTest`, `ContinuousOrchestrationServiceTest`, `ProcessControlServiceTest`, `ProjectFlowServiceTest`) — `BUILD SUCCESS`.
