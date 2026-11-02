@@ -2776,6 +2776,22 @@ public class JulesDispatchService {
 
         compilerTask.setRetryCount(attempts + 1);
         taskRepository.save(compilerTask);
+
+        if ("LOCAL_AGY".equalsIgnoreCase(session.getWorkerEngine())
+                || "DEEPSEEK".equalsIgnoreCase(session.getWorkerEngine())) {
+            prOpt.ifPresent(pr -> gitHubPullRequestService.closeSinglePullRequest(
+                    compilerTask.getProject(), pr, "wishlist compiler plan rejected: " + rejection));
+            closeSessionAsNoCode(session, "Compiler plan rejected (" + rejection + "); re-queuing for fresh worktree attempt.");
+            if (claimService.hasActiveClaim(compilerTask.getId())) {
+                claimService.releaseClaimToQueue(compilerTask.getId(), "Compiler plan rejected: " + rejection);
+            }
+            recordCompilerRejection(compilerTask, "Plan rejected (attempt " + (attempts + 1) + "/"
+                    + compilerRetryCeiling(compilerTask) + "): " + rejection);
+            log.warn("Wishlist compiler plan rejected for {} wishlist(s) (attempt {}/{}) - {}; re-queued sovereign worktree session",
+                    wishlists.size(), attempts + 1, compilerRetryCeiling(compilerTask), rejection);
+            return;
+        }
+
         session.setStatus("revising");
         julesSessionRepository.save(session);
 

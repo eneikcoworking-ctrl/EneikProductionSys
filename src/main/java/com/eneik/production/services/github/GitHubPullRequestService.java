@@ -1419,9 +1419,7 @@ public class GitHubPullRequestService {
                 || externalSessionId.isBlank() || "skipped".equals(externalSessionId)) {
             return false;
         }
-        String token = externalSessionId.startsWith("sessions/")
-                ? externalSessionId.substring("sessions/".length())
-                : externalSessionId;
+        String token = extractCanonicalSessionToken(externalSessionId);
         return !token.isBlank() && pullRequest.headRef().contains(token);
     }
 
@@ -1905,12 +1903,23 @@ public class GitHubPullRequestService {
     }
 
     private String sessionToken(String externalSessionId) {
+        return extractCanonicalSessionToken(externalSessionId);
+    }
+
+    private static String extractCanonicalSessionToken(String externalSessionId) {
         if (externalSessionId == null || externalSessionId.isBlank()) {
             return "";
         }
-        return externalSessionId.startsWith("sessions/")
-                ? externalSessionId.substring("sessions/".length())
-                : externalSessionId;
+        if (externalSessionId.startsWith("sessions/")) {
+            return externalSessionId.substring("sessions/".length());
+        }
+        if (externalSessionId.startsWith("local-agy-")) {
+            return externalSessionId.substring("local-agy-".length());
+        }
+        if (externalSessionId.startsWith("deepseek-")) {
+            return externalSessionId.substring("deepseek-".length());
+        }
+        return externalSessionId;
     }
 
     private String encode(String value) {
@@ -2027,6 +2036,9 @@ public class GitHubPullRequestService {
                     .build();
             HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 201) {
+                if (project.getId() != null) {
+                    projectSnapshotCache.remove(project.getId());
+                }
                 JsonNode pr = objectMapper.readTree(response.body());
                 return Optional.of(new GitHubPullRequest(
                         pr.path("html_url").asText(""), pr.path("number").asInt(), pr.path("title").asText(""),

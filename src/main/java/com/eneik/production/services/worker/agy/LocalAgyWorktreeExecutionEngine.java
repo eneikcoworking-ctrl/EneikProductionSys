@@ -93,8 +93,9 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
         if (account != null) {
             session.setAccountId(account.getId());
         }
+        UUID worktreeToken = UUID.randomUUID();
         session.setWorkerEngine("LOCAL_AGY");
-        session.setExternalSessionId("local-agy-" + UUID.randomUUID());
+        session.setExternalSessionId("local-agy-" + worktreeToken);
         session.setStatus("queued");
         session.setBelnapStatus(BelnapStatus.NEITHER.name());
         session.setCreatedAt(Instant.now());
@@ -110,7 +111,7 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
         try {
             baseRepo = worktreeManager.resolveBaseRepository(task.getProject());
             String startingBranch = resolveStartingBranch(task);
-            worktreePath = worktreeManager.createWorktree(taskId, baseRepo, startingBranch);
+            worktreePath = worktreeManager.createWorktree(worktreeToken, baseRepo, startingBranch);
 
             session.setWorktreePath(worktreePath.toString());
             session.setStatus("running");
@@ -188,7 +189,7 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
             }
 
             if (success) {
-                String workerBranch = "worker/" + taskId;
+                String workerBranch = "worker/" + worktreeToken;
                 worktreeManager.commit(worktreePath, "feat(" + (task.getTitle() != null ? task.getTitle() : "worker") + "): implement task " + taskId);
                 try {
                     worktreeManager.push(worktreePath, workerBranch);
