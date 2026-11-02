@@ -1,351 +1,181 @@
-# ИМПЕРАТИВНЫЙ НАРЯД ДЛЯ L2 (ИНЖЕНЕР): ВЕРХОВЕНСТВО КЛИЕНТСКОЙ ЦЕННОСТИ И КОНТУР КОГНИТИВНОЙ ОЧИСТКИ (COGNITIVE FLUSH)
-**Дата:** 2026-10-27 07:05 UTC+4 (03:05 UTC)  
-**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1)  
+# БОЕВОЙ НАРЯД ДЛЯ L2 (ИНЖЕНЕР): ИНКОРПОРАЦИЯ СУВЕРЕННОГО ДИЗАЙНЕРА В ЯДРО ФАБРИКИ (ВЗАМЕН GOOGLE STITCH)
+**Дата:** 2026-11-02 01:35 UTC  
+**От:** Оператор Дмитрий Ефремов & Менеджер-философ (L1/L3)  
 **Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #1)
+**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #1 — REPLACING STITCH WITH SOVEREIGN DESIGNER)  
+**Контекст:** Проект `designer-eneik` (ef264aea-dd30-46e2-bfac-e7e40918d5ab) успешно принят оператором (`DELIVERED`, HTTP 200). Полнофункциональный код Суверенного Дизайнера готов к инкорпорации из `/tmp/designer-eneik`.
 
 ---
 
-## 1. ФУНДАМЕНТАЛЬНЫЙ ПРИНЦИП: ЭЛИМИНАЦИЯ КАРТЕЗИАНСКОГО ТЕАТРА И ПРИЗРАКА В МАШИНЕ
-Вся фабрика строится строго на материализме и теории сознания Деннетта, Кларка и Хёрли.
-Категорически запрещено создавать искусственные надстройки («призрак в машине»), которые пытаются вручную зарегулировать конвейер и замораживают задачи. Система обязана работать как естественный самосогласованный кибернетический контур.
+## 1. ЭПИСТЕМИЧЕСКИЙ ФУНДАМЕНТ И УСТРАНЕНИЕ СИСТЕМНОГО ДЕФЕКТА
+
+### 1.1. Ликвидация ложной дихотомии и внешней зависимости (Деннетт: «Cranes, not Skyhooks»)
+До сегодняшнего дня в ядре Фабрики (`DesignAssetService.java:378-386`) сохранялась фатальная зависимость от внешнего платного провайдера Google Stitch (`stitch.googleapis.com`):
+```java
+if (requireImplementableHtml) {
+    // Reached only when Stitch is disabled or unconfigured. The caller asked for HTML and the only
+    // producer of HTML is not available...
+    log.warn("DesignAssetService: implementable HTML required but Stitch is not enabled/configured; "
+            + "no image fallback for project {}", project == null ? "unknown" : project.getId());
+    return DesignAssetResult.unavailable(
+            "Implementable HTML required, but Stitch (the only HTML producer) is not enabled or configured.");
+}
+```
+Это порождало непрерывный цикл ретраев в `DesignShopOrchestrationService`:
+`design generation unavailable for project ... retrying next tick`.
+Фабрика ждала «небесного крюка» (Skyhook) в виде платного ключа Google Cloud с кредитной картой ($8 за сессию).
+
+### 1.2. Факт физического артефакта (Витгенштейн & ТЗ Раздел 3)
+Проект `designer-eneik` создал и доказал работоспособность автономного инженерного крана (Crane):
+- 100% суверенная генерация сертифицированного HTML5 + Tailwind CSS (`mockup.html`);
+- Зрительный контур (`PlaywrightVisionHarness`) с двухвьюпортным захватом (Desktop 1440px / Mobile 375px);
+- Зрительный аудитор (`VisionAuditLoop`) с деонтическим заслоном BARCAN-TAG-11 (нулевая толерантность к псевдо-Leica, GPS и фиолетовым клише);
+- Себестоимость генерации: **0 рублей 00 копеек**.
+
+**Императив:** Фабрика обязана инкорпорировать этот движок в ядро и сделать его основным генератором имплементируемого HTML.
 
 ---
 
-## 2. МЕХАНИЗМ №1: БЕЗУСЛОВНЫЙ ПРИОРИТЕТ КЛИЕНТСКОЙ ЦЕННОСТИ (TOC CLIENT VALUE PRIMACY)
+## 2. АРХИТЕКТУРА ИНКОРПОРАЦИИ В ЯДРО ФАБРИКИ
 
-### 2.1. Инвариант деонтического превосходства (`D006: CLIENT_VALUE_DOMINANCE`)
-* **Суть дефекта прошлого:** Из 110 задач проекта 62% были рождены дизайн-ролью на полировку мокапа (`mockup.html`), который даже не поставлялся клиенту. Пул Jules сжигал ресурсы на внутреннюю бюрократию, а задачи ТЗ клиента мертво стояли в очереди.
-* **Требование к L2 в `JulesDispatchService` и `ProjectFlowService`:**
-  1. **Приоритет магистрали (Priority Preemption):** Задачи источника `WishlistSource.client` обладают абсолютным квантовым приоритетом. Пока в очереди есть хотя бы одна продуктовая задача ТЗ клиента, 100% свободных слотов пула Jules (из 7 доступных) выделяются исключительно под продуктовый код (`src/main`, `src/components`).
-  2. **TOC-квота на ролевые задачи (Kaizen Throttling):** Задачи источника `WishlistSource.role` (дизайн-полировка, мета-ревью) классифицируются как фоновый кайдзен. На них разрешено тратить **не более 1 слота пула**, и только при абсолютно пустой клиентской очереди.
-  3. **Запрет самопорождения на ветке `APPROVED`:** В `processDesignVerdict()` при `status == APPROVED` категорически **запретить** создание новых `WishlistEntity` по консернам. Консерны одобренного дизайна фиксируются как информационные заметки, но не превращаются в блокирующие задачи.
+### 2.1. Пакетная структура: `com.eneik.production.services.design.sovereign.*`
+Все компоненты из `/tmp/designer-eneik/src/main/java/com/eneik/generated/designer/` переносятся в ядро `EneikProductionSys`:
 
----
+```
+src/main/java/com/eneik/production/services/design/sovereign/
+├── domain/
+│   ├── ProductArchetype.java
+│   ├── LayoutGridPattern.java
+│   ├── DesignTokenSet.java
+│   ├── SynthesizedDomDocument.java
+│   ├── ViewportType.java
+│   ├── ViewportCapture.java
+│   ├── DeonticGateResult.java
+│   ├── CorrectionDirective.java
+│   ├── VisionAuditReport.java
+│   ├── SynthesisStatus.java
+│   └── SynthesisSession.java
+├── exception/
+│   └── RenderTimeoutException.java
+├── telemetry/
+│   ├── TelemetryEventType.java
+│   ├── TelemetryEvent.java
+│   ├── DesignTelemetryCollector.java
+│   ├── InMemoryDesignTelemetryCollector.java
+│   ├── DesignTelemetrySummary.java
+│   └── ArchetypeTelemetrySummary.java
+└── service/
+    ├── DesignTokenCompiler.java
+    ├── DefaultDesignTokenCompiler.java
+    ├── LayoutPatternRegistry.java
+    ├── DefaultLayoutPatternRegistry.java
+    ├── SovereignProjectAssetResolver.java (адаптация интерфейса DesignAssetService из /tmp)
+    ├── DefaultSovereignProjectAssetResolver.java
+    ├── SemanticLayoutSynthesizer.java
+    ├── DefaultSemanticLayoutSynthesizer.java
+    ├── PlaywrightVisionHarness.java
+    ├── DefaultPlaywrightVisionHarness.java
+    ├── VisionAuditLoop.java
+    ├── DefaultVisionAuditLoop.java
+    ├── PrimaryAssetManagementSystem.java
+    ├── SovereignDesignSynthesisService.java
+    └── DefaultSovereignDesignSynthesisService.java
+```
 
-## 3. МЕХАНИЗМ №2: КОНТУР КОГНИТИВНОЙ ОЧИСТКИ (COGNITIVE FLUSH / ATTENTION HYGIENE)
-
-Оператор Дмитрий Ефремов утвердил внедрение механизма «когнитивной очистки» — сброса всего мусора и шума, который отвлекает агентов и рассеивает их контекстное внимание.
-
-### 3.1. Три уровня когнитивной очистки:
-
-#### Уровень 1: Сброс контекстного шума в промптах агентов (Prompt Tabula Rasa)
-* **Проблема:** При повторных попытках решения задачи (retry) агент часто получает накопленную историю прошлых ошибок, логи сбоев и споры с оркестратором. Агент начинает «галлюцинировать вокруг ошибки», а не решать задачу.
-* **Решение:** При перезапуске сессии контур когнитивной очистки производит **Prompt Flush**:
-  - Стирается весь шлейф предыдущих диалоговых реплик и оправданий.
-  - Агенту передается кристально чистый контекст: **Атомарная цель (Atomic Goal) + Критерии приемки (DoD) + Актуальный diff ветки `origin/main`**.
-  - Никакого когнитивного мусора из прошлых итераций.
-
-#### Уровень 2: Сброс файлового мусора (Workspace Hygiene Flush)
-* **Проблема:** Генерация локальных отчетов (`playwright-report`, `coverage`, `test-results`, `node_modules`, `.next`) засоряет рабочую директорию. Агент делает `git status`, пугается сотен сгенерированных файлов, коммитит их и попадает в бан гигиены репозитория.
-* **Решение:** Перед запуском сессии агента и сразу после ее завершения запускается автоматический хук очистки:
-  `git clean -fdX --exclude=!node_modules` (или целевое удаление временных отчетов). В рабочей области агента не должно быть ни одного отвлекающего временного артефакта.
-
-#### Уровень 3: Сброс сессионного шума (Zombie & Dormant Review Flush)
-* **Проблема:** 24 задачи fallback-ревью висели в очереди на проверку PR, которые уже были смерджены часами ранее.
-* **Решение:** Механизм **Cascading Terminal Flush**:
-  - Как только продуктовая фича смерджена в `main` и подтверждена системным тестом, все сопутствующие вспомогательные задачи ревью, запросы мнений и драфты вишлистов мгновенно аннулируются (`FLUSHED_AS_SUPERSEDED`).
-  - Система не тратит ни секунды внимания агентов на то, что уже потеряло актуальность.
-
-
-
-## 4. МЕХАНИЗМ №3: ЭТАП ОЧИСТКИ ДИЗАЙНА ОТ ВИЗУАЛЬНОГО ШУМА (VISUAL NOISE DETOXIFICATION GATE)
-
-Оператор Дмитрий Ефремов ввел категорический запрет на псевдотехнический и декоративный визуальный мусор:
-
-### 4.1. Деонтический гейт BARCAN-TAG-11 (CLIENT-PERCEPTION & SENSORY PURITY):
-* **КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО (Forbidden):**
-  1. **Псевдотехнические надписи на фото/портретах:** Запрет любых характеристик оптики (LEICA, 50MM, f/1.4), ISO, фейковых GPS-координат, псевдостатусов (STATUS: ACTIVE, SYS.01), технических городов и дат на медиа-контенте.
-  2. **Искажающие монохромные фильтры:** Запрет на агрессивную постобработку студийных портретов (grayscale, contrast-125). Человек должен подаваться естественно и аутентично.
-  3. **Псевдофутуристический декор:** Запрет на декоративные видоискатели, фальшивые угловые скобки (corner brackets), рамки со штрих-пунктиром вокруг живых фотографий.
-  4. **Фальшивая пульсация:** Запрет на nimate-pulse, если элемент не отображает реальный физический процесс (например, активный аудиострим).
-* **ОБЯЗАТЕЛЬНО (Obligatory):**
-  1. Чистая пространственная архитектура (Bauhaus / Mies van der Rohe).
-  2. Достоинство студийного портрета: лаконичный контейнер (
-rounded-2xl, чистая микро-граница, естественная мягкая глубина).
-  3. Типографическая выразительность и функциональный минимализм.
-
-### 4.2. Место в конвейере Stitch Design Workflow:
-В docs/STITCH_DESIGN_WORKFLOW.md закрепляется **Шаг 2.5: Visual Noise Detoxification**. Макет Stitch не допускается к декомпозиции на Svelte-компоненты Джулсами, пока автоматический фильтр или ревьюер не вычистит псевдотехнические плашки и фильтры.
-
----
-
-## 5. МЕХАНИЗМ №4: СОБСТВЕННЫЙ СУВЕРЕННЫЙ ДИЗАЙН-АГЕНТ ФАБРИКИ (SOVEREIGN MULTIMODAL DESIGN SYNTHESIZER)
-
-Оператор Дмитрий Ефремов дал прямое обязывающее указание: **построить собственного дизайн-агента без платного Stitch силами самой Фабрики**. Фабрика обязана быть полностью автономной и генерировать UI/UX мирового уровня (Stripe, Linear, Apple, Vercel, Swiss Bauhaus) для любых продуктов с нулевыми затратами на внешние API.
-
-### 5.1. Архитектурная отвязка от StitchClient в `DesignAssetService.java`:
-- При запросе `requireImplementableHtml == true` и отсутствии/отключении `stitch_api_key`, `DesignAssetService` **запрещено** выбрасывать `DesignAssetResult.unavailable(...)`, загоняя конвейер в бесконечный retry.
-- Вызов автоматически маршрутизируется во встроенный механизм Фабрики: **`SovereignDesignSynthesisService`**.
-
-### 5.2. Инварианты Суверенного Дизайн-Агента:
-1. **Domain-Aware Art Direction (4 архетипа продукта):**
-   - **DevTools / SaaS (Linear, Vercel):** Интерактивная консоль/код, архитектурные схемы, плотная матричная сетка, моноширинные акценты. Без портретов людей.
-   - **FinTech / Enterprise (Stripe, Mercury):** Высокоточные субпиксельные финансовые поверхности, микро-границы `border-white/[0.07]`, строгие таблицы.
-   - **Founder / Editorial (McKinsey, Monocle):** Журнальная асимметрия, мощная типографика `clamp(...)`. Фото основателя/клиента используются **ТОЛЬКО ЕСЛИ** предоставлены в ТЗ (`assets/`). Если фото нет — не выдумывать.
-   - **Consumer / Hardware (Apple, Teenage Engineering):** Продукт как главный герой, тактильные микро-контроллеры, минимализм.
-2. **Тотальный Anti-Slop фильтр (Deontic Forbidden):**
-   - Запрещены фиолетово-синие градиенты (`from-purple-600 to-indigo-600`), размытые цветные тени.
-   - Запрещен псевдотехнический мусор: параметры оптики («Leica 50mm»), выдуманные GPS, псевдостатусы `STATUS: ACTIVE`.
-   - Запрещены одинаковые 3-карточные Bootstrap-сетки и синтетические AI-лица.
-3. **Мультимодальный цикл визуальной доводки (Closed-Loop Vision Feedback):**
-   - Синтез самодостаточного HTML5 + Tailwind CDN макета (`mockup.html`).
-   - Локальный рендер в Playwright на 1440px и 375px (`has_both_screenshots`).
-   - Автоматический Vision-аудит (сетка, контраст, отсутствие переполнений, соответствие токенам `E(f) >= 0.9`).
-   - До 3 автоматических итераций доводки при наличии дефектов верстки.
-4. **Результат:**
-   - Готовый, эстетически безупречный `mockup.html`, сохраняемый в `design/approved/<version>/mockup.html` и готовый к декомпозиции Джулсами.
+### 2.2. Разрешение коллизий имён и реализация сервисных бинов
+1. **Коллизия `DesignAssetService`:**  
+   В исходном `/tmp/designer-eneik` интерфейс разрешения ассетов назывался `DesignAssetService`. Чтобы исключить путаницу с фабричным `com.eneik.production.services.design.DesignAssetService`, в суверенном пакете переименовать его в **`SovereignProjectAssetResolver`** (с методом `resolveProjectAssets(String projectContextKey)`).
+2. **Spring Bean конфигурация (реализации по умолчанию):**
+   - **`DefaultDesignTokenCompiler`**: реализует компиляцию токенов для всех архетипов `ProductArchetype` (`DEV_TOOLS`, `B2B_SAAS`, `FIN_TECH`, `CONSUMER`, `CREATIVE_AGENCY`, `HEALTHCARE`, `AI_AGENTIC_SYSTEMS`) с адаптивными `clamp(...)` и dark-obsidian / slate палитрами.
+   - **`DefaultLayoutPatternRegistry`**: регистрирует композиционные сетки (Swiss 7/5, 8/4, Bento Grid 2.0).
+   - **`DefaultVisionAuditLoop`**: проводит аудит DOM-документа и скриншотов на деонтический гейт BARCAN-TAG-11 (проверка отсутствия Leica, GPS-координат, отсутствия горизонтального скролла на 375px, соблюдение типографической иерархии).
+   - **`DefaultSovereignDesignSynthesisService`**: пометить `@Service` (или `@Component`) со внедрением всех зависимостей, обеспечив полностью готовый к работе Spring Bean.
 
 ---
 
-## 6. ПОРЯДОК ВНЕДРЕНИЯ И ПРИЕМКИ ДЛЯ ИНЖЕНЕРА (L2)
-1. Разработать сервисные методы и заслоны в соответствии с утвержденными механизмами:
-   - Механизм №1: Превосходство клиентской ценности (`TOC Client Value Dominance`).
-   - Механизм №2: Контур когнитивной очистки (`Cognitive Flush`).
-   - Механизм №3: Заслон детоксикации дизайна от визуального шума (`Visual Noise Elimination Gate`).
-   - Механизм №4: Суверенный дизайн-агент Фабрики (`SovereignDesignSynthesisService`).
-   - Механизм №5: Демаркация уровней Kaizen и защита суверенитета продукта (`Kaizen Scope Separation & Stall Immunity`).
-2. Покрыть фальсификационными тестами (с проверкой невозможности повторения дедлоков `test-twenty-eighth`, сбоев генерации макетов без Stitch и 5-суточного ступора `designer-eneik`).
-3. Зафиксировать замеры в рантайме Docker Maven 3.9.9 (`-m 2g`) без превышения лимитов памяти.
-4. Доложить оператору в `docs/reports/ENGINEER_EXPLANATION_AND_PROPOSAL.md`.
+## 3. ПОДКЛЮЧЕНИЕ К КОНВЕЙЕРУ ФАБРИКИ
+
+### 3.1. Модификация `DesignAssetService.java`:
+1. Внедрить зависимость:
+   ```java
+   private final SovereignDesignSynthesisService sovereignDesignSynthesisService;
+   ```
+2. В методе `generateAsset(...)`:
+   Вместо возврата `DesignAssetResult.unavailable("Implementable HTML required, but Stitch...")`:
+   ```java
+   if (requireImplementableHtml) {
+       // Если Stitch не включен или не сконфигурирован — используем Суверенный Дизайнер Фабрики!
+       return generateViaSovereignDesigner(project, brief, assetType, context, designSystemColors, designSystemFonts);
+   }
+   ```
+3. Метод `generateViaSovereignDesigner(...)`:
+   - Определяет `ProductArchetype` по брифу/контексту (по умолчанию `ProductArchetype.DEV_TOOLS` или `B2B_SAAS`).
+   - Вызывает `sovereignDesignSynthesisService.executeDesignSynthesis(archetype, projectSlug)`.
+   - При успешном завершении (`session.getStatus().isTerminal()` и макет сгенерирован):
+     - Извлекает финальный HTML из `SynthesizedDomDocument`.
+     - Сохраняет `mockup.html`, дизайн-токены `tokens.json` и скриншоты в `assetRoot` директорию проекта.
+     - Совершает коммит в ветку репозитория через существующий метод:
+       ```java
+       String repoDraftPath = commitDraftToGitHub(project, basename, htmlBytes, screenshotBytes, ".png");
+       ```
+     - Возвращает зелёный `DesignAssetResult`:
+       ```java
+       return new DesignAssetResult(
+           true,
+           "ok",
+           "sovereign-designer",
+           imagePath,
+           metadataPath,
+           "text/html",
+           "Generated design asset via Autonomous Sovereign Designer.",
+           repoDraftPath,
+           "sovereign",
+           session.getId().toString()
+       );
+       ```
+
+### 3.2. Синхронизация с `DesignShopOrchestrationService.java`:
+- `DesignShopOrchestrationService` ожидает `result.available() == true` и наличие `repoDraftPath` с файлом `mockup.html`.
+- Суверенный дизайнер полностью удовлетворяет этот инвариант.
+- `captureBaseline` автоматически считывает `declaredColors` и `declaredFonts` из синтезированного `mockup.html`.
+- Конвейер беспрепятственно продвигает цикл в `STAGE_AWAITING_REVIEW`.
 
 ---
 
-## 7. МЕХАНИЗМ №5: ДЕМАРКАЦИЯ УРОВНЕЙ KAIZEN И ЗАЩИТА СУВЕРЕНИТЕТА ПРОДУКТА (KAIZEN SCOPE SEPARATION & STALL IMMUNITY)
-**Дата:** 2026-11-01 20:05 UTC  
-**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1/L3)  
-**Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** ОБЯЗЫВАЮЩИЙ НАРЯД АВТОНОМИИ (PRIORITY #1 HOTFIX)
+## 4. ПЕРЕНОС ТЕСТОВ И ТЕСТ-ЗАСЛОН ПОППЕРА (D008)
 
-### 7.1. Эпистемический диагноз инцидента 2026-11-01 (Root Cause & RAG Grounding)
-1. **Категориальная ошибка Райла (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`, D002 Invalid state):**
-   Фабрика спутала процесс работы собственного классификатора (`rootCausePatternId`) с объектом поставки клиенту. Внутренний цеховой сбой фабрики был ошибочно упакован в форму вишлиста продуктового репозитория.
-2. **Нарушение теории типов Рассела (`BERTRAN_RASSEL_08_CATEGORY_ERROR_SCAN`, `BERTRAN_RASSEL_09_LEVEL_OF_ABSTRACTION_LOCK`, D010 Data lineage loss):**
-   Мета-уровень (станок / фабрика) не может быть элементом объектного уровня (деталь / продукт). Возникла путаница уровней абстракции: задача на патчинг кода бэкенда фабрики (`EneikProductionSys`) была скомпилирована в проект `designer-eneik`.
-3. **Нарушение суверенного барьера (GEMINI.md §0 The Sovereign Boundary Invariant):**
-   Фабрика и продукт разделены непреодолимой границей. Продуктовый вишлист предназначен исключительно для инкремента клиентской ценности продукта, а не для авторемонта фабрики через агентов продукта.
-4. **Семантическое загрязнение (`GEORG_HENRIK_FON_VRIGT_08_CATEGORY_CONSISTENCY_WALTON`, `GARET_EVANS_02_ANCHOR_BOUND_NAME`, D001 Semantic drift):**
-   В текст клиентского артефакта (`WishlistEntity`) утёк внутренний технический жаргон («No underlying defect event carries a rootCausePatternId yet»), неприемлемый для продукта.
-5. **Системный коллапс из-за рассогласования предикатов готовности (D012 Policy contradiction):**
-   - `KaizenService.applyMicroStep` (ветка `SYSTEMIC_DEFECT`, поток `reviewConcerns`) создал вишлист с источником `design_review_concern_pattern`.
-   - Компилятор создал задачу `46531a8b-2ba1-4c43-a269-c664908069a8` с `targetContext = UNDETERMINED`.
-   - `ProjectFlowService.deriveTargetContextFromSourceWishlist` выводит контекст только для `client` и `coverage_gap`, поэтому диспетчер ежеминутно отклонял задачу: `Dispatch rejected: target context is undetermined`.
-   - `ContinuousOrchestrationService.isDispatchableQueuedWorkForStallCheck` считала эту недопустимую задачу «работой в очереди» (`queuedTasks=1`), заморозив фабрику в состоянии `SYSTEM STALLED` на 7591 минуту (~5 суток) и заблокировав запуск `FalsificationCycleService` (работающего только по `active` проектам).
+### 4.1. Перенос модульных тестов из `/tmp/designer-eneik/src/test/`:
+Перенести в `src/test/java/com/eneik/production/services/design/sovereign/`:
+- `SynthesisSessionTest.java`
+- `DesignTelemetryCollectorTest.java`
+- `DefaultPlaywrightVisionHarnessTest.java`
+- `DefaultSemanticLayoutSynthesizerTest.java`
+- `DefaultSovereignDesignSynthesisServiceTest.java`
 
-### 7.2. Императивное решение Оператора Дмитрия Ефремова:
-> «Kaizen не может писать в вишлист на уровне фабрики или поставки — только на уровне качества продукта. Уровень поставки продукта или качества самих цехов — отправлять в вишлист инженера.»
-
-### 7.3. Обязательные требования к L2 для реализации Механизма №5:
-
-#### Требование 1: Двухуровневая сепарация Kaizen в `KaizenService.java` и `ProcessControlService.java`
-1. **Строгая классификация скоупа (Scope Discriminator):**
-   - **Уровень качества продукта (Product Quality Scope):** Сюда относятся только реальные повторяющиеся дефекты пользовательского интерфейса, API или логики самого продукта. При эскалации в продуктовый вишлист:
-     - Контент обязан формулироваться исключительно в терминах продукта (без системного жаргона вроде `rootCausePatternId`, `u-chart`, `Western Electric`, `sequence index`).
-     - Обязательно выставляется явный валидный `targetContext` (`TargetContext.PRODUCT_CODEBASE`).
-   - **Уровень поставки продукта и качества цехов/фабрики (Factory / Workshop / Delivery Scope):**
-     - Отсутствие маппинга паттернов корневых причин (`rootCausePatternId`), несформированные инварианты, дефекты классификаторов, сбои конвейера поставки и оркестрации.
-     - **КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО** создавать `WishlistEntity` в БД продуктового проекта (`wishlistRepository.save(wishlist)` с `projectId != null`).
-     - Такие дефекты обязаны маршрутизироваться **исключительно в вишлист инженера**:
-       - сохраняться как фабричные пропозалы (`KaizenProposalEntity` со скоупом фабрики: `projectId = null`, `projectName = "Factory"`, `targetContext = FACTORY_CODEBASE`),
-       - либо передаваться в наряд инженера L2 (`docs/reports/PROGRAMMER_DIRECTIVES.md` / `docs/ANTIGRAVITY_QUEUE.md`).
-
-#### Требование 2: Полнота вывода целевого контекста в `ProjectFlowService.java`
-1. Метод `deriveTargetContextFromSourceWishlist` обязан детерминированно определять контекст для всех легитимных продуктовых источников вишлиста (включая `design_review_concern_pattern` и любые другие разрешённые продуктовые кайдзен-источники), возвращая `TargetContext.PRODUCT_CODEBASE`.
-2. Ни одна продуктовая задача не должна оставаться в подвешенном состоянии `targetContext = UNDETERMINED` при наличии валидного продуктового источника.
-
-#### Требование 3: Защита конвейера от зависаний (Anti-Stall Immunity) в `ContinuousOrchestrationService.java`
-1. Метод `isDispatchableQueuedWorkForStallCheck(TaskEntity task)` обязан проверять не только `task.getStatus() == TaskStatus.queued` и зависимости, но и диспетчеризуемость задачи:
-   - Задача с `targetContext == TargetContext.UNDETERMINED` или `targetContext == null` не является диспетчеризуемой (`isDispatchable == false`).
-   - Задача, перманентно получающая отказ диспетчеризации (`Dispatch rejected`), не должна учитываться как активная очередь, блокирующая признание системы зависшей или загоняющая проект в ложный `stalled`.
-2. При обнаружении недиспетчеризуемой задачи с нарушенным контрактом она должна переводиться в терминальный/изолированный статус (`TaskStatus.blocked` / `TaskStatus.failed`) с фиксацией инцидента, чтобы не блокировать весь цикл фабрики и `FalsificationCycleService`.
-
-#### Требование 4: Заслоны Поппера (Обязательные тесты-фальсификаторы)
-1. **Тест демаркации Kaizen (`KaizenServiceTest`):**
-   - Проверка: при возникновении сигнала `reviewConcerns` без `rootCausePatternId` (цеховой дефект классификатора) вишлист в продуктовом проекте **НЕ создаётся**; событие эскалируется в контур фабрики/инженера.
-2. **Тест очистки от жаргона (`WishlistSanitizationTest` / `KaizenServiceTest`):**
-   - Проверка: текст продуктового вишлиста не содержит строк вида `rootCausePatternId`, `u-chart`, `Western Electric`.
-3. **Тест антифриза (`ContinuousOrchestrationServiceTest`):**
-   - Проверка: задача с `targetContext = UNDETERMINED` не приводит к застреванию системы в `SYSTEM_STALLED` и не блокирует жизненный цикл проекта.
-
-
+### 4.2. Новый интеграционный тест-заслон: `SovereignDesignAssetIntegrationTest`
+Создать `src/test/java/com/eneik/production/services/design/SovereignDesignAssetIntegrationTest.java`:
+- Проверяет, что при `stitch_enabled=false` вызов `designAssetService.generateAsset(project, context, brief, "mockup", "fast", false, null, List.of(), List.of(), true)` возвращает `result.available() == true`, `result.model().equals("sovereign-designer")`, и что репозиторий получает физический `mockup.html`.
+- Тест фальсификации: падение при любой попытке выдать "unavailable" или вернуть изображение вместо имплементируемого HTML.
 
 ---
 
-## 8. ИМПЕРАТИВНЫЙ НАРЯД ДЛЯ L2 (ИНЖЕНЕР): ДЕТАЛЬНЫЙ ИНЖЕНЕРНЫЙ ПЛАН ЗАМЕНЫ JULES НА СУВЕРЕННЫЙ ПУЛ ВОРКЕРОВ (DEEPSEEK API + GIT WORKTREE)
-**Дата:** 2026-11-01 20:50 UTC  
-**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1/L3)  
-**Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #1) — СТРОГО ФАЗА 1 (ПРОЕКТИРОВАНИЕ, БЕЗ ИЗМЕНЕНИЯ `src/`)
+## 5. РЕГЛАМЕНТ ИСПОЛНЕНИЯ И КРИТЕРИИ ПРИЁМКИ ДЛЯ L2
 
-### 8.1. Контекст и основание
-Оператор Дмитрий Ефремов утвердил переход фабрики с внешней облачной мощности Jules на суверенную мощность: связку **DeepSeek API (V3 / R1 с Context Caching) + локальный пул воркеров (`git worktree` + headless-исполнитель)**.
-
-Менеджер-философ (L1/L3) разработал концептуальный фундамент в **Разделе 1** документа `docs/reports/DEEPSEEK_WORKER_REPLACEMENT_PLAN.md` (сохранение онтологии BARCAN-TAG-00..12, деонтический заслон Раза D006 для `fileScope`, уровни Голдмана D010, фальсификация Поппера D008, 4-значная логика Белнапа D012, ресурсосбережение под 2 vCPU / 2.2 GiB RAM).
-
-### 8.2. Задача для Ведущего инженера L2 на следующий такт:
-**Заполнить Раздел 2** документа `docs/reports/DEEPSEEK_WORKER_REPLACEMENT_PLAN.md` («Детальный инженерный план реализации») следующими спецификациями:
-
-1. **Компонентная архитектура и интерфейсы:**
-   - Интерфейс абстракции диспетчеризации (например, `WorkerDispatchService` / `ExecutionAdapter`), позволяющий прозрачно переключаться между `JulesApiClient` и `DeepSeekWorktreeAdapter`.
-   - Архитектура клиента `DeepSeekApiClient`: интеграция с OpenAI-совместимым API DeepSeek (`https://api.deepseek.com`), использование Context Caching (структурирование системного промпта под кэш префикса), выбор моделей (`deepseek-chat` / V3 vs `deepseek-reasoner` / R1 по `CynefinDomain`).
-   - Жизненный цикл ворктри в `GitWorktreeExecutionManager`: создание эфемерной директории (`git worktree add -B worker/{taskId} worktrees/task-{taskId} origin/main`), применение unified diff / patch, физическая валидация `fileScope` через `git status --porcelain`, удаление ворктри (`git worktree remove --force`).
-   - Контейнерный верификатор `LocalVerificationRunner`: запуск легковесного контейнера сборщика (Maven / Node.js) со строгим лимитом `-m 1.2g --cpus 1.5`, таймаутом до 5 минут и `Semaphore(1)` для хоста.
-
-2. **Модель данных и совместимость с БД:**
-   - Как эволюционировать `AccountEntity` (хранение API-ключей DeepSeek, лимиты TPM/RPM вместо сессионных слотов Jules).
-   - Как эволюционировать `JulesSessionEntity` (или ввести `WorkerExecutionSessionEntity`) без ломающей миграции связей с `PrReviewEntity` и `TaskEntity`.
-
-3. **Ресурсный бюджет и гарантии против зависаний (Anti-Freeze):**
-   - Расчёт потребления CPU / Heap / Disk при работе 1–2 воркеров.
-   - Гарантии соблюдения инвариантов сервера (диск строго $< 70\%$, RAM хоста $\ge 1.0$ GiB свободно).
-   - Тайм-ауты всех внешних и системных вызовов (`timeout 30s git`, `timeout 60s http`).
-
-4. **План поэтапной миграции (Migration Roadmap) и заслоны Поппера (D008):**
-   - Этап Shadow Mode / Feature Flag (`factory.worker.engine=JULES|DEEPSEEK_WORKTREE`).
-   - Список обязательных модульных и интеграционных тестов-заслонов (без выполнения в `src/` на текущем шаге).
-
-> **ВНИМАНИЕ:** До официального согласования плана Оператором Дмитрием Ефремовым **КАТЕГОРИЧЕСКИ ЗАПРЕЩАЕТСЯ** изменять код в каталоге `src/`. Работа ведётся исключительно в документе `docs/reports/DEEPSEEK_WORKER_REPLACEMENT_PLAN.md`.
-
----
-
-## 9. БОЕВОЙ ИМПЕРАТИВНЫЙ WORK ORDER ДЛЯ L2 (ИНЖЕНЕР): РЕАЛИЗАЦИЯ СУВЕРЕННОГО ПУЛА ВОРКЕРОВ DEEPSEEK + GIT WORKTREE (ФАЗЫ 2–3)
-**Дата:** 2026-11-01 22:15 UTC  
-**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1/L3)  
-**Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ — ПЛАН УТВЕРЖДЁН ОПЕРАТОРОМ ДМИТРИЕМ ЕФРЕМОВЫМ. РАЗРЕШЕНЫ ИЗМЕНЕНИЯ В `src/` И `db/migration`.
-
-### 9.1. Директива перехода к Фазам 2–3 в исходном коде
-Оператор Дмитрий Ефремов утвердил план перехода на суверенный пул воркеров DeepSeek с тремя обязательными инженерными дополнениями и пятью механизмами автономии Дэниела Деннетта.
-**Инженер L2 приступает к непосредственной реализации в Java-коде (`src/main/java`, `src/test/java`, `src/main/resources/db/migration`).**
-
-### 9.2. Архитектурный скоуп реализации Фаз 2–3:
-
-#### 1. Двухэшелонный транспорт `DeepSeekApiClient` (с Fallback-Clutch):
-- **Основной канал:** `https://api.deepseek.com/chat/completions` (OpenAI-compatible JSON API) с Context Caching (фиксированный префикс ролевой онтологии BARCAN-TAG > 1024 токенов).
-- **Резервный канал (Fallback-Clutch):** При получении сетевого таймаута, кодов `5xx` или `503 Service Unavailable` клиент автоматически переключается на настроенный резервный эндпоинт (OpenRouter / совместимый OpenAI-прокси).
-- Настраиваемые таймауты: `connectTimeout = 15s`, `readTimeout = 90s` (V3) / `180s` (R1).
-
-#### 2. Хирургический парсер патчей `DeepSeekPatchParser` с `Anti-Truncation Gate`:
-- **Двухрежимный контракт применения модификаций:**
-  - `FULL_CONTENT`: для создания новых файлов (`operation == CREATE`) и файлов малого размера (< 150 строк).
-  - `PATCH_BLOCKS` (`SEARCH_REPLACE`): массив точных пар `{ "search": "<точный фрагмент>", "replace": "<новый фрагмент>" }` для модификации существующих файлов любого размера без риска усечения по токенам.
-- **Anti-Truncation Gate (Заслон против ленивых купюр):**
-  - Детерминированное отклонение патча при обнаружении стоп-маркеров: `// ... rest of`, `// ... existing code`, `/* ... existing code ... */`, `// TODO: rest of implementation`, `/* ... */`.
-  - При срабатывании заслона выбрасывается `LazyTruncationDetectedException` и задача немедленно отправляется на рефлексию без запуска тяжёлого контейнера сборщика.
-
-#### 3. Мульти-проектный пул Bare-зеркал `GitWorktreeExecutionManager`:
-- Разрешение целевого базового репозитория:
-  - `ORCHESTRATOR_SYSTEM` $\to$ `/opt/EneikProductionSys`.
-  - Внешние клиентские проекты $\to$ локальный клон `/opt/{repoName}` либо управляемое bare-зеркало в `/var/lib/eneik/mirrors/{owner}__{repo}.git` с `git fetch origin --prune`.
-- Создание изолированного эфемерного ворктри в `/var/lib/eneik/worktrees/task-{taskId}`:
-  `git worktree add -B worker/{taskId} /var/lib/eneik/worktrees/task-{taskId} origin/{startingBranch}`.
-- Детерминированное удаление в блоке `finally`: `git worktree remove --force` и `git worktree prune`.
-
-#### 4. Деонтический заслон Раза `FileScopeEnforcer` (D006):
-- Физическая проверка `git status --porcelain` внутри ворктри перед коммитом.
-- Сверка $F_{\text{actual}} \subseteq task.getFileScope()$.
-- При любом нарушении: откат `git reset --hard && git clean -fd`, отказ в коммите и эскалация.
-
-#### 5. Попперовский фальсификатор и Слепой Арбитр `LocalVerificationRunner` (D008):
-- Гомункулярный функционализм Деннетта: LLM лишена права назначать команду проверки. Слепой Арбитр определяет команду верификации и целевые тесты по измененным классам задачи.
-- Контейнерный запуск: Docker `-m 1.2g --cpus 1.5`, таймаут до 5 минут.
-- Хостовый семафор: `Semaphore(1)` гарантирует строго одну параллельную сборку на сервере Hetzner.
-
-#### 6. Деннеттовские механизмы автономии:
-- **Множественные наброски (Multiple Drafts):** генерация альтернативного черновика при сбое первого или для сложных задач (`complex`).
-- **Анти-петля Дюэма — Куайна (Anti-Looping):** прерывание цикла при совпадении хэша диффа или сигнатуры ошибки сборщика 2 раза подряд.
-- **Эскалация узкого скоупа (`SCOPE_INSUFFICIENT`):** возврат структурированного запроса на расширение скоупа в `TechnicalLeadCompiler` без падения в `SYSTEM_STALLED`.
-- **Гомеостаз ключей и квот (Cranes, not Skyhooks):** при `401/402/429/503` аккаунт маркируется `cooldown`/`exhausted`, а задача перемаршрутизируется в `WorkerExecutionRouter` на следующий рабочий ключ/движок.
-- **Эпистемический след (Narrative Pulse):** обновление статусов на шкале Голдмана для защиты от ложного `detectStuck`.
-
-#### 7. Схема данных: Flyway-миграция `V144__add_worker_engine_and_token_accounting.sql`:
-- Расширение таблицы `accounts`: поля `provider` (`GOOGLE_JULES`, `DEEPSEEK`), `tpm_limit`, `rpm_limit`, `tokens_used_today`.
-- Обеспечение обратной совместимости с существующими сессиями и задачами.
-
-### 9.3. Обязательные попперовские тесты-заслоны (D008 Severe Tests):
-Каждая правка обязана сопровождаться падающим и зеленеющим тестом в `src/test/java/...`:
-1. `DeepSeekApiClientCacheTest`
-2. `DeepSeekPatchParserAntiTruncationTest`
-3. `DeepSeekSearchReplacePatchTest`
-4. `BareMirrorPoolLifecycleTest`
-5. `FallbackClutchTransportTest`
-6. `FileScopeEnforcerDeonticTest`
-7. `LocalVerificationRunnerResourceTest`
-8. `DennettMultipleDraftsSelectorTest`
-9. `DuhemQuineAntiLoopingTest`
-10. `DennettCranesHomeostasisTest`
-11. `BelnapStateMachineTransitionTest`
-12. `EndToEndSovereignWorkerIntegrationTest`
-
-### 9.4. Регламент исполнения тактов L2:
-- **Квантование шага:** Ровно **один механизм за такт**. Реализовать компонент $\to$ покрыть тестом $\to$ прогнать в Docker Maven:
-  ```bash
-  docker run --rm -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/app -w /app maven:3.9-eclipse-temurin-21 -m 2g mvn test -Dtest=<TargetTest>
-  ```
-- **Фиксация:** Семантический коммит в фабрику (`feat(worker): ...`, `fix(worker): ...`).
-- **Отчёт:** Краткая запись (не более 15–20 строк) в `docs/reports/PROGRAMMER_STATE.md`.
-
----
-
-## 10. БОЕВОЙ ИМПЕРАТИВНЫЙ WORK ORDER ДЛЯ L2 (ИНЖЕНЕР): БЕСПЛАТНЫЙ СУВЕРЕННЫЙ ТРАНСПОРТ LOCAL AGY CLI (`LOCAL_AGY_CLI`) С ДЕОНТИЧЕСКИМ РАЗДЕЛЕНИЕМ ТРУДА L1/L2
-**Дата:** 2026-11-02 00:35 UTC  
-**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1/L3)  
-**Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #1) — СУВЕРЕННЫЙ ПУЛ БЕЗ ВНЕШНИХ ЗАТРАТ
-
-### 10.1. Вводная директива Оператора Дмитрия Ефремова
-1. **Неприкосновенность L1 и L2 (Строгий деонтический барьер Раза D006):** Инженер (`remotecli`, L2) и Философ (`remotecli2`, L1) категорически **ЗАБЛОКИРОВАНЫ** от выполнения продуктовых задач (включая `test-fiftieth`, `dmitryefremov-site` и любые другие внешние репозитории). Они обслуживают исключительно ядро самой Фабрики (`/opt/EneikProductionSys`). Любые попытки продуктовых воркеров перехватить эти сессии или системные профили являются нарушением архитектурного суверенитета фабрики.
-2. **Нулевая себестоимость и автономность (Zero-Cost Sovereign Compute):** Поскольку платный внешний ключ DeepSeek сегодня не пополняется, фабрика не должна простаивать ни секунды. Инженер L2 подключает к суверенному контуру исполнения (`GitWorktreeExecutionManager` + `FileScopeEnforcer` D006 + `LocalVerificationRunner` D008 + автономия Деннетта) бесплатную локальную мощность, которая УЖЕ ЕСТЬ и авторизована на сервере:
-   - Свободные локальные CLI-профили `agy`: `remotecli3` (`/home/remotecli3/.local/bin/agy`) и `root` (`/usr/local/bin/agy`), возвращающие `OK` на `--model gemini-3.8-flash-medium` и `pro` без внешних API-ключей.
-   - Существующие 7 активных аккаунтов пула `GOOGLE_JULES` (`EneikGroup`, `dmitrefrem-eneik`, `dmitriieneik-rgb`, `eneikcoworking-ctrl`, `eneikdru`, `fivedmitr-sys`, `sixdmitrsix-ops`) в качестве резервного гибридного плеча (`HYBRID`).
-3. **Бесшовная совместимость с DeepSeek («Cranes, not Skyhooks»):** При появлении платного ключа `sk-...` DeepSeek он работает параллельно в том же `WorkerExecutionRouter`. При отсутствии ключа или кодах `401/402/429` система автоматически, без единой секунды простоя и без вмешательства человека, переключается на бесплатный `LOCAL_AGY_CLI` / `HYBRID` пул.
-
-### 10.2. Архитектурный скоуп реализации для L2:
-
-#### 1. Деонтический заслон неприкосновенности L1/L2 (Раз D006 / Голдман D010):
-- Создать в пакете `com.eneik.production.services.worker.security` класс `AgyWorkerSecurityGuard`:
-  ```java
-  public static final Set<String> FORBIDDEN_WORKER_USERS = Set.of("remotecli", "remotecli2");
-  ```
-- Метод `validateWorkerExecutionUser(String executionUser)`: если запрошен запуск от `remotecli` или `remotecli2` — выбрасывать `ExclusionaryReasonViolationException` с фатальным отказом и записью в журнал аудита.
-- Разрешённые профили для продуктовых воркеров: строго `remotecli3` и `root`.
-
-#### 2. Компонент синтеза `LocalAgyCliClient`:
-- Расположение: `com.eneik.production.services.worker.agy.LocalAgyCliClient`.
-- Формирование команды вызова CLI через `ProcessBuilder`:
-  - Для пользователя `remotecli3`: `sudo -u remotecli3 /home/remotecli3/.local/bin/agy --model gemini-3.8-flash-medium --dangerously-skip-permissions -p "<structured_prompt>"`
-  - Для пользователя `root`: `/usr/local/bin/agy --model gemini-3.8-flash-medium --dangerously-skip-permissions -p "<structured_prompt>"`
-  - Возможность выбора `--model gemini-3.8-pro` для задач с доменом Cynefin `complex`.
-- Передача структурированного промпта с ролевым префиксом BARCAN-TAG (как в `DeepSeekApiClient`), DoD задачи, контентом файлов и жесткой JSON-схемой ответа.
-- Таймаут выполнения процесса: до 180 секунд (`process.waitFor(180, TimeUnit.SECONDS)`).
-- Парсинг выходного JSON через существующий `DeepSeekPatchParser` (`FULL_CONTENT` / `PATCH_BLOCKS` с проверкой `Anti-Truncation Gate`).
-- Преобразование результата в единый контракт `DeepSeekResponse` (или обобщённый `SovereignResponse`).
-
-#### 3. Трёхэшелонный гомеостаз в `WorkerExecutionRouter` (Деннетт: «Cranes, not Skyhooks»):
-- Расширить `WorkerEngineType` или провайдеры суверенного движка: поддержка `LOCAL_AGY_CLI` / `LOCAL_AGY_WORKTREE`.
-- Алгоритм резолвинга и диспетчеризации:
-  1. **Эшелон 1 (Zero-Cost Local Sovereign):** `LOCAL_AGY_CLI` с профилями `remotecli3` / `root`. Нулевые затраты, прямое локальное исполнение в `git worktree`.
-  2. **Эшелон 2 (High-Reasoning API Sovereign):** `DEEPSEEK` (V3/R1 с Context Caching) — задействуется при наличии активного ключа `sk-...`. При `401/402/429` аккаунт уходит в cooldown, а задача мгновенно откатывается на Эшелон 1 (`LOCAL_AGY_CLI`).
-  3. **Эшелон 3 (External Reserve):** `GOOGLE_JULES` (7 аккаунтов пула) — подхватывает задачи при локальной перегрузке или сбоях локальных процессов.
-
-#### 4. Непрерывность и переиспользуемость суверенного контура:
-- `GitWorktreeExecutionManager`: тот же пул ворктри в `/var/lib/eneik/worktrees/task-{id}` с обязательным `finally` teardown.
-- `FileScopeEnforcer` (D006): физический pre-commit аудит `git status --porcelain`.
-- `LocalVerificationRunner` (D008): Слепой Арбитр с `Semaphore(1)` и Docker `-m 1.2g --cpus 1.5`.
-- `DuhemQuineDetector`: детектор зацикливания и обработка сигнала `SCOPE_INSUFFICIENT`.
-- `Multiple Drafts Selector`: до 2 попыток рефлексии черновиков.
-
-### 10.3. Обязательные попперовские тесты-заслоны (D008 Severe Tests):
-1. `LocalAgyCliSecurityGuardTest`: проверка безусловного падения при попытке запустить продуктовый воркер от `remotecli` или `remotecli2`.
-2. `LocalAgyCommandBuilderTest`: проверка корректности генерации аргументов CLI (`--model`, `--dangerously-skip-permissions`, timeout, экранирование промпта).
-3. `LocalAgyOutputParserTest`: проверка парсинга ответов `agy` через `DeepSeekPatchParser` с контролем `Anti-Truncation Gate`.
-4. `SovereignRouterHomeostasisTest`: проверка плавного перехода `LOCAL_AGY` $\leftrightarrow$ `DEEPSEEK` $\leftrightarrow$ `JULES` при исчерпании квот/баланса.
-
-### 10.4. Регламент исполнения тактов L2:
-- **Квантование шага:** Ровно **один механизм за такт**.
-- Запуск тестов в контейнере Maven:
-  ```bash
-  docker run --rm -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=LocalAgyCliSecurityGuardTest,SovereignRouterHomeostasisTest -DfailIfNoTests=false
-  ```
-- Семантический коммит в фабрику (`feat(worker): implement zero-cost Local Agy sovereign provider with strict L1/L2 isolation`).
-- Краткая запись (не более 15–20 строк) в `docs/reports/PROGRAMMER_STATE.md`.
+1. **Квантование шага:**
+   - Перенос классов и адаптация пакетов.
+   - Реализация бинов и интеграция в `DesignAssetService`.
+   - Запуск тестов и сборка.
+2. **Прогон тестов в изолированном Docker Maven:**
+   ```bash
+   docker run --rm -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DefaultSovereignDesignSynthesisServiceTest,DefaultSemanticLayoutSynthesizerTest,DefaultPlaywrightVisionHarnessTest,SovereignDesignAssetIntegrationTest -DfailIfNoTests=false
+   ```
+3. **Горячая пересборка и развёртывание бэкенда:**
+   ```bash
+   docker compose up -d --build backend
+   ```
+4. **Фиксация коммитом:**
+   ```bash
+   git commit -m "feat(design): incorporate Autonomous Sovereign Designer engine into factory core replacing Stitch"
+   ```
+5. **Отчёт инженера:**
+   Краткая запись в `docs/reports/PROGRAMMER_STATE.md`.
