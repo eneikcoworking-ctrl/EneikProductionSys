@@ -284,3 +284,68 @@ rounded-2xl, чистая микро-граница, естественная м
   ```
 - **Фиксация:** Семантический коммит в фабрику (`feat(worker): ...`, `fix(worker): ...`).
 - **Отчёт:** Краткая запись (не более 15–20 строк) в `docs/reports/PROGRAMMER_STATE.md`.
+
+---
+
+## 10. БОЕВОЙ ИМПЕРАТИВНЫЙ WORK ORDER ДЛЯ L2 (ИНЖЕНЕР): БЕСПЛАТНЫЙ СУВЕРЕННЫЙ ТРАНСПОРТ LOCAL AGY CLI (`LOCAL_AGY_CLI`) С ДЕОНТИЧЕСКИМ РАЗДЕЛЕНИЕМ ТРУДА L1/L2
+**Дата:** 2026-11-02 00:35 UTC  
+**От:** Оператор Дмитрий Ефремов & Архитектурный контур Antigravity / Менеджер-философ (L1/L3)  
+**Адресат:** Ведущий инженер фабрики (L2)  
+**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #1) — СУВЕРЕННЫЙ ПУЛ БЕЗ ВНЕШНИХ ЗАТРАТ
+
+### 10.1. Вводная директива Оператора Дмитрия Ефремова
+1. **Неприкосновенность L1 и L2 (Строгий деонтический барьер Раза D006):** Инженер (`remotecli`, L2) и Философ (`remotecli2`, L1) категорически **ЗАБЛОКИРОВАНЫ** от выполнения продуктовых задач (включая `test-fiftieth`, `dmitryefremov-site` и любые другие внешние репозитории). Они обслуживают исключительно ядро самой Фабрики (`/opt/EneikProductionSys`). Любые попытки продуктовых воркеров перехватить эти сессии или системные профили являются нарушением архитектурного суверенитета фабрики.
+2. **Нулевая себестоимость и автономность (Zero-Cost Sovereign Compute):** Поскольку платный внешний ключ DeepSeek сегодня не пополняется, фабрика не должна простаивать ни секунды. Инженер L2 подключает к суверенному контуру исполнения (`GitWorktreeExecutionManager` + `FileScopeEnforcer` D006 + `LocalVerificationRunner` D008 + автономия Деннетта) бесплатную локальную мощность, которая УЖЕ ЕСТЬ и авторизована на сервере:
+   - Свободные локальные CLI-профили `agy`: `remotecli3` (`/home/remotecli3/.local/bin/agy`) и `root` (`/usr/local/bin/agy`), возвращающие `OK` на `--model gemini-3.8-flash-medium` и `pro` без внешних API-ключей.
+   - Существующие 7 активных аккаунтов пула `GOOGLE_JULES` (`EneikGroup`, `dmitrefrem-eneik`, `dmitriieneik-rgb`, `eneikcoworking-ctrl`, `eneikdru`, `fivedmitr-sys`, `sixdmitrsix-ops`) в качестве резервного гибридного плеча (`HYBRID`).
+3. **Бесшовная совместимость с DeepSeek («Cranes, not Skyhooks»):** При появлении платного ключа `sk-...` DeepSeek он работает параллельно в том же `WorkerExecutionRouter`. При отсутствии ключа или кодах `401/402/429` система автоматически, без единой секунды простоя и без вмешательства человека, переключается на бесплатный `LOCAL_AGY_CLI` / `HYBRID` пул.
+
+### 10.2. Архитектурный скоуп реализации для L2:
+
+#### 1. Деонтический заслон неприкосновенности L1/L2 (Раз D006 / Голдман D010):
+- Создать в пакете `com.eneik.production.services.worker.security` класс `AgyWorkerSecurityGuard`:
+  ```java
+  public static final Set<String> FORBIDDEN_WORKER_USERS = Set.of("remotecli", "remotecli2");
+  ```
+- Метод `validateWorkerExecutionUser(String executionUser)`: если запрошен запуск от `remotecli` или `remotecli2` — выбрасывать `ExclusionaryReasonViolationException` с фатальным отказом и записью в журнал аудита.
+- Разрешённые профили для продуктовых воркеров: строго `remotecli3` и `root`.
+
+#### 2. Компонент синтеза `LocalAgyCliClient`:
+- Расположение: `com.eneik.production.services.worker.agy.LocalAgyCliClient`.
+- Формирование команды вызова CLI через `ProcessBuilder`:
+  - Для пользователя `remotecli3`: `sudo -u remotecli3 /home/remotecli3/.local/bin/agy --model gemini-3.8-flash-medium --dangerously-skip-permissions -p "<structured_prompt>"`
+  - Для пользователя `root`: `/usr/local/bin/agy --model gemini-3.8-flash-medium --dangerously-skip-permissions -p "<structured_prompt>"`
+  - Возможность выбора `--model gemini-3.8-pro` для задач с доменом Cynefin `complex`.
+- Передача структурированного промпта с ролевым префиксом BARCAN-TAG (как в `DeepSeekApiClient`), DoD задачи, контентом файлов и жесткой JSON-схемой ответа.
+- Таймаут выполнения процесса: до 180 секунд (`process.waitFor(180, TimeUnit.SECONDS)`).
+- Парсинг выходного JSON через существующий `DeepSeekPatchParser` (`FULL_CONTENT` / `PATCH_BLOCKS` с проверкой `Anti-Truncation Gate`).
+- Преобразование результата в единый контракт `DeepSeekResponse` (или обобщённый `SovereignResponse`).
+
+#### 3. Трёхэшелонный гомеостаз в `WorkerExecutionRouter` (Деннетт: «Cranes, not Skyhooks»):
+- Расширить `WorkerEngineType` или провайдеры суверенного движка: поддержка `LOCAL_AGY_CLI` / `LOCAL_AGY_WORKTREE`.
+- Алгоритм резолвинга и диспетчеризации:
+  1. **Эшелон 1 (Zero-Cost Local Sovereign):** `LOCAL_AGY_CLI` с профилями `remotecli3` / `root`. Нулевые затраты, прямое локальное исполнение в `git worktree`.
+  2. **Эшелон 2 (High-Reasoning API Sovereign):** `DEEPSEEK` (V3/R1 с Context Caching) — задействуется при наличии активного ключа `sk-...`. При `401/402/429` аккаунт уходит в cooldown, а задача мгновенно откатывается на Эшелон 1 (`LOCAL_AGY_CLI`).
+  3. **Эшелон 3 (External Reserve):** `GOOGLE_JULES` (7 аккаунтов пула) — подхватывает задачи при локальной перегрузке или сбоях локальных процессов.
+
+#### 4. Непрерывность и переиспользуемость суверенного контура:
+- `GitWorktreeExecutionManager`: тот же пул ворктри в `/var/lib/eneik/worktrees/task-{id}` с обязательным `finally` teardown.
+- `FileScopeEnforcer` (D006): физический pre-commit аудит `git status --porcelain`.
+- `LocalVerificationRunner` (D008): Слепой Арбитр с `Semaphore(1)` и Docker `-m 1.2g --cpus 1.5`.
+- `DuhemQuineDetector`: детектор зацикливания и обработка сигнала `SCOPE_INSUFFICIENT`.
+- `Multiple Drafts Selector`: до 2 попыток рефлексии черновиков.
+
+### 10.3. Обязательные попперовские тесты-заслоны (D008 Severe Tests):
+1. `LocalAgyCliSecurityGuardTest`: проверка безусловного падения при попытке запустить продуктовый воркер от `remotecli` или `remotecli2`.
+2. `LocalAgyCommandBuilderTest`: проверка корректности генерации аргументов CLI (`--model`, `--dangerously-skip-permissions`, timeout, экранирование промпта).
+3. `LocalAgyOutputParserTest`: проверка парсинга ответов `agy` через `DeepSeekPatchParser` с контролем `Anti-Truncation Gate`.
+4. `SovereignRouterHomeostasisTest`: проверка плавного перехода `LOCAL_AGY` $\leftrightarrow$ `DEEPSEEK` $\leftrightarrow$ `JULES` при исчерпании квот/баланса.
+
+### 10.4. Регламент исполнения тактов L2:
+- **Квантование шага:** Ровно **один механизм за такт**.
+- Запуск тестов в контейнере Maven:
+  ```bash
+  docker run --rm -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=LocalAgyCliSecurityGuardTest,SovereignRouterHomeostasisTest -DfailIfNoTests=false
+  ```
+- Семантический коммит в фабрику (`feat(worker): implement zero-cost Local Agy sovereign provider with strict L1/L2 isolation`).
+- Краткая запись (не более 15–20 строк) в `docs/reports/PROGRAMMER_STATE.md`.

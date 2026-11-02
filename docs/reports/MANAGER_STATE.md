@@ -1,7 +1,8 @@
-# STATUS: AUDIT_READY — 100% МЕХАНИЗМОВ И ПРЕДПИСАНИЙ ЗАВЕРЕНЫ (2026-11-01 22:15 UTC)
+# STATUS: SOVEREIGN_LOCAL_AGY_WORK_ORDER_ISSUED (2026-11-02 00:35 UTC)
 
-- Все записи и предписания в `docs/FACTORY_MECHANISMS.md` имеют живое свидетельство `*Живое:*` (остаток: 0).
-- Канонический контур автономии Деннетта защищён и неприкосновенен (376/376 green).
-- Продукт `dmitryefremov-site`: Flow Core `ACCEPTED` (`client_value_delivered`), done=324, review=0, claimed=0, queued=0.
-- План полного аудита готов в `docs/reports/AUTONOMY_AND_FULL_AUDIT_PLAN.md`.
-- Эстафета L1/L2 переведена в режим бережного автономного дозора (ожидание команды Дмитрия Ефремова на запуск полного аудита).
+- **Директива Оператора Дмитрия Ефремова:** Выдан боевой Work Order в `docs/reports/PROGRAMMER_DIRECTIVES.md` §10 на подключение бесплатного локального транспорта `LOCAL_AGY_CLI` (`remotecli3`, `root` agy) к суверенному контуру воркеров.
+- **Деонтическая неприкосновенность L1/L2 (Раз D006 / Голдман D010):** Пользователи `remotecli2` (L1 Философ) и `remotecli` (L2 Инженер) категорически заблокированы от продуктовых задач — они заняты исключительно ядром самой Фабрики.
+- **Архитектура нулевой себестоимости («Cranes, not Skyhooks»):** Интеграция `LocalAgyCliClient` с существующим контуром `GitWorktreeExecutionManager` -> `DeepSeekPatchParser` (Anti-Truncation Gate) -> `FileScopeEnforcer` (D006) -> `LocalVerificationRunner` (D008, `Semaphore(1)`).
+- **Трёхэшелонный гомеостаз:** `LOCAL_AGY_CLI` (нулевая стоимость, `gemini-3.8-flash-medium`/`pro`) + `DEEPSEEK` (при наличии ключа `sk-...`) + `GOOGLE_JULES` (7 аккаунтов пула) — конвейер защищён от простоя при нулевом балансе внешних API.
+- **Обновлена документация:** Архитектурный план дополнен Разделом 3 в `docs/reports/DEEPSEEK_WORKER_REPLACEMENT_PLAN.md`.
+- **Эстафета передана Инженеру (L2):** Ожидается реализация `LocalAgyCliClient`, `AgyWorkerSecurityGuard` и тестов-заслонов в `src/test/java/`.

@@ -610,3 +610,94 @@ timeline
 3. **Физическая защита ресурсов хоста:** Семафор `Semaphore(1)` и cgroup лимит 1.2 GiB RAM гарантируют, что сервер Hetzner никогда не испытает дефицита памяти (RAM свободно $> 1.5$ GiB).
 4. **Колоссальная экономическая эффективность:** Затраты падают до ~$0.001 за задачу благодаря аппаратному Context Caching DeepSeek, позволяя масштабировать фабрику без ограничений внешних квот.
 
+---
+
+## РАЗДЕЛ 3. БЕСПЛАТНЫЙ ЛОКАЛЬНЫЙ ТРАНСПОРТ: LOCAL AGY SOVEREIGN BRIDGE (`LOCAL_AGY_CLI`) И СТРОГАЯ ДЕОНТИЧЕСКАЯ ИЗОЛЯЦИЯ L1/L2
+
+### 3.1. Эпистемический суверенитет и устранение внешней финансовой зависимости (Деннетт: «Cranes, not Skyhooks»)
+
+Принцип Дэниела Деннетта о «подъёмных кранах вместо небесных крюков» (*Darwin's Dangerous Idea*, 1995) гласит: кибернетическая автономия обязана опираться на реально существующие материальные опоры нижнего уровня («краны»), а не зависеть от чудесных внешних сущностей («небесных крюков»).
+
+Финансовая зависимость от внешнего биллинга DeepSeek представляет собой классический «небесный крюк»: когда баланс API исчерпан или платёж задерживается, фабрика не имеет права останавливаться. 
+
+На сервере Hetzner уже развернута и авторизована мощная вычислительная база:
+- **Локальные CLI-профили `agy`:**
+  - `remotecli3` (`/home/remotecli3/.local/bin/agy`)
+  - `root` (`/usr/local/bin/agy`)
+- Профили протестированы и гарантированно возвращают `OK` на `--model gemini-3.8-flash-medium` и `--model gemini-3.8-pro` с нулевой тарификацией API!
+- Существующий пул из 7 активных аккаунтов `GOOGLE_JULES` выступает в качестве третьего эшелона подхвата.
+
+Внедрение **Local Agy Sovereign Bridge (`LOCAL_AGY_CLI`)** превращает суверенный контур воркеров в полностью автономную, нулевой стоимости систему, способную непрерывно производить код даже при полном отсутствии средств на счетах внешних провайдеров.
+
+---
+
+### 3.2. Деонтический барьер неприкосновенности L1 и L2 (Раз D006 / Голдман D010)
+
+В соответствии с Главным догматом суверенитета (GEMINI.md §0) фабрика (`EneikProductionSys`) и производимый ею продукт разделены непреодолимым барьером. 
+
+В эпистемологии Джозефа Раза (*Practical Reason and Norms*, 1975) и иерархии уровней действия Альвина Голдмана (*A Theory of Human Action*, 1970) роли обслуживания мета-системы обладают абсолютным запретом на смешение с ролями объектов первого порядка:
+1. **L1 Менеджер-философ (`remotecli2`)** и **L2 Ведущий инженер (`remotecli`)** являются мета-агентами фабрики. Они заняты исключительно развитием, аудитом и ремонтом самой Фабрики (`/opt/EneikProductionSys`).
+2. Привлечение профилей `remotecli` и `remotecli2` к выполнению задач клиентских продуктов категорически **ЗАПРЕЩЕНО**.
+3. **Физический заслон в коде (`AgyWorkerSecurityGuard`):**
+   ```java
+   public static final Set<String> FORBIDDEN_WORKER_USERS = Set.of("remotecli", "remotecli2");
+   ```
+   Любая попытка запустить продуктовый воркер под пользователем `remotecli` или `remotecli2` немедленно блокируется с выбросом `ExclusionaryReasonViolationException` и прерыванием такта.
+4. Продуктовые воркеры выполняются **СТРОГО** под выделенными профилями: `remotecli3` или `root`.
+
+---
+
+### 3.3. Архитектура `LocalAgyCliClient` и унифицированный суверенный контур
+
+Локальный CLI-бридж встраивается в уже созданный в Фазах 2–3 суверенный контур воркеров без дублирования логики:
+
+```mermaid
+flowchart TD
+    Task["<b>TaskEntity</b><br>DoD, fileScope, BARCAN-TAG"] --> Router{"<b>WorkerExecutionRouter</b><br><i>Cranes Homeostasis</i>"}
+    
+    Router -->|DeepSeek Key Active| DSClient["<b>DeepSeekApiClient</b><br>V3/R1 Context Caching"]
+    Router -->|Zero-Cost / No Key / 402| AgyClient["<b>LocalAgyCliClient</b><br><i>remotecli3 / root agy CLI</i>"]
+    Router -->|Local Congestion / Fail| JulesCloud["<b>JulesExecutionEngine</b><br>7 Google Accounts Pool"]
+    
+    DSClient --> PatchOutput["<b>JSON Response</b><br>FULL_CONTENT / PATCH_BLOCKS"]
+    AgyClient --> PatchOutput
+    
+    PatchOutput --> PatchParser["<b>DeepSeekPatchParser</b><br>Anti-Truncation Gate (D008)"]
+    PatchParser --> WorktreeMgr["<b>GitWorktreeExecutionManager</b><br>/var/lib/eneik/worktrees/task-{id}"]
+    WorktreeMgr --> DeonticGate["<b>FileScopeEnforcer</b><br>git status --porcelain (D006)"]
+    DeonticGate --> BlindArbiter["<b>LocalVerificationRunner</b><br>Semaphore(1) Docker -m 1.2g (D008)"]
+    BlindArbiter --> PushPR["<b>GitHubPullRequestService</b><br>Branch push & PR creation"]
+```
+
+- **Унифицированный формат обмена:** `LocalAgyCliClient` запрашивает у CLI результат строго в формате JSON, полностью идентичном спецификации `DeepSeekResponse` (`files`, `operation`, `content` / `search`+`replace`, `scope_status`, `missing_files`).
+- **Защита Anti-Truncation Gate:** вывод `agy` пропускается через тот же `DeepSeekPatchParser`, отсекающий любые ленивые маркеры (`// ... existing code ...`).
+- **Слепой Арбитр и Ресурсный Семафор:** запуск проверочных сборок осуществляется исключительно через `LocalVerificationRunner` с `Semaphore(1)` под защитой лимитов cgroups хоста Hetzner.
+
+---
+
+### 3.4. Трёхэшелонный гомеостаз в `WorkerExecutionRouter`
+
+В `WorkerExecutionRouter` реализуется динамический гомеостаз трёх эшелонов:
+1. **Эшелон 1 (Локальный бесплатный суверен):** `LOCAL_AGY_CLI` (профили `remotecli3`/`root`). Задействуется по умолчанию в отсутствие платных ключей DeepSeek.
+2. **Эшелон 2 (Платный высокоплотный суверен):** `DEEPSEEK` (V3/R1). Задействуется при наличии активного `deepseek_api_key` (`sk-...`). При возникновении `401`, `402 Insufficient Balance` или `429 Rate Limit` аккаунт маркируется `api_blocked`/`cooldown`, и система мгновенно без сбоя переключается на Эшелон 1 (`LOCAL_AGY_CLI`).
+3. **Эшелон 3 (Внешний резерв Jules):** `GOOGLE_JULES` (7 аккаунтов). Резервный пул подхватывает задачи при локальной перегрузке сервера или специфических ограничениях окружения.
+
+Фабрика получает **абсолютную устойчивость**: конвейер выпуска клиентской ценности не останавливается ни при сбоях внешних облаков, ни при нулевом балансе внешних API.
+
+---
+
+### 3.5. Обязательные модульные тесты-заслоны (D008 Severe Tests для Local Agy)
+
+1. **`LocalAgyCliSecurityGuardTest` (Фальсификатор деонтической изоляции L1/L2):**
+   - Эмулирует запуск продуктового воркера от имени пользователей `remotecli` и `remotecli2`.
+   - Тест падает, если вызов разрешён: гардиан обязан выбросить `ExclusionaryReasonViolationException`.
+   - Проверяет успешный пропуск для разрешённых воркер-профилей (`remotecli3`, `root`).
+2. **`LocalAgyCommandBuilderTest` (Фальсификатор генерации параметров CLI):**
+   - Проверяет формирование CLI-команды: путь к бинарнику, флаги `--model gemini-3.8-flash-medium`, `--dangerously-skip-permissions`, изоляцию промпта, корректность таймаута.
+3. **`LocalAgyOutputParserTest` (Фальсификатор интеграции парсера патчей):**
+   - Передает вывод `agy` (включая оформление в markdown-блоки ```` ```json ````) в `DeepSeekPatchParser`.
+   - Проверяет корректное извлечение блоков патча и срабатывание `Anti-Truncation Gate` при наличии ленивых купюр.
+4. **`SovereignRouterHomeostasisTest` (Фальсификатор трёхэшелонного гомеостаза):**
+   - Проверяет переключение `DEEPSEEK` $\to$ `LOCAL_AGY_CLI` при выбросе `DeepSeekQuotaExhaustedException`.
+   - Проверяет фоллбэк на `JULES` при исчерпании локальных попыток.
+
