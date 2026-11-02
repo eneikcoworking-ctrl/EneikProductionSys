@@ -197,6 +197,9 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
                 }
 
                 pullRequestUrl = openPullRequest(task, workerBranch, startingBranch);
+                if (pullRequestUrl == null || pullRequestUrl.isBlank()) {
+                    throw new RuntimeException("Failed to open GitHub Pull Request for branch " + workerBranch);
+                }
                 session.setPrUrl(pullRequestUrl);
                 session.setStatus("pr_opened");
                 session.setBelnapStatus(BelnapStatus.TRUE.name());

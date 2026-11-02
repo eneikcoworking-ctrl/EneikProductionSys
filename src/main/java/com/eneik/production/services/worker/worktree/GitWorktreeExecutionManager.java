@@ -243,8 +243,14 @@ public class GitWorktreeExecutionManager {
     }
 
     public void commit(Path worktreePath, String commitMessage) {
-        runCommand(worktreePath, 30, "git", "add", ".");
-        runCommand(worktreePath, 30, "git", "commit", "-m", commitMessage);
+        runCommand(worktreePath, 30, "git", "add", "-f", ".");
+        int exit = runCommand(worktreePath, 30,
+                "git", "-c", "user.name=Eneik Sovereign Worker",
+                "-c", "user.email=eneikdru@gmail.com",
+                "commit", "-m", commitMessage);
+        if (exit != 0) {
+            throw new RuntimeException("git commit failed with exit code " + exit + " in " + worktreePath);
+        }
     }
 
     public void push(Path worktreePath, String branch) {
@@ -255,7 +261,7 @@ public class GitWorktreeExecutionManager {
                 if (originUrl != null && originUrl.contains("github.com")) {
                     String authenticatedUrl = formatAuthenticatedGitHubUrl(originUrl, token);
                     log.info("Pushing branch {} with authenticated GitHub token", branch);
-                    int exit = runCommand(worktreePath, 60, "git", "push", "-u", authenticatedUrl, branch);
+                    int exit = runCommand(worktreePath, 60, "git", "push", "--force", "-u", authenticatedUrl, branch);
                     if (exit == 0) {
                         return;
                     }
@@ -265,7 +271,7 @@ public class GitWorktreeExecutionManager {
                 log.warn("Authenticated git push failed, falling back to standard push: {}", e.getMessage());
             }
         }
-        runCommand(worktreePath, 60, "git", "push", "-u", "origin", branch);
+        runCommand(worktreePath, 60, "git", "push", "--force", "-u", "origin", branch);
     }
 
     public String resolveGitHubToken() {
