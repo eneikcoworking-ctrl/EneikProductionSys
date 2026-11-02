@@ -38,12 +38,19 @@ public class GitWorktreeExecutionManager {
     @Value("${factory.orchestrator.repo-path:/opt/EneikProductionSys}")
     private String orchestratorRepoPath = "/opt/EneikProductionSys";
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.settings.SystemSettingsService settingsService;
+
     public GitWorktreeExecutionManager() {}
 
     public GitWorktreeExecutionManager(String worktreeBaseDir, String mirrorsBaseDir, String orchestratorRepoPath) {
         this.configuredWorktreeBaseDir = worktreeBaseDir;
         this.configuredMirrorsBaseDir = mirrorsBaseDir;
         this.orchestratorRepoPath = orchestratorRepoPath;
+    }
+
+    public void setSettingsService(com.eneik.production.services.settings.SystemSettingsService settingsService) {
+        this.settingsService = settingsService;
     }
 
     /**
@@ -262,6 +269,12 @@ public class GitWorktreeExecutionManager {
     }
 
     public String resolveGitHubToken() {
+        if (settingsService != null && settingsService.isKnownKey("github_token")) {
+            String dbToken = settingsService.effectiveValue("github_token");
+            if (dbToken != null && !dbToken.isBlank()) {
+                return dbToken.trim();
+            }
+        }
         String token = System.getenv("GITHUB_TOKEN");
         if (token != null && !token.isBlank()) {
             return token.trim();

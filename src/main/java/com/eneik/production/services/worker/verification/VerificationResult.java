@@ -10,6 +10,10 @@ public record VerificationResult(
         return new VerificationResult(true, 0, output, null);
     }
 
+    public static VerificationResult success(int exitCode, String output) {
+        return new VerificationResult(true, exitCode, output, null);
+    }
+
     public static VerificationResult failure(int exitCode, String output, String errorSignature) {
         return new VerificationResult(false, exitCode, output, errorSignature);
     }

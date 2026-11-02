@@ -35,6 +35,11 @@ public class LocalVerificationRunner {
      * Executes Popperian severe verification test on worktree under Semaphore(1) protection.
      */
     public VerificationResult runVerification(Path worktreePath, TaskEntity task) {
+        if (task != null && (task.isWishlistCompiler() || task.isCarrier())) {
+            log.info("LocalVerificationRunner: Carrier/compiler task detected for {}, skipping verification", task.getId());
+            return VerificationResult.success(0, "Carrier/compiler task — skipped Maven build");
+        }
+
         log.info("Popper Severe Test D008: acquiring host verification semaphore (available: {})...",
                 HOST_VERIFICATION_SEMAPHORE.availablePermits());
 

@@ -89,6 +89,7 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
             session.setAccountId(account.getId());
         }
         session.setWorkerEngine("DEEPSEEK_WORKTREE");
+        session.setExternalSessionId("deepseek-" + UUID.randomUUID());
         session.setStatus("queued");
         session.setBelnapStatus(BelnapStatus.NEITHER.name());
         session.setCreatedAt(Instant.now());
@@ -160,7 +161,13 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
                 }
 
                 // Epistemic Pulse: POPPER_TEST_RUNNING (Severe Test D008)
-                VerificationResult vResult = verificationRunner.runVerification(worktreePath, task);
+                VerificationResult vResult;
+                if (task != null && (task.isWishlistCompiler() || task.isCarrier())) {
+                    log.info("Task {}: Carrier/compiler task detected, skipping Docker Maven build", taskId);
+                    vResult = VerificationResult.success(0, "Carrier/compiler task — skipped Maven build");
+                } else {
+                    vResult = verificationRunner.runVerification(worktreePath, task);
+                }
 
                 if (vResult.passed()) {
                     log.info("Task {}: draft #{} passed Popperian Severe Test!", taskId, attempt);

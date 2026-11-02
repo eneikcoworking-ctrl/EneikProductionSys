@@ -33,6 +33,7 @@ class LocalAgyCliClientTest {
     @Test
     @DisplayName("Executes local agy CLI with correct user, model and parses response")
     void testSuccessfulExecution() throws Exception {
+        when(settingsService.isKnownKey("worker_local_agy_user")).thenReturn(true);
         when(settingsService.effectiveValue("worker_local_agy_user")).thenReturn("remotecli3");
 
         TaskEntity task = new TaskEntity();
@@ -86,6 +87,7 @@ class LocalAgyCliClientTest {
     @Test
     @DisplayName("Raz Deontic Gate: setting forbidden user (remotecli) aborts execution immediately")
     void testForbiddenUserAbortsExecution() {
+        when(settingsService.isKnownKey("worker_local_agy_user")).thenReturn(true);
         when(settingsService.effectiveValue("worker_local_agy_user")).thenReturn("remotecli");
 
         TaskEntity task = new TaskEntity();
@@ -93,6 +95,55 @@ class LocalAgyCliClientTest {
 
         assertThrows(ExclusionaryReasonViolationException.class, () ->
                 client.generateSolution(task, "", null, null)
+        );
+    }
+
+    @Test
+    @DisplayName("Account with remotecli name overrides default worker user")
+    void testExecutionUserFromAccount() throws Exception {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setTitle("Task for specific worker");
+        task.setCynefinDomain("clear");
+        task.setFileScope("[]");
+
+        com.eneik.production.models.persistence.AccountEntity account = new com.eneik.production.models.persistence.AccountEntity();
+        account.setName("remotecli5");
+
+        String mockOutput = """
+                ```json
+                {
+                  "summary": "OK",
+                  "scope_status": "SUFFICIENT",
+                  "files": []
+                }
+                ```
+                """;
+
+        AtomicReference<java.util.List<String>> executedCommand = new AtomicReference<>();
+        client.setProcessRunner((command, timeout) -> {
+            executedCommand.set(command);
+            return new LocalAgyCliClient.ProcessResult(0, mockOutput, "");
+        });
+
+        client.generateSolution(task, "", account, null);
+
+        assertNotNull(executedCommand.get());
+        assertTrue(executedCommand.get().contains("sudo"));
+        assertTrue(executedCommand.get().contains("remotecli5"));
+    }
+
+    @Test
+    @DisplayName("Account with forbidden core user name (remotecli) is rejected by Raz Deontic Gate")
+    void testExecutionUserFromForbiddenAccount() {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+
+        com.eneik.production.models.persistence.AccountEntity account = new com.eneik.production.models.persistence.AccountEntity();
+        account.setName("remotecli");
+
+        assertThrows(ExclusionaryReasonViolationException.class, () ->
+                client.generateSolution(task, "", account, null)
         );
     }
 }

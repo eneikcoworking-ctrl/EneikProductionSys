@@ -86,4 +86,24 @@ class LocalVerificationRunnerResourceTest {
         assertTrue(tokens.contains("--memory=1200m"), "Must enforce 1.2 GiB RAM cgroup limit");
         assertTrue(tokens.contains("--cpus=1.5"), "Must enforce 1.5 CPU cgroup limit");
     }
+
+    @Test
+    @DisplayName("Carrier or WishlistCompiler tasks skip Maven verification and return success immediately")
+    void testCarrierOrCompilerTaskSkipsVerification(@TempDir Path tempDir) {
+        TaskEntity carrierTask = new TaskEntity();
+        carrierTask.setId(java.util.UUID.randomUUID());
+        carrierTask.setFileScope("[\".eneik/records/task-plan-123.json\"]");
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var payload = mapper.createObjectNode();
+        payload.put(TaskEntity.CARRIER_PAYLOAD_KEY, TaskEntity.WISHLIST_COMPILER_TASK_TYPE);
+        carrierTask.setPayload(payload);
+
+        assertTrue(carrierTask.isCarrier());
+        assertTrue(carrierTask.isWishlistCompiler());
+
+        var result = runner.runVerification(tempDir, carrierTask);
+        assertTrue(result.passed());
+        assertEquals(0, result.exitCode());
+        assertTrue(result.output().contains("Carrier/compiler task"));
+    }
 }

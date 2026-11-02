@@ -73,7 +73,7 @@ public class LocalAgyCliClient {
      * Enforces Raz Deontic Gate: will fail if resolved user is remotecli or remotecli2.
      */
     public String resolveExecutionUser() {
-        if (settingsService != null) {
+        if (settingsService != null && settingsService.isKnownKey("worker_local_agy_user")) {
             String user = settingsService.effectiveValue("worker_local_agy_user");
             if (user != null && !user.isBlank()) {
                 AgyWorkerSecurityGuard.validateWorkerExecutionUser(user);
@@ -96,7 +96,12 @@ public class LocalAgyCliClient {
                                              String fileContentsContext,
                                              AccountEntity account,
                                              String reflectionFeedback) throws Exception {
-        String executionUser = resolveExecutionUser();
+        String executionUser;
+        if (account != null && account.getName() != null && account.getName().trim().startsWith("remotecli")) {
+            executionUser = account.getName().trim();
+        } else {
+            executionUser = resolveExecutionUser();
+        }
         AgyWorkerSecurityGuard.validateWorkerExecutionUser(executionUser);
 
         String cynefin = task != null ? task.getCynefinDomain() : "complicated";

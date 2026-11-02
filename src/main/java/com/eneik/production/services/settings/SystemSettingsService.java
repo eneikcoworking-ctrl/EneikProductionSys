@@ -484,6 +484,7 @@ public class SystemSettingsService {
 
         // Sovereign DeepSeek Worker pool settings (GEMINI.md §0, Dennett Autonomy Architecture)
         definitions.put("worker_engine_mode", plain("worker_engine_mode", "WORKER_ENGINE_MODE", "worker.engine.mode"));
+        definitions.put("worker_local_agy_user", plain("worker_local_agy_user", "WORKER_LOCAL_AGY_USER", "worker.local-agy.user"));
         definitions.put("deepseek_enabled", flag("deepseek_enabled", "DEEPSEEK_ENABLED", "deepseek.enabled"));
         definitions.put("deepseek_api_key", secret("deepseek_api_key", "DEEPSEEK_API_KEY", "deepseek.api-key"));
         definitions.put("deepseek_base_url", plain("deepseek_base_url", "DEEPSEEK_BASE_URL", "deepseek.base-url"));

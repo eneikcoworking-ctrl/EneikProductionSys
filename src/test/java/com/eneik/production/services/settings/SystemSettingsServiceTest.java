@@ -67,6 +67,11 @@ class SystemSettingsServiceTest {
         assertTrue(service.isKnownKey("design_system_falsification_enabled"));
     }
 
+    @Test
+    void workerLocalAgyUserKeyIsRegistered() {
+        assertTrue(service.isKnownKey("worker_local_agy_user"));
+    }
+
     /**
      * 2026-08-14: the same failure happened a second time. JulesDispatchService read
      * "system_orchestrator_repository_name" - carrying a fallback for when it is unset, which never

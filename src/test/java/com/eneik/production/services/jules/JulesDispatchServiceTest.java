@@ -3870,4 +3870,44 @@ class JulesDispatchServiceTest {
 
         verify(systemProgressTracker, never()).recordProgress();
     }
+
+    @Test
+    void executeDispatchReturnsDispatchedTrueWhenWorkerRouterSessionStatusIsPrOpened() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.queued);
+        task.setTargetContext(TargetContext.PRODUCT_CODEBASE);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("owner/repo");
+        task.setProject(project);
+
+        com.eneik.production.services.worker.WorkerExecutionRouter router =
+                mock(com.eneik.production.services.worker.WorkerExecutionRouter.class);
+        when(router.resolveEngineMode()).thenReturn(com.eneik.production.services.worker.WorkerEngineType.LOCAL_AGY);
+
+        UUID sessionId = UUID.randomUUID();
+        when(router.dispatch(eq(task), any(), any()))
+                .thenReturn(com.eneik.production.services.worker.WorkerDispatchResult.completed(
+                        sessionId, "local-agy-123", com.eneik.production.services.worker.WorkerEngineType.LOCAL_AGY, "https://github.com/owner/repo/pull/1"
+                ));
+
+        JulesSessionEntity completedSession = new JulesSessionEntity();
+        completedSession.setId(sessionId);
+        completedSession.setTaskId(taskId);
+        completedSession.setExternalSessionId("local-agy-123");
+        completedSession.setStatus("pr_opened");
+        completedSession.setPrUrl("https://github.com/owner/repo/pull/1");
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(completedSession));
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
+
+        ReflectionTestUtils.setField(julesDispatchService, "workerExecutionRouter", router);
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task, null, "NORMAL");
+
+        assertTrue(result.dispatched(), "Dispatch should be considered successful when session is pr_opened");
+        assertEquals("local-agy-123", result.sessionName());
+    }
 }

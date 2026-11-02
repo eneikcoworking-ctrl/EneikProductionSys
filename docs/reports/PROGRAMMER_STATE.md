@@ -1,8 +1,14 @@
-# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-02 12:00 UTC)
+# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-02 12:28 UTC)
 
-- **Выполнена директива Оператора Дмитрия Ефремова: запуск настоящего Дизайнера без заглушек:**
-  - **Host Sovereign Worker & Vision Bridge (`eneik-sovereign-bridge.service`):** Python HTTP-бридж на порту `8095` запущен на хосте. Защита D006 (Raz Gate) отсекает `remotecli`/`remotecli2`, пропуская воркеров `remotecli3..10`. Интегрирован headless Chromium / Playwright для реального рендеринга viewports (`1440x900`, `375x812`).
-  - **Сквозная сцепка ядра Фабрики:** `LocalAgyCliClient` вызывает хост-бридж из Docker через `host.docker.internal:8095`; `JulesDispatchService` делегирует задачи в `WorkerExecutionRouter` (движки `LOCAL_AGY` / `DEEPSEEK_WORKTREE`); `GitWorktreeExecutionManager` использует авторизованный `GITHUB_TOKEN` для git push.
-  - **Ликвидация заглушек в Дизайнере (`EneikProductionSys` & `designer-eneik`):** Полностью устранены шаблон `bg-indigo-600` и заглушки `w-[1440px]`. Реализован динамический `DefaultSemanticLayoutSynthesizer` на базе Obsidian tokens (`#08090C`, `#11141C`, `emerald-500`), реальный `DefaultPlaywrightVisionHarness` через Playwright API и деонтический гейт `DefaultVisionAuditLoop` (BARCAN-TAG-11 anti-slop gate, WCAG AAA $\ge 7:1$, zero optical noise).
-  - **Верификация продуктового контура `designer-eneik`:** Проект активирован (`status=active`), подан клиентский вишлист. Все 54 теста в `designer-eneik` (Java 21) и все тесты фабрики (Java 17) зелёные (BUILD SUCCESS). Изменения успешно синхронизированы и запушены в `https://github.com/eneikdru/designer-eneik`.
-  - **Ресурсная гигиена хоста:** Диск `/` строго удержан на уровне 68% (< 70%), память и контейнеры в норме.
+- **Реализован пакет доработок автономного контура воркеров и диспетчеризации:**
+  1. `SystemSettingsService`: зарегистрирован ключ `worker_local_agy_user` в `definitions` (предотвращает `IllegalArgumentException: Unknown setting key`).
+  2. `LocalAgyCliClient`: добавлена проверка `settingsService.isKnownKey("worker_local_agy_user")` и поддержка аутентификации от имени конкретного аккаунта воркера (`remotecli3..remotecli10`) с валидацией через `AgyWorkerSecurityGuard` (Raz Deontic Gate D006).
+  3. `GitWorktreeExecutionManager`: внедрён `settingsService`, первичное извлечение `github_token` из настроек БД перед fallback на `System.getenv("GITHUB_TOKEN")`.
+  4. `JulesDispatchService` & `*WorktreeExecutionEngine`:
+     - В `JulesDispatchService.executeDispatch` статус `pr_opened` и `completed` признан успешным результатом диспетчеризации (`dispatched = true`).
+     - В `LocalAgyWorktreeExecutionEngine` и `DeepSeekWorktreeExecutionEngine` гарантирован ненулевой `externalSessionId` при инициализации сессии.
+     - Пропуск Docker Maven верификации для carrier/compiler задач (`task.isWishlistCompiler() || task.isCarrier()`).
+- **Верификация и деплой:**
+  - Все тесты фабрики (`LocalAgy*`, `GitWorktree*`, `JulesDispatch*`, `SystemSettingsServiceTest`, `LocalVerificationRunnerResourceTest`) успешно пройдены в контейнере Maven (160+ тестов, 0 failures).
+  - Бэкенд контейнер `eneikproductionsys-backend-1` пересобран и перезапущен (`docker compose up -d --build backend`), `/actuator/health` в статусе UP.
+  - Гигиена хоста: диск на уровне 69% (<70%), память в норме.
