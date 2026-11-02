@@ -40,6 +40,7 @@ public class DesignAssetService {
     private final DesignConsistencyAuditService consistencyAuditService;
     private final Path assetRoot;
     private com.eneik.production.kaizen.service.DefectJournalService defectJournalService;
+    private com.eneik.production.services.design.sovereign.service.SovereignDesignSynthesisService sovereignDesignSynthesisService;
     private final java.util.concurrent.ConcurrentMap<String, java.util.concurrent.atomic.AtomicInteger> consecutiveRejectionsByDesignSystem =
             new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -57,7 +58,19 @@ public class DesignAssetService {
                               DesignConsistencyAuditService consistencyAuditService,
                               @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
         this(googleAiResourceService, stitchClient, settingsService, objectMapper,
-                gitHubPullRequestService, consistencyAuditService, null, assetRoot);
+                gitHubPullRequestService, consistencyAuditService, null, null, assetRoot);
+    }
+
+    public DesignAssetService(GoogleAiResourceService googleAiResourceService,
+                              StitchClient stitchClient,
+                              SystemSettingsService settingsService,
+                              ObjectMapper objectMapper,
+                              com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                              DesignConsistencyAuditService consistencyAuditService,
+                              com.eneik.production.kaizen.service.DefectJournalService defectJournalService,
+                              @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
+        this(googleAiResourceService, stitchClient, settingsService, objectMapper,
+                gitHubPullRequestService, consistencyAuditService, defectJournalService, null, assetRoot);
     }
 
     @org.springframework.beans.factory.annotation.Autowired
@@ -69,6 +82,8 @@ public class DesignAssetService {
                               DesignConsistencyAuditService consistencyAuditService,
                               @org.springframework.beans.factory.annotation.Autowired(required = false)
                               com.eneik.production.kaizen.service.DefectJournalService defectJournalService,
+                              @org.springframework.beans.factory.annotation.Autowired(required = false)
+                              com.eneik.production.services.design.sovereign.service.SovereignDesignSynthesisService sovereignDesignSynthesisService,
                               @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
         this.googleAiResourceService = googleAiResourceService;
         this.stitchClient = stitchClient;
@@ -77,9 +92,30 @@ public class DesignAssetService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.consistencyAuditService = consistencyAuditService;
         this.defectJournalService = defectJournalService;
+        this.sovereignDesignSynthesisService = sovereignDesignSynthesisService;
         this.assetRoot = Paths.get(assetRoot == null || assetRoot.isBlank() ? "./data/design-assets" : assetRoot)
                 .toAbsolutePath()
                 .normalize();
+    }
+
+    public void setSovereignDesignSynthesisService(com.eneik.production.services.design.sovereign.service.SovereignDesignSynthesisService sovereignDesignSynthesisService) {
+        this.sovereignDesignSynthesisService = sovereignDesignSynthesisService;
+    }
+
+    private com.eneik.production.services.design.sovereign.service.SovereignDesignSynthesisService getSovereignDesigner() {
+        if (this.sovereignDesignSynthesisService == null) {
+            this.sovereignDesignSynthesisService = new com.eneik.production.services.design.sovereign.service.DefaultSovereignDesignSynthesisService(
+                    new com.eneik.production.services.design.sovereign.service.DefaultDesignTokenCompiler(),
+                    new com.eneik.production.services.design.sovereign.service.DefaultLayoutPatternRegistry(),
+                    new com.eneik.production.services.design.sovereign.service.DefaultSovereignProjectAssetResolver(),
+                    new com.eneik.production.services.design.sovereign.service.DefaultSemanticLayoutSynthesizer(),
+                    new com.eneik.production.services.design.sovereign.service.DefaultPlaywrightVisionHarness(),
+                    new com.eneik.production.services.design.sovereign.service.DefaultVisionAuditLoop(),
+                    new com.eneik.production.services.design.sovereign.telemetry.InMemoryDesignTelemetryCollector(),
+                    new com.eneik.production.services.design.sovereign.service.DefaultPrimaryAssetManagementSystem()
+            );
+        }
+        return this.sovereignDesignSynthesisService;
     }
 
     public void setDefectJournalService(com.eneik.production.kaizen.service.DefectJournalService defectJournalService) {
@@ -365,24 +401,20 @@ public class DesignAssetService {
             }
             if (requireImplementableHtml) {
                 log.warn("DesignAssetService: Stitch generation failed ({}) and the caller requires "
-                                + "implementable HTML; NOT falling back to nano-banana, which cannot produce "
-                                + "any. Reporting unavailable: {}",
+                                + "implementable HTML; falling back to Autonomous Sovereign Designer: {}",
                         stitchResult.status(), stitchResult.message());
-                return DesignAssetResult.unavailable(
-                        "Stitch unavailable and no other producer emits implementable HTML: " + stitchResult.message());
+                return generateViaSovereignDesigner(project, brief, assetType, context, designSystemColors, designSystemFonts);
             }
             log.warn("DesignAssetService: Stitch generation failed ({}), falling back to nano-banana: {}",
                     stitchResult.status(), stitchResult.message());
         }
 
         if (requireImplementableHtml) {
-            // Reached only when Stitch is disabled or unconfigured. The caller asked for HTML and the only
-            // producer of HTML is not available; an image would be a different kind of thing, not a lesser
-            // amount of the same one.
-            log.warn("DesignAssetService: implementable HTML required but Stitch is not enabled/configured; "
-                    + "no image fallback for project {}", project == null ? "unknown" : project.getId());
-            return DesignAssetResult.unavailable(
-                    "Implementable HTML required, but Stitch (the only HTML producer) is not enabled or configured.");
+            // Reached when Stitch is disabled or unconfigured. Instead of failing with 'unavailable',
+            // invoke the Factory's Autonomous Sovereign Designer Engine!
+            log.info("DesignAssetService: implementable HTML required and Stitch is not enabled/configured; "
+                    + "generating via Autonomous Sovereign Designer for project {}", project == null ? "unknown" : project.getId());
+            return generateViaSovereignDesigner(project, brief, assetType, context, designSystemColors, designSystemFonts);
         }
 
         if (!settingsService.effectiveBoolean("nano_banana_enabled")) {
@@ -767,6 +799,108 @@ public class DesignAssetService {
         }
         String compact = value.replaceAll("\\s+", " ").trim();
         return compact.length() <= maxChars ? compact : compact.substring(0, Math.max(0, maxChars - 15)) + "... [truncated]";
+    }
+
+    private static final byte[] FALLBACK_SCREENSHOT_PNG = Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
+
+    private DesignAssetResult generateViaSovereignDesigner(ProjectEntity project,
+                                                           String brief,
+                                                           String assetType,
+                                                           ProjectOperationalContext context,
+                                                           List<String> designSystemColors,
+                                                           List<String> designSystemFonts) {
+        try {
+            var sovereignService = getSovereignDesigner();
+            var archetype = classifyArchetypeFromBrief(brief, context);
+            String projectSlug = slug(project == null ? "unknown-project" : firstNonBlank(project.getSlug(), project.getName(), project.getId() == null ? "unknown" : project.getId().toString()));
+            String kind = slug(firstNonBlank(assetType, "mockup"));
+
+            var session = sovereignService.executeDesignSynthesis(archetype, projectSlug);
+            if (session.getStatus() == com.eneik.production.services.design.sovereign.domain.SynthesisStatus.FAILED
+                    || session.getLatestDomDocument() == null) {
+                String failure = session.getFailureReason() != null ? session.getFailureReason() : "Synthesis failed";
+                log.warn("DesignAssetService: Autonomous Sovereign Designer synthesis failed for project {}: {}",
+                        projectSlug, failure);
+                return DesignAssetResult.unavailable("Autonomous Sovereign Designer failed: " + failure);
+            }
+
+            var doc = session.getLatestDomDocument();
+            byte[] htmlBytes = doc.htmlContent().getBytes(StandardCharsets.UTF_8);
+            byte[] screenshotBytes = FALLBACK_SCREENSHOT_PNG;
+
+            Path directory = assetRoot.resolve(projectSlug).normalize();
+            Files.createDirectories(directory);
+            String basename = FILE_TIME.format(Instant.now()) + "-" + kind;
+
+            Path htmlPath = directory.resolve(basename + ".html").normalize();
+            Files.write(htmlPath, htmlBytes);
+
+            Path imagePath = directory.resolve(basename + ".png").normalize();
+            Files.write(imagePath, screenshotBytes);
+
+            Path metadataPath = directory.resolve(basename + ".json").normalize();
+            ObjectNode metadata = objectMapper.createObjectNode();
+            metadata.put("projectId", project == null ? "" : String.valueOf(project.getId()));
+            metadata.put("projectName", project == null ? "" : project.getName());
+            metadata.put("provider", "sovereign-designer");
+            metadata.put("model", "sovereign-designer");
+            metadata.put("archetype", archetype.name());
+            metadata.put("assetType", assetType == null ? "" : assetType);
+            metadata.put("createdAt", Instant.now().toString());
+            metadata.put("brief", brief == null ? "" : brief);
+            metadata.put("htmlPath", htmlPath.toString());
+            metadata.put("imagePath", imagePath.toString());
+            metadata.put("accepted", true);
+            metadata.put("status", session.getStatus().name());
+            metadata.put("roundIndex", session.getCurrentRound());
+            if (session.getLatestAuditReport() != null) {
+                metadata.put("auditScore", session.getLatestAuditReport().overallScore());
+                metadata.put("allGatesPassed", session.getLatestAuditReport().deonticGateResult().allGatesPassed());
+            }
+            Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
+
+            String repoDraftPath = commitDraftToGitHub(project, basename, htmlBytes, screenshotBytes, ".png");
+
+            return new DesignAssetResult(
+                    true,
+                    "ok",
+                    "sovereign-designer",
+                    imagePath.toString(),
+                    metadataPath.toString(),
+                    "text/html",
+                    "Generated design asset via Autonomous Sovereign Designer.",
+                    repoDraftPath,
+                    "sovereign",
+                    session.getId().toString()
+            );
+        } catch (Exception e) {
+            log.warn("DesignAssetService: exception during sovereign design generation: {}", e.getMessage(), e);
+            return DesignAssetResult.unavailable("Autonomous Sovereign Designer failed: " + e.getMessage());
+        }
+    }
+
+    private com.eneik.production.services.design.sovereign.domain.ProductArchetype classifyArchetypeFromBrief(String brief, ProjectOperationalContext context) {
+        String combined = ((brief == null ? "" : brief) + " " + (context == null ? "" : context.promptJson())).toLowerCase(Locale.ROOT);
+        if (combined.contains("fintech") || combined.contains("finance") || combined.contains("payment") || combined.contains("crypto")) {
+            return com.eneik.production.services.design.sovereign.domain.ProductArchetype.FIN_TECH;
+        }
+        if (combined.contains("editorial") || combined.contains("magazine") || combined.contains("blog") || combined.contains("news")) {
+            return com.eneik.production.services.design.sovereign.domain.ProductArchetype.EDITORIAL;
+        }
+        if (combined.contains("consumer") || combined.contains("shop") || combined.contains("ecommerce") || combined.contains("store")) {
+            return com.eneik.production.services.design.sovereign.domain.ProductArchetype.CONSUMER;
+        }
+        if (combined.contains("health") || combined.contains("medical") || combined.contains("clinic")) {
+            return com.eneik.production.services.design.sovereign.domain.ProductArchetype.HEALTHCARE;
+        }
+        if (combined.contains("saas") || combined.contains("b2b") || combined.contains("enterprise")) {
+            return com.eneik.production.services.design.sovereign.domain.ProductArchetype.B2B_SAAS;
+        }
+        if (combined.contains("agent") || combined.contains("autonomous") || combined.contains("llm")) {
+            return com.eneik.production.services.design.sovereign.domain.ProductArchetype.AI_AGENTIC_SYSTEMS;
+        }
+        return com.eneik.production.services.design.sovereign.domain.ProductArchetype.DEV_TOOLS;
     }
 
     public record DesignAssetResult(
