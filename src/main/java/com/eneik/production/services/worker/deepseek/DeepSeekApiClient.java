@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -39,6 +40,17 @@ public class DeepSeekApiClient {
     // Fixed BARCAN-TAG Ontological prefix to guarantee server-side Context Caching (>1024 tokens)
     private static final String BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX = buildBarcanTagOntologyPrefix();
 
+    public DeepSeekApiClient() {
+        this(new ObjectMapper(), new DeepSeekPatchParser(), null, null);
+    }
+
+    @Autowired
+    public DeepSeekApiClient(ObjectMapper objectMapper,
+                             DeepSeekPatchParser patchParser,
+                             @Autowired(required = false) SystemSettingsService settingsService) {
+        this(objectMapper, patchParser, settingsService, null);
+    }
+
     public DeepSeekApiClient(ObjectMapper objectMapper,
                              DeepSeekPatchParser patchParser,
                              SystemSettingsService settingsService,
@@ -49,12 +61,6 @@ public class DeepSeekApiClient {
         this.httpClient = httpClient != null ? httpClient : HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(15))
                 .build();
-    }
-
-    public DeepSeekApiClient(ObjectMapper objectMapper,
-                             DeepSeekPatchParser patchParser,
-                             SystemSettingsService settingsService) {
-        this(objectMapper, patchParser, settingsService, null);
     }
 
     /**
