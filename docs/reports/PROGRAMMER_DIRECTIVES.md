@@ -1,181 +1,153 @@
-# БОЕВОЙ НАРЯД ДЛЯ L2 (ИНЖЕНЕР): ИНКОРПОРАЦИЯ СУВЕРЕННОГО ДИЗАЙНЕРА В ЯДРО ФАБРИКИ (ВЗАМЕН GOOGLE STITCH)
-**Дата:** 2026-11-02 01:35 UTC  
-**От:** Оператор Дмитрий Ефремов & Менеджер-философ (L1/L3)  
+# БОЕВОЙ НАРЯД ДЛЯ L2 (ВЕДУЩИЙ ИНЖЕНЕР): ПОЛНЫЙ СКВОЗНОЙ КОНТУР СУВЕРЕННЫХ ВОРКЕРОВ И СИНТЕЗ НАСТОЯЩЕГО ДИЗАЙНЕРА БЕЗ ЗАГЛУШЕК
+**Дата:** 2026-11-02 11:15 UTC  
+**От:** Менеджер-философ (L1/L3) & Оператор Дмитрий Ефремов  
 **Адресат:** Ведущий инженер фабрики (L2)  
-**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #1 — REPLACING STITCH WITH SOVEREIGN DESIGNER)  
-**Контекст:** Проект `designer-eneik` (ef264aea-dd30-46e2-bfac-e7e40918d5ab) успешно принят оператором (`DELIVERED`, HTTP 200). Полнофункциональный код Суверенного Дизайнера готов к инкорпорации из `/tmp/designer-eneik`.
+**Статус:** ОБЯЗЫВАЮЩАЯ ДИРЕКТИВА АВТОНОМИИ (PRIORITY #0 — LIVE SOVEREIGN WORKER BRIDGE & ZERO-MOCK DESIGNER)  
+**Эпистемический фундамент:** Karl Popper (D008 Falsification / Severe Testing), Joseph Raz (D006 Deontic Separation of Identities), Daniel Dennett (Cranes, not Skyhooks), Ludwig Wittgenstein (Anti-Mirror / Empirical Runtime Reality).
 
 ---
 
-## 1. ЭПИСТЕМИЧЕСКИЙ ФУНДАМЕНТ И УСТРАНЕНИЕ СИСТЕМНОГО ДЕФЕКТА
+## 0. ДИАГНОСТИЧЕСКИЙ ВЕРДИКТ И ПОППЕРОВСКАЯ ВЕРИФИКАЦИЯ (D008)
 
-### 1.1. Ликвидация ложной дихотомии и внешней зависимости (Деннетт: «Cranes, not Skyhooks»)
-До сегодняшнего дня в ядре Фабрики (`DesignAssetService.java:378-386`) сохранялась фатальная зависимость от внешнего платного провайдера Google Stitch (`stitch.googleapis.com`):
-```java
-if (requireImplementableHtml) {
-    // Reached only when Stitch is disabled or unconfigured. The caller asked for HTML and the only
-    // producer of HTML is not available...
-    log.warn("DesignAssetService: implementable HTML required but Stitch is not enabled/configured; "
-            + "no image fallback for project {}", project == null ? "unknown" : project.getId());
-    return DesignAssetResult.unavailable(
-            "Implementable HTML required, but Stitch (the only HTML producer) is not enabled or configured.");
-}
-```
-Это порождало непрерывный цикл ретраев в `DesignShopOrchestrationService`:
-`design generation unavailable for project ... retrying next tick`.
-Фабрика ждала «небесного крюка» (Skyhook) в виде платного ключа Google Cloud с кредитной картой ($8 за сессию).
+Инспекция рантайма фабрики и кодовой базы вскрыла две критические проблемы:
 
-### 1.2. Факт физического артефакта (Витгенштейн & ТЗ Раздел 3)
-Проект `designer-eneik` создал и доказал работоспособность автономного инженерного крана (Crane):
-- 100% суверенная генерация сертифицированного HTML5 + Tailwind CSS (`mockup.html`);
-- Зрительный контур (`PlaywrightVisionHarness`) с двухвьюпортным захватом (Desktop 1440px / Mobile 375px);
-- Зрительный аудитор (`VisionAuditLoop`) с деонтическим заслоном BARCAN-TAG-11 (нулевая толерантность к псевдо-Leica, GPS и фиолетовым клише);
-- Себестоимость генерации: **0 рублей 00 копеек**.
-
-**Императив:** Фабрика обязана инкорпорировать этот движок в ядро и сделать его основным генератором имплементируемого HTML.
+1. **Бутафорские заглушки (Mocks) в коде Дизайнера:**
+   - В перенесённых в ядро классах `com.eneik.production.services.design.sovereign.*` (и в репозитории `designer-eneik`) обнаружены 3 симулякра:
+     - `DefaultSemanticLayoutSynthesizer`: конкатенирует захардкоженный шаблон с шаблонными фиолетовыми кнопками `bg-indigo-600` (нейрослоп) независимо от промпта и брифа.
+     - `DefaultPlaywrightVisionHarness`: вместо вызова реального браузера считает `SHA-256` от строки и проверяет `htmlContent.contains("w-[1440px]")`.
+     - `DefaultVisionAuditLoop`: вместо реального расчёта контраста и геометрии ищет подстроку `"leica"` и возвращает захардкоженные `9.6` / `7.2`.
+2. **Критический разрыв сквозной PR-оркестрации:**
+   - Роутер `WorkerExecutionRouter` (`LOCAL_AGY` / `DEEPSEEK_WORKTREE`) покрыт тестами, но **НЕ ВЫЗЫВАЕТСЯ** из `JulesDispatchService.java`! На строке ~868 вызовы задач фабрики по-прежнему идут напрямую в `julesApiClient.createSessionDetailed(...)`.
+   - Контейнер `eneikproductionsys-backend-1` изолирован в Docker. На хосте Hetzner есть 8 суверенных пользователей `remotecli3..10` с бинарниками `agy` и установленный `node`/`playwright`, но изнутри контейнера запустить их напрямую через `ProcessBuilder` невозможно. Нужен сетевой мост между контейнером бэкенда и хостом.
 
 ---
 
-## 2. АРХИТЕКТУРА ИНКОРПОРАЦИИ В ЯДРО ФАБРИКИ
+## ЧАСТЬ 1: ВКЛЮЧЕНИЕ СКВОЗНОГО КОНТУРА СУВЕРЕННЫХ ВОРКЕРОВ (HOST SOVEREIGN WORKER BRIDGE)
 
-### 2.1. Пакетная структура: `com.eneik.production.services.design.sovereign.*`
-Все компоненты из `/tmp/designer-eneik/src/main/java/com/eneik/generated/designer/` переносятся в ядро `EneikProductionSys`:
+### 1.1. Host Sovereign Worker & Vision Bridge (`scripts/sovereign_host_bridge.py`)
+Разработать и поднять на хосте легковесный Python HTTP-сервис (`scripts/sovereign_host_bridge.py`), слушающий на `0.0.0.0:8095` (или `127.0.0.1:8095` и `172.17.0.1:8095`), доступный из Docker-контейнера через шлюз `172.17.0.1:8095` или `host.docker.internal:8095`.
 
-```
-src/main/java/com/eneik/production/services/design/sovereign/
-├── domain/
-│   ├── ProductArchetype.java
-│   ├── LayoutGridPattern.java
-│   ├── DesignTokenSet.java
-│   ├── SynthesizedDomDocument.java
-│   ├── ViewportType.java
-│   ├── ViewportCapture.java
-│   ├── DeonticGateResult.java
-│   ├── CorrectionDirective.java
-│   ├── VisionAuditReport.java
-│   ├── SynthesisStatus.java
-│   └── SynthesisSession.java
-├── exception/
-│   └── RenderTimeoutException.java
-├── telemetry/
-│   ├── TelemetryEventType.java
-│   ├── TelemetryEvent.java
-│   ├── DesignTelemetryCollector.java
-│   ├── InMemoryDesignTelemetryCollector.java
-│   ├── DesignTelemetrySummary.java
-│   └── ArchetypeTelemetrySummary.java
-└── service/
-    ├── DesignTokenCompiler.java
-    ├── DefaultDesignTokenCompiler.java
-    ├── LayoutPatternRegistry.java
-    ├── DefaultLayoutPatternRegistry.java
-    ├── SovereignProjectAssetResolver.java (адаптация интерфейса DesignAssetService из /tmp)
-    ├── DefaultSovereignProjectAssetResolver.java
-    ├── SemanticLayoutSynthesizer.java
-    ├── DefaultSemanticLayoutSynthesizer.java
-    ├── PlaywrightVisionHarness.java
-    ├── DefaultPlaywrightVisionHarness.java
-    ├── VisionAuditLoop.java
-    ├── DefaultVisionAuditLoop.java
-    ├── PrimaryAssetManagementSystem.java
-    ├── SovereignDesignSynthesisService.java
-    └── DefaultSovereignDesignSynthesisService.java
-```
+#### Спецификация API Бриджа:
+1. **`POST /api/worker/execute`** (Выполнение задач локальными суверенными агентами):
+   - **Request JSON:**
+     ```json
+     {
+       "workerUser": "remotecli3",
+       "workingDirectory": "/tmp/worktrees/task-123",
+       "prompt": "...",
+       "model": "deepseek-coder",
+       "timeoutSeconds": 300
+     }
+     ```
+   - **Заслон Раза (D006 / AgyWorkerSecurityGuard):**
+     Бридж обязан намертво отвергать запросы с `workerUser` равным `remotecli` или `remotecli2` (HTTP 403 Forbidden). Разрешены строго `remotecli3` – `remotecli10`.
+   - **Исполнение:** Выполняется команда через `sudo -u <workerUser>` с вызовом `/home/<workerUser>/.local/bin/agy` в указанной рабочей директории.
+   - **Response JSON:**
+     ```json
+     {
+       "exitCode": 0,
+       "stdout": "...",
+       "stderr": "...",
+       "durationMs": 1420
+     }
+     ```
 
-### 2.2. Разрешение коллизий имён и реализация сервисных бинов
-1. **Коллизия `DesignAssetService`:**  
-   В исходном `/tmp/designer-eneik` интерфейс разрешения ассетов назывался `DesignAssetService`. Чтобы исключить путаницу с фабричным `com.eneik.production.services.design.DesignAssetService`, в суверенном пакете переименовать его в **`SovereignProjectAssetResolver`** (с методом `resolveProjectAssets(String projectContextKey)`).
-2. **Spring Bean конфигурация (реализации по умолчанию):**
-   - **`DefaultDesignTokenCompiler`**: реализует компиляцию токенов для всех архетипов `ProductArchetype` (`DEV_TOOLS`, `B2B_SAAS`, `FIN_TECH`, `CONSUMER`, `CREATIVE_AGENCY`, `HEALTHCARE`, `AI_AGENTIC_SYSTEMS`) с адаптивными `clamp(...)` и dark-obsidian / slate палитрами.
-   - **`DefaultLayoutPatternRegistry`**: регистрирует композиционные сетки (Swiss 7/5, 8/4, Bento Grid 2.0).
-   - **`DefaultVisionAuditLoop`**: проводит аудит DOM-документа и скриншотов на деонтический гейт BARCAN-TAG-11 (проверка отсутствия Leica, GPS-координат, отсутствия горизонтального скролла на 375px, соблюдение типографической иерархии).
-   - **`DefaultSovereignDesignSynthesisService`**: пометить `@Service` (или `@Component`) со внедрением всех зависимостей, обеспечив полностью готовый к работе Spring Bean.
+2. **`POST /api/vision/render`** (Реальный рендеринг HTML и замер DOM):
+   - **Request JSON:**
+     ```json
+     {
+       "htmlContent": "<!DOCTYPE html>...",
+       "viewports": [
+         { "name": "DESKTOP_1440", "width": 1440, "height": 900 },
+         { "name": "MOBILE_375", "width": 375, "height": 812 }
+       ]
+     }
+     ```
+   - **Исполнение:** Через Playwright/Chromium на хосте (headless):
+     - Открывает HTML (через data URI или временный файл).
+     - Ждёт `networkidle` и загрузку шрифтов.
+     - Делает реальный замер геометрии DOM:
+       `scrollWidth = document.documentElement.scrollWidth;`
+       `clientWidth = document.documentElement.clientWidth;`
+       `hasHorizontalOverflow = scrollWidth > clientWidth;`
+     - Сохраняет реальный скриншот (PNG в base64 или файл).
+   - **Response JSON:**
+     ```json
+     {
+       "captures": [
+         {
+           "viewport": "DESKTOP_1440",
+           "measuredScrollWidthPx": 1440,
+           "hasHorizontalOverflow": false,
+           "screenshotHash": "...",
+           "screenshotBase64": "..."
+         },
+         {
+           "viewport": "MOBILE_375",
+           "measuredScrollWidthPx": 375,
+           "hasHorizontalOverflow": false,
+           "screenshotHash": "...",
+           "screenshotBase64": "..."
+         }
+       ]
+     }
+     ```
 
----
-
-## 3. ПОДКЛЮЧЕНИЕ К КОНВЕЙЕРУ ФАБРИКИ
-
-### 3.1. Модификация `DesignAssetService.java`:
-1. Внедрить зависимость:
-   ```java
-   private final SovereignDesignSynthesisService sovereignDesignSynthesisService;
-   ```
-2. В методе `generateAsset(...)`:
-   Вместо возврата `DesignAssetResult.unavailable("Implementable HTML required, but Stitch...")`:
-   ```java
-   if (requireImplementableHtml) {
-       // Если Stitch не включен или не сконфигурирован — используем Суверенный Дизайнер Фабрики!
-       return generateViaSovereignDesigner(project, brief, assetType, context, designSystemColors, designSystemFonts);
-   }
-   ```
-3. Метод `generateViaSovereignDesigner(...)`:
-   - Определяет `ProductArchetype` по брифу/контексту (по умолчанию `ProductArchetype.DEV_TOOLS` или `B2B_SAAS`).
-   - Вызывает `sovereignDesignSynthesisService.executeDesignSynthesis(archetype, projectSlug)`.
-   - При успешном завершении (`session.getStatus().isTerminal()` и макет сгенерирован):
-     - Извлекает финальный HTML из `SynthesizedDomDocument`.
-     - Сохраняет `mockup.html`, дизайн-токены `tokens.json` и скриншоты в `assetRoot` директорию проекта.
-     - Совершает коммит в ветку репозитория через существующий метод:
-       ```java
-       String repoDraftPath = commitDraftToGitHub(project, basename, htmlBytes, screenshotBytes, ".png");
-       ```
-     - Возвращает зелёный `DesignAssetResult`:
-       ```java
-       return new DesignAssetResult(
-           true,
-           "ok",
-           "sovereign-designer",
-           imagePath,
-           metadataPath,
-           "text/html",
-           "Generated design asset via Autonomous Sovereign Designer.",
-           repoDraftPath,
-           "sovereign",
-           session.getId().toString()
-       );
-       ```
-
-### 3.2. Синхронизация с `DesignShopOrchestrationService.java`:
-- `DesignShopOrchestrationService` ожидает `result.available() == true` и наличие `repoDraftPath` с файлом `mockup.html`.
-- Суверенный дизайнер полностью удовлетворяет этот инвариант.
-- `captureBaseline` автоматически считывает `declaredColors` и `declaredFonts` из синтезированного `mockup.html`.
-- Конвейер беспрепятственно продвигает цикл в `STAGE_AWAITING_REVIEW`.
+3. **Служба systemd (`/etc/systemd/system/eneik-sovereign-bridge.service`):**
+   - Обеспечить автозапуск демона при старте хоста и мониторинг через `systemctl status eneik-sovereign-bridge`.
 
 ---
 
-## 4. ПЕРЕНОС ТЕСТОВ И ТЕСТ-ЗАСЛОН ПОППЕРА (D008)
+### 1.2. Интеграция в кодовую базу Фабрики (`EneikProductionSys`)
 
-### 4.1. Перенос модульных тестов из `/tmp/designer-eneik/src/test/`:
-Перенести в `src/test/java/com/eneik/production/services/design/sovereign/`:
-- `SynthesisSessionTest.java`
-- `DesignTelemetryCollectorTest.java`
-- `DefaultPlaywrightVisionHarnessTest.java`
-- `DefaultSemanticLayoutSynthesizerTest.java`
-- `DefaultSovereignDesignSynthesisServiceTest.java`
-
-### 4.2. Новый интеграционный тест-заслон: `SovereignDesignAssetIntegrationTest`
-Создать `src/test/java/com/eneik/production/services/design/SovereignDesignAssetIntegrationTest.java`:
-- Проверяет, что при `stitch_enabled=false` вызов `designAssetService.generateAsset(project, context, brief, "mockup", "fast", false, null, List.of(), List.of(), true)` возвращает `result.available() == true`, `result.model().equals("sovereign-designer")`, и что репозиторий получает физический `mockup.html`.
-- Тест фальсификации: падение при любой попытке выдать "unavailable" или вернуть изображение вместо имплементируемого HTML.
+1. **Модификация `LocalAgyCliClient.java`:**
+   - Вместо локального `ProcessBuilder` (который терпит крах внутри Docker) отправлять HTTP POST запрос на `http://172.17.0.1:8095/api/worker/execute`.
+   - Внедрить fallback: если бридж недоступен, логировать внятное предупреждение и пробрасывать исключение для Dennett Cranes Homeostasis.
+2. **Модификация `DefaultPlaywrightVisionHarness.java`:**
+   - Отправлять HTTP POST запрос на `http://172.17.0.1:8095/api/vision/render`.
+   - Ликвидировать фиктивные проверки `htmlContent.contains("w-[1440px]")` и SHA-256 от строк — возвращать реальные данные замера от headless-браузера хоста!
+3. **Прямое включение `WorkerExecutionRouter` в `JulesDispatchService.java`:**
+   - Внедрить бин `WorkerExecutionRouter` в `JulesDispatchService`.
+   - В методе `dispatchInternal(...)`: при `worker_engine_mode != JULES` перенаправлять задачу в `workerExecutionRouter.dispatch(task, account, mode)`.
+   - В методе опроса сессий (`pollSessions` / `pollStatus`): для суверенных сессий вызывать `workerExecutionRouter.poll(session)`, обновляя состояние задач до завершения и мержа PR.
+4. **Заслон Поппера:**
+   - Прогнать unit и integration тесты в Docker Maven, подтвердив, что при включенном `LOCAL_AGY` задачи маршрутизируются через суверенный контур.
 
 ---
 
-## 5. РЕГЛАМЕНТ ИСПОЛНЕНИЯ И КРИТЕРИИ ПРИЁМКИ ДЛЯ L2
+## ЧАСТЬ 2: САМОСИНТЕЗ НАСТОЯЩЕГО ДИЗАЙНЕРА ФАБРИКОЙ (ПРОЕКТ `designer-eneik`)
 
-1. **Квантование шага:**
-   - Перенос классов и адаптация пакетов.
-   - Реализация бинов и интеграция в `DesignAssetService`.
-   - Запуск тестов и сборка.
-2. **Прогон тестов в изолированном Docker Maven:**
-   ```bash
-   docker run --rm -v /root/.m2:/root/.m2 -v /opt/EneikProductionSys:/workspace -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=DefaultSovereignDesignSynthesisServiceTest,DefaultSemanticLayoutSynthesizerTest,DefaultPlaywrightVisionHarnessTest,SovereignDesignAssetIntegrationTest -DfailIfNoTests=false
-   ```
-3. **Горячая пересборка и развёртывание бэкенда:**
-   ```bash
-   docker compose up -d --build backend
-   ```
-4. **Фиксация коммитом:**
-   ```bash
-   git commit -m "feat(design): incorporate Autonomous Sovereign Designer engine into factory core replacing Stitch"
-   ```
-5. **Отчёт инженера:**
-   Краткая запись в `docs/reports/PROGRAMMER_STATE.md`.
+После включения сквозного суверенного контура запустить Фабрику на проектирование и реализацию реального Дизайнера в его собственном репозитории:
+
+1. **Активация проекта `designer-eneik` (`ef264aea-dd30-46e2-bfac-e7e40918d5ab`):**
+   - Вызвать endpoint перевода проекта из `accepted` в `active`:
+     `POST /api/projects/ef264aea-dd30-46e2-bfac-e7e40918d5ab/activate`
+2. **Подача боевого вишлиста (Wishlist) в проект `designer-eneik`:**
+   - Отправить через `POST /api/projects/ef264aea-dd30-46e2-bfac-e7e40918d5ab/wishlist` подробный клиентский наряд:
+     > **Тема:** Полная ликвидация симулякров и заглушек. Создание живого генератора дизайн-системы.  
+     > **Требования:**  
+     > 1. В `DefaultSemanticLayoutSynthesizer` полностью удалить статичный шаблон и запрещённые кнопки `bg-indigo-600`. Реализовать настоящий синтез структуры страницы на основе токенов архетипа (`ProductArchetype`), переданного брифа, композиционной сетки (Swiss / Bento) и цветовой палитры.  
+     > 2. В `DefaultPlaywrightVisionHarness` подключить реальный клиент взаимодействия с headless-браузером, получающий физический `scrollWidth` и скриншоты.  
+     > 3. В `DefaultVisionAuditLoop` убрать фиктивные оценки (9.6) и хардкод `leica`. Реализовать реальный аудит контрастности по стандарту WCAG 2.1 (APCA/контраст текста к фону), реальный детектив горизонтального переполнения мобильного вьюпорта и реальную проверку фокус-стилей.
+3. **Автономное выполнение Фабрикой:**
+   - Запустить оркестрацию (`POST /api/projects/ef264aea-dd30-46e2-bfac-e7e40918d5ab/orchestrate`).
+   - Фабрика должна автономно:
+     - Скомпилировать вишлист в системные эпики и задачи;
+     - Назначить суверенных воркеров `remotecli3..10` через `WorkerExecutionRouter`;
+     - Создать изолированные worktree, написать боевой код без заглушек;
+     - Прогнать тесты верификации;
+     - Открыть Pull Request в репозиторий `eneikdru/designer-eneik`;
+     - Автоматически смержить PR при выполнении всех гейтов качества.
+4. **Синхронизация в ядро Фабрики:**
+   - После мержа в репозиторий продукта синхронизировать проверенный код без заглушек в пакет `com.eneik.production.services.design.sovereign.*` фабрики `EneikProductionSys`.
+   - Пересобрать и перезапустить контейнер бэкенда (`docker compose up -d --build backend`).
+
+---
+
+## 3. КРИТЕРИИ ПРИЁМКИ И СВИДЕТЕЛЬСТВА ИСТИННОСТИ (WITTGENSTEIN & POPPER)
+
+1. `curl -s http://172.17.0.1:8095/health` возвращает `{"status": "ok", "playwright": "ready", "workers": ["remotecli3", ..., "remotecli10"]}`.
+2. Логи `JulesDispatchService` содержат: `WorkerExecutionRouter: Dispatching via Zero-Cost LOCAL_AGY sovereign engine...` вместо обращений к облачному Jules.
+3. В кодовой базе `com.eneik.production.services.design.sovereign` отсутствуют строки `contains("w-[1440px]")`, `contains("leica")` и захардкоженный шаблон с `bg-indigo-600`.
+4. Сгенерированный дизайн для тестового проекта проходит реальный аудит Playwright на хосте с физическим замером `scrollWidth` = 375px на мобильном вьюпорте.
+5. Фиксация результата в `docs/reports/PROGRAMMER_STATE.md`.
