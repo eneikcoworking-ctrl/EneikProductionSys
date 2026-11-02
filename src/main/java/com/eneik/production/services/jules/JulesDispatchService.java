@@ -616,7 +616,7 @@ public class JulesDispatchService {
         if (session == null) {
             return new JulesDispatchResult(false, null, "Session could not be initialized");
         }
-        boolean dispatched = "running".equals(session.getStatus()) || "queued".equals(session.getStatus()) || "pr_opened".equalsIgnoreCase(session.getStatus()) || "completed".equalsIgnoreCase(session.getStatus());
+        boolean dispatched = "running".equals(session.getStatus()) || "queued".equals(session.getStatus()) || "pr_opened".equalsIgnoreCase(session.getStatus()) || "completed".equalsIgnoreCase(session.getStatus()) || (session.getPrUrl() != null && !session.getPrUrl().isBlank());
         String reason;
         if ("skipped".equals(session.getExternalSessionId())) {
             reason = "Jules integration disabled";

@@ -3980,6 +3980,7 @@ public class ProjectFlowService {
                 JulesDispatchResult dispatch = mode != null
                         ? julesDispatchService.dispatch(savedTask, account.getId(), mode)
                         : julesDispatchService.dispatch(savedTask, account.getId());
+                savedTask = taskRepository.findById(task.getId()).orElse(savedTask);
                 savedTask.setJulesSessionName(dispatch.sessionName());
                 savedTask.setJulesDispatchStatus(dispatch.reason());
                 taskRepository.save(savedTask);

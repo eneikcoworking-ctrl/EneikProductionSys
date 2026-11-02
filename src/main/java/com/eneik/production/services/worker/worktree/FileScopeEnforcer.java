@@ -133,7 +133,7 @@ public class FileScopeEnforcer {
     public List<String> readGitStatusPorcelain(Path worktreePath) {
         List<String> files = new ArrayList<>();
         try {
-            Process process = new ProcessBuilder("git", "status", "--porcelain")
+            Process process = new ProcessBuilder("git", "status", "--porcelain", "-uall")
                     .directory(worktreePath.toFile())
                     .redirectErrorStream(true)
                     .start();
