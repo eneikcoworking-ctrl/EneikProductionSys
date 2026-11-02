@@ -3770,9 +3770,11 @@ public class ProjectFlowService {
         String compilerPrompt = wishlistCompilerPromptBatch(wishlists, planPath);
         compilerTask.setDescription(compilerPrompt);
         if (revived) {
-            // Same row, same identity, fresh plan path and prompt. initializeStatus is for a new entity;
-            // a revived one is moved back to queued explicitly so the row keeps its history.
-            compilerTask.setStatus(TaskStatus.queued);
+            // Same row, same identity, fresh plan path and prompt. Use initializeStatus to revive terminal
+            // carrier rows cleanly without tripping TaskTerminalOverwriteAudit, and reset retry/budget counters.
+            compilerTask.initializeStatus(TaskStatus.queued);
+            compilerTask.setRetryCount(0);
+            compilerTask.setLastBudgetResetAt(Instant.now());
             log.info("Wishlist compiler: reviving existing task {} for the same work ({}) instead of creating a duplicate row",
                     compilerTask.getId(), contentKey);
         } else {
