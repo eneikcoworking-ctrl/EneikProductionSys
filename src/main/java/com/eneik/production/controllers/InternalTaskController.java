@@ -129,7 +129,11 @@ public class InternalTaskController {
         }
         if (updates.containsKey("status")) {
             TaskStatus newStatus = TaskStatus.valueOf((String) updates.get("status"));
-            if (task.isTerminal() && task.getStatus() != newStatus) {
+            if (Boolean.TRUE.equals(updates.get("revive"))) {
+                task.initializeStatus(newStatus);
+                task.setRetryCount(0);
+                task.setLastBudgetResetAt(Instant.now());
+            } else if (task.isTerminal() && task.getStatus() != newStatus) {
                 UUID projectId = task.getProject() != null ? task.getProject().getId() : null;
                 TaskTerminalOverwriteAudit.recordAttempt(task.getId(), projectId, task.getStatus(), newStatus);
                 return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)

@@ -150,6 +150,8 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
             self.handle_execute_agy(payload)
         elif path in ("/render-viewports", "/api/vision/render"):
             self.handle_render_viewports(payload)
+        elif path in ("/verify-worktree", "/api/worker/verify"):
+            self.handle_verify_worktree(payload)
         else:
             self._send_json(404, {"error": "Endpoint not found", "path": path})
 
@@ -292,6 +294,38 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
                 "stdout": "",
                 "stderr": f"Execution failed: {str(e)}",
                 "durationMs": duration_ms
+            })
+
+    def handle_verify_worktree(self, payload):
+        worktree_path = str(payload.get("worktreePath", "")).strip()
+        build_command = payload.get("command") or ["mvn", "test-compile"]
+        if worktree_path.startswith("/var/lib/eneik/"):
+            host_path = "/var/lib/docker/volumes/eneikproductionsys_eneik-db/_data/" + worktree_path[len("/var/lib/eneik/"):]
+        else:
+            host_path = worktree_path
+
+        os.makedirs("/root/.m2", exist_ok=True)
+        cmd = [
+            "docker", "run", "--rm",
+            "--memory=1200m",
+            "--memory-swap=1600m",
+            "--cpus=1.5",
+            "-v", f"{host_path}:/workspace",
+            "-v", "/root/.m2:/root/.m2",
+            "-w", "/workspace",
+            "maven:3.9.9-eclipse-temurin-21"
+        ] + [str(c) for c in build_command]
+
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=280)
+            self._send_json(200, {
+                "exitCode": proc.returncode,
+                "output": (proc.stdout or "") + "\n" + (proc.stderr or "")
+            })
+        except Exception as e:
+            self._send_json(500, {
+                "exitCode": 1,
+                "output": f"Host bridge verification error: {str(e)}"
             })
 
     def handle_render_viewports(self, payload):

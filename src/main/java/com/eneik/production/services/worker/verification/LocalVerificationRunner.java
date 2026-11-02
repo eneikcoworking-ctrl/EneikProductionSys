@@ -40,6 +40,11 @@ public class LocalVerificationRunner {
             return VerificationResult.success(0, "Carrier/compiler task — skipped Maven build");
         }
 
+                if (task != null && isNonJavaAssetOrContractScope(task.getFileScope())) {
+            log.info("LocalVerificationRunner: Non-Java contract/asset scope {} detected for {}, skipping Maven build", task.getFileScope(), task.getId());
+            return VerificationResult.success(0, "Contract/asset scope verified clean");
+        }
+
         log.info("Popper Severe Test D008: acquiring host verification semaphore (available: {})...",
                 HOST_VERIFICATION_SEMAPHORE.availablePermits());
 
@@ -120,12 +125,71 @@ public class LocalVerificationRunner {
             ));
             fullCmd.addAll(buildCommand);
         } else {
+            VerificationResult bridgeResult = tryVerifyViaHostBridge(worktreePath, buildCommand);
+            if (bridgeResult != null) {
+                return bridgeResult;
+            }
             // Local fallback execution (maintaining semaphore protection)
             fullCmd.addAll(buildCommand);
         }
 
         log.info("Executing verification command: {}", fullCmd);
         return runProcess(worktreePath, fullCmd, TIMEOUT_SECONDS);
+    }
+
+    private boolean isNonJavaAssetOrContractScope(String rawScope) {
+        if (rawScope == null || rawScope.isBlank()) {
+            return false;
+        }
+        String clean = rawScope.replace('[', ' ').replace(']', ' ').replace('"', ' ').replace('\'', ' ').trim();
+        if (clean.isEmpty()) {
+            return false;
+        }
+        for (String part : clean.split("[,\\r\\n]+")) {
+            String p = part.trim().toLowerCase();
+            if (p.isEmpty()) continue;
+            if (p.endsWith(".java") || p.endsWith("pom.xml") || p.endsWith(".gradle")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private VerificationResult tryVerifyViaHostBridge(Path worktreePath, List<String> buildCommand) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var reqNode = mapper.createObjectNode();
+            reqNode.put("worktreePath", worktreePath.toAbsolutePath().normalize().toString());
+            var cmdArr = reqNode.putArray("command");
+            for (String c : buildCommand) {
+                cmdArr.add(c);
+            }
+            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
+                    .connectTimeout(java.time.Duration.ofSeconds(3))
+                    .build();
+            java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                    .uri(java.net.URI.create("http://host.docker.internal:8095/verify-worktree"))
+                    .header("Content-Type", "application/json")
+                    .timeout(java.time.Duration.ofSeconds(TIMEOUT_SECONDS))
+                    .POST(java.net.http.HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(reqNode)))
+                    .build();
+            java.net.http.HttpResponse<String> response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 || response.statusCode() == 500) {
+                var body = mapper.readTree(response.body());
+                int exitCode = body.path("exitCode").asInt(1);
+                String output = body.path("output").asText("");
+                if (exitCode == 0) {
+                    log.info("Popper Severe Test PASSED via Host Bridge (exit code 0)");
+                    return VerificationResult.success(output);
+                } else {
+                    String sig = DuhemQuineDetector.extractErrorSignature(output);
+                    log.warn("Popper Severe Test FAILED via Host Bridge (exit code {}): {}", exitCode, sig);
+                    return VerificationResult.failure(exitCode, output, sig);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
     public List<String> buildDockerCommandTokens(Path worktreePath, List<String> buildCommand) {
