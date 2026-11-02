@@ -154,6 +154,7 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
             self._send_json(404, {"error": "Endpoint not found", "path": path})
 
     def handle_execute_agy(self, payload):
+        import glob, signal
         user = payload.get("user") or payload.get("workerUser") or "remotecli3"
         user = user.strip().lower()
 
@@ -179,44 +180,112 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
 
         raw_model = payload.get("model", "gemini-3.8-flash-medium")
         model = normalize_model_name(raw_model)
-        prompt = payload.get("prompt", "")
+        raw_prompt = payload.get("prompt", "")
+        no_tools_header = (
+            "CRITICAL EXECUTION CONTRACT (ZERO TOOL CALLS):\n"
+            "1. DO NOT CALL ANY TOOLS! Never invoke run_command, read_file, write_file, edit_file, grep_search, or find_by_name.\n"
+            "2. The outer GitWorktreeExecutionManager automatically writes the files from your JSON response, creates the git branch, commits, pushes, and opens the PR.\n"
+            "3. Any instruction to 'create a branch', 'open a PR', or 'write a file' is satisfied SOLELY by returning that file inside the 'files' array of your JSON output.\n"
+            "4. Respond IMMEDIATELY in your VERY FIRST turn with ZERO tool calls and ONLY the raw JSON object!\n\n"
+        )
+        prompt = no_tools_header + raw_prompt + "\n\nREMINDER: DO NOT CALL ANY TOOLS. Output ONLY the raw JSON object now."
         timeout_sec = int(payload.get("timeoutSeconds", 180))
-        cwd = payload.get("workingDirectory")
+        sandbox_dir = "/tmp/agy-worker-sandbox"
+        os.makedirs(sandbox_dir, exist_ok=True)
+        os.chmod(sandbox_dir, 0o777)
 
-        if cwd and not os.path.exists(cwd):
-            cwd = None
+        brain_base = "/root/.gemini/antigravity-cli/brain" if user == "root" else f"/home/{user}/.gemini/antigravity-cli/brain"
+        existing_brains = set( os.listdir(brain_base) ) if os.path.exists(brain_base) else set()
 
         if user == "root":
-            cmd = ["/usr/local/bin/agy", "--model", model, "--dangerously-skip-permissions", "-p", prompt]
+            cmd = ["/usr/local/bin/agy", "--model", model, "-p", prompt]
         else:
             bin_path = f"/home/{user}/.local/bin/agy"
-            cmd = ["sudo", "-n", "-u", user, bin_path, "--model", model, "--dangerously-skip-permissions", "-p", prompt]
+            cmd = ["sudo", "-n", "-u", user, bin_path, "--model", model, "-p", prompt]
 
         start_time = time.time()
+        proc_obj = None
         try:
-            proc = subprocess.run(
+            proc_obj = subprocess.Popen(
                 cmd,
-                cwd=cwd,
-                capture_output=True,
+                cwd=sandbox_dir,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout_sec
+                start_new_session=True
             )
-            duration_ms = int((time.time() - start_time) * 1000)
-            self._send_json(200, {
-                "exitCode": proc.returncode,
-                "stdout": proc.stdout,
-                "stderr": proc.stderr,
-                "durationMs": duration_ms
-            })
-        except subprocess.TimeoutExpired as te:
+
+            captured_content = None
+            while (time.time() - start_time) < timeout_sec:
+                # Check any transcript_full.jsonl modified after start_time whose last step is DONE PLANNER_RESPONSE
+                if os.path.exists(brain_base):
+                    for b_id in os.listdir(brain_base):
+                        tf_path = os.path.join(brain_base, b_id, ".system_generated", "logs", "transcript_full.jsonl")
+                        if os.path.exists(tf_path) and os.path.getmtime(tf_path) >= start_time:
+                            try:
+                                with open(tf_path, "r", encoding="utf-8") as tf:
+                                    lines = [ln.strip() for ln in tf if ln.strip()]
+                                if lines:
+                                    last_obj = json.loads(lines[-1])
+                                    if (last_obj.get("type") == "PLANNER_RESPONSE"
+                                            and last_obj.get("status") == "DONE"
+                                            and not last_obj.get("tool_calls")):
+                                        content = last_obj.get("content", "")
+                                        if content and content.strip():
+                                            captured_content = content
+                            except Exception:
+                                pass
+                if captured_content:
+                    break
+                if proc_obj.poll() is not None:
+                    break
+                time.sleep(0.5)
+
+            if captured_content:
+                try:
+                    os.killpg(os.getpgid(proc_obj.pid), signal.SIGKILL)
+                except Exception:
+                    pass
+                duration_ms = int((time.time() - start_time) * 1000)
+                sys.stderr.write(f"[SovereignBridge] Fast-path transcript capture for {user} in {duration_ms}ms ({len(captured_content)} chars)\n")
+                self._send_json(200, {
+                    "exitCode": 0,
+                    "stdout": captured_content,
+                    "stderr": "",
+                    "durationMs": duration_ms
+                })
+                return
+
+            if proc_obj.poll() is not None:
+                stdout_str, stderr_str = proc_obj.communicate(timeout=5)
+                duration_ms = int((time.time() - start_time) * 1000)
+                self._send_json(200, {
+                    "exitCode": proc_obj.returncode,
+                    "stdout": stdout_str,
+                    "stderr": stderr_str,
+                    "durationMs": duration_ms
+                })
+                return
+
+            # Timed out
+            try:
+                os.killpg(os.getpgid(proc_obj.pid), signal.SIGKILL)
+            except Exception:
+                pass
             duration_ms = int((time.time() - start_time) * 1000)
             self._send_json(504, {
                 "exitCode": 124,
-                "stdout": te.stdout or "",
+                "stdout": "",
                 "stderr": f"Command timed out after {timeout_sec}s",
                 "durationMs": duration_ms
             })
         except Exception as e:
+            if proc_obj is not None:
+                try:
+                    os.killpg(os.getpgid(proc_obj.pid), signal.SIGKILL)
+                except Exception:
+                    pass
             duration_ms = int((time.time() - start_time) * 1000)
             self._send_json(500, {
                 "exitCode": 1,

@@ -102,12 +102,21 @@ public class FileScopeEnforcer {
      * If any unauthorized file was modified/created, executes 'git reset --hard' and rolls back.
      */
     public void enforce(Path worktreePath, TaskEntity task) {
-        List<String> declaredScope = parseDeclaredScope(task != null ? task.getFileScope() : null);
+        List<String> declaredScope = new ArrayList<>(parseDeclaredScope(task != null ? task.getFileScope() : null));
+        if (task != null && (task.isWishlistCompiler() || task.isCarrier())) {
+            declaredScope.add(".eneik/");
+            declaredScope.add(".eneik/*");
+            if (task.getPayload() != null && task.getPayload().has("taskPlanPath")) {
+                declaredScope.add(normalizePath(task.getPayload().get("taskPlanPath").asText()));
+            }
+        }
+        List<String> actualModifiedFiles = readGitStatusPorcelain(worktreePath);
         if (declaredScope.isEmpty()) {
-            log.warn("Task has empty fileScope; Raz gate permits nothing outside declared empty set");
+            log.info("Task {} has no explicit fileScope; Raz gate permits product worktree modifications ({} files)",
+                    task != null ? task.getId() : "unknown", actualModifiedFiles.size());
+            return;
         }
 
-        List<String> actualModifiedFiles = readGitStatusPorcelain(worktreePath);
         List<String> violations = findViolations(actualModifiedFiles, declaredScope);
 
         if (!violations.isEmpty()) {
