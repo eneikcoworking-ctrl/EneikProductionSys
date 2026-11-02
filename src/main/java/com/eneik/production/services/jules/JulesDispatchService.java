@@ -527,8 +527,16 @@ public class JulesDispatchService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private com.eneik.production.services.worker.WorkerExecutionRouter workerExecutionRouter;
+
     public void setTocSentinelService(com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
         this.tocSentinelService = tocSentinelService;
+    }
+
+    public void setWorkerExecutionRouter(com.eneik.production.services.worker.WorkerExecutionRouter router) {
+        this.workerExecutionRouter = router;
     }
 
     // 2026-08-14 (bug-hunt sweep): these 4 dispatch(...) overloads all previously carried their own
@@ -680,6 +688,29 @@ public class JulesDispatchService {
             session.setStatus("failed");
             session.setClosureReason("No project found for task");
             return julesSessionRepository.save(session);
+        }
+
+        // Sovereign Worker Execution Router Tier (LOCAL_AGY, DEEPSEEK_WORKTREE, HYBRID)
+        if (workerExecutionRouter != null) {
+            com.eneik.production.services.worker.WorkerEngineType engineMode = workerExecutionRouter.resolveEngineMode();
+            if (engineMode != com.eneik.production.services.worker.WorkerEngineType.JULES) {
+                log.info("JulesDispatchService: Routing task {} to sovereign WorkerExecutionRouter [mode: {}, engine: {}]",
+                        task.getId(), mode, engineMode);
+                com.eneik.production.models.persistence.AccountEntity account = accountId != null
+                        ? accountRepository.findById(accountId).orElse(null)
+                        : null;
+                var dispatchResult = workerExecutionRouter.dispatch(task, account, mode);
+                if (dispatchResult != null && dispatchResult.sessionId() != null) {
+                    JulesSessionEntity dispatchedSession = julesSessionRepository.findById(dispatchResult.sessionId()).orElse(null);
+                    if (dispatchedSession != null) {
+                        String st = dispatchedSession.getStatus();
+                        if ("pr_opened".equalsIgnoreCase(st) || "completed".equalsIgnoreCase(st)) {
+                            handlePrOpenedWorkflow(dispatchedSession);
+                        }
+                        return dispatchedSession;
+                    }
+                }
+            }
         }
 
         String repoName;
@@ -1027,6 +1058,21 @@ public class JulesDispatchService {
     public JulesSessionEntity pollStatus(UUID sessionId) {
         JulesSessionEntity session = julesSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
+
+        // Sovereign Worker Engine polling (LOCAL_AGY, DEEPSEEK_WORKTREE)
+        if (session.getWorkerEngine() != null && !"JULES".equalsIgnoreCase(session.getWorkerEngine())) {
+            if (workerExecutionRouter != null) {
+                String oldStatus = session.getStatus();
+                var pollResult = workerExecutionRouter.poll(sessionId);
+                session = julesSessionRepository.findById(sessionId).orElse(session);
+                String newStatus = session.getStatus();
+                if (("pr_opened".equalsIgnoreCase(newStatus) || "completed".equalsIgnoreCase(newStatus))
+                        && ("running".equalsIgnoreCase(oldStatus) || "queued".equalsIgnoreCase(oldStatus) || "revising".equalsIgnoreCase(oldStatus))) {
+                    handlePrOpenedWorkflow(session);
+                }
+                return session;
+            }
+        }
 
         if ("skipped".equals(session.getExternalSessionId()) || session.getExternalSessionId() == null) {
             return session;

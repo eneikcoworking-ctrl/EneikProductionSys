@@ -82,8 +82,13 @@ public class GitWorktreeExecutionManager {
                 Files.createDirectories(mirrorPath);
                 String repoUrl = project != null ? project.getRepoUrl() : null;
                 if (repoUrl != null && !repoUrl.isBlank()) {
+                    String cloneUrl = repoUrl;
+                    String token = resolveGitHubToken();
+                    if (token != null && repoUrl.contains("github.com")) {
+                        cloneUrl = formatAuthenticatedGitHubUrl(repoUrl, token);
+                    }
                     log.info("Cloning bare mirror for {} from {} to {}", project.getName(), repoUrl, mirrorPath);
-                    runCommand(mirrorsDir, 120, "git", "clone", "--mirror", repoUrl, mirrorPath.toString());
+                    runCommand(mirrorsDir, 120, "git", "clone", "--mirror", cloneUrl, mirrorPath.toString());
                 } else {
                     // Initialize empty bare git repo if no remote URL
                     runCommand(mirrorsDir, 30, "git", "init", "--bare", mirrorPath.toString());
@@ -236,7 +241,72 @@ public class GitWorktreeExecutionManager {
     }
 
     public void push(Path worktreePath, String branch) {
+        String token = resolveGitHubToken();
+        if (token != null && !token.isBlank()) {
+            try {
+                String originUrl = getRemoteOriginUrl(worktreePath);
+                if (originUrl != null && originUrl.contains("github.com")) {
+                    String authenticatedUrl = formatAuthenticatedGitHubUrl(originUrl, token);
+                    log.info("Pushing branch {} with authenticated GitHub token", branch);
+                    int exit = runCommand(worktreePath, 60, "git", "push", "-u", authenticatedUrl, branch);
+                    if (exit == 0) {
+                        return;
+                    }
+                    log.warn("Authenticated git push exited with code {}, retrying with standard origin remote", exit);
+                }
+            } catch (Exception e) {
+                log.warn("Authenticated git push failed, falling back to standard push: {}", e.getMessage());
+            }
+        }
         runCommand(worktreePath, 60, "git", "push", "-u", "origin", branch);
+    }
+
+    public String resolveGitHubToken() {
+        String token = System.getenv("GITHUB_TOKEN");
+        if (token != null && !token.isBlank()) {
+            return token.trim();
+        }
+        return null;
+    }
+
+    public String getRemoteOriginUrl(Path repoPath) {
+        try {
+            Process process = new ProcessBuilder("git", "remote", "get-url", "origin")
+                    .directory(repoPath.toFile())
+                    .start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line = reader.readLine();
+                if (line != null && !line.isBlank()) {
+                    return line.trim();
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
+    }
+
+    public String formatAuthenticatedGitHubUrl(String rawUrl, String token) {
+        if (rawUrl == null || token == null || token.isBlank()) {
+            return rawUrl;
+        }
+        String cleanUrl = rawUrl.trim();
+        // Handle git@github.com:owner/repo.git or https://github.com/owner/repo(.git)
+        String repoPath;
+        if (cleanUrl.startsWith("git@github.com:")) {
+            repoPath = cleanUrl.substring("git@github.com:".length());
+        } else if (cleanUrl.contains("github.com/")) {
+            repoPath = cleanUrl.substring(cleanUrl.indexOf("github.com/") + "github.com/".length());
+        } else {
+            return rawUrl;
+        }
+        // Strip any embedded credentials
+        if (repoPath.contains("@")) {
+            repoPath = repoPath.substring(repoPath.indexOf("@") + 1);
+        }
+        if (!repoPath.endsWith(".git")) {
+            repoPath = repoPath + ".git";
+        }
+        return "https://x-access-token:" + token.trim() + "@github.com/" + repoPath;
     }
 
     private boolean hasBranchOrRef(Path repoPath, String refName) {

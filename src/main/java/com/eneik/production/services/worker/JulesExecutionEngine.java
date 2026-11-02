@@ -21,7 +21,7 @@ public class JulesExecutionEngine implements WorkerExecutionEngine {
 
     private final JulesDispatchService julesDispatchService;
 
-    public JulesExecutionEngine(JulesDispatchService julesDispatchService) {
+    public JulesExecutionEngine(@org.springframework.context.annotation.Lazy JulesDispatchService julesDispatchService) {
         this.julesDispatchService = julesDispatchService;
     }
 

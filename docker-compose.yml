@@ -183,6 +183,10 @@ services:
       LINEAR_API_URL: ${LINEAR_API_URL:-https://api.linear.app/graphql}
       JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT: ${JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT:-3}
       ORCHESTRATION_PERSISTENT_WORKER_SESSIONS_ENABLED: ${ORCHESTRATION_PERSISTENT_WORKER_SESSIONS_ENABLED:-false}
+      WORKER_ENGINE_MODE: ${WORKER_ENGINE_MODE:-LOCAL_AGY}
+      WORKER_LOCAL_AGY_USER: ${WORKER_LOCAL_AGY_USER:-remotecli3}
+      SOVEREIGN_HOST_BRIDGE_URL: ${SOVEREIGN_HOST_BRIDGE_URL:-http://host.docker.internal:8095/execute-agy}
+      SOVEREIGN_VISION_BRIDGE_URL: ${SOVEREIGN_VISION_BRIDGE_URL:-http://host.docker.internal:8095/render-viewports}
     volumes:
       # The LIVE H2 store lives on a Docker-managed volume, not on the Windows bind mount
       # (2026-08-28). Measured across this host all day: every operation performed inside a
@@ -216,6 +220,8 @@ services:
     # file bigger and never compacted it - measured: 96 MB of data in a 1678 MB file. Together with the
     # raised spring.lifecycle.timeout-per-shutdown-phase this lets the store close and compact properly.
     stop_grace_period: 90s
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   frontend:
     build:

@@ -183,6 +183,11 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
             if (success) {
                 String workerBranch = "worker/" + taskId;
                 worktreeManager.commit(worktreePath, "feat(" + (task.getTitle() != null ? task.getTitle() : "worker") + "): implement task " + taskId);
+                try {
+                    worktreeManager.push(worktreePath, workerBranch);
+                } catch (Exception pe) {
+                    log.warn("worktreeManager.push failed for branch {}: {}", workerBranch, pe.getMessage());
+                }
 
                 pullRequestUrl = openPullRequest(task, workerBranch, startingBranch);
                 session.setPrUrl(pullRequestUrl);

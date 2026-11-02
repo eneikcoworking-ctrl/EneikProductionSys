@@ -34,6 +34,13 @@ public class LocalAgyCliClient {
     private final LocalAgyOutputParser outputParser;
     private final SystemSettingsService settingsService;
     private ProcessRunner processRunner;
+    private boolean customRunnerSet = false;
+
+    private static final String[] BRIDGE_URLS = new String[] {
+            System.getenv().getOrDefault("SOVEREIGN_HOST_BRIDGE_URL", "http://host.docker.internal:8095/execute-agy"),
+            "http://172.17.0.1:8095/execute-agy",
+            "http://127.0.0.1:8095/execute-agy"
+    };
 
     @FunctionalInterface
     public interface ProcessRunner {
@@ -58,6 +65,7 @@ public class LocalAgyCliClient {
 
     public void setProcessRunner(ProcessRunner processRunner) {
         this.processRunner = processRunner;
+        this.customRunnerSet = true;
     }
 
     /**
@@ -100,7 +108,26 @@ public class LocalAgyCliClient {
         log.info("LocalAgyCliClient: Executing agy under [{}] with model [{}] for task {}",
                 executionUser, model, task != null ? task.getId() : "unknown");
 
-        ProcessResult result = processRunner.run(command, LocalAgyCommandBuilder.DEFAULT_TIMEOUT_SECONDS);
+        ProcessResult result;
+        String binaryPath = commandBuilder.resolveBinaryPath(executionUser);
+        boolean localBinaryExists = new File(binaryPath).canExecute();
+
+        if (customRunnerSet || localBinaryExists) {
+            try {
+                result = processRunner.run(command, LocalAgyCommandBuilder.DEFAULT_TIMEOUT_SECONDS);
+            } catch (IOException e) {
+                if (!customRunnerSet && e.getMessage() != null && e.getMessage().contains("No such file")) {
+                    log.info("Local binary not executable, falling back to host bridge for task {}", task != null ? task.getId() : "unknown");
+                    result = callHostBridge(executionUser, model, fullPrompt, LocalAgyCommandBuilder.DEFAULT_TIMEOUT_SECONDS);
+                } else {
+                    throw e;
+                }
+            }
+        } else {
+            log.info("Local binary {} absent or not executable; executing agy via Host Bridge for task {}",
+                    binaryPath, task != null ? task.getId() : "unknown");
+            result = callHostBridge(executionUser, model, fullPrompt, LocalAgyCommandBuilder.DEFAULT_TIMEOUT_SECONDS);
+        }
 
         if (result.exitCode() != 0) {
             log.error("LocalAgyCliClient: process failed with exit code {}. Stderr: {}",
@@ -114,6 +141,65 @@ public class LocalAgyCliClient {
         }
 
         return outputParser.parse(stdout, model);
+    }
+
+    private ProcessResult callHostBridge(String executionUser, String model, String prompt, int timeoutSeconds) throws IOException {
+        String jsonPayload;
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            java.util.Map<String, Object> req = java.util.Map.of(
+                    "user", executionUser,
+                    "model", model,
+                    "prompt", prompt,
+                    "timeoutSeconds", timeoutSeconds
+            );
+            jsonPayload = mapper.writeValueAsString(req);
+        } catch (Exception e) {
+            throw new IOException("Failed to serialize host bridge request: " + e.getMessage(), e);
+        }
+
+        java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(java.time.Duration.ofSeconds(10))
+                .build();
+
+        IOException lastException = null;
+        for (String url : BRIDGE_URLS) {
+            try {
+                java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
+                        .uri(java.net.URI.create(url))
+                        .timeout(java.time.Duration.ofSeconds(timeoutSeconds + 15))
+                        .header("Content-Type", "application/json; charset=utf-8")
+                        .POST(java.net.http.HttpRequest.BodyPublishers.ofString(jsonPayload, StandardCharsets.UTF_8))
+                        .build();
+
+                java.net.http.HttpResponse<String> response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (response.statusCode() == 403) {
+                    throw new com.eneik.production.services.worker.worktree.ExclusionaryReasonViolationException(
+                            "Raz Deontic Gate Violation (D006) from Bridge: " + response.body()
+                    );
+                }
+
+                if (response.statusCode() == 200) {
+                    com.fasterxml.jackson.databind.JsonNode root = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.body());
+                    int exitCode = root.has("exitCode") ? root.get("exitCode").asInt() : 0;
+                    String stdout = root.has("stdout") ? root.get("stdout").asText() : "";
+                    String stderr = root.has("stderr") ? root.get("stderr").asText() : "";
+                    return new ProcessResult(exitCode, stdout, stderr);
+                }
+
+                throw new IOException("Host bridge returned HTTP " + response.statusCode() + ": " + response.body());
+            } catch (com.eneik.production.services.worker.worktree.ExclusionaryReasonViolationException d006) {
+                throw d006;
+            } catch (IOException e) {
+                log.warn("Attempt to connect to bridge at {} failed: {}", url, e.getMessage());
+                lastException = e;
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Bridge request interrupted", e);
+            }
+        }
+
+        throw new IOException("All Sovereign Host Bridge endpoints failed. Last error: " + (lastException != null ? lastException.getMessage() : "unknown"), lastException);
     }
 
     public String buildAgyPrompt(TaskEntity task, String fileContentsContext, String reflectionFeedback) {

@@ -569,8 +569,12 @@ public class ProjectFlowService {
     @Transactional
     public ProjectDto activateProject(UUID projectId) {
         ProjectEntity project = requireProject(projectId);
-        if (project.getStatus() == ProjectStatus.accepted || project.getStatus() == ProjectStatus.archived) {
-            throw new IllegalStateException("Cannot activate " + project.getStatus() + " project");
+        if (project.getStatus() == ProjectStatus.archived) {
+            throw new IllegalStateException("Cannot activate archived project");
+        }
+
+        if (project.getStatus() == ProjectStatus.accepted) {
+            project.setAcceptedAt(null);
         }
 
         if (project.getStatus() == ProjectStatus.active) {

@@ -117,8 +117,8 @@ public class DefaultSemanticLayoutSynthesizer implements SemanticLayoutSynthesiz
         html.append("</head>\n");
         html.append("<body class=\"min-h-screen flex flex-col font-sans text-slate-100 antialiased\">\n");
 
-        // Accessibility: Skip link
-        html.append("  <a href=\"#main-content\" class=\"sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-indigo-600 focus:text-white focus:outline-none focus:ring-2 focus:ring-indigo-400\">\n");
+        // Accessibility: Skip link with sovereign styling
+        html.append("  <a href=\"#main-content\" class=\"sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-emerald-500 focus:text-slate-950 focus:outline-none focus:ring-2 focus:ring-emerald-400 font-semibold rounded-md shadow-xl\">\n");
         html.append("    Skip to main content\n");
         html.append("  </a>\n\n");
 
@@ -130,9 +130,9 @@ public class DefaultSemanticLayoutSynthesizer implements SemanticLayoutSynthesiz
         html.append("      <span class=\"font-bold text-lg tracking-tight\">").append(tokenSet.archetype().getDisplayName()).append(" Platform</span>\n");
         html.append("    </div>\n");
         html.append("    <nav role=\"navigation\" aria-label=\"Main Navigation\" class=\"flex items-center space-x-6\">\n");
-        html.append("      <a href=\"#features\" class=\"text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded-sm p-1\">Features</a>\n");
-        html.append("      <a href=\"#documentation\" class=\"text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded-sm p-1\">Documentation</a>\n");
-        html.append("      <a href=\"#contact\" class=\"text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded-sm p-1\">Contact</a>\n");
+        html.append("      <a href=\"#features\" class=\"text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded-sm p-1\">Features</a>\n");
+        html.append("      <a href=\"#documentation\" class=\"text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded-sm p-1\">Documentation</a>\n");
+        html.append("      <a href=\"#contact\" class=\"text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 rounded-sm p-1\">Contact</a>\n");
         html.append("    </nav>\n");
         html.append("  </header>\n\n");
 
@@ -149,7 +149,7 @@ public class DefaultSemanticLayoutSynthesizer implements SemanticLayoutSynthesiz
         html.append("          Generated with WCAG 2.1 AAA contrast compliance (").append(String.format(java.util.Locale.ROOT, "%.1f", tokenSet.apcaContrastRatio())).append(":1) and adaptive typography clamps.\n");
         html.append("        </p>\n");
         html.append("        <div class=\"pt-4 flex flex-wrap gap-4 items-center\">\n");
-        html.append("          <button type=\"button\" class=\"px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-all\">\n");
+        html.append("          <button type=\"button\" class=\"px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold rounded-lg shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-all\">\n");
         html.append("            Explore Dashboard\n");
         html.append("          </button>\n");
         html.append("          <button type=\"button\" class=\"px-6 py-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border ").append(border).append(" font-semibold rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-all\">\n");
@@ -172,15 +172,15 @@ public class DefaultSemanticLayoutSynthesizer implements SemanticLayoutSynthesiz
         html.append("        <form role=\"form\" action=\"#\" method=\"POST\" class=\"space-y-4 max-w-xl\">\n");
         html.append("          <div>\n");
         html.append("            <label for=\"user-email\" class=\"block text-sm font-medium text-slate-300 mb-1\">Email Address</label>\n");
-        html.append("            <input id=\"user-email\" name=\"email\" type=\"email\" required aria-required=\"true\" placeholder=\"developer@domain.com\" class=\"w-full px-4 py-2 bg-slate-900 border ").append(border).append(" text-white rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900\">\n");
+        html.append("            <input id=\"user-email\" name=\"email\" type=\"email\" required aria-required=\"true\" placeholder=\"developer@domain.com\" class=\"w-full px-4 py-2 bg-slate-900 border ").append(border).append(" text-white rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900\">\n");
         html.append("          </div>\n");
         html.append("          <div>\n");
         html.append("            <label for=\"project-archetype-select\" class=\"block text-sm font-medium text-slate-300 mb-1\">Target Archetype</label>\n");
-        html.append("            <select id=\"project-archetype-select\" name=\"archetype\" class=\"w-full px-4 py-2 bg-slate-900 border ").append(border).append(" text-white rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900\">\n");
+        html.append("            <select id=\"project-archetype-select\" name=\"archetype\" class=\"w-full px-4 py-2 bg-slate-900 border ").append(border).append(" text-white rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900\">\n");
         html.append("              <option value=\"").append(tokenSet.archetype().name()).append("\" selected>").append(tokenSet.archetype().getDisplayName()).append("</option>\n");
         html.append("            </select>\n");
         html.append("          </div>\n");
-        html.append("          <button type=\"submit\" class=\"px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-all\">\n");
+        html.append("          <button type=\"submit\" class=\"px-6 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-medium rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-all\">\n");
         html.append("            Submit Configuration\n");
         html.append("          </button>\n");
         html.append("        </form>\n");

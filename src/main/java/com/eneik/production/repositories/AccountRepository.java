@@ -333,7 +333,11 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     long countByEnabledTrueAndStatusNot(AccountStatus status);
 
-    Optional<AccountEntity> findByName(String name);
+    List<AccountEntity> findAllByNameOrderByIdAsc(String name);
+
+    default Optional<AccountEntity> findByName(String name) {
+        return findAllByNameOrderByIdAsc(name).stream().findFirst();
+    }
 
     boolean existsByEnabledTrueAndStatus(AccountStatus status);
 
