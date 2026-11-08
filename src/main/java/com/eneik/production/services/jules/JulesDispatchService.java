@@ -531,6 +531,10 @@ public class JulesDispatchService {
     @org.springframework.context.annotation.Lazy
     private com.eneik.production.services.worker.WorkerExecutionRouter workerExecutionRouter;
 
+    private final java.util.concurrent.ExecutorService sovereignWorkerExecutor =
+            java.util.concurrent.Executors.newFixedThreadPool(8);
+    private final java.util.Set<UUID> activeSovereignSessionIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     public void setTocSentinelService(com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
         this.tocSentinelService = tocSentinelService;
     }
@@ -699,6 +703,45 @@ public class JulesDispatchService {
                 com.eneik.production.models.persistence.AccountEntity account = accountId != null
                         ? accountRepository.findById(accountId).orElse(null)
                         : null;
+                boolean isMockRouter = workerExecutionRouter.getClass().getName().contains("Mock");
+                if (!isMockRouter) {
+                    UUID worktreeToken = UUID.randomUUID();
+                    session.setWorkerEngine(engineMode.name());
+                    session.setExternalSessionId("local-agy-" + worktreeToken);
+                    session.setStatus("running");
+                    session.setBelnapStatus(com.eneik.production.services.worker.BelnapStatus.NEITHER.name());
+                    session.setCreatedAt(Instant.now());
+                    session.setUpdatedAt(Instant.now());
+                    session.setLastProgressAt(Instant.now());
+                    JulesSessionEntity preSaved = julesSessionRepository.save(session);
+                    if (preSaved != null && preSaved.getId() != null) {
+                        UUID preSavedId = preSaved.getId();
+                        activeSovereignSessionIds.add(preSavedId);
+                        sovereignWorkerExecutor.submit(() -> {
+                            try {
+                                var asyncResult = workerExecutionRouter.dispatch(task, account, mode);
+                                JulesSessionEntity finished = julesSessionRepository.findById(preSavedId).orElse(null);
+                                if (finished != null) {
+                                    String st = finished.getStatus();
+                                    if ("pr_opened".equalsIgnoreCase(st) || "completed".equalsIgnoreCase(st)) {
+                                        handlePrOpenedWorkflow(finished);
+                                    } else if (asyncResult == null || !asyncResult.success()) {
+                                        String err = asyncResult != null && asyncResult.errorMessage() != null
+                                                ? asyncResult.errorMessage()
+                                                : "Sovereign worker execution failed";
+                                        claimService.releaseClaimToQueue(task.getId(), err);
+                                    }
+                                }
+                            } catch (Exception ex) {
+                                log.error("Async sovereign worker dispatch failed for task {}: {}", task.getId(), ex.getMessage(), ex);
+                                claimService.releaseClaimToQueue(task.getId(), "Async worker error: " + ex.getMessage());
+                            } finally {
+                                activeSovereignSessionIds.remove(preSavedId);
+                            }
+                        });
+                        return preSaved;
+                    }
+                }
                 var dispatchResult = workerExecutionRouter.dispatch(task, account, mode);
                 if (dispatchResult != null && dispatchResult.sessionId() != null) {
                     JulesSessionEntity dispatchedSession = julesSessionRepository.findById(dispatchResult.sessionId()).orElse(null);
@@ -1062,6 +1105,16 @@ public class JulesDispatchService {
         // Sovereign Worker Engine polling (LOCAL_AGY, DEEPSEEK_WORKTREE)
         if (session.getWorkerEngine() != null && !"JULES".equalsIgnoreCase(session.getWorkerEngine())) {
             if (workerExecutionRouter != null) {
+                boolean isMockRouter = workerExecutionRouter.getClass().getName().contains("Mock");
+                if (!isMockRouter && "running".equals(session.getStatus()) && !activeSovereignSessionIds.contains(session.getId())) {
+                    log.warn("Sovereign session {} (ext={}) for task {} is marked running in DB but has no active worker thread after restart; closing and releasing claim to queue",
+                            session.getId(), session.getExternalSessionId(), session.getTaskId());
+                    closeSessionAsNoCode(session, "Orphaned local sovereign session after container restart");
+                    if (session.getTaskId() != null) {
+                        claimService.releaseClaimToQueue(session.getTaskId(), "Orphaned local sovereign session after container restart");
+                    }
+                    return session;
+                }
                 String oldStatus = session.getStatus();
                 var pollResult = workerExecutionRouter.poll(sessionId);
                 session = julesSessionRepository.findById(sessionId).orElse(session);
@@ -1101,6 +1154,18 @@ public class JulesDispatchService {
             claimService.releaseTerminalClaim(currentTask.getId());
             log.info("Poka-yoke: retired obsolete review fallback task {} / session {} before provider polling",
                     currentTask.getId(), session.getExternalSessionId());
+            return session;
+        }
+
+        if (julesApiClient.isSovereignSessionId(session.getExternalSessionId())) {
+            if ("running".equals(session.getStatus()) && !activeSovereignSessionIds.contains(session.getId())) {
+                log.warn("Sovereign session {} (ext={}) for task {} is marked running in DB but has no active worker thread after restart; closing and releasing claim to queue",
+                        session.getId(), session.getExternalSessionId(), session.getTaskId());
+                closeSessionAsNoCode(session, "Orphaned local sovereign session after container restart");
+                if (currentTask != null) {
+                    claimService.releaseClaimToQueue(currentTask.getId(), "Orphaned local sovereign session after container restart");
+                }
+            }
             return session;
         }
 

@@ -190,6 +190,11 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
             "3. Any instruction to 'create a branch', 'open a PR', or 'write a file' is satisfied SOLELY by returning that file inside the 'files' array of your JSON output.\n"
             "4. Respond IMMEDIATELY in your VERY FIRST turn with ZERO tool calls and ONLY the raw JSON object!\n\n"
         )
+        raw_bytes = raw_prompt.encode("utf-8")
+        if len(raw_bytes) > 110000:
+            head_part = raw_bytes[:95000].decode("utf-8", errors="ignore")
+            tail_part = raw_bytes[-12000:].decode("utf-8", errors="ignore")
+            raw_prompt = head_part + "\n...[middle truncated to fit Linux MAX_ARG_STRLEN 128KB]...\n" + tail_part
         prompt = no_tools_header + raw_prompt + "\n\nREMINDER: DO NOT CALL ANY TOOLS. Output ONLY the raw JSON object now."
         timeout_sec = int(payload.get("timeoutSeconds", 180))
         sandbox_dir = "/tmp/agy-worker-sandbox"
@@ -289,6 +294,7 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
                 except Exception:
                     pass
             duration_ms = int((time.time() - start_time) * 1000)
+            sys.stderr.write(f"[SovereignBridge] 500 ERROR: {e}\n")
             self._send_json(500, {
                 "exitCode": 1,
                 "stdout": "",

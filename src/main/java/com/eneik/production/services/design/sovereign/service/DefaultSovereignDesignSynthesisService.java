@@ -14,13 +14,15 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 /**
  * Default orchestrator for the Autonomous Sovereign Designer Engine pipeline,
- * instrumented with {@link DesignTelemetryCollector} for GQM framework metrics recording.
+ * integrating brief-conditioned synthesis, Stanford Memorilla latent slots (K=16),
+ * empirical Playwright viewport captures, and GQM telemetry recording.
  */
 @Service
 public class DefaultSovereignDesignSynthesisService implements SovereignDesignSynthesisService {
@@ -73,12 +75,27 @@ public class DefaultSovereignDesignSynthesisService implements SovereignDesignSy
 
     @Override
     public SynthesisSession executeDesignSynthesis(ProductArchetype archetype, String projectContextKey) {
+        return executeDesignSynthesis(archetype, projectContextKey, null, List.of());
+    }
+
+    @Override
+    public SynthesisSession executeDesignSynthesis(
+            ProductArchetype archetype,
+            String projectContextKey,
+            String brief,
+            List<String> memorillaLatentSlots
+    ) {
         Objects.requireNonNull(archetype, "archetype cannot be null");
         SynthesisSession session = SynthesisSession.create(archetype, clock.instant());
 
-        Map<String, String> meta = Map.of(
-                "projectContextKey", projectContextKey != null ? projectContextKey : "default"
-        );
+        Map<String, String> meta = new LinkedHashMap<>();
+        meta.put("projectContextKey", projectContextKey != null ? projectContextKey : "default");
+        if (brief != null && !brief.isBlank()) {
+            meta.put("briefLength", String.valueOf(brief.length()));
+        }
+        if (memorillaLatentSlots != null && !memorillaLatentSlots.isEmpty()) {
+            meta.put("memorillaSlots", String.valueOf(memorillaLatentSlots.size()));
+        }
 
         try {
             DesignTokenSet tokenSet = tokenCompiler.compileTokens(archetype);
@@ -90,7 +107,9 @@ public class DefaultSovereignDesignSynthesisService implements SovereignDesignSy
                     tokenSet,
                     gridPattern,
                     assets,
-                    session.getCurrentRound()
+                    session.getCurrentRound(),
+                    brief,
+                    memorillaLatentSlots != null ? memorillaLatentSlots : List.of()
             );
 
             List<ViewportType> viewports = List.of(ViewportType.DESKTOP_1440, ViewportType.MOBILE_375);
@@ -99,9 +118,9 @@ public class DefaultSovereignDesignSynthesisService implements SovereignDesignSy
                 session.recordDomAndTransitionToAuditing(currentDocument);
 
                 List<ViewportCapture> captures = visionHarness.captureViewports(currentDocument, viewports);
+                session.recordCaptures(captures);
                 VisionAuditReport report = auditLoop.auditDocument(currentDocument, captures);
 
-                // Telemetry Event 1: Record visual audit completion
                 telemetryCollector.recordAuditCompleted(
                         session.getId(),
                         archetype,
@@ -114,7 +133,6 @@ public class DefaultSovereignDesignSynthesisService implements SovereignDesignSy
                 SynthesisStatus status = session.evaluateAuditAndTransition(report);
 
                 if (status == SynthesisStatus.COMPLETED_APPROVED || status == SynthesisStatus.COMPLETED_FALLBACK) {
-                    // Telemetry Event 2: Record generation success
                     telemetryCollector.recordGenerationSuccess(
                             session.getId(),
                             archetype,
@@ -150,7 +168,6 @@ public class DefaultSovereignDesignSynthesisService implements SovereignDesignSy
             if (!session.getStatus().isTerminal()) {
                 session.transitionToFailed(failureReason);
             }
-            // Telemetry Event 3: Record generation failure
             telemetryCollector.recordGenerationFailure(
                     session.getId(),
                     archetype,

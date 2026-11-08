@@ -87,21 +87,41 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
         log.info("LocalAgyWorktreeEngine: dispatching task {} [Cynefin: {}, Mode: {}]",
                 taskId, task.getCynefinDomain(), mode);
 
-        // 1. Initialize persistent session entity with Belnap NEITHER
-        JulesSessionEntity session = new JulesSessionEntity();
-        session.setTaskId(taskId);
-        if (account != null) {
-            session.setAccountId(account.getId());
+        // 1. Initialize or reuse pre-dispatched session entity with Belnap NEITHER
+        JulesSessionEntity session = null;
+        UUID worktreeToken = null;
+        List<JulesSessionEntity> existingSessions = sessionRepository.findByTaskId(taskId);
+        if (existingSessions != null) {
+            for (JulesSessionEntity s : existingSessions) {
+                if (("running".equalsIgnoreCase(s.getStatus()) || "queued".equalsIgnoreCase(s.getStatus()))
+                        && s.getExternalSessionId() != null
+                        && s.getExternalSessionId().startsWith("local-agy-")
+                        && s.getWorktreePath() == null) {
+                    try {
+                        worktreeToken = UUID.fromString(s.getExternalSessionId().substring("local-agy-".length()));
+                        session = s;
+                        break;
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
         }
-        UUID worktreeToken = UUID.randomUUID();
-        session.setWorkerEngine("LOCAL_AGY");
-        session.setExternalSessionId("local-agy-" + worktreeToken);
-        session.setStatus("queued");
-        session.setBelnapStatus(BelnapStatus.NEITHER.name());
-        session.setCreatedAt(Instant.now());
-        session.setUpdatedAt(Instant.now());
-        session.setLastProgressAt(Instant.now());
-        session = sessionRepository.save(session);
+        if (session == null || worktreeToken == null) {
+            session = new JulesSessionEntity();
+            session.setTaskId(taskId);
+            if (account != null) {
+                session.setAccountId(account.getId());
+            }
+            worktreeToken = UUID.randomUUID();
+            session.setWorkerEngine("LOCAL_AGY");
+            session.setExternalSessionId("local-agy-" + worktreeToken);
+            session.setStatus("queued");
+            session.setBelnapStatus(BelnapStatus.NEITHER.name());
+            session.setCreatedAt(Instant.now());
+            session.setUpdatedAt(Instant.now());
+            session.setLastProgressAt(Instant.now());
+            session = sessionRepository.save(session);
+        }
         UUID sessionId = session.getId();
 
         Path baseRepo = null;
@@ -118,21 +138,54 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
             session.setLastProgressAt(Instant.now());
             sessionRepository.save(session);
 
-            List<String> declaredScope = fileScopeEnforcer.parseDeclaredScope(task.getFileScope());
-            String scopedFilesContent = worktreeManager.readScopedFiles(worktreePath, declaredScope);
+            List<String> repoFiles = worktreeManager.listRepositoryFiles(worktreePath);
+            String repoTreeBlock = buildRepositoryFileTreeBlock(repoFiles);
+            java.util.List<String> declaredScope = new java.util.ArrayList<>(fileScopeEnforcer.parseDeclaredScope(task.getFileScope()));
+            java.util.List<String> filesToRead = declaredScope.isEmpty()
+                    ? selectGroundedFilesFromTree(task, repoFiles)
+                    : declaredScope;
+            String rawScopedContent = worktreeManager.readScopedFiles(worktreePath, filesToRead);
+            String scopedFilesContent = repoTreeBlock.isEmpty()
+                    ? rawScopedContent
+                    : (rawScopedContent == null || rawScopedContent.isBlank() ? repoTreeBlock : repoTreeBlock + "\n\n" + rawScopedContent);
 
-            // Multiple Drafts loop (up to 2 attempts)
+            // Multiple Drafts loop (up to 2 attempts, +1 if Dynamic Scope Expansion triggers)
             String reflectionFeedback = null;
             boolean success = false;
             String pullRequestUrl = null;
+            int maxAttempts = 2;
 
-            for (int attempt = 1; attempt <= 2; attempt++) {
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                 log.info("Task {}: Generating draft #{} via Local agy CLI...", taskId, attempt);
 
                 DeepSeekResponse response = agyClient.generateSolution(task, scopedFilesContent, account, reflectionFeedback);
 
-                // Duhem-Quine check 1: Scope Insufficient escalation
+                // Dennett Dynamic Scope Expansion on SCOPE_INSUFFICIENT
                 if (response.scopeStatus() == ScopeStatus.SCOPE_INSUFFICIENT) {
+                    java.util.List<String> safeMissing = filterSafeDynamicScopePaths(response.missingFiles(), repoFiles);
+                    if (!safeMissing.isEmpty() && maxAttempts < 3) {
+                        log.info("Task {}: Dennett Dynamic Scope Expansion adding {} to scope within worktree", taskId, safeMissing);
+                        for (String m : safeMissing) {
+                            if (!declaredScope.contains(m)) {
+                                declaredScope.add(m);
+                            }
+                            if (!filesToRead.contains(m)) {
+                                filesToRead.add(m);
+                            }
+                        }
+                        if (task.getFileScope() != null && !task.getFileScope().isBlank() && !"[]".equals(task.getFileScope().trim())) {
+                            task.setFileScope(toJsonArrayString(declaredScope));
+                        }
+                        String expandedContent = worktreeManager.readScopedFiles(worktreePath, filesToRead);
+                        scopedFilesContent = repoTreeBlock.isEmpty()
+                                ? expandedContent
+                                : (expandedContent == null || expandedContent.isBlank() ? repoTreeBlock : repoTreeBlock + "\n\n" + expandedContent);
+                        reflectionFeedback = "Dynamic Scope Expansion (Dennett): The requested files " + safeMissing
+                                + " are now permitted in your scope and loaded above (if they exist in the repository). "
+                                + "Do NOT return SCOPE_INSUFFICIENT again. Output scope_status=SUFFICIENT with the complete file changes.";
+                        maxAttempts = 3;
+                        continue;
+                    }
                     log.warn("Task {}: Local agy returned SCOPE_INSUFFICIENT. Missing files: {}",
                             taskId, response.missingFiles());
                     session.setStatus("scope_insufficient");
@@ -140,6 +193,23 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
                     session.setClosureReason("SCOPE_INSUFFICIENT: missing " + response.missingFiles());
                     sessionRepository.save(session);
                     return WorkerDispatchResult.failed(sessionId, "SCOPE_INSUFFICIENT: " + response.missingFiles(), WorkerEngineType.LOCAL_AGY);
+                }
+
+                // Expand declaredScope for admissible companion product files created/modified in draft
+                if (!declaredScope.isEmpty() && response.files() != null) {
+                    boolean scopeExpanded = false;
+                    for (var patch : response.files()) {
+                        if (patch != null && patch.path() != null && isAdmissibleDynamicPath(patch.path())) {
+                            String norm = fileScopeEnforcer.normalizePath(patch.path());
+                            if (!declaredScope.contains(norm)) {
+                                declaredScope.add(norm);
+                                scopeExpanded = true;
+                            }
+                        }
+                    }
+                    if (scopeExpanded) {
+                        task.setFileScope(toJsonArrayString(declaredScope));
+                    }
                 }
 
                 // Apply surgical patch
@@ -281,9 +351,13 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
             return null;
         }
         try {
-            String title = "feat: " + (task.getTitle() != null ? task.getTitle() : "task " + task.getId());
+            String rawTitle = task.getTitle() != null ? task.getTitle() : "task " + task.getId();
+            if (rawTitle.length() > 200) {
+                rawTitle = rawTitle.substring(0, 197) + "...";
+            }
+            String title = "feat: " + rawTitle;
             String body = "Autonomous sovereign worker PR for task " + task.getId() + "\n\n"
-                    + "Description:\n" + task.getDescription() + "\n\n"
+                    + "Description:\n" + truncateLogs(task.getDescription(), 12000) + "\n\n"
                     + "Verified by LocalVerificationRunner (Semaphore(1), D008). Engine: LOCAL_AGY.";
 
             var prOpt =
@@ -294,6 +368,108 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
             log.warn("Failed to create GitHub PR for task {}: {}", task.getId(), e.getMessage());
             return null;
         }
+    }
+
+    private String buildRepositoryFileTreeBlock(List<String> repoFiles) {
+        if (repoFiles == null || repoFiles.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("### REPOSITORY FILE TREE (git ls-files вЂ” use ONLY real package/directory paths from this tree):\n");
+        int count = 0;
+        for (String f : repoFiles) {
+            if (count >= 120) {
+                sb.append("... (truncated)\n");
+                break;
+            }
+            sb.append("- ").append(f).append("\n");
+            count++;
+        }
+        return sb.toString();
+    }
+
+    private java.util.List<String> selectGroundedFilesFromTree(TaskEntity task, List<String> repoFiles) {
+        if (repoFiles == null || repoFiles.isEmpty() || task == null) {
+            return java.util.List.of();
+        }
+        String text = ((task.getTitle() != null ? task.getTitle() : "") + " "
+                + (task.getDescription() != null ? task.getDescription() : "")).toLowerCase(java.util.Locale.ROOT);
+        java.util.List<String> selected = new java.util.ArrayList<>();
+        if (repoFiles.contains("pom.xml")) {
+            selected.add("pom.xml");
+        }
+        for (String rel : repoFiles) {
+            int slash = rel.lastIndexOf('/');
+            String base = (slash >= 0 ? rel.substring(slash + 1) : rel).toLowerCase(java.util.Locale.ROOT);
+            String stem = base.contains(".") ? base.substring(0, base.indexOf('.')) : base;
+            if (stem.length() >= 4 && text.contains(stem)) {
+                if (!selected.contains(rel)) {
+                    selected.add(rel);
+                }
+            } else {
+                for (String token : stem.split("(?=[A-Z])|[_\\-]+")) {
+                    if (token.length() >= 5 && text.contains(token.toLowerCase(java.util.Locale.ROOT))) {
+                        if (!selected.contains(rel)) {
+                            selected.add(rel);
+                        }
+                        break;
+                    }
+                }
+            }
+            if (selected.size() >= 10) {
+                break;
+            }
+        }
+        return selected;
+    }
+
+    private java.util.List<String> filterSafeDynamicScopePaths(List<String> requested, List<String> repoFiles) {
+        if (requested == null || requested.isEmpty()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> safe = new java.util.ArrayList<>();
+        for (String raw : requested) {
+            if (raw == null || raw.isBlank()) continue;
+            String norm = fileScopeEnforcer.normalizePath(raw);
+            if (isAdmissibleDynamicPath(norm) && !safe.contains(norm)) {
+                safe.add(norm);
+            }
+            // Also match by filename in repoFiles if worker guessed wrong directory prefix
+            int slash = norm.lastIndexOf('/');
+            String baseName = slash >= 0 ? norm.substring(slash + 1) : norm;
+            if (repoFiles != null && !baseName.isEmpty()) {
+                for (String rf : repoFiles) {
+                    if (rf.endsWith("/" + baseName) || rf.equals(baseName)) {
+                        if (isAdmissibleDynamicPath(rf) && !safe.contains(rf)) {
+                            safe.add(rf);
+                        }
+                    }
+                }
+            }
+        }
+        return safe;
+    }
+
+    private boolean isAdmissibleDynamicPath(String path) {
+        if (path == null || path.isBlank()) return false;
+        String norm = fileScopeEnforcer.normalizePath(path);
+        if (norm.contains("..") || norm.startsWith(".github/") || norm.startsWith(".eneik/")
+                || norm.startsWith(".env") || norm.contains("com/eneik/production/")) {
+            return false;
+        }
+        return norm.startsWith("src/") || norm.startsWith("frontend/") || norm.startsWith("backend/")
+                || norm.startsWith("docs/") || norm.startsWith("tests/") || norm.startsWith("design/")
+                || norm.equals("pom.xml") || norm.equals("package.json") || norm.equals("playwright.config.ts");
+    }
+
+    private String toJsonArrayString(List<String> items) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) sb.append(",");
+            sb.append("\"").append(items.get(i).replace("\"", "\\\"")).append("\"");
+        }
+        sb.append("]");
+        return sb.toString();
     }
 
     private String truncateLogs(String output, int maxChars) {

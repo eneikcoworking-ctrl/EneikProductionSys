@@ -538,6 +538,129 @@ class GeminiContextServiceTest {
         verify(repository, never()).findAllVectorRows();
     }
 
+    @Test
+    @org.junit.jupiter.api.DisplayName("Memorilla Subspace Projection (arXiv:2610.21375 / Ryle D002): selects orthogonal semantic dimensions and suppresses collinear clones")
+    void memorillaLatentMemorySlotsSelectOrthogonalSubspaceInsteadOfCollinearClones() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        when(repository.count()).thenReturn(5L);
+
+        // Query points at 45 degrees between axis X and axis Y: (0.7071, 0.7071, 0)
+        float[] queryVec = new float[]{0.70710678f, 0.70710678f, 0.0f};
+        when(mlPredictionServiceClient.embed("multi-aspect architecture query")).thenReturn(queryVec);
+
+        // Three near-collinear clones along dominant axis -> clone1 is closest to query (cos ~ 0.994), clone2 & clone3 have cos > 0.99 with clone1
+        ContextChunkEntity clone1 = chunk("# Rule A1 | *Философия:* Деонтический фильтр D006", "CHARTER_A.md", new float[]{0.78f, 0.62f, 0.0f});
+        ContextChunkEntity clone2 = chunk("Duplicate paragraph of Rule A1 with slight wording change", "CHARTER_A.md", new float[]{0.81f, 0.59f, 0.0f});
+        ContextChunkEntity clone3 = chunk("Another redundant paragraph from CHARTER_A", "CHARTER_A.md", new float[]{0.83f, 0.56f, 0.0f});
+        // Orthogonal relevant dimension along axis Y (0.0, 1.0, 0.0) -> cos with query = 0.7071, cos with clone1 = 0.60
+        ContextChunkEntity orthogonal = chunk("# Rule B1 | *Идеал:* Фальсификация Поппера D008 в рантайме", "FACTORY_MECHANISMS.md", new float[]{0.0f, 1.0f, 0.0f});
+        // Irrelevant noise along axis Z (0.0, 0.0, 1.0) -> cos with query = 0.0
+        ContextChunkEntity noise = chunk("Irrelevant noise", "NOISE.md", new float[]{0.0f, 0.0f, 1.0f});
+
+        List<ContextChunkEntity> allEntities = List.of(clone1, clone2, clone3, orthogonal, noise);
+        List<ContextChunkRepository.VectorRow> rows = allEntities.stream().map(GeminiContextServiceTest::vectorRow).toList();
+        when(repository.findVectorRowsBySourceTypeIn(anyList())).thenReturn(rows);
+        when(repository.findAllById(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            List<java.util.UUID> ids = (List<java.util.UUID>) inv.getArgument(0);
+            return allEntities.stream().filter(e -> ids.contains(e.getId())).toList();
+        });
+
+        List<GeminiContextService.LatentMemorySlot> slots = service.retrieveLatentMemorySlots("multi-aspect architecture query", 16);
+
+        assertEquals(2, slots.size(), "Collinear clones (cos > 0.96) and below-floor noise must be suppressed, leaving the 2 orthogonal dimensions");
+        assertEquals("CHARTER_A.md", slots.get(0).sourceRef());
+        assertEquals("FACTORY_MECHANISMS.md", slots.get(1).sourceRef());
+        assertTrue(slots.get(0).distilledToken().contains("D006"));
+        assertTrue(slots.get(1).distilledToken().contains("D008"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("Memorilla Semantic Distillation (Church D014): compresses 1400-char chunk >= 5x into <= 240-char capsule preserving invariants")
+    void memorillaDistillationCompressesChunksWhilePreservingInvariantsAndSourceRefs() {
+        String verboseChunk = "# Механизм 208: Латентная семантическая память Memorilla\n\n"
+                + ("Длинное вводное описание контекста, которое обычно занимает сотни токенов и размывает внимание модели при передаче сырых абзацев. "
+                + "Повторяющиеся пояснения, исторические отступления и второстепенные примеры из логов. ").repeat(4) + "\n\n"
+                + "*Философия:* Райл D002 (против комбинаторного взрыва), Кларк (Extended Mind), Чёрч D014 (RAG Grounding Capsule).\n"
+                + "*Идеал:* K=16 ортогональных слотов памяти для BARCAN-TAG-07 с 5-кратным сжатием токенов.\n"
+                + "Еще один длинный абзац с дополнительными примерами, которые не должны вытеснять ядро инварианта.";
+
+        String distilled = GeminiContextService.distillLatentMemoryToken(verboseChunk, GeminiContextService.MAX_LATENT_SLOT_CHARS);
+
+        assertTrue(distilled.length() <= GeminiContextService.MAX_LATENT_SLOT_CHARS,
+                "Distilled token must not exceed MAX_LATENT_SLOT_CHARS (240), got " + distilled.length());
+        assertTrue(verboseChunk.length() >= distilled.length() * 3,
+                "Expected at least 3x compression ratio");
+        assertTrue(distilled.contains("# Механизм 208"));
+        assertTrue(distilled.contains("*Философия:*"));
+        assertTrue(distilled.contains("D002"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("Memorilla Incremental Append-Only Indexing (Frege Salva Veritate / D009): embeds only newly appended chunks with zero re-embedding of history")
+    void memorillaIncrementalAppendOnlyIndexingEmbedsOnlyNewlyAppendedChunks() {
+        setUp("");
+        java.util.List<ContextChunkEntity> store = new java.util.ArrayList<>();
+        when(repository.findBySourceRef("OBSERVER_LOG.md")).thenAnswer(inv -> new java.util.ArrayList<>(store));
+        when(repository.saveAll(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Iterable<ContextChunkEntity> it = (Iterable<ContextChunkEntity>) inv.getArgument(0);
+            for (ContextChunkEntity e : it) {
+                store.add(e);
+            }
+            return store;
+        });
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{1.0f, 0.0f});
+
+        String paragraph1 = "Historical Entry 1: The factory initialized and verified 207 mechanisms.".repeat(12);
+        String paragraph2 = "Historical Entry 2: Dennett homeostasis loop confirmed green in runtime.".repeat(12);
+        String initialLog = paragraph1 + "\n\n" + paragraph2;
+
+        int firstPassNew = service.indexAppendOnlyDocument("observer_log", "OBSERVER_LOG.md", initialLog);
+        assertEquals(2, firstPassNew, "Initial pass must embed and persist 2 chunks");
+        assertEquals(2, store.size());
+
+        clearInvocations(mlPredictionServiceClient);
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{0.0f, 1.0f});
+
+        String paragraph3 = "Appended Entry 3: Memorilla K=16 latent memory slots activated.".repeat(12);
+        String grownLog = initialLog + "\n\n" + paragraph3;
+
+        int secondPassNew = service.indexAppendOnlyDocument("observer_log", "OBSERVER_LOG.md", grownLog);
+        assertEquals(1, secondPassNew, "Incremental pass must embed ONLY the 1 newly appended chunk");
+        assertEquals(3, store.size(), "All 3 historical + new chunks must be preserved in repository");
+        verify(mlPredictionServiceClient, times(1)).embed(anyString());
+        verify(repository, never()).deleteBySourceRef("OBSERVER_LOG.md");
+    }
+
+    @Test
+    @org.junit.jupiter.api.DisplayName("Memorilla Tarski Stratification: buildProductWorkerLatentMemoryBlock never queries observer_log or factory_mechanisms")
+    void memorillaProductWorkerLatentMemoryStrictlyEnforcesTarskiStratification() {
+        setUp("");
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        when(repository.count()).thenReturn(3L);
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{1.0f, 0.0f});
+
+        ContextChunkEntity charterChunk = chunk("# BARCAN-TAG-02 Charter | *Идеал:* Чистая архитектура", "BARCAN-TAG-02.md", new float[]{1.0f, 0.0f});
+        charterChunk.setSourceType("role_charter");
+        ContextChunkRepository.VectorRow charterRow = vectorRow(charterChunk);
+        when(repository.findVectorRowsBySourceTypeIn(GeminiContextService.PRODUCT_WORKER_SOURCE_TYPES))
+                .thenReturn(List.of(charterRow));
+        when(repository.findAllById(any())).thenReturn(List.of(charterChunk));
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+
+        String block = service.buildProductWorkerLatentMemoryBlock(role, "implement clean architecture");
+
+        assertTrue(block.contains("MEMORILLA PRODUCT DOCTRINE MEMORY"));
+        assertTrue(block.contains("BARCAN-TAG-02.md"));
+        assertFalse( GeminiContextService.PRODUCT_WORKER_SOURCE_TYPES.contains("observer_log"));
+        assertFalse(GeminiContextService.PRODUCT_WORKER_SOURCE_TYPES.contains("factory_mechanisms"));
+        verify(repository).findVectorRowsBySourceTypeIn(GeminiContextService.PRODUCT_WORKER_SOURCE_TYPES);
+    }
+
     private static ContextChunkRepository.VectorRow vectorRow(ContextChunkEntity chunk) {
         ContextChunkRepository.VectorRow row = mock(ContextChunkRepository.VectorRow.class);
         when(row.getId()).thenReturn(chunk.getId());

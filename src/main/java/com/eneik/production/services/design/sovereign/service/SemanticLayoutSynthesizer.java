@@ -10,13 +10,10 @@ import java.util.Map;
 
 /**
  * Service synthesizing semantic HTML5 documents structured with Tailwind CSS classes,
- * custom design tokens, and accessibility landmarks.
+ * custom design tokens, brief-driven domain components, and Stanford Memorilla latent slots.
  */
 public interface SemanticLayoutSynthesizer {
 
-    /**
-     * Synthesizes an initial HTML5 layout document.
-     */
     SynthesizedDomDocument synthesizeLayout(
             DesignTokenSet tokenSet,
             LayoutGridPattern gridPattern,
@@ -24,9 +21,17 @@ public interface SemanticLayoutSynthesizer {
             int roundIndex
     );
 
-    /**
-     * Refines an existing layout document using audit directives.
-     */
+    default SynthesizedDomDocument synthesizeLayout(
+            DesignTokenSet tokenSet,
+            LayoutGridPattern gridPattern,
+            Map<String, String> projectAssetUrls,
+            int roundIndex,
+            String brief,
+            List<String> memorillaLatentSlots
+    ) {
+        return synthesizeLayout(tokenSet, gridPattern, projectAssetUrls, roundIndex);
+    }
+
     SynthesizedDomDocument refineLayout(
             SynthesizedDomDocument previousDocument,
             DesignTokenSet tokenSet,

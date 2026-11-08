@@ -187,10 +187,74 @@ public class TechnicalLeadCompiler {
         if (paths == null || paths.isEmpty()) {
             return new NamespaceAuditResult(NamespaceAuditStatus.ADMISSIBLE, java.util.List.of(), "Empty scope is admissible");
         }
-        String productNamespace = project != null ? project.resolveProductNamespace() : null;
+        String productNamespace = resolveEffectiveProductNamespace(project);
         boolean hasFlyway = isFlywayConfigured(project);
         boolean isNextJs = isNextJsConfigured(project);
         return auditPathsAgainstNamespace(productNamespace, hasFlyway, isNextJs, paths);
+    }
+
+    static String resolveEffectiveProductNamespace(ProjectEntity project) {
+        if (project == null) {
+            return null;
+        }
+        String declared = project.resolveProductNamespace();
+        if (declared != null && !declared.isBlank()) {
+            return declared;
+        }
+        java.util.List<String> mirrorFiles = listBareMirrorFiles(project);
+        for (String rel : mirrorFiles) {
+            if (rel.startsWith("src/main/java/") && rel.endsWith("Application.java")) {
+                String pkgPart = rel.substring("src/main/java/".length());
+                int lastSlash = pkgPart.lastIndexOf('/');
+                if (lastSlash > 0) {
+                    return pkgPart.substring(0, lastSlash).replace('/', '.');
+                }
+            }
+        }
+        for (String rel : mirrorFiles) {
+            if (rel.startsWith("src/main/java/") && rel.endsWith(".java")) {
+                String[] parts = rel.substring("src/main/java/".length()).split("/");
+                if (parts.length >= 4) {
+                    return parts[0] + "." + parts[1] + "." + parts[2];
+                }
+            }
+        }
+        return null;
+    }
+
+    static java.util.List<String> listBareMirrorFiles(ProjectEntity project) {
+        if (project == null || project.getName() == null || project.getName().isBlank()) {
+            return java.util.List.of();
+        }
+        String sanitized = project.getName().trim().replaceAll("[^a-zA-Z0-9._-]", "_") + ".git";
+        java.io.File mirrorDir = new java.io.File("/var/lib/eneik/mirrors", sanitized);
+        if (!mirrorDir.exists()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> result = new java.util.ArrayList<>();
+        try {
+            Process p = new ProcessBuilder("git", "--git-dir=" + mirrorDir.getAbsolutePath(), "ls-tree", "-r", "--name-only", "HEAD")
+                    .redirectErrorStream(true)
+                    .start();
+            try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(p.getInputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String pathStr = line.trim();
+                    if (pathStr.isEmpty()) continue;
+                    if (pathStr.startsWith("target/") || pathStr.startsWith("node_modules/")
+                            || pathStr.startsWith(".git/") || pathStr.startsWith(".eneik/")
+                            || pathStr.startsWith("bin/") || pathStr.startsWith(".m2-cache/")
+                            || pathStr.endsWith(".class")) {
+                        continue;
+                    }
+                    result.add(pathStr);
+                }
+            }
+            p.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+        }
+        return result;
     }
 
     public static java.util.List<String> pathsOutsideProductNamespace(ProjectEntity project, java.util.List<String> paths) {
@@ -963,6 +1027,22 @@ public class TechnicalLeadCompiler {
                 relevantPaths.add(rel);
             }
         }
+        if (workspaceDir == null && relevantPaths.isEmpty()) {
+            for (String rel : listBareMirrorFiles(project)) {
+                int slash = rel.lastIndexOf('/');
+                String lowerName = (slash >= 0 ? rel.substring(slash + 1) : rel).toLowerCase(java.util.Locale.ROOT);
+                boolean matched = false;
+                for (String kw : keywords) {
+                    if (keywordMatches(lowerName, kw)) {
+                        matched = true;
+                        break;
+                    }
+                }
+                if (matched && isRelevantForRole(roleTag, rel)) {
+                    relevantPaths.add(rel);
+                }
+            }
+        }
 
         // Add found paths to the paths list
         paths.addAll(relevantPaths);
@@ -1013,7 +1093,7 @@ public class TechnicalLeadCompiler {
                 }
             } else {
                 // Java Spring Boot structure fallback: strictly bound to product's own namespace and stack
-                String productNamespace = project != null ? project.resolveProductNamespace() : null;
+                String productNamespace = resolveEffectiveProductNamespace(project);
                 String productPkgDir = (productNamespace != null && !productNamespace.isBlank())
                         ? productNamespace.trim().replace('.', '/')
                         : null;

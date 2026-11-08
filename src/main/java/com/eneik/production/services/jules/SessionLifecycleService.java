@@ -127,6 +127,12 @@ public class SessionLifecycleService {
         if (session.getExternalSessionId() == null || "skipped".equals(session.getExternalSessionId())) {
             return null;
         }
+        if (JulesApiClient.isSovereignSessionId(session.getExternalSessionId())
+                || (session.getWorkerEngine() != null && !"JULES".equalsIgnoreCase(session.getWorkerEngine()))) {
+            session.setRemoteDeletedAt(Instant.now());
+            julesSessionRepository.save(session);
+            return null;
+        }
         if (session.getAccountId() == null) {
             return null;
         }

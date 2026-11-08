@@ -222,6 +222,35 @@ public class GitWorktreeExecutionManager {
     /**
      * Reads contents of files in scope from worktree to provide context to LLM.
      */
+    public List<String> listRepositoryFiles(Path worktreePath) {
+        if (worktreePath == null || !Files.exists(worktreePath)) {
+            return List.of();
+        }
+        List<String> files = new ArrayList<>();
+        try {
+            Process process = new ProcessBuilder("git", "ls-files")
+                    .directory(worktreePath.toFile())
+                    .redirectErrorStream(true)
+                    .start();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String p = line.trim();
+                    if (p.isEmpty()) continue;
+                    if (p.startsWith("target/") || p.startsWith("node_modules/") || p.startsWith(".eneik/")
+                            || p.startsWith(".git/") || p.startsWith(".m2-cache/") || p.endsWith(".class") || p.endsWith(".png")) {
+                        continue;
+                    }
+                    files.add(p);
+                }
+            }
+            process.waitFor(15, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            log.warn("Failed to list repository files in {}: {}", worktreePath, e.getMessage());
+        }
+        return files;
+    }
+
     public String readScopedFiles(Path worktreePath, List<String> relativePaths) {
         if (relativePaths == null || relativePaths.isEmpty()) {
             return "";

@@ -35,6 +35,7 @@ public class LocalAgyCliClient {
     private final SystemSettingsService settingsService;
     private ProcessRunner processRunner;
     private boolean customRunnerSet = false;
+    private final java.net.http.HttpClient sharedHttpClient = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(10)).build();
 
     private static final String[] BRIDGE_URLS = new String[] {
             System.getenv().getOrDefault("SOVEREIGN_HOST_BRIDGE_URL", "http://host.docker.internal:8095/execute-agy"),
@@ -163,9 +164,7 @@ public class LocalAgyCliClient {
             throw new IOException("Failed to serialize host bridge request: " + e.getMessage(), e);
         }
 
-        java.net.http.HttpClient httpClient = java.net.http.HttpClient.newBuilder()
-                .connectTimeout(java.time.Duration.ofSeconds(10))
-                .build();
+        java.net.http.HttpClient httpClient = this.sharedHttpClient;
 
         IOException lastException = null;
         for (String url : BRIDGE_URLS) {
@@ -216,7 +215,11 @@ public class LocalAgyCliClient {
         if (task != null) {
             sb.append("### TASK DEFINITION\n");
             sb.append("Title: ").append(task.getTitle()).append("\n");
-            sb.append("File Scope: ").append(task.getFileScope()).append("\n");
+            String scopeDisplay = task.getFileScope();
+            if (scopeDisplay == null || scopeDisplay.isBlank() || "[]".equals(scopeDisplay.trim())) {
+                scopeDisplay = "Product source tree (see REPOSITORY FILE TREE below; modifying .eneik/, .github/, or .env is strictly forbidden)";
+            }
+            sb.append("File Scope: ").append(scopeDisplay).append("\n");
             sb.append("Description & Acceptance Criteria:\n").append(task.getDescription()).append("\n\n");
         }
 

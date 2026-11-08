@@ -3,11 +3,13 @@ package com.eneik.production.services.worker.verification;
 import com.eneik.production.models.persistence.TaskEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -17,7 +19,8 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Popperian Falsification Gate (D008) and Blind Arbiter (Dennett's Homuncular Functionalism).
+ * Popperian Falsification Gate (D008), Dennett's Blind Arbiter, and Goldman's
+ * Level of Abstraction Lock (D010) enforcing zero-stub reality across worktree tasks.
  * Holds a global host semaphore Semaphore(1) to strictly isolate Hetzner host memory (RAM <= 1.2 GiB).
  * LLM synthesizer has NO authority to choose check commands or skip severe tests.
  */
@@ -30,9 +33,24 @@ public class LocalVerificationRunner {
     public static final Semaphore HOST_VERIFICATION_SEMAPHORE = new Semaphore(1);
 
     private static final int TIMEOUT_SECONDS = 300; // 5 minutes max
+    private final java.net.http.HttpClient sharedHttpClient = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(3))
+            .build();
+
+    private final SimulationStubDetector stubDetector;
+
+    public LocalVerificationRunner() {
+        this(new SimulationStubDetector());
+    }
+
+    @Autowired
+    public LocalVerificationRunner(SimulationStubDetector stubDetector) {
+        this.stubDetector = stubDetector != null ? stubDetector : new SimulationStubDetector();
+    }
 
     /**
-     * Executes Popperian severe verification test on worktree under Semaphore(1) protection.
+     * Executes Popperian severe verification test on worktree under Semaphore(1) protection,
+     * followed by Goldman D010 philosophical audit against stubs and simulacra.
      */
     public VerificationResult runVerification(Path worktreePath, TaskEntity task) {
         if (task != null && (task.isWishlistCompiler() || task.isCarrier())) {
@@ -40,8 +58,12 @@ public class LocalVerificationRunner {
             return VerificationResult.success(0, "Carrier/compiler task — skipped Maven build");
         }
 
-                if (task != null && isNonJavaAssetOrContractScope(task.getFileScope())) {
+        if (task != null && isNonJavaAssetOrContractScope(worktreePath, task.getFileScope())) {
             log.info("LocalVerificationRunner: Non-Java contract/asset scope {} detected for {}, skipping Maven build", task.getFileScope(), task.getId());
+            VerificationResult stubAudit = auditWorktreeAgainstSimulacra(worktreePath, task);
+            if (!stubAudit.passed()) {
+                return stubAudit;
+            }
             return VerificationResult.success(0, "Contract/asset scope verified clean");
         }
 
@@ -60,7 +82,16 @@ public class LocalVerificationRunner {
                     task != null ? task.getId() : "null", worktreePath);
 
             List<String> targetCommand = resolveArbiterCommand(worktreePath, task);
-            return executeInIsolatedContainer(worktreePath, targetCommand);
+            VerificationResult result = executeInIsolatedContainer(worktreePath, targetCommand);
+
+            if (result.passed()) {
+                VerificationResult stubAudit = auditWorktreeAgainstSimulacra(worktreePath, task);
+                if (!stubAudit.passed()) {
+                    return stubAudit;
+                }
+            }
+
+            return result;
 
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -71,6 +102,42 @@ public class LocalVerificationRunner {
                 log.info("Released host verification semaphore (available: {})", HOST_VERIFICATION_SEMAPHORE.availablePermits());
             }
         }
+    }
+
+    /**
+     * Goldman Level of Abstraction Lock (D010):
+     * Audits modified files in task scope against cardboard stubs, fake domains, and 1x1 pixels.
+     */
+    public VerificationResult auditWorktreeAgainstSimulacra(Path worktreePath, TaskEntity task) {
+        if (worktreePath == null || !Files.isDirectory(worktreePath) || stubDetector == null) {
+            return VerificationResult.success(0, "Stub audit skipped: no worktree");
+        }
+        String scope = task != null ? task.getFileScope() : null;
+        if (scope == null || scope.isBlank()) {
+            return VerificationResult.success(0, "Stub audit clean");
+        }
+        String clean = scope.replace('[', ' ').replace(']', ' ').replace('"', ' ').replace('\'', ' ').trim();
+        for (String part : clean.split("[,\\r\\n]+")) {
+            String relPath = part.trim();
+            if (relPath.isEmpty()) continue;
+            Path filePath = worktreePath.resolve(relPath).normalize();
+            if (Files.isRegularFile(filePath) && !relPath.contains("SimulationStubDetector")) {
+                try {
+                    String content = Files.readString(filePath, StandardCharsets.UTF_8);
+                    SimulationStubDetector.StubAuditReport report = stubDetector.auditArtifact(content, relPath);
+                    if (report.hasSimulacra()) {
+                        log.warn("Goldman D010 Gate REJECTED task {} due to simulacra in {}: {}",
+                                task != null ? task.getId() : "null", relPath, report.detectedSimulacra());
+                        return VerificationResult.failure(101,
+                                "Goldman Level of Abstraction Lock (D010): Simulacra/Stub detected in " + relPath + ": " + report.detectedSimulacra(),
+                                "D010_SIMULACRA_DETECTED: " + report.detectedSimulacra().get(0));
+                    }
+                } catch (Exception e) {
+                    log.debug("Stub audit could not read {}: {}", relPath, e.getMessage());
+                }
+            }
+        }
+        return VerificationResult.success(0, "Goldman D010 Gate: Verified clean of simulacra");
     }
 
     /**
@@ -137,7 +204,7 @@ public class LocalVerificationRunner {
         return runProcess(worktreePath, fullCmd, TIMEOUT_SECONDS);
     }
 
-    private boolean isNonJavaAssetOrContractScope(String rawScope) {
+    private boolean isNonJavaAssetOrContractScope(Path worktreePath, String rawScope) {
         if (rawScope == null || rawScope.isBlank()) {
             return false;
         }
@@ -145,10 +212,16 @@ public class LocalVerificationRunner {
         if (clean.isEmpty()) {
             return false;
         }
+        boolean hasFrontendPackageJson = worktreePath != null
+                && (Files.exists(worktreePath.resolve("package.json"))
+                || Files.exists(worktreePath.resolve("frontend/package.json")));
         for (String part : clean.split("[,\\r\\n]+")) {
             String p = part.trim().toLowerCase();
             if (p.isEmpty()) continue;
             if (p.endsWith(".java") || p.endsWith("pom.xml") || p.endsWith(".gradle")) {
+                return false;
+            }
+            if (hasFrontendPackageJson && (p.endsWith(".svelte") || p.endsWith(".ts") || p.endsWith(".tsx") || p.endsWith(".js") || p.endsWith(".jsx"))) {
                 return false;
             }
         }
@@ -164,9 +237,7 @@ public class LocalVerificationRunner {
             for (String c : buildCommand) {
                 cmdArr.add(c);
             }
-            java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder()
-                    .connectTimeout(java.time.Duration.ofSeconds(3))
-                    .build();
+            java.net.http.HttpClient client = this.sharedHttpClient;
             java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder()
                     .uri(java.net.URI.create("http://host.docker.internal:8095/verify-worktree"))
                     .header("Content-Type", "application/json")

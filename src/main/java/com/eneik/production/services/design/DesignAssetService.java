@@ -816,7 +816,7 @@ public class DesignAssetService {
             String projectSlug = slug(project == null ? "unknown-project" : firstNonBlank(project.getSlug(), project.getName(), project.getId() == null ? "unknown" : project.getId().toString()));
             String kind = slug(firstNonBlank(assetType, "mockup"));
 
-            var session = sovereignService.executeDesignSynthesis(archetype, projectSlug);
+            var session = sovereignService.executeDesignSynthesis(archetype, projectSlug, brief, List.of());
             if (session.getStatus() == com.eneik.production.services.design.sovereign.domain.SynthesisStatus.FAILED
                     || session.getLatestDomDocument() == null) {
                 String failure = session.getFailureReason() != null ? session.getFailureReason() : "Synthesis failed";
@@ -828,6 +828,15 @@ public class DesignAssetService {
             var doc = session.getLatestDomDocument();
             byte[] htmlBytes = doc.htmlContent().getBytes(StandardCharsets.UTF_8);
             byte[] screenshotBytes = FALLBACK_SCREENSHOT_PNG;
+            if (session.getLatestCaptures() != null && !session.getLatestCaptures().isEmpty()) {
+                for (var capture : session.getLatestCaptures()) {
+                    byte[] bytes = capture.decodedScreenshotBytes();
+                    if (bytes != null && bytes.length > 0) {
+                        screenshotBytes = bytes;
+                        break;
+                    }
+                }
+            }
 
             Path directory = assetRoot.resolve(projectSlug).normalize();
             Files.createDirectories(directory);

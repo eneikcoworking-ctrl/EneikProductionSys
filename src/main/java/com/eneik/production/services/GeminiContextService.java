@@ -47,6 +47,10 @@ public class GeminiContextService {
 
     private static final int MAX_CHUNK_CHARS = 1400;
     private static final int DEFAULT_TOP_K = 5;
+    public static final int DEFAULT_MEMORILLA_SLOTS = 16;
+    public static final int MAX_LATENT_SLOT_CHARS = 240;
+    public static final double MEMORILLA_RELEVANCE_LAMBDA = 0.65;
+    private static final double MEMORILLA_COLLINEAR_CEILING = 0.96;
     // Bounds on the dynamic similarity floor below - same Otsu-style reasoning as
     // WishlistContentSimilarityMatcher.dynamicClusterThreshold, tuned for Gemini text-embedding cosine
     // similarities (which typically run higher than lexical/Jaccard scores), so a genuinely irrelevant
@@ -164,6 +168,7 @@ public class GeminiContextService {
         }
         Path root = Path.of(repoRoot);
         indexFileIfPresent(root.resolve("OBSERVER_LOG.md"), "observer_log", OBSERVER_LOG_TAIL_CHARS);
+        indexFileIfPresent(root.resolve("docs/FACTORY_MECHANISMS.md"), "factory_mechanisms", -1);
         indexFileIfPresent(root.resolve("docs/ENGINEERING_INVARIANTS_CHARTER.md"), "engineering_charter", -1);
         indexFileIfPresent(root.resolve("docs/AI_REVIEW_GUIDELINES.md"), "ai_review_guidelines", -1);
         // The orchestrator's own accumulated experience/knowledge about this project (architecture
@@ -292,6 +297,69 @@ public class GeminiContextService {
         }
         repository.saveAll(toSave);
         log.info("GeminiContextService: indexed {} ({}) - {} of {} chunk(s) embedded", sourceRef, sourceType, toSave.size(), chunks.size());
+    }
+
+    /**
+     * Incremental append-only indexing (Frege Salva Veritate / Clark Extended Mind):
+     * Preserves already-embedded historical chunks whose individual content hash matches at the current
+     * embedding dimension, and embeds ONLY newly appended or modified chunks. Eliminates O(N) re-embedding
+     * on append-only logs (OBSERVER_LOG.md, FACTORY_MECHANISMS.md) so the factory never loses early memory.
+     *
+     * @return number of newly embedded chunks persisted in this pass.
+     */
+    public int indexAppendOnlyDocument(String sourceType, String sourceRef, String content) {
+        if (content == null || content.isBlank()) {
+            repository.deleteBySourceRef(sourceRef);
+            return 0;
+        }
+        List<String> chunks = chunkText(content);
+        List<ContextChunkEntity> existing = repository.findBySourceRef(sourceRef);
+        float[] probe = currentDimensionProbe();
+        int targetDim = probe != null ? probe.length : -1;
+
+        Map<String, ContextChunkEntity> existingByChunkHash = new java.util.HashMap<>();
+        if (existing != null) {
+            for (ContextChunkEntity entity : existing) {
+                if (entity.getContent() != null) {
+                    int dims = entity.getEmbeddingDims() > 0
+                            ? entity.getEmbeddingDims()
+                            : parseEmbedding(entity.getEmbedding()).length;
+                    if (targetDim < 0 || dims == targetDim) {
+                        existingByChunkHash.putIfAbsent(sha256Hex(entity.getContent()), entity);
+                    }
+                }
+            }
+        }
+
+        List<ContextChunkEntity> toSave = new ArrayList<>();
+        for (int i = 0; i < chunks.size(); i++) {
+            String chunkText = chunks.get(i);
+            String chunkHash = sha256Hex(chunkText);
+            if (existingByChunkHash.containsKey(chunkHash)) {
+                continue;
+            }
+            float[] vector = mlPredictionServiceClient.embed(chunkText);
+            if (vector == null) {
+                log.warn("GeminiContextService: incremental embedding failed for {} chunk {}/{}, skipping",
+                        sourceRef, i + 1, chunks.size());
+                continue;
+            }
+            ContextChunkEntity entity = new ContextChunkEntity();
+            entity.setSourceType(sourceType);
+            entity.setSourceRef(sourceRef);
+            entity.setChunkIndex(i);
+            entity.setContent(chunkText);
+            entity.setEmbedding(serializeEmbedding(vector));
+            entity.setEmbeddingDims(vector.length);
+            entity.setContentHash(chunkHash);
+            toSave.add(entity);
+        }
+        if (!toSave.isEmpty()) {
+            repository.saveAll(toSave);
+            log.info("GeminiContextService: incrementally indexed {} ({}) - {} new chunk(s) embedded ({} preserved)",
+                    sourceRef, sourceType, toSave.size(), existingByChunkHash.size());
+        }
+        return toSave.size();
     }
 
     private static String sha256Hex(String content) {
@@ -464,6 +532,7 @@ public class GeminiContextService {
             // charters - not the material of any one project. Omitting it was an error in this list,
             // caught by a test that had been asserting its retrievability all along.
             "observer_log",
+            "factory_mechanisms",
             "parallel_development_conflict_prevention");
 
     private static final List<String> ROLE_INDEPENDENT_PATTERN_SOURCE_TYPES =
@@ -686,6 +755,261 @@ public class GeminiContextService {
                         + "explicit evidence already provided elsewhere in this prompt):\n");
         for (RetrievedChunk chunk : retrieved) {
             block.append("- [").append(chunk.sourceRef()).append("] ").append(chunk.content().replace("\n", " ")).append('\n');
+        }
+        return block.toString();
+    }
+
+    /**
+     * Stanford Memorilla Latent Semantic Memory slot (arXiv:2610.21375 / Ryle D002 / Clark Extended Mind / Church D014):
+     * Represents one of K=16 query-conditioned orthogonal semantic memory slots distilled from the standing corpus.
+     */
+    public record LatentMemorySlot(
+            int slotIndex,
+            String sourceRef,
+            String distilledToken,
+            double querySimilarity,
+            double orthogonalScore) {
+    }
+
+    private record VectorCandidate(
+            UUID id,
+            String sourceRef,
+            float[] vector,
+            double querySimilarity) {
+    }
+
+    /**
+     * Retrieves up to kSlots (default K=16) query-conditioned orthogonal latent semantic memory slots
+     * across the Factory's METHOD corpus.
+     */
+    public List<LatentMemorySlot> retrieveLatentMemorySlots(String query, int kSlots) {
+        return retrieveLatentMemorySlots(query, kSlots, METHOD_SOURCE_TYPES, null);
+    }
+
+    /**
+     * Retrieves up to kSlots query-conditioned orthogonal latent semantic memory slots across the specified source types.
+     *
+     * Two-stage Memorilla architecture:
+     * Stage 1 (Query-Agnostic Standing Memory): Uses pre-computed embedding vectors stored in ContextChunkRepository.
+     * Stage 2 (Query-Dependent Orthogonal Subspace Projection): Filters candidates above the Otsu dynamic similarity
+     * floor and greedily selects K slots maximizing:
+     *   orthogonalScore(v_i) = lambda * cos(v_i, q) - (1 - lambda) * max_{s in S} cos(v_i, v_s)
+     * while suppressing near-collinear clones (cos(v_i, v_s) > MEMORILLA_COLLINEAR_CEILING), then distills each
+     * selected chunk into a high-density semantic capsule token (<= 240 chars) with mandatory sourceRef attribution.
+     */
+    public List<LatentMemorySlot> retrieveLatentMemorySlots(String query, int kSlots, List<String> sourceTypes) {
+        return retrieveLatentMemorySlots(query, kSlots, sourceTypes, null);
+    }
+
+    private List<LatentMemorySlot> retrieveLatentMemorySlots(
+            String query,
+            int kSlots,
+            List<String> sourceTypes,
+            Predicate<ContextChunkRepository.VectorRow> additionalFilter) {
+        if (kSlots <= 0 || sourceTypes == null || sourceTypes.isEmpty()) {
+            return List.of();
+        }
+        if (!settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
+            return List.of();
+        }
+        if (repository.count() == 0) {
+            return List.of();
+        }
+        float[] queryVector = mlPredictionServiceClient.embed(query);
+        if (queryVector == null) {
+            return List.of();
+        }
+        List<ContextChunkRepository.VectorRow> corpus = repository.findVectorRowsBySourceTypeIn(sourceTypes);
+        if (additionalFilter != null) {
+            corpus = corpus.stream().filter(additionalFilter).toList();
+        }
+        if (corpus.isEmpty()) {
+            return List.of();
+        }
+
+        int queryDimension = queryVector.length;
+        List<VectorCandidate> candidates = corpus.stream()
+                .map(row -> Map.entry(row, parseEmbedding(row.getEmbedding())))
+                .filter(entry -> entry.getValue().length == queryDimension)
+                .map(entry -> new VectorCandidate(
+                        entry.getKey().getId(),
+                        entry.getKey().getSourceRef(),
+                        entry.getValue(),
+                        cosineSimilarity(queryVector, entry.getValue())))
+                .sorted(Comparator.comparingDouble(VectorCandidate::querySimilarity).reversed())
+                .toList();
+
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+
+        double floor = dynamicSimilarityFloor(candidates.stream().map(VectorCandidate::querySimilarity).toList());
+        List<VectorCandidate> pool = new ArrayList<>(
+                candidates.stream().filter(c -> c.querySimilarity() >= floor).toList());
+        if (pool.isEmpty()) {
+            return List.of();
+        }
+
+        List<VectorCandidate> selected = new ArrayList<>();
+        List<Double> selectedOrthogonalScores = new ArrayList<>();
+
+        while (selected.size() < kSlots && !pool.isEmpty()) {
+            int bestIdx = -1;
+            double bestOrthogonalScore = Double.NEGATIVE_INFINITY;
+
+            for (int i = 0; i < pool.size(); i++) {
+                VectorCandidate candidate = pool.get(i);
+                double maxRedundancy = 0.0;
+                for (VectorCandidate alreadySelected : selected) {
+                    double interSim = cosineSimilarity(candidate.vector(), alreadySelected.vector());
+                    if (interSim > maxRedundancy) {
+                        maxRedundancy = interSim;
+                    }
+                }
+                if (!selected.isEmpty() && maxRedundancy > MEMORILLA_COLLINEAR_CEILING) {
+                    continue;
+                }
+                double orthogonalScore = selected.isEmpty()
+                        ? candidate.querySimilarity()
+                        : (MEMORILLA_RELEVANCE_LAMBDA * candidate.querySimilarity()
+                                - (1.0 - MEMORILLA_RELEVANCE_LAMBDA) * maxRedundancy);
+                if (orthogonalScore > bestOrthogonalScore) {
+                    bestOrthogonalScore = orthogonalScore;
+                    bestIdx = i;
+                }
+            }
+
+            if (bestIdx < 0) {
+                break;
+            }
+            selected.add(pool.remove(bestIdx));
+            selectedOrthogonalScores.add(bestOrthogonalScore);
+        }
+
+        List<UUID> selectedIds = selected.stream().map(VectorCandidate::id).toList();
+        Map<UUID, ContextChunkEntity> contentById = StreamSupport
+                .stream(repository.findAllById(selectedIds).spliterator(), false)
+                .collect(Collectors.toMap(ContextChunkEntity::getId, chunk -> chunk, (a, b) -> a));
+
+        List<LatentMemorySlot> slots = new ArrayList<>(selected.size());
+        for (int i = 0; i < selected.size(); i++) {
+            VectorCandidate sel = selected.get(i);
+            ContextChunkEntity entity = contentById.get(sel.id());
+            if (entity != null && entity.getContent() != null) {
+                String distilled = distillLatentMemoryToken(entity.getContent(), MAX_LATENT_SLOT_CHARS);
+                slots.add(new LatentMemorySlot(
+                        i + 1,
+                        sel.sourceRef(),
+                        distilled,
+                        sel.querySimilarity(),
+                        selectedOrthogonalScores.get(i)));
+            }
+        }
+        return slots;
+    }
+
+    /**
+     * Deterministic semantic compression of a raw knowledge chunk into a compact Memorilla latent slot token.
+     * Prioritizes headings (#), philosophical/invariant markers (*Философия:*, *Идеал:*, *Закон:*), defect
+     * identifiers (D001..D016), role tags (BARCAN-TAG-), and core declarative propositions, capping at maxChars.
+     */
+    static String distillLatentMemoryToken(String content, int maxChars) {
+        if (content == null || content.isBlank() || maxChars <= 0) {
+            return "";
+        }
+        String[] lines = content.split("\\R+");
+        List<String> prioritySegments = new ArrayList<>();
+        List<String> secondarySegments = new ArrayList<>();
+
+        for (String rawLine : lines) {
+            String line = rawLine.strip().replaceAll("\\s+", " ");
+            if (line.isEmpty() || line.equals("---")) {
+                continue;
+            }
+            boolean isPriority = line.startsWith("#")
+                    || line.contains("*Философия:*")
+                    || line.contains("*Идеал:*")
+                    || line.contains("*Закон:*")
+                    || line.contains("BARCAN-TAG-")
+                    || line.matches(".*\\bD0(0[1-9]|1[0-6])\\b.*")
+                    || line.contains("INVARIANT")
+                    || line.contains("ИНВАРИАНТ");
+            if (isPriority) {
+                prioritySegments.add(line);
+            } else {
+                secondarySegments.add(line);
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (String seg : prioritySegments) {
+            if (sb.length() >= maxChars) {
+                break;
+            }
+            if (!sb.isEmpty()) {
+                sb.append(" | ");
+            }
+            sb.append(seg);
+        }
+        for (String seg : secondarySegments) {
+            if (sb.length() >= maxChars) {
+                break;
+            }
+            if (!sb.isEmpty()) {
+                sb.append(" | ");
+            }
+            sb.append(seg);
+        }
+
+        String joined = sb.toString().strip();
+        if (joined.length() <= maxChars) {
+            return joined;
+        }
+        return joined.substring(0, Math.max(0, maxChars - 3)).stripTrailing() + "...";
+    }
+
+    /**
+     * Builds a 16-slot Memorilla Latent Semantic Memory block for Factory orchestrator / philosopher / auditor calls.
+     */
+    public String buildLatentSemanticMemoryBlock(String query) {
+        List<LatentMemorySlot> slots = retrieveLatentMemorySlots(query, DEFAULT_MEMORILLA_SLOTS, METHOD_SOURCE_TYPES, null);
+        if (slots.isEmpty()) {
+            return "";
+        }
+        StringBuilder block = new StringBuilder(
+                "MEMORILLA LATENT SEMANTIC MEMORY (K=" + slots.size()
+                        + " orthogonal query-conditioned slots from standing doctrine & mechanisms corpus):\n");
+        for (LatentMemorySlot slot : slots) {
+            block.append(String.format(java.util.Locale.ROOT,
+                    "- [Slot #%02d | %s | sim=%.2f] %s%n",
+                    slot.slotIndex(), slot.sourceRef(), slot.querySimilarity(), slot.distilledToken()));
+        }
+        return block.toString();
+    }
+
+    /**
+     * Builds a Tarski-stratified Memorilla Latent Semantic Memory block for product workers (Jules).
+     * Strictly restricts retrieval to PRODUCT_WORKER_SOURCE_TYPES (never leaks observer_log or factory_mechanisms).
+     */
+    public String buildProductWorkerLatentMemoryBlock(RoleEntity role, String query) {
+        Predicate<ContextChunkRepository.VectorRow> roleFilter = role == null ? null : c ->
+                PRODUCT_WORKER_SOURCE_TYPES.contains(c.getSourceType())
+                        && (c.getSourceRef() == null || c.getSourceRef().startsWith(role.getTag())
+                                || "philosopher_pattern_common".equals(c.getSourceType())
+                                || "engineering_charter".equals(c.getSourceType())
+                                || "parallel_development_conflict_prevention".equals(c.getSourceType()));
+        List<LatentMemorySlot> slots = retrieveLatentMemorySlots(
+                query, DEFAULT_MEMORILLA_SLOTS, PRODUCT_WORKER_SOURCE_TYPES, roleFilter);
+        if (slots.isEmpty()) {
+            return "";
+        }
+        StringBuilder block = new StringBuilder(
+                "MEMORILLA PRODUCT DOCTRINE MEMORY (K=" + slots.size()
+                        + " orthogonal query-conditioned slots, Tarski L0-stratified):\n");
+        for (LatentMemorySlot slot : slots) {
+            block.append(String.format(java.util.Locale.ROOT,
+                    "- [Slot #%02d | %s | sim=%.2f] %s%n",
+                    slot.slotIndex(), slot.sourceRef(), slot.querySimilarity(), slot.distilledToken()));
         }
         return block.toString();
     }

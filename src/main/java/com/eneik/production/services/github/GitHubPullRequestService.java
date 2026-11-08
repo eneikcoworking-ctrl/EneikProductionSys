@@ -2026,11 +2026,13 @@ public class GitHubPullRequestService {
         RepoRef repoRef = repoRef(project);
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls";
+            String safeTitle = title == null ? "feat: update" : (title.length() > 240 ? title.substring(0, 237) + "..." : title);
+            String safeBody = body == null ? "" : (body.length() > 60000 ? body.substring(0, 60000) + "\n\n...[truncated for GitHub 65536 char limit]" : body);
             var bodyNode = objectMapper.createObjectNode();
-            bodyNode.put("title", title);
+            bodyNode.put("title", safeTitle);
             bodyNode.put("head", head);
             bodyNode.put("base", base);
-            bodyNode.put("body", body == null ? "" : body);
+            bodyNode.put("body", safeBody);
             HttpRequest request = baseRequest(path, token)
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(bodyNode)))
                     .build();

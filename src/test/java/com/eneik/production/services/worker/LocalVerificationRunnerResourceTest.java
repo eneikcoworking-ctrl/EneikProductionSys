@@ -2,11 +2,13 @@ package com.eneik.production.services.worker;
 
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.services.worker.verification.LocalVerificationRunner;
+import com.eneik.production.services.worker.verification.SimulationStubDetector;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -23,7 +25,6 @@ class LocalVerificationRunnerResourceTest {
     @Test
     @DisplayName("Host Memory Invariant: Semaphore(1) strictly forbids concurrent compiler runs on host")
     void testHostSemaphoreIsolation() throws InterruptedException {
-        // Verify available permit is 1
         assertEquals(1, LocalVerificationRunner.HOST_VERIFICATION_SEMAPHORE.availablePermits());
 
         CountDownLatch acquiredLatch = new CountDownLatch(1);
@@ -44,7 +45,6 @@ class LocalVerificationRunnerResourceTest {
         Thread t2 = new Thread(() -> {
             try {
                 acquiredLatch.await(2, TimeUnit.SECONDS);
-                // Attempt to acquire while t1 holds permit -> must fail immediately
                 boolean ok = LocalVerificationRunner.HOST_VERIFICATION_SEMAPHORE.tryAcquire(200, TimeUnit.MILLISECONDS);
                 if (!ok) {
                     secondThreadBlocked.set(true);
@@ -105,5 +105,23 @@ class LocalVerificationRunnerResourceTest {
         assertTrue(result.passed());
         assertEquals(0, result.exitCode());
         assertTrue(result.output().contains("Carrier/compiler task"));
+    }
+
+    @Test
+    @DisplayName("Goldman Level of Abstraction Lock (D010): Rejects task introducing 1x1 pixel or cardboard stub")
+    void testGoldmanD010RejectsStubInWorktree(@TempDir Path tempDir) throws IOException {
+        Path mockFile = tempDir.resolve("design/mockup.html");
+        Files.createDirectories(mockFile.getParent());
+        Files.writeString(mockFile, "<img src=\"https://assets.eneik.com/default-hero.webp\"><button>Explore Dashboard</button>", StandardCharsets.UTF_8);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(java.util.UUID.randomUUID());
+        task.setFileScope("[\"design/mockup.html\"]");
+
+        var result = runner.auditWorktreeAgainstSimulacra(tempDir, task);
+        assertFalse(result.passed());
+        assertEquals(101, result.exitCode());
+        assertTrue(result.errorSignature().contains("D010_SIMULACRA_DETECTED"));
+        assertTrue(result.output().contains("Dead placeholder domain"));
     }
 }

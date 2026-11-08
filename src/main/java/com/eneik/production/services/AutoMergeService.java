@@ -46,6 +46,7 @@ import java.util.HashMap;
 @Service
 public class AutoMergeService {
     private static final Logger log = LoggerFactory.getLogger(AutoMergeService.class);
+    private final HttpClient sharedHttpClient = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
     private static final String EARLY_UNBLOCK_SPEC_NOTIFIED_KEY = "earlyUnblockedSpecNotified";
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
@@ -1247,7 +1248,7 @@ public class AutoMergeService {
                     String pullNumber = pullRequestTarget.pullNumber();
 
                     String mergeUrl = "https://api.github.com/repos/" + owner + "/" + repoName + "/pulls/" + pullNumber + "/merge";
-                        HttpClient client = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
+                        HttpClient client = this.sharedHttpClient;
                         HttpRequest mergeRequest = HttpRequest.newBuilder()
                                 .uri(URI.create(mergeUrl))
                                 .header("Authorization", "Bearer " + token)
@@ -2850,7 +2851,7 @@ public class AutoMergeService {
     List<String> fetchPrFiles(String token, String owner, String repo, String pullNumber) {
         try {
             String filesUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + pullNumber + "/files";
-            HttpClient client = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
+            HttpClient client = this.sharedHttpClient;
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(filesUrl))
                     .header("Authorization", "Bearer " + token)
@@ -2877,7 +2878,7 @@ public class AutoMergeService {
     private String fetchPrDiff(String token, String owner, String repo, String pullNumber) {
         try {
             String url = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + pullNumber;
-            HttpClient client = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
+            HttpClient client = this.sharedHttpClient;
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Bearer " + token)

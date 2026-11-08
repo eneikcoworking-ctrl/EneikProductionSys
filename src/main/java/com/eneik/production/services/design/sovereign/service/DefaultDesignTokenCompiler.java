@@ -12,39 +12,34 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Default implementation of {@link DesignTokenCompiler} compiling design token sets
- * and aggregates for all product archetypes with adaptive typography clamps and WCAG AAA compliance.
+ * Default implementation of {@link DesignTokenCompiler} compiling adaptive CSS clamps,
+ * multi-level dark obsidian palettes (#08090C -> #11141C), and enforcing WCAG 2.1 AAA contrast (>= 7:1)
+ * with strict BARCAN-TAG-11 compliance (zero indigo/purple/violet AI-slop tokens).
  */
 @Component
 public class DefaultDesignTokenCompiler implements DesignTokenCompiler {
 
-    public ProductArchetype classifyArchetype(String inputArchetype) {
-        return ProductArchetype.fromString(inputArchetype);
+    public ProductArchetype classifyArchetype(String input) {
+        return ProductArchetype.fromString(input);
     }
 
     @Override
     public DesignTokenSet compileTokens(ProductArchetype archetype) {
         ProductArchetype resolved = (archetype != null) ? archetype : ProductArchetype.DEFAULT;
-        Map<String, String> colors = buildColorPalette(resolved);
-        String fg = colors.getOrDefault("text", "#FFFFFF");
-        String baseBg = colors.getOrDefault("background", "#08090C");
-        String surfaceBg = colors.getOrDefault("surface", "#11141C");
-        String border = colors.getOrDefault("border", "border-white/[0.07]");
-
-        ContrastRule contrastRule = ContrastRule.calculate(fg, baseBg);
-        double contrastRatio = contrastRule.contrastRatio();
-        if (contrastRatio < DesignTokenSet.MINIMUM_CONTRAST_RATIO) {
-            fg = "#FFFFFF";
-            baseBg = "#08090C";
-            contrastRule = ContrastRule.calculate(fg, baseBg);
-            contrastRatio = contrastRule.contrastRatio();
-        }
+        Map<String, String> palette = buildColorPalette(resolved);
+        List<TypographyConstraint> constraints = buildTypographyConstraints(resolved);
 
         Map<String, String> typographyClamps = new LinkedHashMap<>();
-        for (TypographyConstraint tc : buildTypographyConstraints(resolved)) {
-            typographyClamps.put(tc.fontSizeCategory(), tc.clampExpression());
+        for (TypographyConstraint c : constraints) {
+            typographyClamps.put(c.fontSizeCategory(), c.clampExpression());
         }
 
+        String baseBg = palette.getOrDefault("background", "#08090C");
+        String surfaceBg = palette.getOrDefault("surface", "#11141C");
+        String border = palette.getOrDefault("border", "border-white/[0.07]");
+        String text = palette.getOrDefault("text", "#F3F4F6");
+
+        double contrastRatio = ContrastRule.calculateContrastRatio(text, baseBg);
         return new DesignTokenSet(
                 resolved,
                 typographyClamps,
@@ -84,16 +79,16 @@ public class DefaultDesignTokenCompiler implements DesignTokenCompiler {
                     "background", "#08090C",
                     "surface", "#11141C",
                     "text", "#F3F4F6",
-                    "primary", "#6366F1",
-                    "accent", "#22C55E",
+                    "primary", "#10B981",
+                    "accent", "#06B6D4",
                     "border", "border-white/[0.07]"
             );
             case B2B_SAAS -> Map.of(
                     "background", "#0B0F19",
                     "surface", "#111827",
                     "text", "#F9FAFB",
-                    "primary", "#4F46E5",
-                    "accent", "#06B6D4",
+                    "primary", "#0EA5E9",
+                    "accent", "#10B981",
                     "border", "border-white/[0.08]"
             );
             case FIN_TECH -> Map.of(
@@ -101,23 +96,23 @@ public class DefaultDesignTokenCompiler implements DesignTokenCompiler {
                     "surface", "#111827",
                     "text", "#F9FAFB",
                     "primary", "#10B981",
-                    "accent", "#3B82F6",
+                    "accent", "#38BDF8",
                     "border", "border-white/[0.07]"
             );
             case CONSUMER -> Map.of(
-                    "background", "#18181B",
-                    "surface", "#27272A",
+                    "background", "#090D16",
+                    "surface", "#131B2E",
                     "text", "#FAFAFA",
-                    "primary", "#EC4899",
-                    "accent", "#8B5CF6",
-                    "border", "border-white/[0.06]"
+                    "primary", "#F43F5E",
+                    "accent", "#F59E0B",
+                    "border", "border-white/[0.07]"
             );
             case CREATIVE_AGENCY -> Map.of(
-                    "background", "#120E16",
-                    "surface", "#1F1A24",
+                    "background", "#0A0A0E",
+                    "surface", "#14141C",
                     "text", "#FDFDFD",
-                    "primary", "#F43F5E",
-                    "accent", "#A855F7",
+                    "primary", "#F59E0B",
+                    "accent", "#10B981",
                     "border", "border-white/[0.08]"
             );
             case HEALTHCARE -> Map.of(
@@ -133,7 +128,7 @@ public class DefaultDesignTokenCompiler implements DesignTokenCompiler {
                     "surface", "#0F121A",
                     "text", "#F3F4F6",
                     "primary", "#10B981",
-                    "accent", "#6366F1",
+                    "accent", "#14B8A6",
                     "border", "border-white/[0.08]"
             );
             case EDITORIAL -> Map.of(
@@ -148,7 +143,7 @@ public class DefaultDesignTokenCompiler implements DesignTokenCompiler {
                     "background", "#08090C",
                     "surface", "#11141C",
                     "text", "#FFFFFF",
-                    "primary", "#6366F1",
+                    "primary", "#10B981",
                     "accent", "#38BDF8",
                     "border", "border-white/[0.07]"
             );
