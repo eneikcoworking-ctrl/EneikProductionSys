@@ -85,6 +85,9 @@ public class AccountController {
         account.setLastHeartbeat(Instant.now());
         account.setGithubUsername(request.githubUsername() != null ? request.githubUsername().trim() : null);
         account.setApiKey(request.apiKey());
+        if (request.provider() != null && !request.provider().isBlank()) {
+            account.setProvider(request.provider().trim());
+        }
 
         if (account.getGithubUsername() == null || account.getGithubUsername().trim().isEmpty()) {
             account.setGithubUsername(account.getName());
@@ -115,6 +118,9 @@ public class AccountController {
                     }
                     if (updates.containsKey("apiKey")) {
                         account.setApiKey((String) updates.get("apiKey"));
+                    }
+                    if (updates.containsKey("provider")) {
+                        account.setProvider(((String) updates.get("provider")).trim());
                     }
                     if (updates.containsKey("status")) {
                         AccountStatus newStatus = AccountStatus.valueOf((String) updates.get("status"));
@@ -267,7 +273,8 @@ public class AccountController {
                 masked,
                 account.getGithubUsername(),
                 account.isEnabled(),
-                account.getMaxConcurrentSessions()
+                account.getMaxConcurrentSessions(),
+                account.getProvider()
         );
     }
 
