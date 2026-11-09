@@ -10,12 +10,18 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClientDeliverableReadinessService;
 import com.eneik.production.services.github.GitHubPullRequestService;
+import com.eneik.production.services.worker.verification.SimulationStubDetector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Phase 0 of the client-runtime-observability plan (docs/reports/PLAN_client_runtime_observability_2026-08-09.md):
@@ -51,6 +57,9 @@ public class ProductLaunchabilityService {
     private final WishlistRepository wishlistRepository;
     private final GitHubPullRequestService gitHubPullRequestService;
     private final ClientDeliverableReadinessService readinessService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private SimulationStubDetector stubDetector;
 
     // Self-injected proxy reference (2026-08-14, same pattern/reason as JulesDispatchService.self): a plain
     // `this.recordLaunchabilityResult(...)` call bypasses the Spring AOP proxy entirely, so
@@ -348,8 +357,12 @@ public class ProductLaunchabilityService {
      * Greenfield-safe: a project with no `frontend/src` produces no claim.
      */
     public void checkFrontendRendersOnlyProducedRecords(ProjectEntity project) {
-        if (wishlistRepository.existsByProjectIdAndSource(project.getId(),
-                WishlistSource.frontend_unbacked_records)) {
+        boolean alreadyWorkingOnUnbackedRecords = wishlistRepository.findByProjectIdAndSourceAndStatusIn(
+                project.getId(),
+                WishlistSource.frontend_unbacked_records,
+                java.util.List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.converted_to_task)
+        ).size() > 0;
+        if (alreadyWorkingOnUnbackedRecords) {
             return;
         }
         java.util.List<String> sources = gitHubPullRequestService
@@ -577,5 +590,99 @@ public class ProductLaunchabilityService {
         wishlistRepository.save(wishlist);
         log.info("ProductLaunchabilityService: project {} has frontend/ but Dockerfile never references it - "
                 + "created frontend_not_deployed wishlist", project.getId());
+    }
+
+    /**
+     * Popper Falsification (D008) & Goldman Level of Abstraction (D010) Simulacra Elimination Loop.
+     * Iteratively audits repository sources to find fake stubs (// Simulate, simulated timeouts,
+     * hardcoded mocks) and transforms every finding into actionable tasks for sovereign workers
+     * until zero stubs remain across all project code.
+     */
+    public void checkAndEliminateSimulacraAndStubs(ProjectEntity project) {
+        if (project == null || project.getId() == null) {
+            return;
+        }
+
+        // 1. Guard against duplicate work items in flight: if a STUB_ELIMINATION wishlist is already active,
+        // let the sovereign workers finish that cycle before discovering more in the next iteration.
+        boolean alreadyWorkingOnStubs = wishlistRepository.findByProjectIdAndSourceAndStatusIn(
+                project.getId(),
+                WishlistSource.self_falsification,
+                List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.converted_to_task)
+        ).stream().anyMatch(w -> "STUB_ELIMINATION".equals(w.getTocConstraintRef()));
+
+        if (alreadyWorkingOnStubs) {
+            return;
+        }
+
+        // 2. Discover stubs: check workspace filesystem or scan via GitHub
+        SimulationStubDetector detector = this.stubDetector != null ? this.stubDetector : new SimulationStubDetector();
+        List<SimulationStubDetector.SimulacrumFinding> findings = new ArrayList<>();
+
+        if (project.getWorkspacePath() != null && !project.getWorkspacePath().isBlank()) {
+            Path workspaceRoot = Path.of(project.getWorkspacePath());
+            if (Files.isDirectory(workspaceRoot)) {
+                findings.addAll(detector.auditRepositorySources(workspaceRoot));
+            }
+        }
+
+        // If local workspace is not mounted or has no findings, check GitHub client runtime sources
+        if (findings.isEmpty()) {
+            List<String> sources = gitHubPullRequestService.listFilePaths(project, project.getDefaultBranch(), FRONTEND_SRC_PATH);
+            if (sources != null) {
+                for (String path : sources) {
+                    if (isTestSource(path)) continue;
+                    if (!path.endsWith(".svelte") && !path.endsWith(".js") && !path.endsWith(".ts")) continue;
+                    String body = gitHubPullRequestService.fetchFileContent(project, project.getDefaultBranch(), path).orElse(null);
+                    if (body != null) {
+                        SimulationStubDetector.StubAuditReport report = detector.auditArtifact(body, path);
+                        if (report.hasSimulacra()) {
+                            findings.addAll(report.detailedFindings());
+                        }
+                    }
+                    if (findings.size() >= 10) break;
+                }
+            }
+        }
+
+        if (findings.isEmpty()) {
+            return; // 100% clean of stubs
+        }
+
+        // 3. Create a Popper Falsification task to eliminate stubs in this iteration
+        SimulationStubDetector.SimulacrumFinding primary = findings.get(0);
+        String targetRole = primary.artifactPath().startsWith("frontend/") ? "BARCAN-TAG-11" : "BARCAN-TAG-02";
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(TargetContext.PRODUCT_CODEBASE);
+        wishlist.setSource(WishlistSource.self_falsification);
+        wishlist.setSourceRoleTag(targetRole);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.essential);
+        wishlist.setTocConstraintRef("STUB_ELIMINATION");
+        wishlist.setSixSigmaMetric("falsification_run_rate");
+        wishlist.setCynefinDomain("clear");
+        wishlist.setDod("Goldman D010 & Popper D008: Zero simulacra or stubs remain in " + primary.artifactPath() + "; fully wired to real backend endpoints.");
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Goldman Level of Abstraction (D010) & Popper Falsification (D008) Defect:\n");
+        sb.append("Infantile simulacra and stubs detected in product sources:\n");
+        for (SimulationStubDetector.SimulacrumFinding f : findings) {
+            sb.append("- ").append(f.artifactPath()).append(":").append(f.lineNumber())
+              .append(" [").append(f.violationType()).append("] `").append(f.snippet().trim()).append("`\n");
+        }
+        sb.append("\nRequirement:\n");
+        sb.append("Replace fake simulations (e.g. simulated setTimeout streaming, mock handlers, hardcoded responses) ");
+        sb.append("with genuine backend API integration (`/api/chat` or real service). ");
+        sb.append("Provide robust loading, empty, error, and presentation states without any hardcoded stubs or fake data.");
+
+        wishlist.setContent(sb.toString());
+        wishlist.setJtbd("When interacting with the product interface, I want authentic live execution and responses, not hardcoded mock simulations.");
+        wishlist.setAcceptanceCriteria("Given " + primary.artifactPath() + ", When examined by Baudrillard Simulacra Detector, Then zero stubs or simulations are detected and live API endpoints are integrated.");
+
+        wishlistRepository.save(wishlist);
+        log.warn("Popper D008 & Goldman D010 Falsification: created STUB_ELIMINATION wishlist for project {} ({} simulacra in {})",
+                project.getId(), findings.size(), primary.artifactPath());
     }
 }

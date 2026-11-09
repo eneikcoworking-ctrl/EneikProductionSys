@@ -112,14 +112,38 @@ public class LocalVerificationRunner {
         if (worktreePath == null || !Files.isDirectory(worktreePath) || stubDetector == null) {
             return VerificationResult.success(0, "Stub audit skipped: no worktree");
         }
+        List<String> filesToCheck = new ArrayList<>();
         String scope = task != null ? task.getFileScope() : null;
-        if (scope == null || scope.isBlank()) {
+        if (scope != null && !scope.isBlank()) {
+            String clean = scope.replace('[', ' ').replace(']', ' ').replace('"', ' ').replace('\'', ' ').trim();
+            for (String part : clean.split("[,\\r\\n]+")) {
+                String relPath = part.trim();
+                if (!relPath.isEmpty()) {
+                    filesToCheck.add(relPath);
+                }
+            }
+        }
+        if (filesToCheck.isEmpty()) {
+            try {
+                ProcessBuilder pb = new ProcessBuilder("git", "diff", "--name-only", "HEAD~1");
+                pb.directory(worktreePath.toFile());
+                pb.redirectErrorStream(true);
+                Process p = pb.start();
+                try (var r = new java.io.BufferedReader(new java.io.InputStreamReader(p.getInputStream(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = r.readLine()) != null) {
+                        line = line.trim();
+                        if (!line.isEmpty()) filesToCheck.add(line);
+                    }
+                }
+                p.waitFor();
+            } catch (Exception ignored) {
+            }
+        }
+        if (filesToCheck.isEmpty()) {
             return VerificationResult.success(0, "Stub audit clean");
         }
-        String clean = scope.replace('[', ' ').replace(']', ' ').replace('"', ' ').replace('\'', ' ').trim();
-        for (String part : clean.split("[,\\r\\n]+")) {
-            String relPath = part.trim();
-            if (relPath.isEmpty()) continue;
+        for (String relPath : filesToCheck) {
             Path filePath = worktreePath.resolve(relPath).normalize();
             if (Files.isRegularFile(filePath) && !relPath.contains("SimulationStubDetector")) {
                 try {

@@ -129,6 +129,7 @@ services:
       # COMPACT never ran once and the store was only ever compacted by hand. Leaving the close
       # to Spring alone lets the @PreDestroy hook find the database open.
       SPRING_DATASOURCE_URL: jdbc:h2:file:/var/lib/eneik/eneik_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DEFRAG_ALWAYS=TRUE;AUTO_COMPACT_FILL_RATE=80
+      SPRING_FLYWAY_REPAIR_ON_STARTUP: "true"
       PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
       # 2026-08-28, §5b item 5. Hikari was 24 connections against an EMBEDDED H2 - a library in this same
       # JVM, not a server. Connections buy no parallelism there; what they buy is 24 transactions able to

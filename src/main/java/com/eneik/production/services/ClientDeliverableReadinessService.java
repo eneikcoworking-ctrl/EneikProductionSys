@@ -484,7 +484,7 @@ public class ClientDeliverableReadinessService {
         int falsificationReadyFeatures = (int) productFeatures.stream()
                 .filter(feature -> {
                     List<WishlistEntity> featureItems = codeProducingItems.stream()
-                            .filter(w -> feature.getId().equals(w.getFeatureId()))
+                            .filter(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId())))
                             .toList();
                     return !featureItems.isEmpty() && featureItems.stream()
                             .allMatch(w -> Boolean.TRUE.equals(falsificationReadyByPlannedItem.get(w.getId())));
@@ -529,7 +529,7 @@ public class ClientDeliverableReadinessService {
         if (task == null) {
             return false;
         }
-        if (task.getStatus() == TaskStatus.failed) {
+        if (task.getStatus() == TaskStatus.failed || task.getStatus() == TaskStatus.done || task.getStatus() == TaskStatus.spike_completed) {
             return true;
         }
         if (task.getStatus() != TaskStatus.queued && task.getStatus() != TaskStatus.blocked) {

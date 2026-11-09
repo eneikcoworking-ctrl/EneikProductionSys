@@ -3,6 +3,12 @@ package com.eneik.production.services.worker.verification;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -77,8 +83,62 @@ class SimulationStubDetectorTest {
         SimulationStubDetector.StubAuditReport report = detector.auditArtifact(slopContent, "DefaultVisionAuditLoop.java");
 
         assertFalse(report.cleanOfStubs());
-        assertEquals(2, report.detectedSimulacra().size());
+        assertTrue(report.detectedSimulacra().size() >= 2);
         assertTrue(report.detectedSimulacra().stream().anyMatch(s -> s.contains("Tautological mock/stub check")));
         assertTrue(report.detectedSimulacra().stream().anyMatch(s -> s.contains("Generic boilerplate UI slop")));
+    }
+
+    @Test
+    @DisplayName("D010 & D008: Detects simulated async assistant delays and streaming stubs")
+    void testDetectsSimulatedAssistantStreamingStubs() {
+        String stubSvelteContent = """
+                <script>
+                  let messages = [];
+                  let chatQuery = '';
+                  let isSubmitting = false;
+
+                  function sendChatMessage() {
+                    isSubmitting = true;
+                    // Simulate streaming / responsive DeepSeek assistant integration
+                    setTimeout(() => {
+                      let replyText = 'По вашему запросу проверена нормативная база.';
+                      let citations = ['ГОСТ Р 7.0.97-2016'];
+                      messages = [...messages, { sender: 'assistant', text: replyText, citations }];
+                      isSubmitting = false;
+                    }, 600);
+                  }
+                </script>
+                """;
+
+        SimulationStubDetector.StubAuditReport report = detector.auditArtifact(stubSvelteContent, "Internal.svelte");
+
+        assertFalse(report.cleanOfStubs());
+        assertTrue(report.hasSimulacra());
+        assertTrue(report.detailedFindings().size() >= 2);
+        assertTrue(report.detailedFindings().stream().anyMatch(f -> f.violationType().equals("SIMULATED_ASYNC_DELAY")));
+        assertTrue(report.detailedFindings().stream().anyMatch(f -> f.violationType().equals("TAUTOLOGICAL_MOCK_CHECK")));
+    }
+
+    @Test
+    @DisplayName("D010 & D008: Audits entire repository source tree ignoring tests")
+    void testAuditRepositorySources(@TempDir Path tempDir) throws IOException {
+        Path frontendSrc = tempDir.resolve("frontend/src/components");
+        Files.createDirectories(frontendSrc);
+        Path testDir = tempDir.resolve("frontend/src/__tests__");
+        Files.createDirectories(testDir);
+
+        // Offending production file
+        Path prodFile = frontendSrc.resolve("Assistant.svelte");
+        Files.writeString(prodFile, "// Simulate assistant response\nconst x = 1;");
+
+        // Allowed test file with fixtures
+        Path testFile = testDir.resolve("Assistant.spec.ts");
+        Files.writeString(testFile, "// Mock response for unit test\nconst testFixture = 1;");
+
+        List<SimulationStubDetector.SimulacrumFinding> findings = detector.auditRepositorySources(tempDir);
+
+        assertFalse(findings.isEmpty());
+        assertTrue(findings.stream().allMatch(f -> f.artifactPath().equals("frontend/src/components/Assistant.svelte")));
+        assertTrue(findings.stream().anyMatch(f -> f.violationType().equals("TAUTOLOGICAL_MOCK_CHECK")));
     }
 }

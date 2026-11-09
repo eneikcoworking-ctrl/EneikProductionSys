@@ -308,6 +308,8 @@ public class ContinuousOrchestrationService {
                         // produce is an operability fact about the delivered product, decidable from the
                         // repository without launching anything.
                         productLaunchabilityService.checkFrontendRendersOnlyProducedRecords(project);
+                        // Popper Falsification (D008) & Goldman D010: Iteratively detect all stubs and transform into tasks
+                        productLaunchabilityService.checkAndEliminateSimulacraAndStubs(project);
                         // The client's own words into the product's repository, so |C| has somewhere to be
                         // derived FROM (8.2). Idempotent - no commit when nothing changed.
                         projectFlowService.syncClientBriefToRepository(project);
