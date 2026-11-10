@@ -124,4 +124,50 @@ class LocalVerificationRunnerResourceTest {
         assertTrue(result.errorSignature().contains("D010_SIMULACRA_DETECTED"));
         assertTrue(result.output().contains("Dead placeholder domain"));
     }
+
+    @Test
+    @DisplayName("Goldman Level of Abstraction Lock (D010): Automatically compiles and synchronizes Svelte frontend to static/index.html")
+    void testGoldmanD010LevelOfAbstractionLockCompilesSvelteToStaticIndexHtml(@TempDir Path tempDir) throws IOException {
+        Path svelteFile = tempDir.resolve("frontend/src/App.svelte");
+        Files.createDirectories(svelteFile.getParent());
+        String svelteContent = """
+                <script>
+                  const specialties = [
+                    { id: '31.08.36', label: '31.08.36 Эпидемиология' },
+                    { id: '31.08.35', label: '31.08.35 Инфекционные болезни' },
+                    { id: '31.08.19', label: '31.08.19 Педиатрия' }
+                  ];
+                </script>
+                <main><h1>ЦНИИ Эпидемиологии</h1></main>
+                """;
+        Files.writeString(svelteFile, svelteContent, StandardCharsets.UTF_8);
+
+        Path frontendIndex = tempDir.resolve("frontend/index.html");
+        String frontendHtml = """
+                <!DOCTYPE html>
+                <html>
+                <head><title>ЦНИИЭ База Знаний</title></head>
+                <body>
+                  <div id="app">Specialties: 31.08.36 Эпидемиология, 31.08.35 Инфекционные болезни</div>
+                </body>
+                </html>
+                """;
+        Files.writeString(frontendIndex, frontendHtml, StandardCharsets.UTF_8);
+
+        Path staleStaticIndex = tempDir.resolve("src/main/resources/static/index.html");
+        Files.createDirectories(staleStaticIndex.getParent());
+        Files.writeString(staleStaticIndex, "<h2>Сводный пакет институциональных документов (2026–2027)</h2>", StandardCharsets.UTF_8);
+
+        // Execute conjugated build step
+        boolean synced = runner.compileAndSyncFrontendToStatic(tempDir);
+        assertTrue(synced, "Must successfully compile and synchronize Svelte frontend");
+
+        String updatedStatic = Files.readString(staleStaticIndex, StandardCharsets.UTF_8);
+        assertTrue(updatedStatic.contains("31.08.36"), "Static index.html must now contain authentic specialty 31.08.36");
+        assertFalse(updatedStatic.contains("Сводный пакет институциональных документов"), "Stale mock must be eliminated");
+
+        // Verify abstraction lock check passes
+        var abstractionLockResult = runner.verifyLevelOfAbstractionLock(tempDir);
+        assertTrue(abstractionLockResult.passed(), "Abstraction lock must pass once synchronized");
+    }
 }

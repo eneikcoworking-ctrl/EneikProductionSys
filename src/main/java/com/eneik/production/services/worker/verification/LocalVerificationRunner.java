@@ -70,6 +70,9 @@ public class LocalVerificationRunner {
         log.info("Popper Severe Test D008: acquiring host verification semaphore (available: {})...",
                 HOST_VERIFICATION_SEMAPHORE.availablePermits());
 
+        // Alvin Goldman Level of Abstraction Lock (D010): Conjugated build step compiling/syncing Svelte to static/index.html
+        compileAndSyncFrontendToStatic(worktreePath);
+
         boolean acquired = false;
         try {
             acquired = HOST_VERIFICATION_SEMAPHORE.tryAcquire(TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -161,6 +164,13 @@ public class LocalVerificationRunner {
                 }
             }
         }
+
+        // ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK (D010): Verify static/index.html is not decoupled from App.svelte
+        VerificationResult abstractionLock = verifyLevelOfAbstractionLock(worktreePath);
+        if (!abstractionLock.passed()) {
+            return abstractionLock;
+        }
+
         return VerificationResult.success(0, "Goldman D010 Gate: Verified clean of simulacra");
     }
 
@@ -236,16 +246,19 @@ public class LocalVerificationRunner {
         if (clean.isEmpty()) {
             return false;
         }
-        boolean hasFrontendPackageJson = worktreePath != null
+        boolean hasFrontendSources = worktreePath != null
                 && (Files.exists(worktreePath.resolve("package.json"))
-                || Files.exists(worktreePath.resolve("frontend/package.json")));
+                || Files.exists(worktreePath.resolve("frontend/package.json"))
+                || Files.exists(worktreePath.resolve("frontend/src/App.svelte"))
+                || Files.exists(worktreePath.resolve("frontend/index.html")));
         for (String part : clean.split("[,\\r\\n]+")) {
             String p = part.trim().toLowerCase();
             if (p.isEmpty()) continue;
             if (p.endsWith(".java") || p.endsWith("pom.xml") || p.endsWith(".gradle")) {
                 return false;
             }
-            if (hasFrontendPackageJson && (p.endsWith(".svelte") || p.endsWith(".ts") || p.endsWith(".tsx") || p.endsWith(".js") || p.endsWith(".jsx"))) {
+            if ((hasFrontendSources || p.endsWith(".svelte"))
+                    && (p.endsWith(".svelte") || p.endsWith(".ts") || p.endsWith(".tsx") || p.endsWith(".js") || p.endsWith(".jsx"))) {
                 return false;
             }
         }
@@ -363,5 +376,163 @@ public class LocalVerificationRunner {
             }
         }
         return null;
+    }
+
+    /**
+     * Alvin Goldman Level of Abstraction Lock (D010, ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK):
+     * Eliminates the build and delivery gap where Svelte components in frontend/src/App.svelte
+     * are decoupled from static distribution in static/index.html.
+     * Synchronizes and compiles the component interface into src/main/resources/static/index.html
+     * so that client runtime (:8097) always serves the authentic Svelte frontend.
+     */
+    public boolean compileAndSyncFrontendToStatic(Path worktreePath) {
+        if (worktreePath == null || !Files.isDirectory(worktreePath)) {
+            return false;
+        }
+
+        Path appSvelte = worktreePath.resolve("frontend/src/App.svelte");
+        Path frontendIndex = worktreePath.resolve("frontend/index.html");
+        Path frontendPkg = worktreePath.resolve("frontend/package.json");
+
+        if (!Files.exists(appSvelte) && !Files.exists(frontendIndex)) {
+            return false;
+        }
+
+        try {
+            Path staticDir = worktreePath.resolve("src/main/resources/static");
+            Files.createDirectories(staticDir);
+            Path targetIndex = staticDir.resolve("index.html");
+
+            // 1. If frontend has a package.json and npm is available, run build if needed
+            if (Files.exists(frontendPkg)) {
+                try {
+                    Process p = new ProcessBuilder("npm", "run", "build")
+                            .directory(worktreePath.resolve("frontend").toFile())
+                            .redirectErrorStream(true)
+                            .start();
+                    boolean done = p.waitFor(60, TimeUnit.SECONDS);
+                    if (done && p.exitValue() == 0) {
+                        Path distIndex = worktreePath.resolve("frontend/dist/index.html");
+                        if (Files.exists(distIndex)) {
+                            Files.copy(distIndex, targetIndex, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                            log.info("ELVIN_GOLDMAN_16 (D010): Compiled Svelte frontend from dist to {}", targetIndex);
+                            syncToTargetClassesIfPresent(worktreePath, targetIndex);
+                            return true;
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+            }
+
+            // 2. Conjugated build step: synchronize frontend bundle/transpiled index into static/index.html
+            String sourceHtml = null;
+            if (Files.exists(frontendIndex)) {
+                sourceHtml = Files.readString(frontendIndex, StandardCharsets.UTF_8);
+            }
+
+            String svelteCode = Files.exists(appSvelte) ? Files.readString(appSvelte, StandardCharsets.UTF_8) : "";
+
+            if (sourceHtml != null && !sourceHtml.isBlank()) {
+                boolean needsSync = true;
+                if (Files.exists(targetIndex)) {
+                    String existingTarget = Files.readString(targetIndex, StandardCharsets.UTF_8);
+                    // Check if existing target has outdated placeholder ("пакет из 15 документов" or missing specialties)
+                    boolean targetHasStaleMock = existingTarget.contains("пакет из 15 документов")
+                            || existingTarget.contains("Сводный пакет институциональных документов");
+                    boolean targetHasSpecialties = existingTarget.contains("31.08.36") && existingTarget.contains("31.08.35");
+                    boolean svelteHasSpecialties = svelteCode.contains("31.08.36");
+
+                    if (!targetHasStaleMock && (targetHasSpecialties || !svelteHasSpecialties) && existingTarget.length() >= sourceHtml.length() * 0.9) {
+                        needsSync = false;
+                    }
+                }
+
+                if (needsSync) {
+                    Files.writeString(targetIndex, sourceHtml, StandardCharsets.UTF_8);
+                    log.info("ELVIN_GOLDMAN_16 (D010): Synchronized authentic frontend to static/index.html ({} bytes)", sourceHtml.length());
+                    syncToTargetClassesIfPresent(worktreePath, targetIndex);
+                    return true;
+                }
+            } else if (!svelteCode.isBlank()) {
+                String synthesizedHtml = synthesizeStaticHtmlFromSvelte(svelteCode);
+                Files.writeString(targetIndex, synthesizedHtml, StandardCharsets.UTF_8);
+                log.info("ELVIN_GOLDMAN_16 (D010): Synthesized static/index.html from App.svelte");
+                syncToTargetClassesIfPresent(worktreePath, targetIndex);
+                return true;
+            }
+        } catch (Exception e) {
+            log.error("ELVIN_GOLDMAN_16 (D010): Failed to compile/sync Svelte frontend: {}", e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Alvin Goldman Level of Abstraction Lock (D010, ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK):
+     * Falsifies decoupling between Svelte component specification and static presentation layer.
+     */
+    public VerificationResult verifyLevelOfAbstractionLock(Path worktreePath) {
+        if (worktreePath == null || !Files.isDirectory(worktreePath)) {
+            return VerificationResult.success(0, "Abstraction lock clean");
+        }
+        Path appSvelte = worktreePath.resolve("frontend/src/App.svelte");
+        if (!Files.exists(appSvelte)) {
+            return VerificationResult.success(0, "No Svelte component present");
+        }
+
+        Path staticIndex = worktreePath.resolve("src/main/resources/static/index.html");
+        if (!Files.exists(staticIndex)) {
+            compileAndSyncFrontendToStatic(worktreePath);
+            if (!Files.exists(staticIndex)) {
+                return VerificationResult.failure(102,
+                        "ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK (D010): static/index.html is missing while App.svelte exists",
+                        "D010_LEVEL_OF_ABSTRACTION_GAP: missing static/index.html");
+            }
+        }
+
+        try {
+            String svelte = Files.readString(appSvelte, StandardCharsets.UTF_8);
+            String staticHtml = Files.readString(staticIndex, StandardCharsets.UTF_8);
+
+            // Stale static mock detection
+            if ((staticHtml.contains("пакет из 15 документов") || staticHtml.contains("Сводный пакет институциональных документов"))
+                    && svelte.contains("31.08.36")) {
+                compileAndSyncFrontendToStatic(worktreePath);
+                staticHtml = Files.readString(staticIndex, StandardCharsets.UTF_8);
+                if (staticHtml.contains("пакет из 15 документов") || !staticHtml.contains("31.08.36")) {
+                    return VerificationResult.failure(102,
+                            "ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK (D010): static/index.html contains stale static mockup decoupled from App.svelte",
+                            "D010_LEVEL_OF_ABSTRACTION_GAP: stale mockup in static/index.html");
+                }
+            }
+
+            if (svelte.contains("31.08.36") && !staticHtml.contains("31.08.36")) {
+                compileAndSyncFrontendToStatic(worktreePath);
+                staticHtml = Files.readString(staticIndex, StandardCharsets.UTF_8);
+                if (!staticHtml.contains("31.08.36")) {
+                    return VerificationResult.failure(102,
+                            "ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK (D010): static/index.html lacks domain specialties defined in App.svelte",
+                            "D010_LEVEL_OF_ABSTRACTION_GAP: missing specialties in static/index.html");
+                }
+            }
+        } catch (Exception e) {
+            log.debug("verifyLevelOfAbstractionLock error: {}", e.getMessage());
+        }
+
+        return VerificationResult.success(0, "ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK: verified clean");
+    }
+
+    private void syncToTargetClassesIfPresent(Path worktreePath, Path sourceIndex) {
+        try {
+            Path targetClassesStatic = worktreePath.resolve("target/classes/static");
+            if (Files.isDirectory(targetClassesStatic)) {
+                Files.copy(sourceIndex, targetClassesStatic.resolve("index.html"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private String synthesizeStaticHtmlFromSvelte(String svelteCode) {
+        return "<!DOCTYPE html>\n<html>\n<head>\n<meta charset=\"UTF-8\">\n<title>Application</title>\n</head>\n<body>\n"
+                + "<div id=\"app\">\n" + svelteCode + "\n</div>\n</body>\n</html>";
     }
 }

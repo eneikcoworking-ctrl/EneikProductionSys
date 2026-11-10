@@ -27,9 +27,17 @@ import java.util.UUID;
 
 import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.AccountStatus;
+import com.eneik.production.models.persistence.WishlistSource;
+import com.eneik.production.dto.operational.FlowCoreDto;
+import com.eneik.production.dto.operational.FlowSpineDto;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -852,6 +860,87 @@ class ContinuousOrchestrationServiceTest {
         org.junit.jupiter.api.Assertions.assertFalse(snapshot.hasActionableWork());
         assertEquals(TaskStatus.blocked, brokenTask.getStatus());
         verify(taskRepository).save(brokenTask);
+    }
+
+    @Test
+    void testKarlPopper01FalsificationHarnessRecoversBlockedByMainCi() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
+        AccountRepository accountRepository = mock(AccountRepository.class);
+        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+
+        ProjectEntity project = project(UUID.fromString("00000000-0000-0000-0000-000000000099"),
+                "knowledge-base-crie", ProjectStatus.active);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository,
+                projectFlowService,
+                accountRepository,
+                julesSessionRepository,
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                wishlistRepository,
+                mock(TechnicalLeadCompiler.class),
+                mock(com.eneik.production.services.MLPredictionServiceClient.class),
+                taskRepository,
+                new SystemProgressTracker(),
+                mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class)
+        );
+
+        // Given: project is BLOCKED_BY_MAIN_CI with failing telemetry tests
+        FlowCoreDto flowSnapshot = mock(FlowCoreDto.class);
+        FlowSpineDto spine = mock(FlowSpineDto.class);
+        FlowSpineDto.FlowCounts counts = mock(FlowSpineDto.FlowCounts.class);
+
+        when(flowSnapshot.snapshot()).thenReturn(spine);
+        when(spine.currentState()).thenReturn("BLOCKED_BY_MAIN_CI");
+        when(spine.counts()).thenReturn(counts);
+        when(counts.mainCiStatus()).thenReturn("failure");
+        when(spine.blockingReason()).thenReturn("TelemetryMetricsServiceTest=failure, InternalServiceTest=failure");
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of());
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()), eq(WishlistSource.self_falsification), any()))
+                .thenReturn(List.of());
+
+        // When: Popper Falsification Harness runs
+        assertTrue(ContinuousOrchestrationService.isMainCiRecoveryNeeded(flowSnapshot));
+        ContinuousOrchestrationService.MainCiRecoveryResult result = service.recoverFailingMainCi(project, flowSnapshot);
+
+        // Then: Targeted MAIN_CI_RECOVERY is triggered without deadlock
+        assertTrue(result.recoveryActive());
+        assertEquals("TRIGGERED", result.status());
+        assertTrue(result.failingTests().contains("TelemetryMetricsServiceTest"));
+        assertTrue(result.failingTests().contains("InternalServiceTest"));
+
+        ArgumentCaptor<WishlistEntity> wishlistCaptor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository).save(wishlistCaptor.capture());
+        WishlistEntity saved = wishlistCaptor.getValue();
+        assertEquals(WishlistSource.self_falsification, saved.getSource());
+        assertEquals("MAIN_CI_RECOVERY", saved.getTocConstraintRef());
+        assertEquals("KARL_POPPER_01_FALSIFICATION_HARNESS", saved.getSourceRoleTag());
+        assertTrue(saved.getContent().contains("TelemetryMetricsServiceTest"));
+        assertTrue(saved.getContent().contains("InternalServiceTest"));
+
+        verify(projectFlowService).orchestrate(project.getId());
+        verify(projectFlowService).dispatchQueuedTasks(project.getId());
+
+        // Falsification check 2: Second run does NOT duplicate wishlist if task/wishlist is already in flight
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()), eq(WishlistSource.self_falsification), any()))
+                .thenReturn(List.of(saved));
+        ContinuousOrchestrationService.MainCiRecoveryResult secondRun = service.recoverFailingMainCi(project, flowSnapshot);
+        assertTrue(secondRun.recoveryActive());
+        assertEquals("IN_PROGRESS", secondRun.status());
+        verify(wishlistRepository, times(1)).save(any());
     }
 
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {
