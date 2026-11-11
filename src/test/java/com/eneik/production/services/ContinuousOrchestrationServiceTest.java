@@ -943,6 +943,78 @@ class ContinuousOrchestrationServiceTest {
         verify(wishlistRepository, times(1)).save(any());
     }
 
+    @Test
+    void testNiklasLuhmann01PerpetualAutopoiesisEvolution() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
+
+        ProjectEntity project = project(UUID.randomUUID(), "knowledge-base-crie", ProjectStatus.active);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository,
+                projectFlowService,
+                mock(AccountRepository.class),
+                mock(JulesSessionRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                wishlistRepository,
+                mock(TechnicalLeadCompiler.class),
+                mock(com.eneik.production.services.MLPredictionServiceClient.class),
+                taskRepository,
+                new SystemProgressTracker(),
+                mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class)
+        );
+
+        // Given: Empty queue / idle state (0 queued, 0 active, 0 review)
+        FlowCoreDto flowSnapshot = mock(FlowCoreDto.class);
+        FlowSpineDto spine = mock(FlowSpineDto.class);
+        FlowSpineDto.FlowCounts counts = mock(FlowSpineDto.FlowCounts.class);
+
+        when(flowSnapshot.snapshot()).thenReturn(spine);
+        when(spine.counts()).thenReturn(counts);
+        when(counts.queuedTasks()).thenReturn(0L);
+        when(counts.activeTasks()).thenReturn(0L);
+        when(counts.reviewTasks()).thenReturn(0L);
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of());
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()), eq(WishlistSource.self_falsification), any()))
+                .thenReturn(List.of());
+
+        // When: check autopoiesis need
+        assertTrue(service.isPerpetualAutopoiesisEvolutionNeeded(project, flowSnapshot));
+        ContinuousOrchestrationService.AutopoiesisEvolutionResult result = service.triggerPerpetualAutopoiesisEvolution(project, flowSnapshot);
+
+        // Then: Evolution is triggered
+        assertTrue(result.evolutionTriggered());
+        assertEquals("TRIGGERED", result.status());
+        assertEquals("PERPETUAL_AUTOPOIESIS", result.targetConstraint());
+
+        ArgumentCaptor<WishlistEntity> wishlistCaptor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository).save(wishlistCaptor.capture());
+        WishlistEntity saved = wishlistCaptor.getValue();
+        assertEquals(WishlistSource.self_falsification, saved.getSource());
+        assertEquals("PERPETUAL_AUTOPOIESIS", saved.getTocConstraintRef());
+        assertEquals("BARCAN-TAG-11", saved.getSourceRoleTag());
+        assertTrue(saved.getContent().contains("Mechanism #8"));
+
+        // Second run does NOT duplicate wishlist if already in flight
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()), eq(WishlistSource.self_falsification), any()))
+                .thenReturn(List.of(saved));
+        ContinuousOrchestrationService.AutopoiesisEvolutionResult secondRun = service.triggerPerpetualAutopoiesisEvolution(project, flowSnapshot);
+        assertTrue(secondRun.evolutionTriggered());
+        assertEquals("IN_PROGRESS", secondRun.status());
+    }
+
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {
         ProjectEntity project = new ProjectEntity();
         project.setId(id);

@@ -398,6 +398,22 @@ public class ContinuousOrchestrationService {
                     }
                 }
 
+                // NIKLAS_LUHMANN_01_AUTOPOIETIC_CLOSURE [D014]: Perpetual Autopoiesis (Mechanism #8)
+                // When there is no active work in flight, the factory never stops in a passive standby:
+                // it audits and triggers evolutionary hardening for institutional purity (D010),
+                // temporal session continuity (D002), and dynamic document generation (D003/D007).
+                if (isPerpetualAutopoiesisEvolutionNeeded(project, flowSnapshot)) {
+                    try {
+                        AutopoiesisEvolutionResult evolution = triggerPerpetualAutopoiesisEvolution(project, flowSnapshot);
+                        if (evolution.evolutionTriggered()) {
+                            workMutatedThisTick = true;
+                            flowSnapshot = refreshFlowSnapshot(project, flowSnapshot);
+                        }
+                    } catch (Exception e) {
+                        log.error("Continuous Orchestration: Niklas Luhmann D014 Perpetual Autopoiesis failed for project {}", project.getId(), e);
+                    }
+                }
+
                 // Compile any pending wishlist items into tasks. This is the step that used to only run when a
                 // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation
                 // stalls the moment the queue drains down to a wishlist item that isn't a circuit-breaker
@@ -1177,5 +1193,106 @@ public class ContinuousOrchestrationService {
         public static MainCiRecoveryResult triggered(UUID wishlistId, List<String> failingTests, String explanation) {
             return new MainCiRecoveryResult(true, "TRIGGERED", failingTests, null, wishlistId, explanation);
         }
+    }
+
+    /**
+     * NIKLAS_LUHMANN_01_AUTOPOIETIC_CLOSURE [D014]: Perpetual Autopoiesis (Mechanism #8).
+     * Eliminates passive standby simulacra. When the project queue has drained, the factory
+     * actively examines the repository for institutional purity (D010), chat session continuity (D002),
+     * dynamic document generation (D003), and targeted packaging (D007).
+     */
+    public boolean isPerpetualAutopoiesisEvolutionNeeded(ProjectEntity project, com.eneik.production.dto.operational.FlowCoreDto flowSnapshot) {
+        if (project == null || flowSnapshot == null || flowSnapshot.snapshot() == null || flowSnapshot.snapshot().counts() == null) {
+            return false;
+        }
+        // Active if project is operational (not frozen or archived) and queue has drained (0 queued, 0 active, 0 review)
+        if (project.getStatus() == com.eneik.production.models.persistence.ProjectStatus.frozen
+                || project.getStatus() == com.eneik.production.models.persistence.ProjectStatus.archived) {
+            return false;
+        }
+        if (isProjectStarvingForAutonomy(flowSnapshot)) {
+            return false;
+        }
+        var evidence = flowSnapshot.snapshot().evidence();
+        if (evidence != null && (evidence.pendingWishlist() > 0 || evidence.compilingWishlist() > 0)) {
+            return false;
+        }
+        var counts = flowSnapshot.snapshot().counts();
+        return counts.queuedTasks() == 0 && counts.activeTasks() == 0 && counts.reviewTasks() == 0;
+    }
+
+    public record AutopoiesisEvolutionResult(
+            boolean evolutionTriggered,
+            String status,
+            UUID wishlistId,
+            String targetConstraint,
+            String explanation
+    ) {
+        public static AutopoiesisEvolutionResult notNeeded(String explanation) {
+            return new AutopoiesisEvolutionResult(false, "NOT_NEEDED", null, null, explanation);
+        }
+
+        public static AutopoiesisEvolutionResult inProgress(UUID wishlistId, String explanation) {
+            return new AutopoiesisEvolutionResult(true, "IN_PROGRESS", wishlistId, "PERPETUAL_AUTOPOIESIS", explanation);
+        }
+
+        public static AutopoiesisEvolutionResult triggered(UUID wishlistId, String explanation) {
+            return new AutopoiesisEvolutionResult(true, "TRIGGERED", wishlistId, "PERPETUAL_AUTOPOIESIS", explanation);
+        }
+    }
+
+    public AutopoiesisEvolutionResult triggerPerpetualAutopoiesisEvolution(ProjectEntity project, com.eneik.production.dto.operational.FlowCoreDto flowSnapshot) {
+        if (project == null || project.getId() == null) {
+            return AutopoiesisEvolutionResult.notNeeded("No active project");
+        }
+
+        // 1. Guard against duplicate evolution items in flight
+        boolean hasActiveAutopoiesis = wishlistRepository.findByProjectIdAndSourceAndStatusIn(
+                project.getId(),
+                WishlistSource.self_falsification,
+                List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.converted_to_task)
+        ).stream().anyMatch(w -> "PERPETUAL_AUTOPOIESIS".equals(w.getTocConstraintRef()));
+
+        if (hasActiveAutopoiesis) {
+            return AutopoiesisEvolutionResult.inProgress(null, "Autopoiesis evolution already in flight");
+        }
+
+        // Check recent tasks for active in-flight task with this constraint
+        List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        for (TaskEntity task : recentTasks) {
+            if (task.getStatus() == TaskStatus.queued || task.getStatus() == TaskStatus.in_progress || task.getStatus() == TaskStatus.review) {
+                if (task.getTitle() != null && task.getTitle().contains("PERPETUAL_AUTOPOIESIS")) {
+                    return AutopoiesisEvolutionResult.inProgress(null, "Autopoiesis task already in flight: " + task.getId());
+                }
+            }
+        }
+
+        // 2. Synthesize targeted evolutionary wishlist for Mechanism #8
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
+        wishlist.setSource(WishlistSource.self_falsification);
+        wishlist.setSourceRoleTag("BARCAN-TAG-11");
+        wishlist.setTocConstraintRef("PERPETUAL_AUTOPOIESIS");
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+        wishlist.setSixSigmaMetric("institutional_purity_index");
+        wishlist.setCynefinDomain("clear");
+        wishlist.setContent("NIKLAS_LUHMANN_01_AUTOPOIETIC_CLOSURE (D014 / Mechanism #8): Continuous autonomous evolution: "
+                + "1) Eliminate UI abstraction leaks (D010: purge DeepSeek branding and 1713 document counters; enforce institutional branding); "
+                + "2) Temporal chat continuity (D002: bind chat sessions to localStorage and backend session state); "
+                + "3) Dynamic document generator (D003: implement /api/generate/docx, /api/generate/xlsx, /api/generate/pdf); "
+                + "4) Targeted packaging (D007: replace static 15-document mock download with dynamic targeted bundle generation).");
+        wishlist.setJtbd("When product queue is idle, the factory must continuously evolve and harden product quality without waiting for human intervention.");
+        wishlist.setAcceptanceCriteria("Given an idle factory state, "
+                + "When perpetual autopoiesis triggers, "
+                + "Then institutional UI purity is verified (zero DeepSeek/1713 leaks), chat session continuity is persistent, and dynamic generation endpoints are functional.");
+        wishlist.setDod("Mechanism #8 verified: D010, D002, D003, D007 and D014 compliance 100% green.");
+
+        wishlistRepository.save(wishlist);
+        log.info("Luhmann D014: Triggered PERPETUAL_AUTOPOIESIS evolution wishlist {} for project {}",
+                wishlist.getId(), project.getName());
+
+        return AutopoiesisEvolutionResult.triggered(wishlist.getId(), "Triggered PERPETUAL_AUTOPOIESIS evolution");
     }
 }

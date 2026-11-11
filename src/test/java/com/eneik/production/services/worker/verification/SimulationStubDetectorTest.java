@@ -141,4 +141,55 @@ class SimulationStubDetectorTest {
         assertTrue(findings.stream().allMatch(f -> f.artifactPath().equals("frontend/src/components/Assistant.svelte")));
         assertTrue(findings.stream().anyMatch(f -> f.violationType().equals("TAUTOLOGICAL_MOCK_CHECK")));
     }
+
+    @Test
+    @DisplayName("D010 Mechanism #8: Detects and rejects leaky model branding and document counter stubs in UI")
+    void testDetectsLeakyModelBrandingAndCounters() {
+        String leakyUiContent = """
+                <div class="chat-header">
+                  <h2>Интеллектуальный ассистент на базе DeepSeek-V3</h2>
+                  <span class="badge">1713 документов в базе</span>
+                  <a href="/archive.zip" class="btn">Скачать архив (15 документов)</a>
+                </div>
+                """;
+
+        SimulationStubDetector.StubAuditReport report = detector.auditArtifact(leakyUiContent, "frontend/src/App.svelte");
+
+        assertFalse(report.cleanOfStubs());
+        assertTrue(report.hasSimulacra());
+        assertTrue(report.detailedFindings().stream().anyMatch(f -> f.violationType().equals("LEAKY_MODEL_BRANDING")));
+        assertTrue(report.detailedFindings().stream().anyMatch(f -> f.violationType().equals("HARDCODED_DOCUMENT_COUNTER")));
+        assertTrue(report.detailedFindings().stream().anyMatch(f -> f.violationType().equals("STATIC_MOCK_ARCHIVE")));
+    }
+
+    @Test
+    @DisplayName("D002 Mechanism #8: Detects ephemeral chat state without session persistence")
+    void testDetectsEphemeralChatWithoutPersistence() {
+        String ephemeralChat = """
+                <script>
+                  let messages = [];
+                  function sendChatMessage(text) {
+                    messages.push({ role: 'user', content: text });
+                  }
+                </script>
+                """;
+
+        SimulationStubDetector.StubAuditReport report = detector.auditArtifact(ephemeralChat, "frontend/src/Chat.svelte");
+
+        assertFalse(report.cleanOfStubs());
+        assertTrue(report.detailedFindings().stream().anyMatch(f -> f.violationType().equals("EPHEMERAL_CHAT_NO_PERSISTENCE")));
+
+        // Persistent chat should pass clean of this check
+        String persistentChat = """
+                <script>
+                  let messages = JSON.parse(localStorage.getItem('chat_history') || '[]');
+                  function sendChatMessage(text) {
+                    messages.push({ role: 'user', content: text });
+                    localStorage.setItem('chat_history', JSON.stringify(messages));
+                  }
+                </script>
+                """;
+        SimulationStubDetector.StubAuditReport cleanReport = detector.auditArtifact(persistentChat, "frontend/src/Chat.svelte");
+        assertFalse(cleanReport.detailedFindings().stream().anyMatch(f -> f.violationType().equals("EPHEMERAL_CHAT_NO_PERSISTENCE")));
+    }
 }

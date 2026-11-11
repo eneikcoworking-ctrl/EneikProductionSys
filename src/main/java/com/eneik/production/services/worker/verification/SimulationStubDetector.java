@@ -50,6 +50,21 @@ public class SimulationStubDetector {
             "(?i)\\b(lorem ipsum dolor sit amet|explore dashboard|view documentation|interactive session request)\\b"
     );
 
+    // 6. Leaky model branding & technical jargon in client UI (Mechanism #8, D010 Goldman Level of Abstraction Lock)
+    private static final Pattern LEAKY_MODEL_BRANDING_REGEX = Pattern.compile(
+            "(?i)\\b(deepseek(?:-coder|-chat|-r1|-v3)?|chatgpt)\\b"
+    );
+
+    // 7. Hardcoded technical document counter stubs (Mechanism #8, D010)
+    private static final Pattern HARDCODED_DOCUMENT_COUNTER_REGEX = Pattern.compile(
+            "(?iu)(?:1713\\s*(?:документ[а-яё]*|док\\.|doc)|(?:документов|кол-во документов|всего документов)\\s*:\\s*1713)"
+    );
+
+    // 8. Static pre-baked mock archive & 15-document stubs (Mechanism #8, D007 Teleological Action & D003 Contract Drift)
+    private static final Pattern STATIC_MOCK_ARCHIVE_REGEX = Pattern.compile(
+            "(?iu)(?:пакет из 15 документов|15 типовых документов|скачать архив \\(15 документов\\)|сводный пакет институциональных документов|href=[\"'][^\"']*(?:archive|documents|packet)\\.zip[\"'](?!.*(?:format=|target=|scope=|specialty=|query=)))"
+    );
+
     public record SimulacrumFinding(
             String artifactPath,
             int lineNumber,
@@ -102,6 +117,35 @@ public class SimulationStubDetector {
             String desc = "D010 VIOLATION: Generic boilerplate UI slop detected in " + artifactName;
             findings.add(desc);
             detailedFindings.add(new SimulacrumFinding(artifactName, 1, "GENERIC_SLOP", desc));
+        }
+
+        // Mechanism #8 (D010, D002, D003, D007): UI Institutional Purity, Session Continuity & Dynamic Generation
+        if (isUiArtifact(artifactName)) {
+            if (LEAKY_MODEL_BRANDING_REGEX.matcher(content).find()) {
+                String desc = "D010 VIOLATION: Leaky model branding in UI detected in " + artifactName;
+                findings.add(desc);
+                detailedFindings.add(new SimulacrumFinding(artifactName, 1, "LEAKY_MODEL_BRANDING", desc));
+            }
+
+            if (HARDCODED_DOCUMENT_COUNTER_REGEX.matcher(content).find()) {
+                String desc = "D010 VIOLATION: Hardcoded technical document counter in UI detected in " + artifactName;
+                findings.add(desc);
+                detailedFindings.add(new SimulacrumFinding(artifactName, 1, "HARDCODED_DOCUMENT_COUNTER", desc));
+            }
+
+            if (STATIC_MOCK_ARCHIVE_REGEX.matcher(content).find()) {
+                String desc = "D007 VIOLATION: Static prebaked archive mock button detected in " + artifactName + " (dynamic request-driven generation required)";
+                findings.add(desc);
+                detailedFindings.add(new SimulacrumFinding(artifactName, 1, "STATIC_MOCK_ARCHIVE", desc));
+            }
+
+            if ((content.contains("chatMessages") || content.contains("messages = [") || content.contains("messages = []") || content.contains("messages.push"))
+                    && !content.contains("localStorage") && !content.contains("sessionStorage")
+                    && !content.contains("/api/chat/session") && !content.contains("/api/session") && !content.contains("/api/chat/history")) {
+                String desc = "D002 VIOLATION: Ephemeral chat state without session persistence in " + artifactName + " (localStorage or session API required)";
+                findings.add(desc);
+                detailedFindings.add(new SimulacrumFinding(artifactName, 1, "EPHEMERAL_CHAT_NO_PERSISTENCE", desc));
+            }
         }
 
         String[] lines = content.split("\r?\n");
@@ -159,6 +203,14 @@ public class SimulationStubDetector {
         }
 
         return allFindings;
+    }
+
+    public static boolean isUiArtifact(String artifactName) {
+        if (artifactName == null) return false;
+        String lower = artifactName.toLowerCase(java.util.Locale.ROOT);
+        return lower.endsWith(".html") || lower.endsWith(".svelte") || lower.endsWith(".vue")
+                || lower.endsWith(".jsx") || lower.endsWith(".tsx")
+                || lower.contains("frontend/") || lower.contains("static/") || lower.contains("mockup");
     }
 
     private boolean isProductSourceFile(Path path) {

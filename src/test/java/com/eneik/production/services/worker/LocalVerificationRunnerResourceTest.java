@@ -170,4 +170,55 @@ class LocalVerificationRunnerResourceTest {
         var abstractionLockResult = runner.verifyLevelOfAbstractionLock(tempDir);
         assertTrue(abstractionLockResult.passed(), "Abstraction lock must pass once synchronized");
     }
+
+    @Test
+    @DisplayName("Mechanism #8 (D010, D002, D003, D007): Eliminates DeepSeek branding, document counter and ensures session persistence")
+    void testMechanism8InstitutionalPurityAndSessionContinuity(@TempDir Path tempDir) throws IOException {
+        Path svelteFile = tempDir.resolve("frontend/src/App.svelte");
+        Files.createDirectories(svelteFile.getParent());
+        String svelteContent = """
+                <script>
+                  const specialties = [{ id: '31.08.36', label: 'Эпидемиология' }];
+                  let chatMessages = [];
+                </script>
+                <main><h1>ЦНИИЭ Консультант на DeepSeek-V3</h1><span>1713 документов</span></main>
+                """;
+        Files.writeString(svelteFile, svelteContent, StandardCharsets.UTF_8);
+
+        Path frontendIndex = tempDir.resolve("frontend/index.html");
+        String frontendHtml = """
+                <!DOCTYPE html>
+                <html>
+                <head><title>ЦНИИЭ</title></head>
+                <body>
+                  <div id="app">Specialties: 31.08.36 Эпидемиология. Консультант на DeepSeek-V3. 1713 документов в базе.</div>
+                  <a href="/archive.zip">Скачать архив (15 документов)</a>
+                </body>
+                </html>
+                """;
+        Files.writeString(frontendIndex, frontendHtml, StandardCharsets.UTF_8);
+
+        boolean synced = runner.compileAndSyncFrontendToStatic(tempDir);
+        assertTrue(synced, "Must successfully synchronize and cleanse frontend");
+
+        Path staticIndex = tempDir.resolve("src/main/resources/static/index.html");
+        String updatedStatic = Files.readString(staticIndex, StandardCharsets.UTF_8);
+
+        // 1. D010: Zero DeepSeek mentions
+        assertFalse(updatedStatic.contains("DeepSeek"), "Must cleanse all DeepSeek model branding");
+        assertTrue(updatedStatic.contains("Учебно-методического управления ФБУН ЦНИИ Эпидемиологии"), "Must use institutional branding");
+
+        // 2. D010: Zero 1713 document counter
+        assertFalse(updatedStatic.contains("1713 документов"), "Must eliminate hardcoded file counters");
+
+        // 3. D002: Session persistence injected
+        assertTrue(updatedStatic.contains("localStorage"), "Must inject session persistence for chat");
+
+        // 4. D003 / D007: Dynamic export endpoints
+        assertTrue(updatedStatic.contains("/api/generate/"), "Must wire dynamic generation endpoints");
+
+        // Abstraction lock passes
+        var lockResult = runner.verifyLevelOfAbstractionLock(tempDir);
+        assertTrue(lockResult.passed(), "Abstraction lock must pass with institutional purity");
+    }
 }
