@@ -300,7 +300,7 @@ public class CommandDashboardService {
         // 3. allPrsMerged
         // 4. githubAccessHealthy
         // 5. clientAcceptanceWitnessed (NUEL_BELNAP_04_CONSTRUCTIVE_PROOF_OBJECT / D007,
-        //                              DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT / D009)
+        //                              GOTTLOB_FREGE_05_SENSE_REFERENCE_SPLIT / D009)
         // Without client acceptance traversal (witnessed = false), readiness cannot be reached:
         // the state is "scope built, awaiting acceptance" (WITHHOLD), not PERMIT.
         Verdict construction;

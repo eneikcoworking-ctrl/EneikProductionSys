@@ -31,7 +31,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * Screen for Prescription 41: Validated GitHub Webhook Ingress
- * (DEREK_PARFIT_02_CAUSAL_PROCESS_TRACE [D013] / ALVA_NOE_01_PERCEPTION_ACTION_LOOP [D011]).
+ * (DEREK_PARFIT_02_CAUSAL_PROCESS_TRACE [D013] / SUSAN_HURLEY_01_DYNAMIC_FEEDBACK_LOOP [D011]).
  */
 class GithubWebhookControllerTest {
 

@@ -121,7 +121,7 @@ public class ProductCapabilityService {
      * and caches known results until the branch or commit SHA advances.
      * BOUNDARY_TOPOLOGY (D006): loads DB entities before network operations so database connections
      * are never held across external HTTP calls.
-     * <p>DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009) / LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY (D013):
+     * <p>GOTTLOB_FREGE_05_SENSE_REFERENCE_SPLIT (D009) / LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY (D013):
      * Eliminates sense-reference split by discovering physical contract files rather than guessing names.
      */
     public List<DeclaredCapability> declaredCapabilities(ProjectEntity project) {
@@ -162,7 +162,7 @@ public class ProductCapabilityService {
         Set<String> seen = new LinkedHashSet<>();
         Set<String> dirFiles = filesInDirectory.get();
         if (!dirFiles.isEmpty()) {
-            // DEVID_CHALMERS_05_SENSE_REFERENCE_SPLIT (D009): Derive capabilities from all contracts in docs/contracts
+            // GOTTLOB_FREGE_05_SENSE_REFERENCE_SPLIT (D009): Derive capabilities from all contracts in docs/contracts
             List<String> contractFiles = dirFiles.stream()
                     .filter(ProductCapabilityService::isContractFile)
                     .sorted()

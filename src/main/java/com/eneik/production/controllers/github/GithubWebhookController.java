@@ -35,7 +35,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Validated GitHub Webhook Ingress (ALVA_NOE_01_PERCEPTION_ACTION_LOOP [D011] /
+ * Validated GitHub Webhook Ingress (SUSAN_HURLEY_01_DYNAMIC_FEEDBACK_LOOP [D011] /
  * DEREK_PARFIT_02_CAUSAL_PROCESS_TRACE [D013]).
  *
  * <p>Receives bottom-up GitHub signals (pull_request opened/synchronized), validates

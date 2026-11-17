@@ -14,7 +14,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Falsification tests for RequirementGroundingService anchored in Barcan philosopher patterns:
- * 1. DEVID_CHALMERS_02_INTENSION_COMPATIBILITY (D001 Semantic drift, Chalmers):
+ * 1. RUDOLF_CARNAP_02_INTENSION_COMPATIBILITY (D001 Semantic drift, Carnap/Stalnaker):
  *    Primary intension (client's original wording) is strictly preserved verbatim; secondary intension
  *    (rigorous mathematical/architectural concept capsule) is only appended, never replacing or mutating
  *    client intent.
@@ -25,8 +25,8 @@ import static org.mockito.Mockito.when;
 class RequirementGroundingServiceFalsificationTest {
 
     @Test
-    @DisplayName("Chalmers D001: Primary intension is preserved verbatim at position 0; capsule only appends")
-    void falsifyChalmersPrimaryIntensionPreservation() {
+    @DisplayName("Carnap D001: Primary intension is preserved verbatim at position 0; capsule only appends")
+    void falsifyCarnapPrimaryIntensionPreservation() {
         GeminiContextService geminiContextService = mock(GeminiContextService.class);
         when(geminiContextService.retrieveRelevantContextBySourceTypes(anyString(), anyInt(), anyList()))
                 .thenReturn(List.of(
@@ -47,7 +47,7 @@ class RequirementGroundingServiceFalsificationTest {
     }
 
     @Test
-    @DisplayName("Chalmers D001: Null, blank, and empty input pass through unchanged without synthetic mutations")
+    @DisplayName("Carnap D001: Null, blank, and empty input pass through unchanged without synthetic mutations")
     void falsifyChalmersIntensionCompatibilityBlankInputs() {
         GeminiContextService geminiContextService = mock(GeminiContextService.class);
         RequirementGroundingService service = new RequirementGroundingService(geminiContextService);
@@ -93,7 +93,7 @@ class RequirementGroundingServiceFalsificationTest {
     }
 
     @Test
-    @DisplayName("Church D014 / Chalmers D001: Short paragraphs grouped into coherent requirement unit (< 400 chars)")
+    @DisplayName("Church D014 / Carnap D001: Short paragraphs grouped into coherent requirement unit (< 400 chars)")
     void falsifyGroupingFloorPreservesMultiParagraphCoherence() {
         String paragraph1 = "The user initiates the KYC verification flow.";
         String paragraph2 = "The system checks existing records in the central registry.";
