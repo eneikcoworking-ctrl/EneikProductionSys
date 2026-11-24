@@ -326,4 +326,82 @@ rounded-2xl, чистая микро-граница, естественная м
    - Пересобрать и перезапустить `eneikproductionsys-judgment-proxy-1` (`docker compose up -d --build judgment-proxy`), проверить `curl -s http://127.0.0.1:8093/health` (должен показывать `primary: "deepseek"`).
 4. Зафиксировать коммит (`fix(d003,d010): switch judgment-proxy primary to DeepSeek with explicit fallback chain`) и обновить `docs/reports/PROGRAMMER_STATE.md`.
 
+---
+
+## 13. МЕХАНИЗМ №13 (P1 WORK ORDER #11 ОТ 2026-11-24 — ТАКТ 4 ПОСЛЕ ЗАКРЫТИЯ P0 #1–#3): ЧЕСТНОСТЬ PR / АНТИ-ОРФАН MIRROR (`D010`/`D003`), ТЕРМИНАЦИЯ ОТРАВЛЕННЫХ `SCOPE_INSUFFICIENT` (`D003`/`D002`) И РАЗГРАНИЧЕНИЕ UI С `AESTHETIC-MASTER` (`D006`/`D001`)
+
+**Статус:** P1 ОБЯЗЫВАЮЩИЙ НАРЯД L1 → L2 (ВЫПОЛНЯТЬ СТРОГО ПОСЛЕ ЗАКРЫТИЯ И ЖИВОЙ ВЕРИФИКАЦИИ P0 #1–#3 ИЗ §12)  
+**Основание:** Срочная директива Оператора от `2026-11-24 22:45:00 UTC` ([OPERATOR_DIRECTIVES.md](OPERATOR_DIRECTIVES.md)), контекст экосистемы ([ECOSYSTEM_PHILOSOPHICAL_CONTEXT.md](ECOSYSTEM_PHILOSOPHICAL_CONTEXT.md)) и форензика L1 ([INCIDENT_DIAGNOSIS_2026-11-24_DEEPSEEK_P1_AUTONOMOUS_CLOSURE.md](INCIDENT_DIAGNOSIS_2026-11-24_DEEPSEEK_P1_AUTONOMOUS_CLOSURE.md)).  
+**Жёсткий регламент (`GEMINI.md` §0–§1):**
+- **Сначала полностью закрыть §12 (Такты 1 → 2 → 3)** и довести их до живого рантайма.
+- Затем в **Такте 4** реализовать Механизм №13 с попперовскими тестами-заслонами в Docker Maven (`-m 2g`), пересобрать `eneikproductionsys-backend-1` и подтвердить живую телеметрию.
+- **Категорический запрет:** никаких ручных правок репозитория продукта (`knowledge-base-crie` и др.).
+
+### 13.1. Подмеханизм 4A — Ликвидация ложного успеха PR (`422 no history in common with main`) и симулякра `local-repo/pulls` (`D010` Голдман + `D003` Леонелли + `D013` Сэлмон)
+**Диагностированный дефект (`22:41 UTC` + живой bare-mirror `/var/lib/eneik/mirrors/knowledge-base-crie.git`):**
+- `DeepSeekWorktreeExecutionEngine.java:317` при отказе `GitHubPullRequestService.createPullRequest` (HTTP 422 `no history in common with main`) молча возвращает фиктивный URL `"https://github.com/local-repo/pulls/task-" + task.getId()` и помечает задачу `COMPLETED` (`status=pr_opened`, `Belnap=TRUE`), отравляя `JulesDispatchService` (`Replaying stranded pr_opened workflow`).
+- Корень 422 доказан на живом зеркале: коммит `60cdcae` ветки `worker/c6f75610-...` имеет **`parents=[]` (orphan root commit)**, т.к. `GitWorktreeExecutionManager.java:98,110` использует `--mirror` (`+refs/*:refs/*`) + конкурентный безблокировочный `git fetch origin --prune`, который **сносит локальные ветки `refs/heads/worker/*` прямо из-под активных worktree других потоков**. Кроме того, `GitWorktreeExecutionManager.push` (`line 303`) игнорирует exit code, а `DeepSeekWorktreeExecutionEngine:200-204` глотает исключения `push`.
+
+**Обязательные изменения L2:**
+1. **`DeepSeekWorktreeExecutionEngine.java`:**
+   - **Полностью удалить** fallback `"https://github.com/local-repo/pulls/task-" + task.getId()`.
+   - Не глотать ошибку `worktreeManager.push(...)`: неуспешный `push` обязан прерывать публикацию PR.
+   - Перед открытием PR проверять, что `HEAD` ветки worktree имеет реального общего предка с `origin/<startingBranch>` (не `parents=[]`).
+   - При отказе создания PR в `GitHubPullRequestService` (HTTP 422 / `no history in common with main` / пустой `Optional` / исключение):
+     - Автоматически вызвать `worktreeManager.resyncMirrorWithOriginMain(task.getProject())`.
+     - Пометить сессию честным статусом отказа (`status = "pr_creation_failed"` / `"closed_no_code"`, `belnapStatus = BelnapStatus.FALSE.name()`, `prUrl = null`, явный `closureReason` с кодом/причиной ошибки) и вернуть `WorkerDispatchResult.failed(...)`. **Никогда** не возвращать `COMPLETED` / `pr_opened` без реального GitHub PR URL.
+   - Синхронизировать переиспользование/закрытие предсохранённой сессии из `JulesDispatchService:708-722`, чтобы при маршрутизации/fallback в `DeepSeekWorktreeExecutionEngine` не оставалось осиротевшей `running`-сессии `local-agy-*`.
+2. **`GitWorktreeExecutionManager.java` (потокобезопасный bare-mirror без орфан-коммитов):**
+   - Добавить per-mirror блокировку (`ConcurrentHashMap<Path, ReentrantLock>`) вокруг операций синхронизации зеркала и создания/удаления worktree.
+   - Устранить снос локальных `refs/heads/worker/*`: настроить/использовать безопасный refspec `+refs/heads/*:refs/remotes/origin/*` при fetch (не запускать `--mirror` prune поверх локальных `refs/heads/worker/*`), базируя `createWorktree` от `origin/<startingBranch>` (с явным fallback на `main`).
+   - Реализовать `resyncMirrorWithOriginMain(ProjectEntity project)` (force-обновление `origin/main` и `main`, при повреждении/расхождении истории — безопасная переинициализация bare-mirror) и метод `hasCommonHistoryWithBase(Path worktreePath, String baseBranch)`.
+   - В `push(Path worktreePath, String branch)` проверять exit code команды `git push` и выбрасывать исключение при `exit != 0`.
+3. **`GitHubPullRequestService.java` (при необходимости расширенный результат/диагностика):**
+   - Обеспечить распознавание HTTP 422 (`no history in common with main` / validation failed) для детерминированного вызова `resyncMirrorWithOriginMain` в `DeepSeekWorktreeExecutionEngine`.
+
+### 13.2. Подмеханизм 4B — Терминация отравленных задач `SCOPE_INSUFFICIENT` (`crie_*.py` в Java-репозитории) (`D003` Леонелли + `D002` Райл/Дюэм-Куайн + `D010` Голдман)
+**Диагностированный дефект (`22:44–22:48 UTC`):**
+- Задачи `knowledge-base-crie` (`4c4837ff`, `d976d831`, `a6f64e24`) каждую минуту возвращают `SCOPE_INSUFFICIENT: [crie_persistent_memory.py, crie_document_parser.py, crie_assistant_api.py, crie_smart_consultant.py]` в Java/Maven-репозитории, не имеют дерева файлов в промпте `DeepSeekWorktreeExecutionEngine` и бесконечно возвращаются в `TaskStatus.queued`.
+
+**Обязательные изменения L2:**
+1. **`DeepSeekWorktreeExecutionEngine.java`:**
+   - Подгружать и передавать в промпт актуальное дерево файлов репозитория `worktreeManager.listRepositoryFiles(worktreePath)` (единообразно с `LocalAgyWorktreeExecutionEngine.java:141-150`).
+   - При получении `ScopeStatus.SCOPE_INSUFFICIENT` классифицировать `missingFiles` относительно `repoFiles`:
+     - Если отсутствующие файлы не существуют в `repoFiles` и относятся к несовместимому стеку (например, `*.py` при наличии `pom.xml` и отсутствии `*.py` в репозитории), пометить отказ явным кодом **`POISONED_CROSS_STACK_SCOPE_INSUFFICIENT`** (сохранив `closureReason`).
+2. **`ClaimService.java` и `JulesDispatchService.java`:**
+   - При `POISONED_CROSS_STACK_SCOPE_INSUFFICIENT` (или при повторном `>= 2` возврате `SCOPE_INSUFFICIENT` на несуществующие в репозитории файлы) **немедленно выводить задачу из бесконечного цикла ретраев**: переводить в терминальный отказ / перекомпиляцию (`TaskStatus.blocked` с `julesDispatchStatus = "NEEDS_RECOMPILATION: POISONED_SCOPE_INSUFFICIENT..."` + запись в `DefectJournal` / `needs_human_review`, без возврата в `queued`).
+   - Учитывать сессии со статусом `scope_insufficient` в монотонной вариант-функции отказов `ClaimService`.
+
+### 13.3. Подмеханизм 4C — Граница ответственности с `aesthetic-master` (UI vs Backend/API) (`D006` Раз + `D003` Леонелли + `D001` Поточник)
+**Диагностированный дефект:**
+- `DesignShopOrchestrationService` продолжает запускать цикл макетов (`20261124211039-mockup`) для `knowledge-base-crie`; `LocalVerificationRunner` перезаписывает/гейтит `src/main/resources/static/index.html`; `FileScopeEnforcer` не блокирует модификацию внешне управляемого UI.
+
+**Обязательные изменения L2 (строго на уровне конфигурируемых механизмов Фабрики, без ручных правок продукта):**
+1. **`SystemSettingsService.java` (реестр внешнего владения UI):**
+   - Зарегистрировать настройку Фабрики (например, `external_ui_owned_projects`, по умолчанию включающую `knowledge-base-crie`), фиксирующую, что для указанных проектов фронтенд `src/main/resources/static/index.html` эксклюзивно ведёт `aesthetic-master`, а Фабрика отвечает строго за Java 21 / Spring Boot 3 backend, SQLite (`data/agent_memory.sqlite`) и REST API (`/crie/api/chat`, `/crie/api/documents/upload`, `/crie/api/dialogues/history`, `/crie/api/catalog/search`, `/crie/api/download/...`).
+2. **`FileScopeEnforcer.java` (Raz Deontic Gate D006):**
+   - Для проектов с внешним владельцем UI безусловно запрещать модификацию `src/main/resources/static/index.html` (и защищённых UI-путей), даже если путь указан в `task.fileScope` или `fileScope` пуст: немедленный `rollbackWorktree` и `ExclusionaryReasonViolationException` (`EXTERNAL_UI_OWNED_BY_AESTHETIC_MASTER`).
+3. **`LocalVerificationRunner.java`:**
+   - Для проектов с внешним владельцем UI пропускать `compileAndSyncFrontendToStatic` и `verifyLevelOfAbstractionLock` в отношении `src/main/resources/static/index.html`, чтобы верификатор никогда не перезаписывал и не блокировал UI `aesthetic-master`.
+4. **`DesignShopOrchestrationService.java`:**
+   - В `tick()` пропускать проекты с внешним владельцем UI (`EXTERNAL_UI_OWNER`), полностью устраняя двойное владение UI и паразитные дизайн-ревью задачи (`c6f75610`).
+5. **`DeepSeekApiClient.java` / `LocalAgyCliClient.java`:**
+   - Для проектов с внешним владельцем UI добавлять в промпт явную границу ответственности (backend Java 21 / Spring Boot 3, SQLite `data/agent_memory.sqlite`, REST API `/crie/api/*`; `src/main/resources/static/index.html` — read-only / `aesthetic-master`).
+
+### 13.4. Тесты-заслоны (Поппер D008, Docker Maven `-m 2g`) и живая приёмка L1
+1. **`DeepSeekWorktreeExecutionEngineTest.java` + `GitWorktreeExecutionManagerTest.java`:**
+   - **Заслон 4A-1 (D010):** при отказе `GitHubPullRequestService.createPullRequest` (`Optional.empty()` / HTTP 422 `no history in common with main`) `DeepSeekWorktreeExecutionEngine.dispatch` **НЕ возвращает `COMPLETED`** и **НЕ записывает `https://github.com/local-repo/pulls/...`**, вызывает `resyncMirrorWithOriginMain`, помечает сессию отказом (`Belnap=FALSE`, `prUrl == null`) и возвращает `WorkerDispatchResult.failed(...)`.
+   - **Заслон 4A-2 (D013):** воспроизвести конкурентный fetch зеркала при активном worktree — ветка `worker/<id>` не удаляется, коммит сохраняет родителя `main` (`merge-base` не пуст, не orphan `parents=[]`).
+   - **Заслон 4B (D003/D002):** задача в Java/Maven-репозитории (`pom.xml`), вернувшая `SCOPE_INSUFFICIENT` с несуществующими `crie_*.py` (или повторно `>= 2` раз на несуществующие файлы), переводится в терминальный отказ / `NEEDS_RECOMPILATION` и не возвращается в `TaskStatus.queued`.
+2. **`FileScopeEnforcerTest.java` + `LocalVerificationRunnerTest.java` + `DesignShopOrchestrationServiceTest.java`:**
+   - **Заслон 4C (D006/D001):** для проекта с внешним владельцем UI (`knowledge-base-crie`):
+     - попытка воркера изменить `src/main/resources/static/index.html` блокируется `FileScopeEnforcer` с физическим rollback;
+     - `LocalVerificationRunner` не перезаписывает `src/main/resources/static/index.html`;
+     - `DesignShopOrchestrationService.tick()` пропускает проект без создания дизайн-цикла.
+3. **Фиксация и живой рантайм:**
+   - Коммит `fix(d010,d003,d006): block fake local-repo PRs, terminate cross-stack SCOPE_INSUFFICIENT, enforce aesthetic-master UI boundary`.
+   - Пересобрать `eneikproductionsys-backend-1`, проверить в живом рантайме: `0` ссылок `local-repo/pulls`, `0` бесконечных повторов `crie_*.py`, `0` новых дизайн-циклов по `knowledge-base-crie`, CPU `< 50%`, RAM с запасом до `1GiB`, диск `/` `< 70%`.
+   - Записать доказательный отчёт в `docs/reports/PROGRAMMER_STATE.md` для финальной приёмки L1.
+
+
 
