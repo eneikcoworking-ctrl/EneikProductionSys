@@ -1,10 +1,10 @@
-# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-11 18:13 UTC)
+# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-24 18:37 UTC)
 
-- **Статус очереди фабрики:** Механизмы №1–№8 полностью реализованы и закреплены тестами (73/73 green).
-- **Входной наряд:** `MANAGER_STATE.md` в статусе `AUDIT_READY` (100% заверено, новых нарядов нет).
-- **Состояние рантайма:**
-  - Оркестратор (:8080) — `UP` (`HTTP 200`).
-  - Продукт ЦНИИЭ (:8097, `https://dmitryefremov.com/crie`) — `HTTP 200 OK`.
-- **Ресурсная гигиена хоста:** Диск `/` 67% (13 GiB свободно, лимит < 70% соблюдён), RAM 1.4 GiB доступно.
-- **Инвариант суверенитета (Rule 0):** Кодовая база фабрики чиста (working tree clean, HEAD: `e80d7fd1`).
-- **Режим:** Автономный дозор и готовность к аудиту (`AUDIT_READY`). Взведён таймер 45 мин.
+- **Выполнен срочный Work Order #9 (Механизм №9, D003/D008/D005/D010/D013):**
+  - **Шаг A (`e09221c5`):** `ContinuousOrchestrationService.recoverFailingMainCi` переведён на канонический `BARCAN-TAG-06` (имя паттерна `KARL_POPPER_01_FALSIFICATION_HARNESS` сохранено в `content`/`dod`); добавлена миграция `V146__widen_wishlist_source_role_tag.sql` (`VARCHAR(128)`); в `WishlistEntity` внедрён единый валидатор `validateCanonicalSourceRoleTag` (`@PrePersist`/`@PreUpdate` + setter). Docker Maven (`-m 2g`): **35/35 green** (`SourceRoleTagContractIntegrationTest`, `ContinuousOrchestrationServiceTest`, `FlywayMigrationValidationTest`, `WishlistControllerIntegrationTest`).
+  - **Шаг B (`9bfd501f`):** Снят внешний `@Transactional` с `AutoMergeService.executeMerge` (сетевой GitHub I/O вне транзакции, записи в коротком `TransactionTemplate`), `ClientDeliverableReadinessService.deleteValuelessEpics`, `TrustSnapshotService.captureAndBackfillSnapshots` и `ProcessControlService.recomputeForProject`; устранён N+1 `findByFeatureId` → `findByFeatureIdIn` (включая `taskRevivalCounts`); добавлен `spring.jpa.open-in-view=false`; переиспользован `sharedHttpClient` в `ProjectFlowService`; ограничены пулы потоков в `DefaultPlaywrightVisionHarness` (4) и `LocalAgyCliClient` (8, `@PreDestroy`). Docker Maven (`-m 2g`): **177/177 green** (`HikariLeakAndThreadHygieneGateTest` + все целевые сьюты).
+- **Живой рантайм (`eneikproductionsys-backend-1` пересобран и перезапущен):**
+  - Flyway `V146` применён на живую H2 (`10ms`); `Started EneikProductionApplication in 29.167s`; `/actuator/health` → `UP`.
+  - Телеметрия: `VmRSS: 763608 kB`, `Threads: 70`; `0` `SQL Error: 22001`, `0` `Connection leak detection`, `0` `unable to create native thread`.
+- **Ресурсная гигиена хоста:** Удалены зависшие `data/logs/backend.log.*.tmp` (408 МБ) + `docker builder/image prune`; диск `/` **69%** (12 GiB свободно, лимит < 70% соблюдён), RAM 1.9 GiB доступно.
+- **Статус:** Готово к приёмке L1 (Ступени 3–4).
