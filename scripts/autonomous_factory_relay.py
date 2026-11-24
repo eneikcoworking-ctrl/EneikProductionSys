@@ -278,12 +278,13 @@ def run_agent_command(user, prompt, timeout_seconds=1800):
             log(f"Такт [{user}] завершен успешно.")
             return True, res.stdout.strip()
         else:
-            log(f"Такт [{user}] код {res.returncode}. Stderr: {res.stderr[:200]}")
+            combined_err = "\n".join(p for p in (res.stderr.strip(), res.stdout.strip()) if p)
+            log(f"Такт [{user}] код {res.returncode}. Stderr: {combined_err[:200]}")
             head_after = subprocess.check_output(["git", "-C", REPO_DIR, "rev-parse", "HEAD"]).decode().strip()
             if head_after != head_before:
                 log(f"Такт [{user}] зафиксировал коммит {head_after[:7]} (успех).")
                 return True, "Commit made"
-            return False, res.stderr.strip()
+            return False, combined_err
     except subprocess.TimeoutExpired:
         log(f"Такт [{user}] превысил лимит сессии ({timeout_seconds}s).")
         head_after = subprocess.check_output(["git", "-C", REPO_DIR, "rev-parse", "HEAD"]).decode().strip()
@@ -296,18 +297,68 @@ def run_agent_command(user, prompt, timeout_seconds=1800):
         return False, str(e)
 
 
+def parse_quota_reset_seconds(err_text, default_wait=900, max_wait=21600, buffer_sec=30):
+    """Распознаёт 429/RESOURCE_EXHAUSTED и парсит 'Resets in XhYmZs' -> секунды ожидания или None."""
+    if not err_text:
+        return None
+    low = err_text.lower()
+    if not any(tok in low for tok in ("resource_exhausted", "code 429", "http 429", "quota reached", "rate limit")):
+        return None
+    m = re.search(r"resets\s+in\s+(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?\s*(?:(\d+)\s*s)?", low)
+    if m and any(m.groups()):
+        hours = int(m.group(1) or 0)
+        mins = int(m.group(2) or 0)
+        secs = int(m.group(3) or 0)
+        total = hours * 3600 + mins * 60 + secs
+        if total > 0:
+            return min(total + buffer_sec, max_wait)
+    return default_wait
+
+
 def directive_retry_decision(rs, cur_hash, old_hash, now, max_attempts=3):
-    """RETRY_GUARD (чистая функция): -> (done|exhausted|wait|run, state). Паузы 5/15/45 мин."""
+    """RETRY_GUARD (чистая функция): -> (done|exhausted|wait|run, state). Паузы 5/15/45 мин + 429 cooldown."""
     if rs.get("hash") != cur_hash:
-        rs = {"hash": cur_hash, "attempts": 0, "last": 0}
+        rs = {"hash": cur_hash, "attempts": 0, "last": 0, "cooldown_until": 0, "l1_done": False}
+    else:
+        rs = dict(rs)
+        rs.setdefault("attempts", 0)
+        rs.setdefault("last", 0)
+        rs.setdefault("cooldown_until", 0)
+        rs.setdefault("l1_done", False)
     if cur_hash == old_hash:
         return "done", rs
+    if now < rs.get("cooldown_until", 0):
+        return "wait", rs
     if rs["attempts"] >= max_attempts:
         return "exhausted", rs
     wait = 300 * (3 ** (rs["attempts"] - 1)) if rs["attempts"] else 0
     if now - rs["last"] < wait:
         return "wait", rs
     return "run", rs
+
+
+def record_directive_outcome(rs, now, ok, err_text="", stage="l1"):
+    """Обновляет состояние RETRY_GUARD после шага L1/L2: 429 не тратит попытки, а ставит cooldown_until."""
+    new_rs = dict(rs)
+    new_rs.setdefault("attempts", 0)
+    new_rs.setdefault("last", 0)
+    new_rs.setdefault("cooldown_until", 0)
+    new_rs.setdefault("l1_done", False)
+    if ok:
+        new_rs["cooldown_until"] = 0
+        new_rs["last"] = now
+        if stage == "l1":
+            new_rs["l1_done"] = True
+        return "ok", 0, new_rs
+    reset_wait = parse_quota_reset_seconds(err_text)
+    if reset_wait is not None:
+        new_rs["cooldown_until"] = now + reset_wait
+        new_rs["last_quota_error"] = err_text[:200]
+        return "quota_wait", reset_wait, new_rs
+    new_rs["attempts"] += 1
+    new_rs["last"] = now
+    new_rs["cooldown_until"] = 0
+    return "failed", 0, new_rs
 
 
 def execute_relay_round():
@@ -324,46 +375,69 @@ def execute_relay_round():
         import hashlib
         cur_hash = hashlib.sha256(open(dir_path, "rb").read()).hexdigest()
         old_hash = open(dir_hash_file).read().strip() if os.path.exists(dir_hash_file) else ""
-        # RETRY_GUARD: макс. 3 попытки на хэш директивы, экспоненциальная пауза 5/15/45 мин
+        # RETRY_GUARD: макс. 3 попытки на хэш директивы, паузы 5/15/45 мин, 429 -> cooldown без траты попыток
         retry_file = "/var/lib/eneik_operator_directives.retry.json"
         MAX_DIRECTIVE_ATTEMPTS = 3
         try:
-            import json as _json
-            rs = _json.load(open(retry_file)) if os.path.exists(retry_file) else {}
+            rs = json.load(open(retry_file)) if os.path.exists(retry_file) else {}
         except Exception:
             rs = {}
-        decision, rs = directive_retry_decision(rs, cur_hash, old_hash, time.time(), MAX_DIRECTIVE_ATTEMPTS)
+        now_ts = time.time()
+        decision, rs = directive_retry_decision(rs, cur_hash, old_hash, now_ts, MAX_DIRECTIVE_ATTEMPTS)
         if decision == "exhausted":
             log("RETRY_GUARD: лимит попыток исчерпан для директивы %s — требуется ручной разбор Оператора, ретраи остановлены" % cur_hash[:12])
             time.sleep(600)
             return
         if decision == "wait":
-            time.sleep(60)
+            rem_cd = int(max(0, rs.get("cooldown_until", 0) - now_ts))
+            if rem_cd > 0:
+                log("RETRY_GUARD (429): ожидание сброса квоты (%ds осталось, попытки %d/%d, l1_done=%s)" % (rem_cd, rs["attempts"], MAX_DIRECTIVE_ATTEMPTS, rs.get("l1_done", False)))
+                time.sleep(min(300, max(30, rem_cd)))
+            else:
+                time.sleep(60)
             return
         if cur_hash != old_hash:
-            rs["attempts"] += 1
-            rs["last"] = time.time()
-            with open(retry_file, "w") as rf:
-                _json.dump(rs, rf)
-            log("=== НОВАЯ ДИРЕКТИВА ОПЕРАТОРА ОБНАРУЖЕНА В OPERATOR_DIRECTIVES.md — ПРОБУЖДЕНИЕ L1 <-> L2 (попытка %d/%d) ===" % (rs["attempts"], MAX_DIRECTIVE_ATTEMPTS))
-            l1_prompt = (
-                "Ты — L1 Философ EneikProductionSys. В docs/reports/OPERATOR_DIRECTIVES.md поступила НОВАЯ СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА "
-                "(также прочти docs/reports/ECOSYSTEM_PHILOSOPHICAL_CONTEXT.md). "
-                "Проведи диагностику, задокументируй контракт и ответственные механизмы, сними standby в docs/reports/MANAGER_STATE.md "
-                "и выдай точный Work Order для L2 Инженера в docs/reports/PROGRAMMER_DIRECTIVES.md. Сделай git commit. Не вызывай таймеры."
-            )
-            p_ok, _ = run_agent_command("remotecli2", l1_prompt)
-            if p_ok:
-                l2_prompt = (
-                    "Ты — L2 Инженер EneikProductionSys. Выполни срочный Work Order от L1 Философа в docs/reports/PROGRAMMER_DIRECTIVES.md "
-                    "(по последней директиве из docs/reports/OPERATOR_DIRECTIVES.md). Исправь код/схему, покрой тестами в Docker Maven, "
-                    "задокументируй результат в docs/reports/PROGRAMMER_STATE.md и сделай git commit. Не вызывай таймеры."
+            def _save_rs(state):
+                with open(retry_file, "w") as rf:
+                    json.dump(state, rf)
+
+            if not rs.get("l1_done"):
+                log("=== НОВАЯ ДИРЕКТИВА ОПЕРАТОРА ОБНАРУЖЕНА В OPERATOR_DIRECTIVES.md — ПРОБУЖДЕНИЕ L1 (попытка %d/%d) ===" % (rs["attempts"] + 1, MAX_DIRECTIVE_ATTEMPTS))
+                l1_prompt = (
+                    "Ты — L1 Философ EneikProductionSys. В docs/reports/OPERATOR_DIRECTIVES.md поступила НОВАЯ СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА "
+                    "(также прочти docs/reports/ECOSYSTEM_PHILOSOPHICAL_CONTEXT.md). "
+                    "Проведи диагностику, задокументируй контракт и ответственные механизмы, сними standby в docs/reports/MANAGER_STATE.md "
+                    "и выдай точный Work Order для L2 Инженера в docs/reports/PROGRAMMER_DIRECTIVES.md. Сделай git commit. Не вызывай таймеры."
                 )
-                e_ok, _ = run_agent_command("remotecli", l2_prompt)
-                if e_ok:
-                    with open(dir_hash_file, "w") as hf:
-                        hf.write(cur_hash)
-                    log("=== СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА ОТРАБОТАНА L1 <-> L2 ===")
+                p_ok, p_err = run_agent_command("remotecli2", l1_prompt)
+                kind, wait_s, rs = record_directive_outcome(rs, time.time(), p_ok, p_err, stage="l1")
+                _save_rs(rs)
+                if not p_ok:
+                    if kind == "quota_wait":
+                        log("RETRY_GUARD (429): квота L1 исчерпана, попытка не засчитана; пауза %ds до сброса" % wait_s)
+                    else:
+                        log("RETRY_GUARD: L1 завершился ошибкой (попытка %d/%d)" % (rs["attempts"], MAX_DIRECTIVE_ATTEMPTS))
+                    time.sleep(20)
+                    return
+            else:
+                log("=== ДИРЕКТИВА %s: L1 уже выполнен ранее — переход сразу к L2 (попытка %d/%d) ===" % (cur_hash[:12], rs["attempts"] + 1, MAX_DIRECTIVE_ATTEMPTS))
+
+            l2_prompt = (
+                "Ты — L2 Инженер EneikProductionSys. Выполни срочный Work Order от L1 Философа в docs/reports/PROGRAMMER_DIRECTIVES.md "
+                "(по последней директиве из docs/reports/OPERATOR_DIRECTIVES.md). Исправь код/схему, покрой тестами в Docker Maven, "
+                "задокументируй результат в docs/reports/PROGRAMMER_STATE.md и сделай git commit. Не вызывай таймеры."
+            )
+            e_ok, e_err = run_agent_command("remotecli", l2_prompt)
+            kind, wait_s, rs = record_directive_outcome(rs, time.time(), e_ok, e_err, stage="l2")
+            _save_rs(rs)
+            if e_ok:
+                with open(dir_hash_file, "w") as hf:
+                    hf.write(cur_hash)
+                log("=== СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА ОТРАБОТАНА L1 <-> L2 ===")
+            elif kind == "quota_wait":
+                log("RETRY_GUARD (429): квота L2 исчерпана, попытка не засчитана; пауза %ds до сброса (L1 сохранён)" % wait_s)
+            else:
+                log("RETRY_GUARD: L2 завершился ошибкой (попытка %d/%d)" % (rs["attempts"], MAX_DIRECTIVE_ATTEMPTS))
             time.sleep(20)
             return
 
@@ -401,10 +475,15 @@ def execute_relay_round():
 5. Обнови `docs/reports/MANAGER_STATE.md` (не более 20 строк, укажи остаток {total_rem} блоков) и сделай `git commit -m "docs(manager): issue inline verification Work Order ({len(batch)} of {total_rem} remaining)"`.
 6. НЕ ВЫЗЫВАЙ инструмент schedule или таймеры! Заверши выполнение штатно."""
 
-    p_ok, _ = run_agent_command("remotecli2", philosopher_prompt)
+    p_ok, p_err = run_agent_command("remotecli2", philosopher_prompt)
     if not p_ok:
-        log("Философ L1/L3 завершился без коммита. Ожидание 60 сек перед повтором.")
-        time.sleep(60)
+        q_wait = parse_quota_reset_seconds(p_err)
+        if q_wait is not None:
+            log(f"Философ L1/L3 упёрся в квоту (429). Пауза {q_wait} сек до сброса.")
+            time.sleep(q_wait)
+        else:
+            log("Философ L1/L3 завершился без коммита. Ожидание 60 сек перед повтором.")
+            time.sleep(60)
         return
 
     engineer_prompt = f"""Ты — Ведущий инженер (L2) фабрики EneikProductionSys.
@@ -425,10 +504,15 @@ def execute_relay_round():
    `git commit -m "docs(mechanisms): verify inline Stage 4 batch ({len(batch)} blocks, D008/D010/D006)"`
 5. НЕ ВЫЗЫВАЙ инструмент schedule или таймеры! Заверши выполнение штатно."""
 
-    e_ok, _ = run_agent_command("remotecli", engineer_prompt)
+    e_ok, e_err = run_agent_command("remotecli", engineer_prompt)
     if not e_ok:
-        log("Инженер L2 завершился без коммита. Ожидание 60 сек.")
-        time.sleep(60)
+        q_wait = parse_quota_reset_seconds(e_err)
+        if q_wait is not None:
+            log(f"Инженер L2 упёрся в квоту (429). Пауза {q_wait} сек до сброса.")
+            time.sleep(q_wait)
+        else:
+            log("Инженер L2 завершился без коммита. Ожидание 60 сек.")
+            time.sleep(60)
         return
 
     rem_after = len(scan_remaining_mechanisms())
