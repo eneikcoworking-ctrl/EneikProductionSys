@@ -264,9 +264,10 @@ def run_agent_command(user, prompt, timeout_seconds=1800):
     except Exception:
         pass
 
+    selected_model = "gemini-4-neon-high" if user == "remotecli2" else "gemini-4-neon-medium"
     cmd = [
         "sudo", "-u", user, bin_path,
-        "--model", "gemini-3.8-flash-medium",
+        "--model", selected_model,
         "--dangerously-skip-permissions",
         "-p", prompt,
     ]
@@ -295,12 +296,76 @@ def run_agent_command(user, prompt, timeout_seconds=1800):
         return False, str(e)
 
 
+def directive_retry_decision(rs, cur_hash, old_hash, now, max_attempts=3):
+    """RETRY_GUARD (чистая функция): -> (done|exhausted|wait|run, state). Паузы 5/15/45 мин."""
+    if rs.get("hash") != cur_hash:
+        rs = {"hash": cur_hash, "attempts": 0, "last": 0}
+    if cur_hash == old_hash:
+        return "done", rs
+    if rs["attempts"] >= max_attempts:
+        return "exhausted", rs
+    wait = 300 * (3 ** (rs["attempts"] - 1)) if rs["attempts"] else 0
+    if now - rs["last"] < wait:
+        return "wait", rs
+    return "run", rs
+
+
 def execute_relay_round():
     if not check_disk_and_resources():
         time.sleep(300)
         return
 
     resolve_dead_parents_and_stalls()
+
+    # OPERATOR_DIRECTIVES_WAKEUP: never sleep when OPERATOR_DIRECTIVES.md has unprocessed directives
+    dir_path = os.path.join(REPO_DIR, "docs", "reports", "OPERATOR_DIRECTIVES.md")
+    dir_hash_file = "/var/lib/eneik_operator_directives.sha256"
+    if os.path.exists(dir_path):
+        import hashlib
+        cur_hash = hashlib.sha256(open(dir_path, "rb").read()).hexdigest()
+        old_hash = open(dir_hash_file).read().strip() if os.path.exists(dir_hash_file) else ""
+        # RETRY_GUARD: макс. 3 попытки на хэш директивы, экспоненциальная пауза 5/15/45 мин
+        retry_file = "/var/lib/eneik_operator_directives.retry.json"
+        MAX_DIRECTIVE_ATTEMPTS = 3
+        try:
+            import json as _json
+            rs = _json.load(open(retry_file)) if os.path.exists(retry_file) else {}
+        except Exception:
+            rs = {}
+        decision, rs = directive_retry_decision(rs, cur_hash, old_hash, time.time(), MAX_DIRECTIVE_ATTEMPTS)
+        if decision == "exhausted":
+            log("RETRY_GUARD: лимит попыток исчерпан для директивы %s — требуется ручной разбор Оператора, ретраи остановлены" % cur_hash[:12])
+            time.sleep(600)
+            return
+        if decision == "wait":
+            time.sleep(60)
+            return
+        if cur_hash != old_hash:
+            rs["attempts"] += 1
+            rs["last"] = time.time()
+            with open(retry_file, "w") as rf:
+                _json.dump(rs, rf)
+            log("=== НОВАЯ ДИРЕКТИВА ОПЕРАТОРА ОБНАРУЖЕНА В OPERATOR_DIRECTIVES.md — ПРОБУЖДЕНИЕ L1 <-> L2 (попытка %d/%d) ===" % (rs["attempts"], MAX_DIRECTIVE_ATTEMPTS))
+            l1_prompt = (
+                "Ты — L1 Философ EneikProductionSys. В docs/reports/OPERATOR_DIRECTIVES.md поступила НОВАЯ СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА "
+                "(также прочти docs/reports/ECOSYSTEM_PHILOSOPHICAL_CONTEXT.md). "
+                "Проведи диагностику, задокументируй контракт и ответственные механизмы, сними standby в docs/reports/MANAGER_STATE.md "
+                "и выдай точный Work Order для L2 Инженера в docs/reports/PROGRAMMER_DIRECTIVES.md. Сделай git commit. Не вызывай таймеры."
+            )
+            p_ok, _ = run_agent_command("remotecli2", l1_prompt)
+            if p_ok:
+                l2_prompt = (
+                    "Ты — L2 Инженер EneikProductionSys. Выполни срочный Work Order от L1 Философа в docs/reports/PROGRAMMER_DIRECTIVES.md "
+                    "(по последней директиве из docs/reports/OPERATOR_DIRECTIVES.md). Исправь код/схему, покрой тестами в Docker Maven, "
+                    "задокументируй результат в docs/reports/PROGRAMMER_STATE.md и сделай git commit. Не вызывай таймеры."
+                )
+                e_ok, _ = run_agent_command("remotecli", l2_prompt)
+                if e_ok:
+                    with open(dir_hash_file, "w") as hf:
+                        hf.write(cur_hash)
+                    log("=== СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА ОТРАБОТАНА L1 <-> L2 ===")
+            time.sleep(20)
+            return
 
     remaining = scan_remaining_mechanisms()
     total_rem = len(remaining)
