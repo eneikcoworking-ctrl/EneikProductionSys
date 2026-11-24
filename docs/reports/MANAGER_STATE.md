@@ -1,7 +1,11 @@
-# STATUS: AUDIT_READY — 100% МЕХАНИЗМОВ И ПРЕДПИСАНИЙ ЗАВЕРЕНЫ (2026-11-24 18:36 UTC)
+# STATUS: ACTIVE_P0_WORK_ORDER — STANDBY СНЯТ (2026-11-24 21:29 UTC)
 
-- Все записи и предписания в `docs/FACTORY_MECHANISMS.md` имеют живое свидетельство `*Живое:*` (остаток: 0).
-- Канонический контур автономии Деннетта защищён и неприкосновенен (376/376 green).
-- Продукт `dmitryefremov-site`: Flow Core `None` (`None`), done=0, review=0, claimed=0, queued=0.
-- План полного аудита готов в `docs/reports/AUTONOMY_AND_FULL_AUDIT_PLAN.md`.
-- Эстафета L1/L2 переведена в режим бережного автономного дозора (ожидание команды Дмитрия Ефремова на запуск полного аудита).
+- **Приёмка L2 (WO #9, коммиты `e09221c5`, `9bfd501f`, `3bfd4af8`):** принято по живым замерам (`3h` uptime): `0` `SQL Error: 22001`, `0` `unable to create native thread`; `Connection leak detection` снижено до `2` (`DesignShopOrchestrationService.tick`).
+- **Ресурсная гигиена хоста:** диск `/` **69%** (`25G/38G`, `12G` свободно — `< 70%` соблюдено после `docker builder/image prune`); RAM `1.5 GiB` свободно.
+- **Продукты и контур:** `eneikproductionsys-backend-1` (:8080) `UP`, но **130.3% CPU, 858MiB/1GiB RAM, 185 зомби `git`**; `eneikproductionsys-judgment-proxy-1` (:8093) `primary=gemini, geminiAvailable=false` (работает заглушка); `dmitryefremov-backend` (:18080) `UP`.
+- **Новая срочная директива Оператора (`2026-11-24 19:46 UTC`, P0 переход на DeepSeek):** Standby снят. Полный диагноз, контракты и таблица механизмов: `docs/reports/INCIDENT_DIAGNOSIS_2026-11-24_DEEPSEEK_P0.md`.
+- **Вердикт L1 (RAG-корпус) и Work Order #10 для L2 Инженера (`docs/reports/PROGRAMMER_DIRECTIVES.md` §12):**
+  1. **Такт 1 — P0 #1 (`D003` Леонелли/Куайн + `D008` Поппер):** починить санитайзер JSON в `DeepSeekPatchParser.java` (state-machine экранирование `CTRL-CHAR 0x00..0x1F` внутри строк, 5/10 падений `code 10`) + заслон-тест на реальном падающем ответе.
+  2. **Такт 2 — P0 #2 (`D013` Витгенштейн/Сэлмон + `D005` Бучак):** ликвидировать горячий цикл `130% CPU`: починить счётчик отказов `ClaimService.refusedSessionCreations` (`attempt 0/34` для `local-agy-*`/`deepseek-*`), ввести exponential backoff и лимит ретраев, перевести `ContinuousOrchestrationService` на `fixedDelay` с cooldown по `failed=1` (`knowledge-base-crie`, 99+ требований), добавить `init: true` в `docker-compose.yml` против зомби `git` + заслон-тесты.
+  3. **Такт 3 — P0 #3 (`D003`/`D010` Голдман + `D008` Поппер):** перевести `judgment-proxy` (:8093) на `primary=deepseek` (`DeepSeek -> Gemini -> явный fallback`) с честным `/health` и прокидкой `DEEPSEEK_API_KEY` в `docker-compose.yml` + автотест.
+- **Инвариант суверенитета (GEMINI.md §0):** строго по одному механизму за такт (п.1 → п.2 → п.3), заслон-тест обязателен, ручных правок продукта нет, отчёт в `docs/reports/PROGRAMMER_STATE.md`.

@@ -254,3 +254,76 @@ rounded-2xl, чистая микро-граница, естественная м
 3. Очистить/проверить ротацию зависших `data/logs/backend.log.*.tmp`, вернув диск `/` ниже `< 70%`.
 4. Зафиксировать доказательные замеры (SHA коммитов, результаты Docker Maven, живую телеметрию контейнера) в `docs/reports/PROGRAMMER_STATE.md`.
 
+---
+
+## 12. МЕХАНИЗМЫ №10–12 (P0 WORK ORDER #10 ОТ 2026-11-24 — ПЕРЕХОД НА DEEPSEEK: ПАРСЕР JSON, АНТИ-ЦИКЛ CPU/BACKOFF, JUDGMENT-PROXY)
+
+**Статус:** P0 ОБЯЗЫВАЮЩИЙ НАРЯД L1 → L2 (`STANDBY СНЯТ`)  
+**Основание:** Срочная P0-директива Оператора от `2026-11-24 19:46:00 UTC` (`OPERATOR_DIRECTIVES.md`) и форензика L1 (`docs/reports/INCIDENT_DIAGNOSIS_2026-11-24_DEEPSEEK_P0.md`).  
+**Жёсткий регламент квантования (GEMINI.md §0–§1):**
+- Выполнять **строго последовательно: сначала п.1, затем п.2, затем п.3** — ровно **один механизм за такт**.
+- На каждый шаг обязателен воспроизводимый **попперовский тест-заслон** (`mvn test -Dtest=...` в Docker Maven `-m 2g` для Java и `node --test` для `judgment-proxy`), семантический коммит в фабрику и отчёт в `docs/reports/PROGRAMMER_STATE.md`.
+- **Категорический запрет:** никаких ручных правок репозитория продукта (`knowledge-base-crie` и др.).
+
+### 12.1. Такт 1 — P0 #1 (`D003 Contract Drift` / `D008 Popper`): Санитайзер `CTRL-CHAR` в `DeepSeekPatchParser` (Механизм №10)
+**Диагностированный дефект:**
+- `DeepSeekPatchParser.parse` (`DeepSeekPatchParser.java:55,117`, вызывается из `LocalAgyOutputParser.java:42` и `DeepSeekApiClient.java:185`) падает с `JsonParseException: Illegal unquoted character ((CTRL-CHAR, code 10))` (`10x` за 2ч / `5x` за 3ч в текущем контейнере), когда модель выводит сырой перенос строки / табуляцию внутри строковых литералов JSON (`"content"`, `"search"`, `"replace"`, `"rationale"`).
+
+**Обязательные изменения L2:**
+1. В `src/main/java/com/eneik/production/services/worker/deepseek/DeepSeekPatchParser.java`:
+   - Добавить детерминированный state-machine метод `sanitizeJsonControlChars(String rawJson)` (вызывается строго после `extractJson(jsonContent)` и до `objectMapper.readTree(...)`), отслеживающий состояния `inString` и `escaped`:
+     - Внутри JSON-строковых литералов (`inString == true`): экранировать сырые `\n` (`0x0A`) → `\\n`, `\r` (`0x0D`) → `\\r`, `\t` (`0x09`) → `\\t`, `\b` (`0x08`) → `\\b`, `\f` (`0x0C`) → `\\f`, прочие `< 0x20` → `\u00XX`.
+     - Вне строковых литералов (`!inString`): символы форматирования не изменять.
+     - Сохранять нетронутыми уже валидные escape-последовательности (`\"`, `\\`, `\n`, `\t`, `\uXXXX`) — обеспечить строгую идемпотентность на валидном JSON.
+   - Убедиться, что `LocalAgyOutputParser.parse` проходит через этот же единый санитайзер без дублирования логики.
+   - Сохранить 100% действие `checkAntiTruncation` (`LazyTruncationDetectedException`, D008) после санитаризации.
+2. **Тест-заслон (Docker Maven `-m 2g`):**
+   - Создать `src/test/java/com/eneik/production/services/worker/deepseek/DeepSeekPatchParserTest.java` (и расширить `LocalAgyOutputParserTest.java`):
+     - Воспроизвести реальный падающий ответ с неэкранированным `LF (code 10)`, `CR (code 13)`, `TAB (code 9)` внутри `"content"` и `"patch_blocks"` — убедиться, что парсер успешно извлекает многострочный код без `JsonParseException`.
+     - Проверить идемпотентность на валидном JSON с `\\n`, `\"`, `\\t` (Java-код и regex внутри строк не искажаются).
+     - Проверить, что `LazyTruncationDetectedException` (D008) по-прежнему срабатывает на стоп-маркер внутри многострочного санитайзированного кода.
+3. Зафиксировать коммит (`fix(d003): sanitize unescaped control chars in DeepSeekPatchParser`) и обновить `docs/reports/PROGRAMMER_STATE.md`.
+
+### 12.2. Такт 2 — P0 #2 (`D013 Runtime Drift` / `D005 Buchak` / `D008 Popper`): Ликвидация горячего цикла `130% CPU`, backoff и лимит ретраев (Механизм №11)
+**Диагностированный дефект:**
+- Контейнер `eneikproductionsys-backend-1` жжёт **`113–144% CPU`** (`130.3%` на замере `21:26 UTC`) при **`858–929MiB / 1GiB`** RAM (GC-трашинг: `G1 Conc#0`, `GC Thread#0/1` на вершине CPU) и накопил **`185` зомби-процессов `git`**.
+- **Корень 1 (`ClaimService.java:748-756`):** `refusedSessionCreations(taskId)` считает только `jules_sessions` с `externalSessionId IS NULL`, тогда как `JulesDispatchService:717` и `LocalAgyWorktreeExecutionEngine:117` заранее задают `externalSessionId = "local-agy-..."` (и `deepseek-...`). В результате счётчик застревает на **`attempt 0/34`**, бюджет никогда не исчерпывается, а 4 задачи `knowledge-base-crie` (`a6f64e24`, `4c4837ff`, `d976d831`, `c6f75610`) каждую минуту без backoff заново создают `git worktree` и падают по квоте (`exit 3`).
+- **Корень 2 (`ContinuousOrchestrationService.java:201` + `ClientDeliverableReadinessService`):** `@Scheduled(fixedRateString = "60000")` при длительности тика `70–97с` (`ORCHESTRATION_PROCESSING STALL_BOTTLENECK`, 99+ `failed=1` требований `knowledge-base-crie`, до `265` round trips `mergedReviews`) запускает следующий тик без паузы.
+
+**Обязательные изменения L2:**
+1. **`ClaimService.java` (строго монотонная вариант-функция + backoff):**
+   - Исправить `refusedSessionCreations(taskId)` (и сопутствующую запись/подсчёт отказов при `releaseClaimToQueue`): учитывать неуспешные суверенные сессии (`local-agy-*`, `deepseek-*` со статусом `failed` без открытого PR), чтобы `attempt` рос на каждой неудачной попытке и упирался в лимит ретраев (`retireForExhaustedDispatchBudget`).
+   - Ввести экспоненциальный backoff/cooldown на возвращаемую в очередь задачу (`2m -> 5m -> 15m -> 30m`, cap `60m`), не позволяя `ContinuousOrchestrationService`/`ProjectFlowService`/`ClaimService` брать её в работу до истечения окна backoff.
+   - При отказе по квоте (`Individual quota reached` / HTTP 429) выставлять cooldown на аккаунт/провайдер через `AccountHealthService`, прекращая минутный штурм квотированного профиля.
+2. **`ContinuousOrchestrationService.java` и горячие пересчёты (`knowledge-base-crie`, 99+ требований):**
+   - Перевести `@Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")` на `fixedDelayString` (гарантированная пауза между тиками).
+   - Ограничить повторные ретраи/пересчёты неизменившихся `failed=1` требований проекта через cooldown/лимит ретраев, устранив постоянную нагрузку >100% CPU и GC-трашинг.
+3. **Устранение зомби `git` (`185 Zs`):**
+   - Проверить `GitWorktreeExecutionManager` на гарантированный `waitFor()`/`destroyForcibly()` дочерних процессов в `finally`.
+   - Добавить `init: true` сервису `backend` в `docker-compose.yml` (активация Docker `tini` reaper).
+4. **Тесты-заслоны (Docker Maven `-m 2g`):**
+   - Фальсификационный тест в `ClaimServiceTest`: суверенный отказ (`local-agy-*` / `deepseek-*` с непустым `externalSessionId`) **увеличивает** счётчик отказов (не остаётся `0/N`), применяет exponential backoff (повторный claim внутри окна блокируется) и при достижении лимита выводит задачу из горячего цикла.
+   - Тест `ContinuousOrchestrationServiceTest`: проверка соблюдения backoff/лимита ретраев и отсутствия бесконечной немедленной передиспетчеризации.
+   - Пересобрать `eneikproductionsys-backend-1` и подтвердить в живом рантайме: падение CPU ниже `< 50%` в спокойном интервале, `0` минутных повторов `attempt 0/34`, `0` зомби `git`.
+5. Зафиксировать коммит (`fix(d013,d005): bound sovereign retry loop with monotonic budget, backoff, and fixedDelay orchestration`) и обновить `docs/reports/PROGRAMMER_STATE.md`.
+
+### 12.3. Такт 3 — P0 #3 (`D003` / `D010 Goldman` / `D008 Popper`): Переключение `judgment-proxy :8093` на DeepSeek primary с явным fallback (Механизм №12)
+**Диагностированный дефект:**
+- `http://127.0.0.1:8093/health` возвращает `{"ok":true,"primary":"gemini","shadowDir":"/shadow","geminiAvailable":false}`, из-за чего 100% запросов `/judge` молча обслуживаются хардкодной заглушкой `evaluateAutonomousFallback` (`ABSTAIN` / `SATISFIED` — симулякр суждения D010).
+
+**Обязательные изменения L2:**
+1. **`judgment-proxy/server.js`:**
+   - Добавить поддержку DeepSeek как первичного провайдера (`JUDGMENT_PRIMARY` default `'deepseek'`, `DEEPSEEK_API_KEY`, `DEEPSEEK_BASE_URL` default `'https://api.deepseek.com'`, `DEEPSEEK_MODEL` default `'deepseek-chat'`).
+   - Реализовать `callDeepSeekPrimary(payload, mode)` (`POST ${DEEPSEEK_BASE_URL}/chat/completions`, `temperature: 0.1`, таймаут 45с, `response_format: { type: 'json_object' }` в `schema`-режиме, устойчивый парсинг JSON с очисткой markdown fences и управляющих символов).
+   - Выстроить явную цепочку провайдеров: `primary` (`deepseek` или `gemini` по `JUDGMENT_PRIMARY`) → второй доступный LLM-провайдер → явный fallback (`heuristic-fallback` с честным полем/логом источника, либо `UNAVAILABLE` при `JUDGMENT_ALLOW_HEURISTIC_FALLBACK=false`).
+   - Обновить `GET /health`: честно возвращать `ok`, `primary`, `activeProvider`, `deepseekAvailable`, `geminiAvailable`, `fallbackChain`, `shadowDir`.
+2. **`docker-compose.yml` (сервис `judgment-proxy`):**
+   - Прокинуть `JUDGMENT_PRIMARY: ${JUDGMENT_PRIMARY:-deepseek}`, `DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}`, `DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}`, `DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}` (сохранив `GEMINI_API_KEY` как опциональный fallback).
+3. **Тест-заслон (`node --test` + живой smoke):**
+   - Создать `judgment-proxy/server.test.js`:
+     - Проверить `/health` при `JUDGMENT_PRIMARY=deepseek` (с ключом и без ключа — честный `activeProvider` и `deepseekAvailable`).
+     - Проверить `/judge` (`schema` и `text` режимы) против локального mock DeepSeek HTTP-сервера: успешный `FINDING`/`ABSTAIN`/`TEXT`, а также явный fallback при HTTP 500/429 от primary.
+   - Пересобрать и перезапустить `eneikproductionsys-judgment-proxy-1` (`docker compose up -d --build judgment-proxy`), проверить `curl -s http://127.0.0.1:8093/health` (должен показывать `primary: "deepseek"`).
+4. Зафиксировать коммит (`fix(d003,d010): switch judgment-proxy primary to DeepSeek with explicit fallback chain`) и обновить `docs/reports/PROGRAMMER_STATE.md`.
+
+
