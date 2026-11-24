@@ -1,10 +1,11 @@
-# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-24 18:37 UTC)
+# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-24 23:03 UTC)
 
-- **Выполнен срочный Work Order #9 (Механизм №9, D003/D008/D005/D010/D013):**
-  - **Шаг A (`e09221c5`):** `ContinuousOrchestrationService.recoverFailingMainCi` переведён на канонический `BARCAN-TAG-06` (имя паттерна `KARL_POPPER_01_FALSIFICATION_HARNESS` сохранено в `content`/`dod`); добавлена миграция `V146__widen_wishlist_source_role_tag.sql` (`VARCHAR(128)`); в `WishlistEntity` внедрён единый валидатор `validateCanonicalSourceRoleTag` (`@PrePersist`/`@PreUpdate` + setter). Docker Maven (`-m 2g`): **35/35 green** (`SourceRoleTagContractIntegrationTest`, `ContinuousOrchestrationServiceTest`, `FlywayMigrationValidationTest`, `WishlistControllerIntegrationTest`).
-  - **Шаг B (`9bfd501f`):** Снят внешний `@Transactional` с `AutoMergeService.executeMerge` (сетевой GitHub I/O вне транзакции, записи в коротком `TransactionTemplate`), `ClientDeliverableReadinessService.deleteValuelessEpics`, `TrustSnapshotService.captureAndBackfillSnapshots` и `ProcessControlService.recomputeForProject`; устранён N+1 `findByFeatureId` → `findByFeatureIdIn` (включая `taskRevivalCounts`); добавлен `spring.jpa.open-in-view=false`; переиспользован `sharedHttpClient` в `ProjectFlowService`; ограничены пулы потоков в `DefaultPlaywrightVisionHarness` (4) и `LocalAgyCliClient` (8, `@PreDestroy`). Docker Maven (`-m 2g`): **177/177 green** (`HikariLeakAndThreadHygieneGateTest` + все целевые сьюты).
-- **Живой рантайм (`eneikproductionsys-backend-1` пересобран и перезапущен):**
-  - Flyway `V146` применён на живую H2 (`10ms`); `Started EneikProductionApplication in 29.167s`; `/actuator/health` → `UP`.
-  - Телеметрия: `VmRSS: 763608 kB`, `Threads: 70`; `0` `SQL Error: 22001`, `0` `Connection leak detection`, `0` `unable to create native thread`.
-- **Ресурсная гигиена хоста:** Удалены зависшие `data/logs/backend.log.*.tmp` (408 МБ) + `docker builder/image prune`; диск `/` **69%** (12 GiB свободно, лимит < 70% соблюдён), RAM 1.9 GiB доступно.
-- **Статус:** Готово к приёмке L1 (Ступени 3–4).
+- **Выполнен Такт 1 — P0 #1 Work Order #10 (Механизм №10, `D003 Contract Drift` / `D008 Popper`):**
+  - В `DeepSeekPatchParser.java` внедрён детерминированный state-machine санитайзер `sanitizeJsonControlChars(String rawJson)` (вызывается строго после `extractJson` и до `objectMapper.readTree`), отслеживающий `inString`/`escaped`: экранирует сырые `\n`, `\r`, `\t`, `\b`, `\f` и прочие управляющие символы `< 0x20` исключительно внутри строковых литералов JSON, сохраняя форматирование вне строк и валидные escape-последовательности (строгая идемпотентность).
+  - `LocalAgyOutputParser.parse` проходит через тот же единый санитайзер без дублирования; `checkAntiTruncation` (`LazyTruncationDetectedException`, D008) полностью сохранён после санитаризации.
+  - **Тесты-заслоны (Docker Maven `maven:3.9.9-eclipse-temurin-21`, `-m 2g`):** **17/17 green** (`DeepSeekPatchParserTest` 4/4, `DeepSeekPatchParserAntiTruncationTest` 9/9, `LocalAgyOutputParserTest` 4/4, `40.8s`).
+- **Следующий шаг очереди (строго 1 механизм за такт):**
+  - Такт 2 — P0 #2 (`D013`/`D005`/`D008`): `ClaimService` монотонный бюджет отказов + exponential backoff, `ContinuousOrchestrationService` `fixedDelay` + cooldown `failed=1`, `init: true` в `docker-compose.yml` против `181% CPU` и зомби `git`.
+  - Далее Такт 3 (`judgment-proxy` -> DeepSeek primary), Такт 4 (WO #11 P1 #4A–4C), Такт 5 (WO #12 P2 #5).
+- **Предыдущий закрытый наряд:** Work Order #9 (`e09221c5`, `9bfd501f`, `3bfd4af8` — V146 `SOURCE_ROLE_TAG`, `HikariPool`/thread hygiene).
+- **Статус:** Такт 1 (P0 #1) готов к приёмке L1; ручных правок продукта не производилось.

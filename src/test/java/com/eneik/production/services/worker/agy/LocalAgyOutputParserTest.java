@@ -96,4 +96,33 @@ class LocalAgyOutputParserTest {
         assertEquals(1, response.missingFiles().size());
         assertEquals("src/main/IRepository.java", response.missingFiles().get(0));
     }
+
+    @Test
+    @DisplayName("D003 Gate: LocalAgyOutputParser uses shared CTRL-CHAR sanitizer for raw multiline JSON strings")
+    void testParseUnescapedControlCharsInMarkdownJson() {
+        String rawOutput = "Thinking...\n```json\n"
+                + "{\n"
+                + "  \"summary\": \"Multiline CLI patch\",\n"
+                + "  \"rationale\": \"Line 1\nLine 2\",\n"
+                + "  \"scope_status\": \"SUFFICIENT\",\n"
+                + "  \"missing_files\": [],\n"
+                + "  \"files\": [\n"
+                + "    {\n"
+                + "      \"path\": \"src/main/Multiline.java\",\n"
+                + "      \"operation\": \"CREATE\",\n"
+                + "      \"mode\": \"FULL_CONTENT\",\n"
+                + "      \"content\": \"public class Multiline {\n\tpublic int x() {\r\n\t\treturn 42;\n\t}\n}\",\n"
+                + "      \"patch_blocks\": []\n"
+                + "    }\n"
+                + "  ]\n"
+                + "}\n"
+                + "```\n";
+
+        DeepSeekResponse response = parser.parse(rawOutput, "deepseek-chat");
+
+        assertNotNull(response);
+        assertEquals("Multiline CLI patch", response.summary());
+        assertEquals("Line 1\nLine 2", response.rationale());
+        assertEquals("public class Multiline {\n\tpublic int x() {\r\n\t\treturn 42;\n\t}\n}", response.files().get(0).content());
+    }
 }

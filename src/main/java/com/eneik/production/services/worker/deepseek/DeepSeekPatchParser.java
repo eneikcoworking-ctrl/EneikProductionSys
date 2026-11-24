@@ -51,7 +51,9 @@ public class DeepSeekPatchParser {
 
         try {
             // Unquote or extract JSON if LLM wrapped in markdown fences ```json ... ```
-            String cleanJson = extractJson(jsonContent);
+            String extractedJson = extractJson(jsonContent);
+            // Sanitize unescaped control chars (LF/CR/TAB/<0x20) inside JSON string literals (D003)
+            String cleanJson = sanitizeJsonControlChars(extractedJson);
             JsonNode root = objectMapper.readTree(cleanJson);
 
             String summary = root.path("summary").asText("");
@@ -131,6 +133,63 @@ public class DeepSeekPatchParser {
                 log.warn("Anti-Truncation Gate triggered! Found marker '{}' in {}", marker, path);
                 throw new LazyTruncationDetectedException(marker, path);
             }
+        }
+    }
+
+    /**
+     * Deterministic state-machine sanitizer (D003 Contract Drift):
+     * Escapes raw control characters (< 0x20: LF, CR, TAB, BS, FF, etc.) strictly inside
+     * JSON string literals while leaving structural whitespace outside strings and already
+     * valid escape sequences (quotes, backslashes, newline/tab, unicode escapes) untouched
+     * (strictly idempotent).
+     */
+    public static String sanitizeJsonControlChars(String rawJson) {
+        if (rawJson == null || rawJson.isEmpty()) {
+            return rawJson;
+        }
+        StringBuilder sb = new StringBuilder(rawJson.length() + 32);
+        boolean inString = false;
+        boolean escaped = false;
+
+        for (int i = 0; i < rawJson.length(); i++) {
+            char c = rawJson.charAt(i);
+            if (!inString) {
+                sb.append(c);
+                if (c == '"') {
+                    inString = true;
+                }
+            } else if (escaped) {
+                if (c < 0x20) {
+                    // Escape the preceding backslash so it does not dangle before a control char
+                    sb.append('\\');
+                    appendEscapedControlChar(sb, c);
+                } else {
+                    sb.append(c);
+                }
+                escaped = false;
+            } else if (c == '\\') {
+                sb.append(c);
+                escaped = true;
+            } else if (c == '"') {
+                sb.append(c);
+                inString = false;
+            } else if (c < 0x20) {
+                appendEscapedControlChar(sb, c);
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    private static void appendEscapedControlChar(StringBuilder sb, char c) {
+        switch (c) {
+            case '\n' -> sb.append("\\n");
+            case '\r' -> sb.append("\\r");
+            case '\t' -> sb.append("\\t");
+            case '\b' -> sb.append("\\b");
+            case '\f' -> sb.append("\\f");
+            default -> sb.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
         }
     }
 
