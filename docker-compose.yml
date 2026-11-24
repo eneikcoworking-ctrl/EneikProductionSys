@@ -95,6 +95,7 @@ services:
     restart: unless-stopped
 
   backend:
+    init: true
     build:
       context: .
       dockerfile: Dockerfile.backend

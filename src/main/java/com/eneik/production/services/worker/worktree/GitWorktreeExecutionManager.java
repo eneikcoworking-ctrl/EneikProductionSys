@@ -227,8 +227,9 @@ public class GitWorktreeExecutionManager {
             return List.of();
         }
         List<String> files = new ArrayList<>();
+        Process process = null;
         try {
-            Process process = new ProcessBuilder("git", "ls-files")
+            process = new ProcessBuilder("git", "ls-files")
                     .directory(worktreePath.toFile())
                     .redirectErrorStream(true)
                     .start();
@@ -244,9 +245,16 @@ public class GitWorktreeExecutionManager {
                     files.add(p);
                 }
             }
-            process.waitFor(15, TimeUnit.SECONDS);
+            boolean finished = process.waitFor(15, TimeUnit.SECONDS);
+            if (!finished) {
+                log.warn("git ls-files timed out after 15s in {}; forcing termination", worktreePath);
+                process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
+            }
         } catch (Exception e) {
             log.warn("Failed to list repository files in {}: {}", worktreePath, e.getMessage());
+        } finally {
+            reapProcessQuietly(process);
         }
         return files;
     }
@@ -318,19 +326,31 @@ public class GitWorktreeExecutionManager {
     }
 
     public String getRemoteOriginUrl(Path repoPath) {
+        Process process = null;
         try {
-            Process process = new ProcessBuilder("git", "remote", "get-url", "origin")
+            process = new ProcessBuilder("git", "remote", "get-url", "origin")
                     .directory(repoPath.toFile())
+                    .redirectErrorStream(true)
                     .start();
+            String url = null;
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line = reader.readLine();
                 if (line != null && !line.isBlank()) {
-                    return line.trim();
+                    url = line.trim();
                 }
             }
+            boolean finished = process.waitFor(10, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
+                return null;
+            }
+            return process.exitValue() == 0 ? url : null;
         } catch (Exception ignored) {
+            return null;
+        } finally {
+            reapProcessQuietly(process);
         }
-        return null;
     }
 
     public String formatAuthenticatedGitHubUrl(String rawUrl, String token) {
@@ -367,14 +387,15 @@ public class GitWorktreeExecutionManager {
     }
 
     int runCommand(Path workingDir, int timeoutSeconds, String... command) {
+        Process process = null;
         try {
-            Process process = new ProcessBuilder(command)
+            process = new ProcessBuilder(command)
                     .directory(workingDir.toFile())
                     .redirectErrorStream(true)
                     .start();
 
             StringBuilder output = new StringBuilder();
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
                     output.append(line).append("\n");
@@ -384,6 +405,7 @@ public class GitWorktreeExecutionManager {
             boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
             if (!finished) {
                 process.destroyForcibly();
+                process.waitFor(5, TimeUnit.SECONDS);
                 throw new RuntimeException("Command " + Arrays.toString(command) + " timed out after " + timeoutSeconds + "s");
             }
 
@@ -392,8 +414,27 @@ public class GitWorktreeExecutionManager {
                 log.debug("Command {} exited with code {}: {}", command[0], exitCode, output.toString().trim());
             }
             return exitCode;
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
             throw new RuntimeException("Execution error for " + Arrays.toString(command) + ": " + e.getMessage(), e);
+        } finally {
+            reapProcessQuietly(process);
+        }
+    }
+
+    private void reapProcessQuietly(Process process) {
+        if (process == null) {
+            return;
+        }
+        try {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+            process.waitFor(5, TimeUnit.SECONDS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        } catch (Exception ignored) {
         }
     }
 

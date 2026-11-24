@@ -6654,6 +6654,13 @@ public class ProjectFlowService {
                 continue;
             }
 
+            // D013/D005 (Mechanism #11): respect exponential dispatch backoff window after failed attempts
+            if (claimService.isTaskInDispatchBackoff(task, java.time.Instant.now())) {
+                log.info("ProjectFlowService: task {} is in exponential dispatch backoff cooldown until {}; skipping dispatch this cycle",
+                        task.getId(), claimService.getTaskBackoffUntil(task).orElse(null));
+                continue;
+            }
+
             // Law 26 / INDEXICAL_CONTEXT_LOCK (D006): do not dispatch tasks whose file scope was refused
             // due to product namespace or stack violations. A task with an empty or refused file scope cannot
             // produce valid work and must remain blocked until the compiler produces a valid scope.

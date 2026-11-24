@@ -58,6 +58,41 @@ public class ContinuousOrchestrationService {
     @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
     private int stallThresholdMinutes = 45;
 
+    @org.springframework.beans.factory.annotation.Value("${orchestration.unchanged-failed-recalc-cooldown-minutes:5}")
+    private int unchangedFailedRecalcCooldownMinutes = 5;
+
+    private final java.util.Map<UUID, UnchangedFailureCooldownState> unchangedFailureCooldownByProject =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private record UnchangedFailureCooldownState(String failureSignature, Instant lastEvaluatedAt) {}
+
+    boolean isUnchangedFailureRecalcInCooldown(UUID projectId,
+                                               com.eneik.production.dto.operational.FlowCoreDto flowSnapshot,
+                                               Instant now) {
+        if (projectId == null || flowSnapshot == null || flowSnapshot.snapshot() == null
+                || flowSnapshot.snapshot().counts() == null || unchangedFailedRecalcCooldownMinutes <= 0) {
+            return false;
+        }
+        var counts = flowSnapshot.snapshot().counts();
+        if (counts.failedTasksRecoveryCanResume() <= 0 && counts.failedTasksTotal() <= 0) {
+            unchangedFailureCooldownByProject.remove(projectId);
+            return false;
+        }
+        Instant current = now != null ? now : Instant.now();
+        String sig = counts.queuedTasks() + "|" + counts.reviewTasks() + "|" + counts.doneTasks()
+                + "|" + counts.failedTasksRecoveryCanResume() + "|" + counts.failedTasksTotal()
+                + "|" + counts.blockedTasks()
+                + "|" + counts.completeFeatures() + "|" + counts.totalFeatures()
+                + "|" + flowSnapshot.snapshot().currentState();
+        UnchangedFailureCooldownState prev = unchangedFailureCooldownByProject.get(projectId);
+        if (prev != null && sig.equals(prev.failureSignature())
+                && current.isBefore(prev.lastEvaluatedAt().plus(Duration.ofMinutes(unchangedFailedRecalcCooldownMinutes)))) {
+            return true;
+        }
+        unchangedFailureCooldownByProject.put(projectId, new UnchangedFailureCooldownState(sig, current));
+        return false;
+    }
+
     private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
@@ -198,7 +233,7 @@ public class ContinuousOrchestrationService {
         this.deliveryRealityProducerService = deliveryRealityProducerService;
     }
 
-    @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
+    @Scheduled(fixedDelayString = "${orchestration.delay-ms:${orchestration.rate-ms:60000}}")
     public void continuousOrchestrate() {
         if (tocSentinelService != null) {
             com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("ORCHESTRATION_CYCLE", 30);
@@ -350,6 +385,11 @@ public class ContinuousOrchestrationService {
                 }
 
                 boolean workMutatedThisTick = false;
+                boolean unchangedFailureInCooldown = isUnchangedFailureRecalcInCooldown(project.getId(), flowSnapshot, Instant.now());
+                if (unchangedFailureInCooldown) {
+                    log.debug("Continuous Orchestration: unchanged failed requirements for project {} are in {}m recalculation cooldown; skipping redundant recovery sweeps",
+                            project.getName(), unchangedFailedRecalcCooldownMinutes);
+                }
 
                 // KARL_POPPER_01_FALSIFICATION_HARNESS (D008): Safe resolution of BLOCKED_BY_MAIN_CI
                 if (isMainCiRecoveryNeeded(flowSnapshot)) {
@@ -363,7 +403,7 @@ public class ContinuousOrchestrationService {
                         log.error("Continuous Orchestration: Karl Popper D008 Main CI recovery failed for project {}", project.getId(), e);
                     }
                 }
-                if (isAllowed(project, flowSnapshot, OperationalAction.RECOVER_FAILED_FRONTIER)) {
+                if (!unchangedFailureInCooldown && isAllowed(project, flowSnapshot, OperationalAction.RECOVER_FAILED_FRONTIER)) {
                     int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
                     if (resumedPlanTasks > 0) {
                         workMutatedThisTick = true;
@@ -383,7 +423,7 @@ public class ContinuousOrchestrationService {
                 // When a project is starving with unfinished product scope, attempt bounded homeostatic epoch
                 // recovery first; if all epochs are cooling down or exhausted, trigger immediate Multiple Drafts
                 // delivery-gap wishlist generation before ORCHESTRATE runs in this very tick.
-                if (isProjectStarvingForAutonomy(flowSnapshot)) {
+                if (!unchangedFailureInCooldown && isProjectStarvingForAutonomy(flowSnapshot)) {
                     try {
                         int epochResumed = plannedWorkRecoveryService.recoverStarvingFrontierForAutonomy(project);
                         if (epochResumed > 0) {
@@ -443,7 +483,7 @@ public class ContinuousOrchestrationService {
                 }
 
                 try {
-                    int recovered = projectFlowService.recoverBlockedWork(project.getId());
+                    int recovered = unchangedFailureInCooldown ? 0 : projectFlowService.recoverBlockedWork(project.getId());
                     if (recovered > 0) {
                         workMutatedThisTick = true;
                         log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",

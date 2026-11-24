@@ -23,6 +23,8 @@ public enum DispatchRefusalCategory {
             "concurrent session limit",
             "daily limit",
             "daily/quota/rate limit",
+            "individual quota reached",
+            "quota reached",
             "rate_limit",
             "quota_exceeded",
             "429"

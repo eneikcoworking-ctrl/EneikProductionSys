@@ -729,12 +729,29 @@ public class JulesDispatchService {
                                         String err = asyncResult != null && asyncResult.errorMessage() != null
                                                 ? asyncResult.errorMessage()
                                                 : "Sovereign worker execution failed";
+                                        if ("running".equalsIgnoreCase(st) || "queued".equalsIgnoreCase(st)) {
+                                            finished.setStatus("failed");
+                                            finished.setClosureReason(err);
+                                            finished.setClosedAt(Instant.now());
+                                            finished.setUpdatedAt(Instant.now());
+                                            julesSessionRepository.save(finished);
+                                        }
                                         claimService.releaseClaimToQueue(task.getId(), err);
                                     }
                                 }
                             } catch (Exception ex) {
                                 log.error("Async sovereign worker dispatch failed for task {}: {}", task.getId(), ex.getMessage(), ex);
-                                claimService.releaseClaimToQueue(task.getId(), "Async worker error: " + ex.getMessage());
+                                String err = "Async worker error: " + ex.getMessage();
+                                julesSessionRepository.findById(preSavedId).ifPresent(s -> {
+                                    if ("running".equalsIgnoreCase(s.getStatus()) || "queued".equalsIgnoreCase(s.getStatus())) {
+                                        s.setStatus("failed");
+                                        s.setClosureReason(err);
+                                        s.setClosedAt(Instant.now());
+                                        s.setUpdatedAt(Instant.now());
+                                        julesSessionRepository.save(s);
+                                    }
+                                });
+                                claimService.releaseClaimToQueue(task.getId(), err);
                             } finally {
                                 activeSovereignSessionIds.remove(preSavedId);
                             }

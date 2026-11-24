@@ -441,94 +441,105 @@ public class ClientDeliverableReadinessService {
                 .filter(java.util.Objects::nonNull)
                 .collect(java.util.stream.Collectors.toSet());
         RepairIndex repairIndex = buildRepairIndex(allWishlist, attemptIds);
-        Map<UUID, Boolean> fulfilledByPlannedItem =
-                fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, repairIndex);
+        java.util.Set<UUID> allReadinessTaskIds = new java.util.HashSet<>(attemptIds);
+        repairIndex.tasksByRepair().values().stream()
+                .flatMap(List::stream)
+                .map(TaskEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .forEach(allReadinessTaskIds::add);
+        prefetchMergedReviews(allReadinessTaskIds);
+        try {
+            Map<UUID, Boolean> fulfilledByPlannedItem =
+                    fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, repairIndex);
 
-        // Operator directive 2026-07-24, sharpened over two rounds of correction: "the formula must be computed
-        // only over code-bearing tasks, not spikes, reviews and other auxiliary work" (this ratio must only
-        // count tasks that produce code, not spikes/reviews/other auxiliary work). Confirmed live: a
-        // legitimate `complex`-Cynefin spike (AutoMergeService deliberately never merges its PR - its
-        // deliverable is a decision record, not code) permanently stuck the denominator via the exact same
-        // "requires a merged review" check duplicate-task pollution does, with zero relation to
-        // duplication. `everyRootCompiled`/`everyFeaturePlanned` above stay computed against the FULL
-        // (unfiltered) plannedItems - decomposition-completeness means "has this been planned", not "how
-        // much of it merged", and must not be held hostage by items this metric is about to exclude.
-        List<WishlistEntity> codeProducingItems = plannedItems.stream()
-                .filter(w -> !isAuxiliaryPlannedItem(tasksByPlannedItem.getOrDefault(w.getId(), List.of())))
-                .toList();
+            // Operator directive 2026-07-24, sharpened over two rounds of correction: "the formula must be computed
+            // only over code-bearing tasks, not spikes, reviews and other auxiliary work" (this ratio must only
+            // count tasks that produce code, not spikes/reviews/other auxiliary work). Confirmed live: a
+            // legitimate `complex`-Cynefin spike (AutoMergeService deliberately never merges its PR - its
+            // deliverable is a decision record, not code) permanently stuck the denominator via the exact same
+            // "requires a merged review" check duplicate-task pollution does, with zero relation to
+            // duplication. `everyRootCompiled`/`everyFeaturePlanned` above stay computed against the FULL
+            // (unfiltered) plannedItems - decomposition-completeness means "has this been planned", not "how
+            // much of it merged", and must not be held hostage by items this metric is about to exclude.
+            List<WishlistEntity> codeProducingItems = plannedItems.stream()
+                    .filter(w -> !isAuxiliaryPlannedItem(tasksByPlannedItem.getOrDefault(w.getId(), List.of())))
+                    .toList();
 
-        if (sources.equals(PRODUCT_ITERATION_SOURCES) && rootWishlistId == null) {
-            reportUnfulfilledIfChanged(projectId, codeProducingItems, fulfilledByPlannedItem,
-                    tasksByPlannedItem, repairIndex.repairsByRepairedTask(), repairIndex.tasksByRepair());
-        }
-
-        int mergedCount = (int) codeProducingItems.stream()
-                .filter(w -> Boolean.TRUE.equals(fulfilledByPlannedItem.get(w.getId())))
-                .count();
-        int completeFeatures = (int) productFeatures.stream()
-                .filter(feature -> {
-                    List<WishlistEntity> featureItems = codeProducingItems.stream()
-                            .filter(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId())))
-                            .toList();
-                    return !featureItems.isEmpty() && featureItems.stream()
-                            .allMatch(w -> Boolean.TRUE.equals(fulfilledByPlannedItem.get(w.getId())));
-                })
-                .count();
-        boolean everyFeaturePlanned = productFeatures.stream().allMatch(feature -> plannedItems.stream()
-                .anyMatch(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId()))));
-        boolean decompositionComplete = everyRootCompiled && everyFeaturePlanned;
-        int total = codeProducingItems.size();
-        int totalFeatures = productFeatures.size();
-
-        // See the Readiness.selfFalsificationReadyRatio javadoc: a work item counts toward THIS metric
-        // when it's fulfilled OR its task chain bottoms out at a real `failed` task with no replacement -
-        // self_falsification has real, terminal material to look at either way. Never reused for
-        // completeFeatures/ratio itself (those must stay "actually merged" for DELIVERED-status callers).
-        Map<UUID, Boolean> falsificationReadyByPlannedItem = new HashMap<>();
-        for (WishlistEntity plannedItem : codeProducingItems) {
-            if (Boolean.TRUE.equals(fulfilledByPlannedItem.get(plannedItem.getId()))) {
-                falsificationReadyByPlannedItem.put(plannedItem.getId(), true);
-                continue;
+            if (sources.equals(PRODUCT_ITERATION_SOURCES) && rootWishlistId == null) {
+                reportUnfulfilledIfChanged(projectId, codeProducingItems, fulfilledByPlannedItem,
+                        tasksByPlannedItem, repairIndex.repairsByRepairedTask(), repairIndex.tasksByRepair());
             }
-            List<TaskEntity> itemTasks = tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of());
-            boolean ready = !itemTasks.isEmpty() && itemTasks.stream()
-                    .allMatch(t -> isTerminalOrAwaitingDeadDependency(t, new java.util.HashSet<>()));
-            falsificationReadyByPlannedItem.put(plannedItem.getId(), ready);
+
+            int mergedCount = (int) codeProducingItems.stream()
+                    .filter(w -> Boolean.TRUE.equals(fulfilledByPlannedItem.get(w.getId())))
+                    .count();
+            int completeFeatures = (int) productFeatures.stream()
+                    .filter(feature -> {
+                        List<WishlistEntity> featureItems = codeProducingItems.stream()
+                                .filter(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId())))
+                                .toList();
+                        return !featureItems.isEmpty() && featureItems.stream()
+                                .allMatch(w -> Boolean.TRUE.equals(fulfilledByPlannedItem.get(w.getId())));
+                    })
+                    .count();
+            boolean everyFeaturePlanned = productFeatures.stream().allMatch(feature -> plannedItems.stream()
+                    .anyMatch(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId()))));
+            boolean decompositionComplete = everyRootCompiled && everyFeaturePlanned;
+            int total = codeProducingItems.size();
+            int totalFeatures = productFeatures.size();
+
+            // See the Readiness.selfFalsificationReadyRatio javadoc: a work item counts toward THIS metric
+            // when it's fulfilled OR its task chain bottoms out at a real `failed` task with no replacement -
+            // self_falsification has real, terminal material to look at either way. Never reused for
+            // completeFeatures/ratio itself (those must stay "actually merged" for DELIVERED-status callers).
+            Map<UUID, Boolean> falsificationReadyByPlannedItem = new HashMap<>();
+            for (WishlistEntity plannedItem : codeProducingItems) {
+                if (Boolean.TRUE.equals(fulfilledByPlannedItem.get(plannedItem.getId()))) {
+                    falsificationReadyByPlannedItem.put(plannedItem.getId(), true);
+                    continue;
+                }
+                List<TaskEntity> itemTasks = tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of());
+                boolean ready = !itemTasks.isEmpty() && itemTasks.stream()
+                        .allMatch(t -> isTerminalOrAwaitingDeadDependency(t, new java.util.HashSet<>()));
+                falsificationReadyByPlannedItem.put(plannedItem.getId(), ready);
+            }
+            int falsificationReadyFeatures = (int) productFeatures.stream()
+                    .filter(feature -> {
+                        List<WishlistEntity> featureItems = codeProducingItems.stream()
+                                .filter(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId())))
+                                .toList();
+                        return !featureItems.isEmpty() && featureItems.stream()
+                                .allMatch(w -> Boolean.TRUE.equals(falsificationReadyByPlannedItem.get(w.getId())));
+                    })
+                    .count();
+            double selfFalsificationReadyRatio = totalFeatures == 0
+                    ? 1.0 : (double) falsificationReadyFeatures / totalFeatures;
+            // 2026-07-26 operator directive ("count by features, not by tasks!", repeated - this metric had
+            // drifted to deliverable-granularity): ratio() now reflects completeFeatures/totalFeatures, not
+            // mergedDeliverables/totalDeliverables. totalDeliverables/mergedDeliverables stay in the record as
+            // informational detail (still shown), they just no longer DRIVE ratio() or anything gated on it
+            // (falsification/coverage-audit thresholds, her journal, the dashboard). A project with 5 real
+            // features and 1 fully complete now genuinely reads 20%, not "5 of 19 individual work items merged"
+            // - a client brief is delivered feature by feature, not item by item.
+            double ratio = totalFeatures == 0 ? 1.0 : (double) completeFeatures / totalFeatures;
+            boolean coherent = true;
+            double coherenceScore = 0.0;
+            if (evidenceCoherenceService != null) {
+                coherent = evidenceCoherenceService.isCoherent(projectId);
+                coherenceScore = evidenceCoherenceService.getLatestCoherenceScore(projectId);
+            }
+            if (total == 0) {
+                // Every planned item for this scope is auxiliary (decision/spike/review work only) - there is
+                // nothing this metric can measure, not "0% done". Report via decompositionComplete alone rather
+                // than a misleading 0/0 ratio.
+                return new Readiness(totalFeatures, completeFeatures, 0, 0, 1.0, decompositionComplete, 1.0,
+                        coherent, coherenceScore);
+            }
+            return new Readiness(totalFeatures, completeFeatures, total, mergedCount, ratio, decompositionComplete,
+                    selfFalsificationReadyRatio, coherent, coherenceScore);
+        } finally {
+            batchMergedReviewsCache.remove();
         }
-        int falsificationReadyFeatures = (int) productFeatures.stream()
-                .filter(feature -> {
-                    List<WishlistEntity> featureItems = codeProducingItems.stream()
-                            .filter(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId())))
-                            .toList();
-                    return !featureItems.isEmpty() && featureItems.stream()
-                            .allMatch(w -> Boolean.TRUE.equals(falsificationReadyByPlannedItem.get(w.getId())));
-                })
-                .count();
-        double selfFalsificationReadyRatio = totalFeatures == 0
-                ? 1.0 : (double) falsificationReadyFeatures / totalFeatures;
-        // 2026-07-26 operator directive ("count by features, not by tasks!", repeated - this metric had
-        // drifted to deliverable-granularity): ratio() now reflects completeFeatures/totalFeatures, not
-        // mergedDeliverables/totalDeliverables. totalDeliverables/mergedDeliverables stay in the record as
-        // informational detail (still shown), they just no longer DRIVE ratio() or anything gated on it
-        // (falsification/coverage-audit thresholds, her journal, the dashboard). A project with 5 real
-        // features and 1 fully complete now genuinely reads 20%, not "5 of 19 individual work items merged"
-        // - a client brief is delivered feature by feature, not item by item.
-        double ratio = totalFeatures == 0 ? 1.0 : (double) completeFeatures / totalFeatures;
-        boolean coherent = true;
-        double coherenceScore = 0.0;
-        if (evidenceCoherenceService != null) {
-            coherent = evidenceCoherenceService.isCoherent(projectId);
-            coherenceScore = evidenceCoherenceService.getLatestCoherenceScore(projectId);
-        }
-        if (total == 0) {
-            // Every planned item for this scope is auxiliary (decision/spike/review work only) - there is
-            // nothing this metric can measure, not "0% done". Report via decompositionComplete alone rather
-            // than a misleading 0/0 ratio.
-            return new Readiness(totalFeatures, completeFeatures, 0, 0, 1.0, decompositionComplete, 1.0,
-                    coherent, coherenceScore);
-        }
-        return new Readiness(totalFeatures, completeFeatures, total, mergedCount, ratio, decompositionComplete,
-                selfFalsificationReadyRatio, coherent, coherenceScore);
     }
 
     /**
@@ -1531,8 +1542,49 @@ public class ClientDeliverableReadinessService {
      * here is two queries, one for the task's sessions and one for their merged reviews.
      */
     private final ThreadLocal<int[]> mergedReviewCalls = ThreadLocal.withInitial(() -> new int[1]);
+    private final ThreadLocal<Map<UUID, List<PrReviewEntity>>> batchMergedReviewsCache = new ThreadLocal<>();
+
+    private void prefetchMergedReviews(java.util.Collection<UUID> taskIds) {
+        if (taskIds == null || taskIds.isEmpty()) {
+            return;
+        }
+        List<com.eneik.production.models.persistence.JulesSessionEntity> sessions =
+                julesSessionRepository.findByTaskIdIn(new java.util.ArrayList<>(taskIds));
+        if (sessions == null || sessions.isEmpty()) {
+            return;
+        }
+        Map<UUID, UUID> sessionToTask = new HashMap<>();
+        List<UUID> sessionIds = new java.util.ArrayList<>();
+        for (com.eneik.production.models.persistence.JulesSessionEntity s : sessions) {
+            if (s != null && s.getId() != null && s.getTaskId() != null) {
+                sessionToTask.put(s.getId(), s.getTaskId());
+                sessionIds.add(s.getId());
+            }
+        }
+        Map<UUID, List<PrReviewEntity>> byTask = new HashMap<>();
+        for (UUID tid : taskIds) {
+            byTask.put(tid, new java.util.ArrayList<>());
+        }
+        if (!sessionIds.isEmpty()) {
+            mergedReviewCalls.get()[0]++;
+            List<PrReviewEntity> merged = prReviewRepository.findByJulesSessionIdInAndMergedTrue(sessionIds);
+            if (merged != null) {
+                for (PrReviewEntity review : merged) {
+                    UUID tid = review.getJulesSessionId() != null ? sessionToTask.get(review.getJulesSessionId()) : null;
+                    if (tid != null) {
+                        byTask.computeIfAbsent(tid, k -> new java.util.ArrayList<>()).add(review);
+                    }
+                }
+            }
+        }
+        batchMergedReviewsCache.set(byTask);
+    }
 
     private List<PrReviewEntity> mergedReviews(UUID taskId) {
+        Map<UUID, List<PrReviewEntity>> cached = batchMergedReviewsCache.get();
+        if (cached != null && cached.containsKey(taskId)) {
+            return cached.get(taskId);
+        }
         mergedReviewCalls.get()[0]++;
         List<UUID> sessionIds = julesSessionRepository.findByTaskId(taskId).stream()
                 .map(session -> session.getId())

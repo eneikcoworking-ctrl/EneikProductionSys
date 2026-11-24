@@ -50,6 +50,17 @@ public class ClaimService {
     private final DefectJournalRepository defectJournalRepository;
     private final String configuredApiKey;
     private final java.util.concurrent.atomic.AtomicLong pullClaimsCount = new java.util.concurrent.atomic.AtomicLong(0);
+    private final java.util.concurrent.ConcurrentHashMap<UUID, Instant> taskBackoffUntil = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static final String PAYLOAD_DISPATCH_BACKOFF_UNTIL = "dispatch_backoff_until";
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    @org.springframework.context.annotation.Lazy
+    private com.eneik.production.services.accounts.AccountHealthService accountHealthService;
+
+    public void setAccountHealthService(com.eneik.production.services.accounts.AccountHealthService accountHealthService) {
+        this.accountHealthService = accountHealthService;
+    }
 
     public enum ReviewAdmissionDecision {
         ADMIT("Review artifact present or role does not require code"),
@@ -244,6 +255,11 @@ public class ClaimService {
         TaskEntity task = taskRepository.lockNextQueuedTask(capableTags).orElse(null);
 
         if (task == null) return null;
+        if (isTaskInDispatchBackoff(task, Instant.now())) {
+            log.info("ClaimService.claim: task {} is in dispatch backoff cooldown until {}; skipping claim",
+                    task.getId(), getTaskBackoffUntil(task).orElse(null));
+            return null;
+        }
 
         // 3. Create claim and update task status
         ClaimEntity claim = new ClaimEntity();
@@ -291,6 +307,11 @@ public class ClaimService {
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
         validateClaimSubject(account);
 
+        if (isTaskInDispatchBackoff(task, Instant.now())) {
+            throw new IllegalStateException("Task " + taskId + " is in dispatch backoff cooldown until "
+                    + getTaskBackoffUntil(task).orElse(null));
+        }
+
         String taskTag = task.getRole().getTag();
         boolean isCapable = "*".equals(account.getCapabilities()) ||
                 java.util.Arrays.asList(account.getCapabilities().split(",")).contains(taskTag);
@@ -330,6 +351,11 @@ public class ClaimService {
     public ClaimDto claimForProject(UUID projectId, UUID accountId) {
         TaskEntity task = taskRepository.lockNextQueuedTaskForProject(projectId).orElse(null);
         if (task == null) return null;
+        if (isTaskInDispatchBackoff(task, Instant.now())) {
+            log.info("ClaimService.claimForProject: task {} is in dispatch backoff cooldown until {}; skipping claim",
+                    task.getId(), getTaskBackoffUntil(task).orElse(null));
+            return null;
+        }
 
         AccountEntity account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
@@ -629,23 +655,44 @@ public class ClaimService {
             log.info("Poka-yoke: ignored requeue transition for terminal task {} ({})", taskId, currentTask.getStatus());
             return;
         }
-        claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId).ifPresent(claim -> {
+        AccountEntity releasedAccount = null;
+        java.util.Optional<ClaimEntity> activeClaimOpt = claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId);
+        if (activeClaimOpt.isPresent()) {
+            ClaimEntity claim = activeClaimOpt.get();
+            releasedAccount = claim.getAccount();
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
 
-            refreshAccountStatusAfterClaimRelease(claim.getAccount());
-        });
+            refreshAccountStatusAfterClaimRelease(releasedAccount);
+        }
+
+        if (isQuotaFailureReason(reason) && accountHealthService != null && releasedAccount != null) {
+            UUID projectId = currentTask != null && currentTask.getProject() != null ? currentTask.getProject().getId() : null;
+            String roleTag = currentTask != null && currentTask.getRole() != null ? currentTask.getRole().getTag() : null;
+            accountHealthService.reportDispatchOutcome(
+                    releasedAccount.getId(),
+                    projectId,
+                    taskId,
+                    com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.DAILY_LIMIT,
+                    reason,
+                    roleTag);
+        }
 
         long refusals = refusedSessionCreations(taskId);
         long budget = dispatchAttemptBudget();
         if (refusals >= budget) {
+            taskBackoffUntil.remove(taskId);
             retireForExhaustedDispatchBudget(taskId, refusals, budget, reason);
             return;
         }
 
-        log.warn("ClaimService.releaseClaimToQueue: task {} dispatch refused (attempt {}/{} against budget {}): {}",
-                taskId, refusals, budget, budget, reason);
+        Duration backoff = computeExponentialBackoff(Math.max(1L, refusals));
+        Instant backoffUntil = Instant.now().plus(backoff);
+        taskBackoffUntil.put(taskId, backoffUntil);
+
+        log.warn("ClaimService.releaseClaimToQueue: task {} dispatch refused (attempt {}/{} against budget {}, backoff={}m until {}): {}",
+                taskId, refusals, budget, budget, backoff.toMinutes(), backoffUntil, reason);
 
         int revived = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.queued);
         if (revived == 0) {
@@ -653,6 +700,7 @@ public class ClaimService {
         } else {
             taskRepository.findById(taskId).ifPresent(task -> {
                 task.setJulesDispatchStatus(reason);
+                writeTaskBackoffToPayload(task, backoffUntil);
                 taskRepository.save(task);
             });
         }
@@ -744,15 +792,173 @@ public class ClaimService {
 
     // A(task): refusals already recorded. Monotone, and raised by exactly one per iteration - see the
     // JulesSessionRepository query's own note for why both hold.
+    // D013/D005 (Mechanism #11): also counts failed sovereign sessions (local-agy-*, deepseek-*) that
+    // carry a pre-assigned externalSessionId and ended without opening a PR, so sovereign dispatch loops
+    // cannot freeze at attempt 0/N.
     // When a task is resumed after capacity restoration, refusals prior to its last budget reset do not count.
     long refusedSessionCreations(UUID taskId) {
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
         Instant resetAt = (task != null) ? task.getLastBudgetResetAt() : null;
-        if (resetAt != null) {
-            return julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatusAndCreatedAtAfter(
-                    taskId, "failed", resetAt);
+        long nullExternalRefusals = (resetAt != null)
+                ? julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatusAndCreatedAtAfter(
+                        taskId, "failed", resetAt)
+                : julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatus(taskId, "failed");
+        long sovereignRefusals = countFailedSovereignSessions(taskId, resetAt);
+        return nullExternalRefusals + sovereignRefusals;
+    }
+
+    public static boolean isSovereignExternalSessionId(String externalSessionId) {
+        if (externalSessionId == null || externalSessionId.isBlank()) {
+            return false;
         }
-        return julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatus(taskId, "failed");
+        String lower = externalSessionId.toLowerCase(Locale.ROOT);
+        return lower.startsWith("local-agy-") || lower.startsWith("deepseek-");
+    }
+
+    public static boolean isFailedSovereignStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return false;
+        }
+        return "failed".equalsIgnoreCase(status)
+                || "closed_no_code".equalsIgnoreCase(status)
+                || "scope_insufficient".equalsIgnoreCase(status)
+                || "pr_creation_failed".equalsIgnoreCase(status);
+    }
+
+    public static boolean isCountedDispatchRefusalSession(JulesSessionEntity session) {
+        if (session == null) {
+            return false;
+        }
+        String extId = session.getExternalSessionId();
+        if (extId == null) {
+            return "failed".equalsIgnoreCase(session.getStatus());
+        }
+        if (!isSovereignExternalSessionId(extId)) {
+            return false;
+        }
+        boolean hasPr = session.getPrUrl() != null && !session.getPrUrl().isBlank();
+        return !hasPr && isFailedSovereignStatus(session.getStatus());
+    }
+
+    private long countFailedSovereignSessions(UUID taskId, Instant resetAt) {
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(taskId);
+        if (sessions == null || sessions.isEmpty()) {
+            return 0L;
+        }
+        return sessions.stream()
+                .filter(s -> s != null && isSovereignExternalSessionId(s.getExternalSessionId()))
+                .filter(ClaimService::isCountedDispatchRefusalSession)
+                .filter(s -> resetAt == null || (s.getCreatedAt() != null && s.getCreatedAt().isAfter(resetAt)))
+                .count();
+    }
+
+    /**
+     * D013/D005 (Mechanism #11): Exponential dispatch backoff schedule (2m -> 5m -> 15m -> 30m, cap 60m).
+     */
+    public static Duration computeExponentialBackoff(long attemptNumber) {
+        if (attemptNumber <= 1) {
+            return Duration.ofMinutes(2);
+        }
+        if (attemptNumber == 2) {
+            return Duration.ofMinutes(5);
+        }
+        if (attemptNumber == 3) {
+            return Duration.ofMinutes(15);
+        }
+        if (attemptNumber == 4) {
+            return Duration.ofMinutes(30);
+        }
+        return Duration.ofMinutes(60);
+    }
+
+    public static boolean isQuotaFailureReason(String reason) {
+        if (reason == null || reason.isBlank()) {
+            return false;
+        }
+        String lower = reason.toLowerCase(Locale.ROOT);
+        return lower.contains("individual quota reached")
+                || lower.contains("quota reached")
+                || lower.contains("quota_exceeded")
+                || lower.contains("429")
+                || lower.contains("rate limit")
+                || lower.contains("rate_limit")
+                || lower.contains("daily limit")
+                || lower.contains("jules_daily_limit");
+    }
+
+    public java.util.Optional<Instant> getTaskBackoffUntil(UUID taskId) {
+        if (taskId == null) {
+            return java.util.Optional.empty();
+        }
+        Instant mem = taskBackoffUntil.get(taskId);
+        TaskEntity task = taskRepository.findById(taskId).orElse(null);
+        Instant fromPayload = readTaskBackoffFromPayload(task);
+        if (mem != null && fromPayload != null) {
+            return java.util.Optional.of(mem.isAfter(fromPayload) ? mem : fromPayload);
+        }
+        return java.util.Optional.ofNullable(mem != null ? mem : fromPayload);
+    }
+
+    public java.util.Optional<Instant> getTaskBackoffUntil(TaskEntity task) {
+        if (task == null) {
+            return java.util.Optional.empty();
+        }
+        Instant mem = task.getId() != null ? taskBackoffUntil.get(task.getId()) : null;
+        Instant fromPayload = readTaskBackoffFromPayload(task);
+        if (mem != null && fromPayload != null) {
+            return java.util.Optional.of(mem.isAfter(fromPayload) ? mem : fromPayload);
+        }
+        return java.util.Optional.ofNullable(mem != null ? mem : fromPayload);
+    }
+
+    public boolean isTaskInDispatchBackoff(UUID taskId) {
+        return isTaskInDispatchBackoff(taskId, Instant.now());
+    }
+
+    public boolean isTaskInDispatchBackoff(UUID taskId, Instant now) {
+        Instant current = now != null ? now : Instant.now();
+        return getTaskBackoffUntil(taskId).map(current::isBefore).orElse(false);
+    }
+
+    public boolean isTaskInDispatchBackoff(TaskEntity task, Instant now) {
+        Instant current = now != null ? now : Instant.now();
+        return getTaskBackoffUntil(task).map(current::isBefore).orElse(false);
+    }
+
+    public void clearTaskBackoff(UUID taskId) {
+        if (taskId != null) {
+            taskBackoffUntil.remove(taskId);
+        }
+    }
+
+    private Instant readTaskBackoffFromPayload(TaskEntity task) {
+        if (task == null || task.getPayload() == null || !task.getPayload().has(PAYLOAD_DISPATCH_BACKOFF_UNTIL)) {
+            return null;
+        }
+        String raw = task.getPayload().path(PAYLOAD_DISPATCH_BACKOFF_UNTIL).asText(null);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(raw.trim());
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    private void writeTaskBackoffToPayload(TaskEntity task, Instant backoffUntil) {
+        if (task == null) {
+            return;
+        }
+        com.fasterxml.jackson.databind.node.ObjectNode node = (task.getPayload() instanceof com.fasterxml.jackson.databind.node.ObjectNode existing)
+                ? existing
+                : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        if (backoffUntil == null) {
+            node.remove(PAYLOAD_DISPATCH_BACKOFF_UNTIL);
+        } else {
+            node.put(PAYLOAD_DISPATCH_BACKOFF_UNTIL, backoffUntil.toString());
+        }
+        task.setPayload(node);
     }
 
     // A_max = 2 * live accounts. Derived rather than picked. A refusal can be a property of the account
@@ -788,7 +994,7 @@ public class ClaimService {
         }
 
         List<JulesSessionEntity> failedSessions = julesSessionRepository.findByTaskId(taskId).stream()
-                .filter(s -> s.getExternalSessionId() == null && "failed".equalsIgnoreCase(s.getStatus()))
+                .filter(ClaimService::isCountedDispatchRefusalSession)
                 .toList();
 
         long externalCount = 0;
@@ -932,6 +1138,8 @@ public class ClaimService {
                 task.setStatus(TaskStatus.queued);
                 task.setLastBudgetResetAt(current);
                 task.setDispatchVerdict(com.eneik.production.models.persistence.TaskDispatchVerdict.NONE);
+                taskBackoffUntil.remove(task.getId());
+                writeTaskBackoffToPayload(task, null);
                 long newBudget = dispatchAttemptBudget();
                 task.setJulesDispatchStatus(String.format("REQUEUED_ON_CAPACITY_RECOVERY: returned to queue on account capacity restoration at %s (budget reset to 0/%d, prior verdict: %s)",
                         current, newBudget, priorVerdict));
@@ -974,7 +1182,7 @@ public class ClaimService {
 
     public int consecutiveIdenticalUnattributedRefusals(UUID taskId) {
         List<JulesSessionEntity> failedSessions = julesSessionRepository.findByTaskId(taskId).stream()
-                .filter(s -> s.getExternalSessionId() == null && "failed".equalsIgnoreCase(s.getStatus()))
+                .filter(ClaimService::isCountedDispatchRefusalSession)
                 .sorted(Comparator.comparing(JulesSessionEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
                 .toList();
         if (failedSessions.isEmpty()) {
@@ -1007,7 +1215,7 @@ public class ClaimService {
     public boolean isIdenticalUnattributedRefusalThrottled(UUID taskId, Instant now) {
         Instant current = now != null ? now : Instant.now();
         List<JulesSessionEntity> failedSessions = julesSessionRepository.findByTaskId(taskId).stream()
-                .filter(s -> s.getExternalSessionId() == null && "failed".equalsIgnoreCase(s.getStatus()))
+                .filter(ClaimService::isCountedDispatchRefusalSession)
                 .sorted(Comparator.comparing(JulesSessionEntity::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed())
                 .toList();
         if (failedSessions.isEmpty()) {

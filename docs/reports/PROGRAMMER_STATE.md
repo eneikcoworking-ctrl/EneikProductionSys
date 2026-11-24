@@ -1,11 +1,12 @@
-# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-24 23:03 UTC)
+# Состояние Ведущего инженера L2 (Синхронизировано 2026-11-24 23:49 UTC)
 
-- **Выполнен Такт 1 — P0 #1 Work Order #10 (Механизм №10, `D003 Contract Drift` / `D008 Popper`):**
-  - В `DeepSeekPatchParser.java` внедрён детерминированный state-machine санитайзер `sanitizeJsonControlChars(String rawJson)` (вызывается строго после `extractJson` и до `objectMapper.readTree`), отслеживающий `inString`/`escaped`: экранирует сырые `\n`, `\r`, `\t`, `\b`, `\f` и прочие управляющие символы `< 0x20` исключительно внутри строковых литералов JSON, сохраняя форматирование вне строк и валидные escape-последовательности (строгая идемпотентность).
-  - `LocalAgyOutputParser.parse` проходит через тот же единый санитайзер без дублирования; `checkAntiTruncation` (`LazyTruncationDetectedException`, D008) полностью сохранён после санитаризации.
-  - **Тесты-заслоны (Docker Maven `maven:3.9.9-eclipse-temurin-21`, `-m 2g`):** **17/17 green** (`DeepSeekPatchParserTest` 4/4, `DeepSeekPatchParserAntiTruncationTest` 9/9, `LocalAgyOutputParserTest` 4/4, `40.8s`).
+- **Выполнен Такт 2 — P0 #2 Work Order #10 (Механизм №11, `D013 Runtime Drift` / `D005 Buchak` / `D008 Popper`):**
+  - `ClaimService.java` + `DispatchRefusalCategory.java` + `JulesDispatchService.java` + `ProjectFlowService.java`: исправлена монотонная вариант-функция `refusedSessionCreations(taskId)` (учитываются неуспешные суверенные сессии `local-agy-*`/`deepseek-*` без PR, с фиксацией `status=failed` в async-контуре до релиза); внедрён exponential backoff `2m -> 5m -> 15m -> 30m` (cap `60m`) с персистенцией в `task.payload` и блокировкой повторного claim/dispatch внутри окна; при `Individual quota reached` / HTTP 429 выставляется `DAILY_LIMIT` cooldown на аккаунт через `@Lazy AccountHealthService`.
+  - `ContinuousOrchestrationService.java` + `ClientDeliverableReadinessService.java`: `continuousOrchestrate()` переведён с `fixedRateString` на `fixedDelayString`; добавлен per-project cooldown (`5m`) на повторные пересчёты неизменившихся `failed=1` требований; `mergedReviews` батчится за проход через `findByTaskIdIn` + `findByJulesSessionIdInAndMergedTrue` (снижение с 265+ до ~1–2 round trips).
+  - `GitWorktreeExecutionManager.java` + `docker-compose.yml`: гарантированный `waitFor()`/`destroyForcibly()`/reap в `finally` во всех `ProcessBuilder`-вызовах (`runCommand`, `listRepositoryFiles`, `getRemoteOriginUrl`) + `init: true` (`docker-init` reaper) для сервиса `backend`.
+  - **Тесты-заслоны (Docker Maven `maven:3.9.9-eclipse-temurin-21`, `-m 2g`):** **56/56 green** (`ClaimServiceTest` 3/3, `ClaimServiceFalsificationTest` 6/6, `DispatchAttemptBudgetTest` 17/17, `ContinuousOrchestrationServiceTest` 22/22, **`DennettAutonomyFalsificationTest` 6/6**, `GitWorktreeExecutionManagerTest` 2/2).
+  - **Живая верификация `eneikproductionsys-backend-1` (включает Такт 1 + Такт 2):** `/actuator/health` = `UP` (старт 30s), `HostConfig.Init = true`, `CPU = 0.76%` (`< 50%`), `MEM = 608.9MiB / 1GiB`, зомби `git` = **`0`**, `attempt 0/34` = **`0`**, диск `/` = `67%` (`< 70%`).
 - **Следующий шаг очереди (строго 1 механизм за такт):**
-  - Такт 2 — P0 #2 (`D013`/`D005`/`D008`): `ClaimService` монотонный бюджет отказов + exponential backoff, `ContinuousOrchestrationService` `fixedDelay` + cooldown `failed=1`, `init: true` в `docker-compose.yml` против `181% CPU` и зомби `git`.
-  - Далее Такт 3 (`judgment-proxy` -> DeepSeek primary), Такт 4 (WO #11 P1 #4A–4C), Такт 5 (WO #12 P2 #5).
-- **Предыдущий закрытый наряд:** Work Order #9 (`e09221c5`, `9bfd501f`, `3bfd4af8` — V146 `SOURCE_ROLE_TAG`, `HikariPool`/thread hygiene).
-- **Статус:** Такт 1 (P0 #1) готов к приёмке L1; ручных правок продукта не производилось.
+  - Такт 3 — P0 #3 (`D003`/`D010`/`D008`, `PROGRAMMER_DIRECTIVES.md` §12.3): переключение `judgment-proxy :8093` на `primary=deepseek` с явным fallback + честный `/health` + `node --test` + пересборка `judgment-proxy`.
+  - Далее Такт 4 (WO #11 P1 #4A–4C), Такт 5 (WO #12 P2 #5).
+- **Статус:** Такт 2 (P0 #2) закрыт и верифицирован в живом рантайме; готов к приёмке L1. Ручных правок продуктов не производилось.

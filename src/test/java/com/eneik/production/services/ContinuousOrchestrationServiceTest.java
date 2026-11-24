@@ -1017,6 +1017,84 @@ class ContinuousOrchestrationServiceTest {
         assertEquals("IN_PROGRESS", secondRun.status());
     }
 
+    @Test
+    void continuousOrchestrateUsesFixedDelayInsteadOfFixedRate() throws Exception {
+        var method = ContinuousOrchestrationService.class.getMethod("continuousOrchestrate");
+        var scheduled = method.getAnnotation(org.springframework.scheduling.annotation.Scheduled.class);
+        assertNotNull(scheduled, "continuousOrchestrate must remain @Scheduled");
+        assertFalse(scheduled.fixedDelayString().isBlank(),
+                "D013: continuousOrchestrate must use fixedDelayString to guarantee a pause between ticks");
+        assertTrue(scheduled.fixedRateString().isBlank(),
+                "D013: fixedRateString causes 0ms back-to-back tick overlap and >100% CPU thrashing");
+    }
+
+    @Test
+    void unchangedFailedRequirementsRespectRecalculationCooldownAndPreventHotLoop() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
+        PlannedWorkRecoveryService plannedWorkRecoveryService = mock(PlannedWorkRecoveryService.class);
+        OperationalPolicyService operationalPolicyService = mock(OperationalPolicyService.class);
+        com.eneik.production.services.toc.TocSubordinationLever subordinationLever =
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class);
+
+        ProjectEntity project = project(UUID.randomUUID(), "knowledge-base-crie", ProjectStatus.active);
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.stalled)).thenReturn(List.of());
+        when(subordinationLever.subordinate(any(), any(), eq(true))).thenReturn(true);
+
+        FlowCoreDto snapshotWithUnchangedFailures = mock(FlowCoreDto.class);
+        FlowSpineDto spine = mock(FlowSpineDto.class);
+        FlowSpineDto.FlowCounts counts = mock(FlowSpineDto.FlowCounts.class);
+        when(snapshotWithUnchangedFailures.snapshot()).thenReturn(spine);
+        when(spine.currentState()).thenReturn("IN_PROGRESS");
+        when(spine.counts()).thenReturn(counts);
+        when(counts.queuedTasks()).thenReturn(4L);
+        when(counts.reviewTasks()).thenReturn(0L);
+        when(counts.doneTasks()).thenReturn(10L);
+        when(counts.failedTasksRecoveryCanResume()).thenReturn(1L);
+        when(counts.failedTasksTotal()).thenReturn(99L);
+        when(counts.blockedTasks()).thenReturn(0L);
+        when(counts.completeFeatures()).thenReturn(2);
+        when(counts.totalFeatures()).thenReturn(10);
+
+        when(operationalPolicyService.snapshot(project.getId())).thenReturn(snapshotWithUnchangedFailures);
+        OperationalPolicyService.OperationalDecision allowedDecision =
+                mock(OperationalPolicyService.OperationalDecision.class);
+        when(allowedDecision.allowed()).thenReturn(true);
+        when(allowedDecision.state()).thenReturn("IN_PROGRESS");
+        when(allowedDecision.reason()).thenReturn("allowed");
+        when(operationalPolicyService.authorize(eq(snapshotWithUnchangedFailures), any()))
+                .thenReturn(allowedDecision);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                projectRepository, projectFlowService, mock(AccountRepository.class),
+                mock(JulesSessionRepository.class), mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class), mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class), mock(TaskRepository.class),
+                new SystemProgressTracker(), mock(SystemSettingsService.class), plannedWorkRecoveryService,
+                mock(BranchGarbageCollectorService.class), mock(GitHubPullRequestService.class),
+                operationalPolicyService, mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                subordinationLever
+        );
+
+        // Tick 1: first observation runs recovery sweeps
+        service.executeContinuousOrchestrate();
+        // Tick 2 immediately after with identical failed=1/exhausted=99 signature: skipped due to cooldown
+        service.executeContinuousOrchestrate();
+
+        verify(plannedWorkRecoveryService, times(1)).resumeNextFrontier(project);
+        verify(projectFlowService, times(1)).recoverBlockedWork(project.getId());
+
+        // When failure state actually changes, cooldown immediately lifts and recovery runs again
+        when(counts.failedTasksRecoveryCanResume()).thenReturn(2L);
+        service.executeContinuousOrchestrate();
+        verify(plannedWorkRecoveryService, times(2)).resumeNextFrontier(project);
+        verify(projectFlowService, times(2)).recoverBlockedWork(project.getId());
+    }
+
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {
         ProjectEntity project = new ProjectEntity();
         project.setId(id);
