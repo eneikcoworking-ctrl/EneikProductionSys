@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 REPO_DIR = "/opt/EneikProductionSys"
 MECHANISMS_FILE = os.path.join(REPO_DIR, "docs", "FACTORY_MECHANISMS.md")
 MANAGER_STATE_FILE = os.path.join(REPO_DIR, "docs", "reports", "MANAGER_STATE.md")
+WORK_ORDER_STATE_FILE = "/var/lib/eneik_work_order_relay.state.json"
 LOG_FILE = "/var/log/autonomous_factory_relay.log"
 PID = "1695f808-0df7-4393-ace9-d5a79e62ef41"
 BASE_URL = "http://127.0.0.1:8080"
@@ -223,13 +224,87 @@ def scan_remaining_mechanisms(filepath=MECHANISMS_FILE):
     return items
 
 
+def read_manager_state(filepath=MANAGER_STATE_FILE):
+    try:
+        if os.path.exists(filepath):
+            with open(filepath, encoding="utf-8") as f:
+                return f.read()
+    except Exception as e:
+        log(f"Предупреждение чтения {filepath}: {e}")
+    return ""
+
+
+def has_active_work_order(manager_state_text):
+    """Возвращает True, если в MANAGER_STATE.md активен многотактовый наряд L1/L2."""
+    if not manager_state_text:
+        return False
+    return bool(
+        re.search(
+            r"^\s*#*\s*STATUS:\s*ACTIVE_AUTONOMOUS_WORK_ORDER\b",
+            manager_state_text,
+            re.MULTILINE,
+        )
+    )
+
+
+def should_mark_audit_ready(manager_state_text):
+    """Запрещает перезапись MANAGER_STATE.md на AUDIT_READY при активном наряде или уже выставленном AUDIT_READY."""
+    if not manager_state_text:
+        return True
+    if has_active_work_order(manager_state_text):
+        return False
+    if "STATUS: AUDIT_READY" in manager_state_text:
+        return False
+    return True
+
+
+def work_order_retry_decision(ws, now, max_attempts=3):
+    """RETRY_GUARD для многотактового наряда ACTIVE_AUTONOMOUS_WORK_ORDER -> (exhausted|wait|run, state)."""
+    ws = dict(ws) if isinstance(ws, dict) else {}
+    ws.setdefault("pending_stage", "l2")
+    ws.setdefault("attempts", 0)
+    ws.setdefault("last", 0)
+    ws.setdefault("cooldown_until", 0)
+    if now < ws.get("cooldown_until", 0):
+        return "wait", ws
+    if ws["attempts"] >= max_attempts:
+        return "exhausted", ws
+    wait = 300 * (3 ** (ws["attempts"] - 1)) if ws["attempts"] else 0
+    if now - ws["last"] < wait:
+        return "wait", ws
+    return "run", ws
+
+
+def record_work_order_outcome(ws, now, ok, err_text="", stage="l2"):
+    """Обновляет состояние многотактового цикла: l2 <-> l1, 429 -> cooldown без траты попыток."""
+    new_ws = dict(ws) if isinstance(ws, dict) else {}
+    new_ws.setdefault("pending_stage", stage)
+    new_ws.setdefault("attempts", 0)
+    new_ws.setdefault("last", 0)
+    new_ws.setdefault("cooldown_until", 0)
+    if ok:
+        new_ws["attempts"] = 0
+        new_ws["cooldown_until"] = 0
+        new_ws["last"] = now
+        new_ws["pending_stage"] = "l1" if stage == "l2" else "l2"
+        return "ok", 0, new_ws
+    reset_wait = parse_quota_reset_seconds(err_text)
+    if reset_wait is not None:
+        new_ws["cooldown_until"] = now + reset_wait
+        new_ws["last_quota_error"] = err_text[:200]
+        new_ws["pending_stage"] = stage
+        return "quota_wait", reset_wait, new_ws
+    new_ws["attempts"] += 1
+    new_ws["last"] = now
+    new_ws["cooldown_until"] = 0
+    new_ws["pending_stage"] = stage
+    return "failed", 0, new_ws
+
+
 def mark_audit_ready_if_needed():
     try:
-        current = ""
-        if os.path.exists(MANAGER_STATE_FILE):
-            with open(MANAGER_STATE_FILE, encoding="utf-8") as f:
-                current = f.read()
-        if "STATUS: AUDIT_READY" in current:
+        current = read_manager_state()
+        if not should_mark_audit_ready(current):
             return
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
         c_state, v_status, _, _ = get_flow_core_state()
@@ -433,11 +508,96 @@ def execute_relay_round():
             if e_ok:
                 with open(dir_hash_file, "w") as hf:
                     hf.write(cur_hash)
-                log("=== СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА ОТРАБОТАНА L1 <-> L2 ===")
+                if has_active_work_order(read_manager_state()):
+                    try:
+                        with open(WORK_ORDER_STATE_FILE, "w", encoding="utf-8") as wf:
+                            json.dump({"pending_stage": "l1", "attempts": 0, "last": 0, "cooldown_until": 0}, wf)
+                    except Exception as e:
+                        log(f"Предупреждение сохранения состояния WORK_ORDER: {e}")
+                    log("=== ТАКТ 1 ДИРЕКТИВЫ ВЫПОЛНЕН — ПЕРЕДАЧА В МНОГОТАКТОВЫЙ ЦИКЛ ACTIVE_AUTONOMOUS_WORK_ORDER (следующий этап: приёмка L1) ===")
+                else:
+                    log("=== СРОЧНАЯ ДИРЕКТИВА ОПЕРАТОРА ОТРАБОТАНА L1 <-> L2 ===")
             elif kind == "quota_wait":
                 log("RETRY_GUARD (429): квота L2 исчерпана, попытка не засчитана; пауза %ds до сброса (L1 сохранён)" % wait_s)
             else:
                 log("RETRY_GUARD: L2 завершился ошибкой (попытка %d/%d)" % (rs["attempts"], MAX_DIRECTIVE_ATTEMPTS))
+            time.sleep(20)
+            return
+
+    # ACTIVE_AUTONOMOUS_WORK_ORDER: многотактовая эстафета L2 (1 механизм за такт) <-> L1 (приёмка и перевод статуса)
+    manager_state_text = read_manager_state()
+    if has_active_work_order(manager_state_text):
+        try:
+            ws = json.load(open(WORK_ORDER_STATE_FILE)) if os.path.exists(WORK_ORDER_STATE_FILE) else {}
+        except Exception:
+            ws = {}
+        now_ts = time.time()
+        MAX_WO_ATTEMPTS = 3
+        wo_dec, ws = work_order_retry_decision(ws, now_ts, MAX_WO_ATTEMPTS)
+        if wo_dec == "exhausted":
+            log("WORK_ORDER_GUARD: лимит последовательных ошибок (%d/%d) исчерпан на этапе %s — пауза 600с" % (ws["attempts"], MAX_WO_ATTEMPTS, ws["pending_stage"]))
+            time.sleep(600)
+            return
+        if wo_dec == "wait":
+            rem_cd = int(max(0, ws.get("cooldown_until", 0) - now_ts))
+            if rem_cd > 0:
+                log("WORK_ORDER_GUARD (429): ожидание сброса квоты (%ds осталось, этап=%s)" % (rem_cd, ws["pending_stage"]))
+                time.sleep(min(300, max(30, rem_cd)))
+            else:
+                time.sleep(60)
+            return
+
+        def _save_ws(state):
+            with open(WORK_ORDER_STATE_FILE, "w", encoding="utf-8") as wf:
+                json.dump(state, wf)
+
+        stage = ws.get("pending_stage", "l2")
+        if stage == "l1":
+            log("=== ACTIVE_AUTONOMOUS_WORK_ORDER: ПРИЁМКА L1 (remotecli2) И ОБНОВЛЕНИЕ СТАТУСА ===")
+            l1_wo_prompt = (
+                "Ты — L1 Философ (Менеджер-архитектор) фабрики EneikProductionSys.\n"
+                "АКТИВЕН МНОГОТАКТОВЫЙ НАРЯД (`STATUS: ACTIVE_AUTONOMOUS_WORK_ORDER` в `docs/reports/MANAGER_STATE.md`).\n"
+                "Твоя задача на этот такт приёмки:\n"
+                "1. Проверь последний коммит L2 (`git log -n 5 --oneline`), отчёт `docs/reports/PROGRAMMER_STATE.md`, ресурсы хоста (`df -h /` < 70%, `free -h`) и живую телеметрию контура.\n"
+                "2. Проведи приёмку завершённого такта L2 по `docs/reports/PROGRAMMER_DIRECTIVES.md` (сохраняя контур гомеостатической автономии Деннетта и `DennettAutonomyFalsificationTest` 100% green).\n"
+                "3. Обнови `docs/reports/MANAGER_STATE.md` (компактно, <= 25 строк):\n"
+                "   - Если в очереди Work Order ещё остались невыполненные такты (или пересборка/живая проверка не завершена) — ОБЯЗАТЕЛЬНО СОХРАНИ заголовок `# STATUS: ACTIVE_AUTONOMOUS_WORK_ORDER` и явно укажи, какие такты закрыты, а какой ОДИН следующий такт L2 должен взять сейчас.\n"
+                "   - Если ВСЕ активные наряды (P0/P1/P2) полностью выполнены, покрыты зелёными заслон-тестами и верифицированы в живом рантайме — замени заголовок на `# STATUS: AUDIT_READY — ВСЕ АКТИВНЫЕ НАРЯДЫ ЗАКРЫТЫ` (это переведёт relay в режим ожидания).\n"
+                "4. Закоммить `docs/reports/MANAGER_STATE.md` (и при необходимости уточнения в `docs/reports/PROGRAMMER_DIRECTIVES.md`). НЕ вызывай schedule/таймеры!"
+            )
+            ok, err = run_agent_command("remotecli2", l1_wo_prompt)
+            kind, wait_s, ws = record_work_order_outcome(ws, time.time(), ok, err, stage="l1")
+            _save_ws(ws)
+            if ok:
+                log("=== ACTIVE_AUTONOMOUS_WORK_ORDER: приёмка L1 завершена (следующий этап: L2 если наряд ещё активен) ===")
+            elif kind == "quota_wait":
+                log("WORK_ORDER_GUARD (429): квота L1 исчерпана, пауза %ds" % wait_s)
+            else:
+                log("WORK_ORDER_GUARD: L1 завершился ошибкой (попытка %d/%d)" % (ws["attempts"], MAX_WO_ATTEMPTS))
+            time.sleep(20)
+            return
+        else:
+            log("=== ACTIVE_AUTONOMOUS_WORK_ORDER: ИСПОЛНЕНИЕ СЛЕДУЮЩЕГО ТАКТА L2 (remotecli) ===")
+            l2_wo_prompt = (
+                "Ты — Ведущий инженер L2 фабрики EneikProductionSys.\n"
+                "АКТИВЕН МНОГОТАКТОВЫЙ НАРЯД (`STATUS: ACTIVE_AUTONOMOUS_WORK_ORDER`).\n"
+                "Твоя задача на этот такт (строго ОДИН следующий механизм за такт по `GEMINI.md` §1):\n"
+                "1. Прочти `docs/reports/MANAGER_STATE.md`, `docs/reports/PROGRAMMER_STATE.md` и соответствующий раздел `docs/reports/PROGRAMMER_DIRECTIVES.md`.\n"
+                "2. Возьми строго ОДИН следующий незакрытый такт из очереди (не перескакивай и не дроби механизм). Строго сохраняй защищённый контур автономии Деннетта (`DennettAutonomyFalsificationTest` обязан оставаться 100% green).\n"
+                "3. Реализуй механизм целиком, покрой фальсифицирующими тестами-заслонами в Docker Maven (`docker run --rm -v /opt/EneikProductionSys:/workspace -v /root/.m2:/root/.m2 -w /workspace -m 2g maven:3.9.9-eclipse-temurin-21 mvn test -Dtest=...`), а для node-сервисов — `node --test`. При завершении этапа с пересборкой — проверь живой рантайм.\n"
+                "4. Никаких ручных правок репозиториев продуктов (`GEMINI.md` §0).\n"
+                "5. Обнови `docs/reports/PROGRAMMER_STATE.md` (что закрыто в этом такте, какие тесты green, какой следующий такт в очереди) и сделай семантический `git commit`.\n"
+                "6. НЕ вызывай schedule/таймеры! Заверши выполнение штатно."
+            )
+            ok, err = run_agent_command("remotecli", l2_wo_prompt)
+            kind, wait_s, ws = record_work_order_outcome(ws, time.time(), ok, err, stage="l2")
+            _save_ws(ws)
+            if ok:
+                log("=== ACTIVE_AUTONOMOUS_WORK_ORDER: такт L2 завершён (следующий этап: приёмка L1) ===")
+            elif kind == "quota_wait":
+                log("WORK_ORDER_GUARD (429): квота L2 исчерпана, пауза %ds" % wait_s)
+            else:
+                log("WORK_ORDER_GUARD: L2 завершился ошибкой (попытка %d/%d)" % (ws["attempts"], MAX_WO_ATTEMPTS))
             time.sleep(20)
             return
 

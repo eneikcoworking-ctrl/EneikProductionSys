@@ -1,7 +1,13 @@
-# STATUS: AUDIT_READY — 100% МЕХАНИЗМОВ И ПРЕДПИСАНИЙ ЗАВЕРЕНЫ (2026-11-24 23:04 UTC)
+# STATUS: ACTIVE_AUTONOMOUS_WORK_ORDER — STANDBY СНЯТ (2026-11-24 23:20 UTC)
 
-- Все записи и предписания в `docs/FACTORY_MECHANISMS.md` имеют живое свидетельство `*Живое:*` (остаток: 0).
-- Канонический контур автономии Деннетта защищён и неприкосновенен (376/376 green).
-- Продукт `dmitryefremov-site`: Flow Core `ACCEPTED` (`client_value_delivered`), done=324, review=0, claimed=0, queued=0.
-- План полного аудита готов в `docs/reports/AUTONOMY_AND_FULL_AUDIT_PLAN.md`.
-- Эстафета L1/L2 переведена в режим бережного автономного дозора (ожидание команды Дмитрия Ефремова на запуск полного аудита).
+- **Восстановление многотактовой эстафеты:** исправлен `scripts/autonomous_factory_relay.py` (запрет перезаписи `ACTIVE_AUTONOMOUS_WORK_ORDER` на `AUDIT_READY`, добавлен многотактовый цикл `L2 -> L1 -> L2` с `WORK_ORDER_GUARD` и 429 cooldown).
+- **Текущая точка эстафеты:** **Такт 1 (`a07690a1`) выполнен L2 (`DeepSeekPatchParser` CTRL-CHAR, 17/17 green) — ожидает приёмки L1 (`remotecli2`)**, после чего L2 автоматически переходит к **Такту 2 → 3 → 4 → 5**.
+- **Приоритет P0 — Work Order #10 (Такты 1–3, `PROGRAMMER_DIRECTIVES.md` §12, СОХРАНИТЬ БЕЗ ИЗМЕНЕНИЙ):**
+  1. **Такт 1 — P0 #1 (`D003`/`D008`):** `a07690a1` (`DeepSeekPatchParser.java` state-machine санитайзер `CTRL-CHAR`, 17/17 green) — **на приёмке L1**.
+  2. **Такт 2 — P0 #2 (`D013`/`D005`):** монотонный бюджет отказов и exponential backoff в `ClaimService.java`, `fixedDelay` + cooldown `failed=1` в `ContinuousOrchestrationService.java`, `init: true` в `docker-compose.yml` против `181% CPU` / зомби `git` — **следующий такт L2**.
+  3. **Такт 3 — P0 #3 (`D003`/`D010`/`D008`):** `judgment-proxy` (:8093) → `primary=deepseek` (`DeepSeek -> Gemini -> явный fallback`) + честный `/health` + `node --test`.
+- **Приоритет P1 — Work Order #11 (Такт 4 после P0, `PROGRAMMER_DIRECTIVES.md` §13):**
+  4. **Такт 4 — P1 #4 (`D010`/`D003`/`D006`/`D001`):** `4A` удалить фиктивный `local-repo/pulls` и устранить снос `refs/heads/worker/*` (анти-орфан mirror + `resyncMirrorWithOriginMain`); `4B` `git ls-files` + терминация кросс-стековых `SCOPE_INSUFFICIENT` (`crie_*.py`); `4C` граница UI `knowledge-base-crie` с `aesthetic-master`.
+- **Приоритет P2 — Work Order #12 (Такт 5 после P0 и P1, `PROGRAMMER_DIRECTIVES.md` §14, диагностика `INCIDENT_DIAGNOSIS_2026-11-24_MEMORILLA_WORKERS_ROLE_WIRING.md`):**
+  5. **Такт 5 — P2 #5 (`D014`/`D010`/`D001`/`D013`/`D006`/`D008`):** `SovereignWorkerContextAssembler` (динамическая роль `task.getRole()` + `RoleCapabilityLoader.loadRawCharter` + Tarski L0-стратифицированный Memorilla $K=16$) в `DeepSeekWorktreeExecutionEngine`/`DeepSeekApiClient` (сохранив `BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX` на offset 0), `LocalAgyWorktreeExecutionEngine`/`LocalAgyCliClient`, `OpsAuditorService`/`FalsificationCycleService`/`JulesDispatchService` + телеметрия пустой выборки в `GeminiContextService`.
+- **Инвариант суверенитета (`GEMINI.md` §0–§1):** строго 1 механизм за такт (Такт 2 → 3 → 4 → 5), заслон-тесты в Docker Maven (`-m 2g`) обязательны, 0 ручных правок продукта, `DennettAutonomyFalsificationTest` незыблем; отчёт L2 в `docs/reports/PROGRAMMER_STATE.md`, финальная приёмка и закрытие статуса L1 в `docs/reports/MANAGER_STATE.md`.
