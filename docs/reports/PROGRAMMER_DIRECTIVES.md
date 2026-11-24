@@ -181,3 +181,76 @@ rounded-2xl, чистая микро-граница, естественная м
 
 ### 10.5. Инвариант непрерывной автономии (D014 Perpetual Autopoiesis):
 - Оркестратор фабрики (`ContinuousOrchestrationService`) и L2 инженер не имеют права останавливаться при пустой очереди. При отсутствии внешних задач контур автономного фальсификатора обязан непрерывно генерировать тесты надежности, искать контрастные дефекты UI и синтезировать эволюционные улучшения.
+
+---
+
+## 11. МЕХАНИЗМ №9 (URGENT WORK ORDER 2026-11-24): КАНОНИЗАЦИЯ КОНТРАКТА `SOURCE_ROLE_TAG` (D003/D008) И ЛИКВИДАЦИЯ УТЕЧЕК `HikariPool-1` / НАТИВНЫХ ПОТОКОВ (D005/D013)
+
+**Статус:** СРОЧНЫЙ ОБЯЗЫВАЮЩИЙ НАРЯД L1 → L2 (`STANDBY СНЯТ`)  
+**Основание:** Срочная директива Оператора от `2026-11-24 15:17:15 UTC` (`OPERATOR_DIRECTIVES.md`) и форензика L1 (`docs/reports/INCIDENT_DIAGNOSIS_2026-11-24_D003_D008_HIKARI.md`).  
+**Квантование (GEMINI.md §1):** Выполнять последовательно по двум чётким квантовым шагам (Шаг A → коммит + тест, Шаг B → коммит + тест), затем пересобрать контейнер `eneikproductionsys-backend-1` и подтвердить Ступени 3–4 в живом рантайме.
+
+### 11.1. Шаг A — Устранение `SQL Error: 22001` и закрепление канона `SOURCE_ROLE_TAG` (D003 / D008 / D002)
+**Диагностированный дефект:**
+- `ContinuousOrchestrationService.java:1098` передаёт `"KARL_POPPER_01_FALSIFICATION_HARNESS"` (36 символов — имя паттерна, а не роли) в `wishlist.SOURCE_ROLE_TAG VARCHAR(16)`, срывая D008 Main CI Recovery на каждом 60-секундном цикле (`d64a3b6b-667e-4cda-aa69-8a7bf42b890f`).
+- `FalsificationCycleService.java:1061` передаёт comma-separated мульти-ролевые теги (`"BARCAN-TAG-01, BARCAN-TAG-06"`), которые также переполняют `VARCHAR(16)`, хотя `TechnicalLeadCompiler.doctrinePressure` явно рассчитан на список `BARCAN-TAG-XX`.
+
+**Обязательные изменения L2:**
+1. **Каноническая роль в D008 Main CI Recovery (`ContinuousOrchestrationService.java:1098`):**
+   - Заменить `"KARL_POPPER_01_FALSIFICATION_HARNESS"` на канонический тег роли **`"BARCAN-TAG-06"`** (`QA Automation` / `BARCAN-TAG-06_DEONTIC-CONSISTENCY`).
+   - Имя паттерна `"KARL_POPPER_01_FALSIFICATION_HARNESS"` сохранить в `content` и `dod`, а `"MAIN_CI_RECOVERY"` — в `tocConstraintRef`.
+2. **Миграция схемы БД (`src/main/resources/db/migration/V146__widen_wishlist_source_role_tag.sql`):**
+   - `ALTER TABLE wishlist ALTER COLUMN source_role_tag VARCHAR(128);`
+   - В `WishlistEntity.java:21` обновить аннотацию: `@Column(name = "source_role_tag", length = 128)`.
+   - Колонку `wishlist_items.source_role_tag VARCHAR(16)` с FK на `roles(tag)` НЕ ослаблять.
+3. **Единый валидатор контракта `SOURCE_ROLE_TAG` (Charter Invariant 10 / `RIGID_API_REFERENT` D003):**
+   - Ввести централизованную проверку/нормализацию (например, статический метод `WishlistEntity.validateCanonicalSourceRoleTag(String)` или `@PrePersist`/`@PreUpdate` + вызов в `ProjectFlowService`/конструкторе):
+     - Допустимо `null` (для `source == client`), либо один или несколько comma-separated канонических тегов формата `BARCAN-TAG-(0[0-9]|1[0-2])` общей длиной `<= 128`.
+     - Любая попытка записать имя паттерна (`KARL_POPPER_...`) или строку длиннее 128 символов немедленно отвергается `IllegalArgumentException` до SQL-слоя.
+4. **Тесты-заслоны (Поппер D008, Docker Maven `-m 2g`):**
+   - Интеграционный тест на реальной H2 с Flyway-миграциями (`V1..V146`): воспроизвести полный вызов `ContinuousOrchestrationService.recoverFailingMainCi(...)` и подтвердить успешную вставку `MAIN_CI_RECOVERY` wishlist с `source_role_tag = "BARCAN-TAG-06"` (0 ошибок `SQL 22001`).
+   - Тест на мульти-ролевой `source_role_tag` (`"BARCAN-TAG-01, BARCAN-TAG-06, BARCAN-TAG-08"` — успешно сохраняется и корректно оценивается `TechnicalLeadCompiler.doctrinePressure`).
+   - Фальсификационный тест: попытка записать `"KARL_POPPER_01_FALSIFICATION_HARNESS"` или >128 символов в `source_role_tag` детерминированно падает на входном контракте.
+   - Подтвердить зелёный прогон `FlywayMigrationValidationTest` и `ContinuousOrchestrationServiceTest`.
+
+### 11.2. Шаг B — Устранение коренных причин утечек `HikariPool-1` и OOM нативных потоков (D005 / D010 / D013)
+**Диагностированные дефекты (из `data/logs/backend.log.2026-11-20..24*`):**
+1. **OOM нативных потоков → смерть `HikariPool.addBagItem` (`122x` `2026-11-20T15:54:00Z`):**
+   - `ProjectFlowService.java:2288` создаёт `HttpClient.newBuilder()...build()` внутри метода на каждый вызов (утечка `SelectorManager` и worker-потоков).
+   - `DefaultPlaywrightVisionHarness.java:64` использует неограниченный `Executors.newCachedThreadPool(...)`.
+   - `LocalAgyCliClient.java:270–271` спавнит сырые `new Thread(...)` на каждый вызов CLI.
+2. **Хронические длинные транзакции (>30 с `Connection leak detection`):**
+   - `ClientDeliverableReadinessService.deleteValuelessEpics()` (`20x` утечек — одна `@Transactional` на цикл по всем проектам).
+   - `TrustSnapshotService.captureAndBackfillSnapshots()` (`9x` утечек — одна `@Transactional` на `operationalTruthService.build` + `backfillResolvedOutcomes`).
+   - `ProcessControlService.recomputeForProject(...)` (`6x` утечек — N+1 `findByFeatureId` в цикле, строки 164–167).
+   - `AutoMergeService.executeMerge(...)` (`@Transactional`, строка 1056) — держит JDBC-соединение открытым на время синхронных GitHub API запросов (`fetchPullRequestByNumber`, `mergeableState`, `pullRequestChecks`, `PUT /merge`, `handleMergeConflict`), провоцируя `STALL_BOTTLENECK` на `AUTOMERGE_PROCESSING` (`818x`).
+   - `spring.jpa.open-in-view` не выключен явно (`application.properties`), удерживая соединения на длительность HTTP-запросов.
+
+**Обязательные изменения L2:**
+1. **Запрет сетевого I/O внутри `@Transactional` в `AutoMergeService.executeMerge`:**
+   - Снять `@Transactional` с `executeMerge` (которая вызывает GitHub API); выделить короткие БД-транзакции (через `TransactionTemplate` или проксируемые короткие методы) строго на чтение состояния до HTTP-вызова и фиксацию результата после HTTP-вызова.
+2. **Декомпозиция длинных батч-транзакций (исключить `Connection leak detection` >30 с):**
+   - `ClientDeliverableReadinessService.deleteValuelessEpics()`: снять `@Transactional` с внешнего `@Scheduled`-метода; выполнять чтение/диагностику и запись короткими транзакциями per-project / per-unit (без удержания одного соединения на весь цикл).
+   - `TrustSnapshotService.captureAndBackfillSnapshots()`: снять `@Transactional` с внешнего `@Scheduled`-метода; вычислять `operationalTruthService.build(projectId)` вне долгой write-транзакции и сохранять снапшот / переходы инвариантов короткой транзакцией.
+   - `ProcessControlService.acquireEvidencePacket(...)` (строки 164–167): устранить N+1 (`findByFeatureId` в цикле → батч-выборка `findByFeatureIdIn(allFeatureIds)`) и ограничить транзакцию строго сохранением снапшотов.
+   - `src/main/resources/application.properties`: явно установить `spring.jpa.open-in-view=false` (проверив отсутствие `LazyInitializationException` в контроллерах/тестах).
+3. **Устранение утечек нативных потоков (D005 Buchak Tail Risk Block):**
+   - `ProjectFlowService.java:2288`: заменить per-call `HttpClient.newBuilder()...build()` на единый `private final HttpClient sharedHttpClient` (поле бина, как в `AutoMergeService:49`).
+   - `DefaultPlaywrightVisionHarness.java:64`: заменить `Executors.newCachedThreadPool` на ограниченный пул (например, `Executors.newFixedThreadPool(4, ...)` с daemon-потоками и `@PreDestroy` shutdown).
+   - `LocalAgyCliClient.java:270–271`: перевести чтение stdout/stderr на ограниченный daemon `ExecutorService` вместо неограниченного `new Thread(...)`.
+4. **Тесты-заслоны (Поппер D008 + Голдман D010 + Бучак D005, Docker Maven `-m 2g`):**
+   - Модульные/интеграционные тесты, подтверждающие:
+     - `AutoMergeService.executeMerge` НЕ держит открытую DB-транзакцию во время вызова `GitHubPullRequestService` / `sendGitHub` (`TransactionSynchronizationManager.isActualTransactionActive() == false` в момент сетевого вызова).
+     - `ClientDeliverableReadinessService.deleteValuelessEpics` и `TrustSnapshotService.captureAndBackfillSnapshots` не открывают монолитную внешнюю транзакцию на весь `@Scheduled`-проход.
+     - `ProcessControlService` использует батч-выборку вместо N+1 `findByFeatureId`.
+     - Зелёный прогон затронутых сьютов (`AutoMergeServiceTest`, `ClientDeliverableReadinessServiceTest`, `ProcessControlServiceTest`, `ProjectFlowServiceTest`, `ContinuousOrchestrationServiceTest`, `FlywayMigrationValidationTest`).
+
+### 11.3. Доведение до 100% в живом рантайме (Ступени 3–4) и приёмка L1
+1. Пересобрать и перезапустить контейнер `eneikproductionsys-backend-1` (`docker compose up -d --build backend`) с чистым graceful shutdown H2 (`stop_grace_period: 90s`).
+2. Проверить в живых логах `eneikproductionsys-backend-1` минимум за 3 последовательных цикла оркестрации + 1 часовой тик `:20` / `:42`:
+   - `0` ошибок `SQL Error: 22001` / `SOURCE_ROLE_TAG` (D008 Main CI Recovery создаёт/подхватывает `MAIN_CI_RECOVERY` wishlist без падения).
+   - `0` записей `Connection leak detection triggered` и `0` `HikariPool-1 - Connection is not available`.
+   - `0` ошибок `unable to create native thread`; стабильный `Threads` и `VmRSS` в `/proc/1/status`.
+3. Очистить/проверить ротацию зависших `data/logs/backend.log.*.tmp`, вернув диск `/` ниже `< 70%`.
+4. Зафиксировать доказательные замеры (SHA коммитов, результаты Docker Maven, живую телеметрию контейнера) в `docs/reports/PROGRAMMER_STATE.md`.
+
