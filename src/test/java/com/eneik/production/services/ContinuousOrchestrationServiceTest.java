@@ -927,7 +927,9 @@ class ContinuousOrchestrationServiceTest {
         WishlistEntity saved = wishlistCaptor.getValue();
         assertEquals(WishlistSource.self_falsification, saved.getSource());
         assertEquals("MAIN_CI_RECOVERY", saved.getTocConstraintRef());
-        assertEquals("KARL_POPPER_01_FALSIFICATION_HARNESS", saved.getSourceRoleTag());
+        assertEquals("BARCAN-TAG-06", saved.getSourceRoleTag());
+        assertTrue(saved.getContent().contains("KARL_POPPER_01_FALSIFICATION_HARNESS"));
+        assertTrue(saved.getDod().contains("KARL_POPPER_01_FALSIFICATION_HARNESS"));
         assertTrue(saved.getContent().contains("TelemetryMetricsServiceTest"));
         assertTrue(saved.getContent().contains("InternalServiceTest"));
 

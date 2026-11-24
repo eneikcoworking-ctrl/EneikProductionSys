@@ -1095,7 +1095,7 @@ public class ContinuousOrchestrationService {
         wishlist.setProjectId(project.getId());
         wishlist.setTargetContext(com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE);
         wishlist.setSource(WishlistSource.self_falsification);
-        wishlist.setSourceRoleTag("KARL_POPPER_01_FALSIFICATION_HARNESS");
+        wishlist.setSourceRoleTag("BARCAN-TAG-06");
         wishlist.setTocConstraintRef("MAIN_CI_RECOVERY");
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
@@ -1110,7 +1110,7 @@ public class ContinuousOrchestrationService {
         wishlist.setAcceptanceCriteria("Given failing tests on main branch (" + failingSummary + "), "
                 + "When targeted recovery is executed and verified by LocalVerificationRunner, "
                 + "Then all tests pass and main branch CI returns to success.");
-        wishlist.setDod("Karl Popper D008: 100% of failing main branch tests (" + failingSummary + ") pass cleanly; zero failures on main CI.");
+        wishlist.setDod("KARL_POPPER_01_FALSIFICATION_HARNESS (D008): 100% of failing main branch tests (" + failingSummary + ") pass cleanly; zero failures on main CI.");
 
         wishlistRepository.save(wishlist);
         log.warn("Popper D008: Created targeted MAIN_CI_RECOVERY wishlist {} for project {} (failing: {})",

@@ -2,7 +2,10 @@ package com.eneik.production.models.persistence;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Entity
 @Table(name = "wishlist")
@@ -18,7 +21,7 @@ public class WishlistEntity {
     @Column(nullable = false)
     private WishlistSource source;
 
-    @Column(name = "source_role_tag")
+    @Column(name = "source_role_tag", length = 128)
     private String sourceRoleTag;
 
     @Column(nullable = false)
@@ -146,12 +149,60 @@ public class WishlistEntity {
         this.source = source;
     }
 
+    public static final int MAX_SOURCE_ROLE_TAG_LENGTH = 128;
+    private static final Pattern CANONICAL_SOURCE_ROLE_TAG_PATTERN = Pattern.compile("^BARCAN-TAG-(0[0-9]|1[0-2])$");
+
+    /**
+     * Charter Invariant 10 / D003 RIGID_API_REFERENT: single enforcement point for wishlist.source_role_tag.
+     * Allows null (client-originated wishlists) or one or more comma-separated canonical BARCAN-TAG-00..12
+     * role identifiers with normalized total length <= 128. Rejects pattern names (e.g. KARL_POPPER_*) and
+     * oversized strings before the SQL layer.
+     */
+    public static String validateCanonicalSourceRoleTag(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "sourceRoleTag must be null or canonical BARCAN-TAG-00..12, got blank string");
+        }
+        if (trimmed.length() > MAX_SOURCE_ROLE_TAG_LENGTH) {
+            throw new IllegalArgumentException(
+                    "sourceRoleTag exceeds max length " + MAX_SOURCE_ROLE_TAG_LENGTH + " (got " + trimmed.length() + ")");
+        }
+        String[] parts = trimmed.split(",");
+        List<String> normalizedTokens = new ArrayList<>(parts.length);
+        for (String part : parts) {
+            String token = part.trim();
+            if (!CANONICAL_SOURCE_ROLE_TAG_PATTERN.matcher(token).matches()) {
+                throw new IllegalArgumentException(
+                        "Invalid sourceRoleTag token '" + token
+                                + "': expected canonical BARCAN-TAG-00..12 (pattern names are forbidden in source_role_tag)");
+            }
+            normalizedTokens.add(token);
+        }
+        String normalized = String.join(", ", normalizedTokens);
+        if (normalized.length() > MAX_SOURCE_ROLE_TAG_LENGTH) {
+            throw new IllegalArgumentException(
+                    "Normalized sourceRoleTag exceeds max length " + MAX_SOURCE_ROLE_TAG_LENGTH
+                            + " (got " + normalized.length() + ")");
+        }
+        return normalized;
+    }
+
+    @PrePersist
+    @PreUpdate
+    void enforceCanonicalSourceRoleTag() {
+        this.sourceRoleTag = validateCanonicalSourceRoleTag(this.sourceRoleTag);
+    }
+
     public String getSourceRoleTag() {
         return sourceRoleTag;
     }
 
     public void setSourceRoleTag(String sourceRoleTag) {
-        this.sourceRoleTag = sourceRoleTag;
+        this.sourceRoleTag = validateCanonicalSourceRoleTag(sourceRoleTag);
     }
 
     /**
