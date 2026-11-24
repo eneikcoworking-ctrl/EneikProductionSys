@@ -405,3 +405,60 @@ rounded-2xl, чистая микро-граница, естественная м
 
 
 
+---
+
+## 14. МЕХАНИЗМ №14 (P2 WORK ORDER #12 ОТ 2026-11-24 — ТАКТ 5 ПОСЛЕ ЗАКРЫТИЯ P0 #1–#3 И P1 #4): ПОДКЛЮЧЕНИЕ MEMORILLA ($K=16$) И ДИНАМИЧЕСКОЙ РОЛИ (`task.getRole()`) В СУВЕРЕННЫЕ ВОРКЕРЫ (`DeepSeek`, `LOCAL_AGY`) И ОРКЕСТРАТОР
+
+**Статус:** P2 ОБЯЗЫВАЮЩИЙ НАРЯД L1 → L2 (ВЫПОЛНЯТЬ СТРОГО ПОСЛЕ ЗАКРЫТИЯ И ЖИВОЙ ВЕРИФИКАЦИИ §12 P0 #1–#3 И §13 P1 #4)  
+**Основание:** Автономное поручение Оператора Дмитрия Ефремова (`2026-11-24 22:56 UTC`), спецификация Memorilla (§6 выше) и форензика L1 ([INCIDENT_DIAGNOSIS_2026-11-24_MEMORILLA_WORKERS_ROLE_WIRING.md](INCIDENT_DIAGNOSIS_2026-11-24_MEMORILLA_WORKERS_ROLE_WIRING.md)).  
+**Философский корпус (верифицировано в `docs/philosopher-patterns/philosophers/`):**
+- `ALONZO_CHERCH_17_RAG_GROUNDING_CAPSULE` (`D014 RAG hallucination`)
+- `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (`D013 Runtime drift`)
+- `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` (`D010 Data lineage loss`)
+- `GILBERT_RAYL_02_INFERENTIAL_SCOREBOARD` (`D001 Semantic drift`)
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (`D006 Authorization ambiguity`)
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` (`D008 False green`) / `ALFRED_TARSKIY_01_FALSIFICATION_HARNESS` (`D008 False green`)
+
+**Жёсткий регламент (`GEMINI.md` §0–§1):**
+- **Сначала полностью закрыть §12 (Такты 1–3) и §13 (Такт 4)** в живом рантайме.
+- **Затем в Такте 5** реализовать Механизм №14 целиком с попперовскими тестами-заслонами в Docker Maven (`-m 2g`), не ослабляя защищённый контур автономии Деннетта (`DennettAutonomyFalsificationTest` — 100% green) и не внося ручных правок в репозитории продуктов.
+
+### 14.1. Диагностированные разрывы в живом коде
+1. **`GeminiContextService.java:785-1015` (`D013`/`D014`):** `buildProductWorkerLatentMemoryBlock(RoleEntity, String)` и `buildLatentSemanticMemoryBlock(String)` имеют **0 вызовов в `src/main/java`** (вызываются только в `GeminiContextServiceTest`), несмотря на включённый в живой БД флаг `gemini_context_learning_enabled=true`.
+2. **`JulesDispatchService.java:698-757` (`D001`/`D013`):** при `worker_engine_mode=HYBRID` суверенный роутинг уходит в `WorkerExecutionRouter` **до** загрузки `RoleCapabilityLoader.loadRawCharter(task.getRole().getTag())` и `GeminiContextService`.
+3. **`DeepSeekApiClient.java:198-242`:** получает только `roleTag` + `roleDescription` и общий статический префикс `BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX`, без реального устава роли и без ортогональных слотов Memorilla ($K=16$).
+4. **`LocalAgyCliClient.java:226-276`:** в `buildAgyPrompt(...)` вообще не передаёт `task.getRole().getTag()`, `Role Description`, Role Charter и Memorilla — локальный воркер работает без ролевой идентичности.
+5. **`GeminiContextService.retrieveLatentMemorySlots` (`lines 804-828`):** при `embed(query) == null` или пустом индексе молча возвращает `List.of()` без телеметрии причины.
+
+### 14.2. Обязательные изменения L2
+1. **Единый сборщик ролевого контекста и Memorilla — `SovereignWorkerContextAssembler` (`src/main/java/com/eneik/production/services/worker/SovereignWorkerContextAssembler.java`):**
+   - Принимает `@Autowired(required = false) GeminiContextService` и `@Autowired(required = false) RoleCapabilityLoader` (safe-null для юнит-тестов).
+   - **Динамическое принятие роли в момент диспетчеризации (`task.getRole()`, `D001` Райл):**
+     - Извлекает `roleTag` и `roleDescription` из `task.getRole()`.
+     - Для не-carrier задач загружает сырой устав роли через `roleCapabilityLoader.loadRawCharter(roleTag)` (кэширован по `mtime`, без лишнего I/O; ограничить бюджет устава до `<= 4000` символов, **никогда не обрезая `task.getDescription()`**).
+   - **Подключение Memorilla ($K=16$) со стратификацией Тарского (`D010` Голдман + `D014` Чёрч):**
+     - Формирует сфокусированный `retrievalQuery` из `mode`, `roleTag`, `roleDescription`, `task.getTitle()`, компактного среза `task.getDescription()` (`<= 600` символов) и `task.getFileScope()`.
+     - **Жёсткая демаркация Тарского L0:** для `TargetContext.ORCHESTRATOR_SYSTEM` вызывает `geminiContextService.buildLatentSemanticMemoryBlock(retrievalQuery)`; для `TargetContext.PRODUCT_CODEBASE` (и любого `null`/прочего значения — fail-safe default!) вызывает строго `geminiContextService.buildProductWorkerLatentMemoryBlock(task.getRole(), retrievalQuery)` (`PRODUCT_WORKER_SOURCE_TYPES`, 0 утечек `observer_log` и `factory_mechanisms`).
+     - Возвращает структурированный контекстный блок (Role Charter + Memorilla) и пишет диагностический лог с `taskId`, `roleTag`, `targetContext`, количеством инъектированных слотов Memorilla (`slots=N`) и размером блока.
+2. **`DeepSeekWorktreeExecutionEngine.java` и `DeepSeekApiClient.java` (СОХРАНИТЬ CONTEXT CACHING `D006`):**
+   - **Инвариант кэша DeepSeek:** константный префикс `BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX` (`DeepSeekApiClient.getOntologicalCachePrefix()`) обязан оставаться **побайтово неизменным в самом начале `systemPrompt`** (`offset 0`) для всех задач и ролей (гарантия `prompt_cache_hit_tokens`).
+   - Вызывать `SovereignWorkerContextAssembler.assemble(task, mode)` **один раз** перед циклом `attempt = 1..2` в `DeepSeekWorktreeExecutionEngine.dispatch(...)` и передавать собранный блок в перегруженный `DeepSeekApiClient.generateSolution(task, fileContentsContext, account, reflectionFeedback, workerDoctrineContext)` (сохранив существующую 4-аргументную сигнатуру как делегирующую с `null`).
+   - В `DeepSeekApiClient.buildUserPrompt(...)` (или в хвосте `buildSystemPrompt` строго **после** `BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX`) вставлять блок `### ACTIVE ROLE CHARTER & MEMORILLA DOCTRINE MEMORY (K=16)` без обрезки `task.getDescription()`.
+3. **`LocalAgyWorktreeExecutionEngine.java` и `LocalAgyCliClient.java` (устранение слепоты к роли):**
+   - Вызывать `SovereignWorkerContextAssembler.assemble(task, mode)` в `LocalAgyWorktreeExecutionEngine.dispatch(...)` один раз до цикла попыток и передавать в перегруженный `LocalAgyCliClient.generateSolution(...)` / `buildAgyPrompt(...)` (сохранив обратную совместимость существующих конструкторов и 3-аргументного `buildAgyPrompt`).
+   - В `LocalAgyCliClient.buildAgyPrompt(...)` обязательно выводить `Role Tag` и `Role Description` (если `task.getRole() != null`) + блок Role Charter и Memorilla ($K=16$) от `SovereignWorkerContextAssembler`.
+4. **Переключение оркестраторских/облачных потребителей с legacy top-5 на Memorilla ($K=16$):**
+   - `OpsAuditorService.java:163` и `FalsificationCycleService.java:646`: перевести на `geminiContextService.buildLatentSemanticMemoryBlock(...)` (с сохранением no-throw контракта).
+   - `JulesDispatchService.java:1027-1029` (облачный резерв): перевести `buildProductWorkerContextBlock` → `buildProductWorkerLatentMemoryBlock` и `buildContextBlock` → `buildLatentSemanticMemoryBlock` (строго минимальный 2-строчный точечный патч, не затрагивающий ни одной строки защищённого контура автономии Деннетта).
+5. **Телеметрия деградации Memorilla в `GeminiContextService.java` (`D013` Витгенштейн):**
+   - В `retrieveLatentMemorySlots(...)` добавить явное логирование (`log.debug`/`log.warn`) причины пустого результата (`learning_disabled`, `empty_corpus`, `embed_unavailable`, `below_similarity_floor`), чтобы немой провал памяти был виден в живых логах.
+
+### 14.3. Тесты-заслоны (`KARL_POPPER_01_FALSIFICATION_HARNESS` D008, Docker Maven `-m 2g`) и живая приёмка L1
+1. Создать `src/test/java/com/eneik/production/services/worker/SovereignWorkerMemorillaWiringTest.java`:
+   - **Заслон 5-1 (DeepSeek Context Cache Invariance, `D006`):** `DeepSeekApiClient.buildSystemPrompt` для двух разных ролей (`BARCAN-TAG-02` и `BARCAN-TAG-06`) с разными Memorilla-блоками начинается с побайтово идентичного `DeepSeekApiClient.getOntologicalCachePrefix()`.
+   - **Заслон 5-2 (Dynamic Role + Memorilla in DeepSeek, `D001`/`D014`):** при диспетчеризации задачи `BARCAN-TAG-02` промпт содержит тег роли, фрагмент Role Charter из `RoleCapabilityLoader` и секцию `MEMORILLA PRODUCT DOCTRINE MEMORY`.
+   - **Заслон 5-3 (Dynamic Role + Memorilla in LOCAL_AGY, `D001`/`D013`):** `LocalAgyCliClient.buildAgyPrompt` для задачи `BARCAN-TAG-06` включает `BARCAN-TAG-06`, Role Charter и блок Memorilla (фальсифицирует прежнюю слепоту к роли).
+   - **Заслон 5-4 (Tarski L0 Stratification, `ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK` D010):** для задачи `TargetContext.PRODUCT_CODEBASE` (и `null`) вызывается **только** `buildProductWorkerLatentMemoryBlock(task.getRole(), query)` и **никогда** `buildLatentSemanticMemoryBlock`; `observer_log` и `factory_mechanisms` физически не могут попасть в промпт воркера. Для `TargetContext.ORCHESTRATOR_SYSTEM` вызывается `buildLatentSemanticMemoryBlock`.
+   - **Заслон 5-5 (Graceful Degradation & Full Description Preservation):** при недоступности `GeminiContextService` / `RoleCapabilityLoader` (или пустых слотах) сборка промпта не бросает исключений и на 100% сохраняет `task.getDescription()`.
+2. Прогнать в Docker Maven (`-m 2g`): `SovereignWorkerMemorillaWiringTest`, `GeminiContextServiceTest`, `DeepSeekApiClientTest`, `LocalAgyCliClientTest`, `DeepSeekWorktreeExecutionEngineTest`, `LocalAgyWorktreeExecutionEngineTest` и регрессионный контрольный прогон `DennettAutonomyFalsificationTest` (100% green).
+3. Пересобрать `eneikproductionsys-backend-1`, проверить в живом логе появление записей сборки ролевого контекста и Memorilla ($K=16$) при диспетчеризации суверенного воркера, коммит `feat(d014,d010,d001): wire Memorilla K=16 and dynamic BARCAN role charter into sovereign workers`, отчёт в `docs/reports/PROGRAMMER_STATE.md` для финальной приёмки L1.
