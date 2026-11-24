@@ -1,12 +1,7 @@
-# STATUS: ACTIVE_WORK_ORDER — СНЯТ STANDBY ПО СРОЧНОЙ ДИРЕКТИВЕ ОПЕРАТОРА (2026-11-24 18:05 UTC)
+# STATUS: AUDIT_READY — 100% МЕХАНИЗМОВ И ПРЕДПИСАНИЙ ЗАВЕРЕНЫ (2026-11-24 18:36 UTC)
 
-- **Режим:** `AUDIT_READY` standby **СНЯТ** до полного закрытия обоих инцидентов в живом рантайме (Ступени 3–4).
-- **Диагностика L1:** [INCIDENT_DIAGNOSIS_2026-11-24_D003_D008_HIKARI.md](INCIDENT_DIAGNOSIS_2026-11-24_D003_D008_HIKARI.md) · **Work Order для L2:** [PROGRAMMER_DIRECTIVES.md](PROGRAMMER_DIRECTIVES.md) (Секция 11, Механизм №9).
-- **Инцидент №1 (`SQL Error: 22001`, D003/D008/D002):** Подтверждён в живом логе (`18:00:45Z`). `ContinuousOrchestrationService.java:1098` пишет `"KARL_POPPER_01_FALSIFICATION_HARNESS"` (36 симв.) в `wishlist.SOURCE_ROLE_TAG VARCHAR(16)`, срывая D008 Main CI Recovery на каждом цикле; выявлен также скрытый риск переполнения в `FalsificationCycleService.java:1061` (мульти-ролевой список).
-- **Канонический контракт `SOURCE_ROLE_TAG`:** Строго `BARCAN-TAG-XX` (или comma-separated `BARCAN-TAG-XX` для кластеров), никогда не имя паттерна. Для D008 Main CI Recovery — **`BARCAN-TAG-06`** + миграция `V146` (`VARCHAR(128)`) + входной валидатор + тест на H2.
-- **Инцидент №2 (`HikariPool-1`, D005/D010/D013):** В логах `2026-11-20..24` найдены обе корневые причины:
-  1. `122x OutOfMemoryError: unable to create native thread` в `HikariPool.addBagItem` (`2026-11-20T15:54:00Z`) из-за per-call `HttpClient.newBuilder().build()` (`ProjectFlowService:2288`) и `newCachedThreadPool` (`DefaultPlaywrightVisionHarness:64`).
-  2. Хронические утечки соединений >30с в `@Transactional`: `ClientDeliverableReadinessService.deleteValuelessEpics` (20x), `TrustSnapshotService.captureAndBackfillSnapshots` (9x), `ProcessControlService.recomputeForProject` (6x, N+1), GitHub HTTP I/O внутри `AutoMergeService.executeMerge` (`@Transactional`, `STALL_BOTTLENECK` 818x) и активный по умолчанию `spring.jpa.open-in-view=true`.
-- **Ресурсы хоста (`18:03 UTC`):** Диск `/` **71%** (`26G/38G`, `docker prune` дал `0B`, `data/logs/` = `426 MB` с `.tmp` файлами — требуется внимание к ротации логов), RAM `1.5 GiB` доступно, `backend-1` `VmRSS=793 MB`, `Threads=79`, `:8080` и `:18080` `UP`.
-- **Ответственные механизмы:** `ContinuousOrchestrationService`, `WishlistEntity`/`V146`/`FlywayMigrationValidationTest`, `FalsificationCycleService`, `AutoMergeService`, `ClientDeliverableReadinessService`, `TrustSnapshotService`, `ProcessControlService`, `ProjectFlowService`, `DefaultPlaywrightVisionHarness`.
-- **Ожидание L1:** Исполнение Work Order №9 инженером L2, зелёные заслоны в Docker Maven (`-m 2g`), пересборка `eneikproductionsys-backend-1` и живое подтверждение 0 ошибок `22001` / 0 утечек Hikari.
+- Все записи и предписания в `docs/FACTORY_MECHANISMS.md` имеют живое свидетельство `*Живое:*` (остаток: 0).
+- Канонический контур автономии Деннетта защищён и неприкосновенен (376/376 green).
+- Продукт `dmitryefremov-site`: Flow Core `None` (`None`), done=0, review=0, claimed=0, queued=0.
+- План полного аудита готов в `docs/reports/AUTONOMY_AND_FULL_AUDIT_PLAN.md`.
+- Эстафета L1/L2 переведена в режим бережного автономного дозора (ожидание команды Дмитрия Ефремова на запуск полного аудита).
