@@ -102,11 +102,17 @@ run().catch(err => {
 
 def normalize_model_name(model_str):
     if not model_str:
-        return "Gemini 3.8 Flash (Medium)"
+        return "Gemini 4 Hydrogen (High)"
     m = model_str.lower()
-    if "pro" in m or "argon" in m:
-        return "Gemini 4 Argon (Medium)"
-    return "Gemini 3.8 Flash (Medium)"
+    if "argon" in m or "pro" in m:
+        return "Gemini 4 Argon (High)"
+    if "neon" in m or "vision" in m or "compiler" in m:
+        return "Gemini 4 Neon (High)" if "high" in m else "Gemini 4 Neon (Medium)"
+    if "hydrogen" in m:
+        return "Gemini 4 Hydrogen (Medium)" if "medium" in m else "Gemini 4 Hydrogen (High)"
+    if "flash" in m:
+        return "Gemini 4 Hydrogen (High)"
+    return "Gemini 4 Hydrogen (High)"
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -180,7 +186,7 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
             })
             return
 
-        raw_model = payload.get("model", "gemini-3.8-flash-medium")
+        raw_model = payload.get("model", "gemini-4-hydrogen-high")
         model = normalize_model_name(raw_model)
         raw_prompt = payload.get("prompt", "")
         no_tools_header = (
