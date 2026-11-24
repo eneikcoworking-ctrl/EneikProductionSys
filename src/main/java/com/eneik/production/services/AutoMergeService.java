@@ -47,6 +47,20 @@ import java.util.HashMap;
 public class AutoMergeService {
     private static final Logger log = LoggerFactory.getLogger(AutoMergeService.class);
     private final HttpClient sharedHttpClient = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
+    public void setTransactionTemplate(org.springframework.transaction.support.TransactionTemplate transactionTemplate) {
+        this.transactionTemplate = transactionTemplate;
+    }
+
+    private void runInShortTransaction(Runnable action) {
+        if (transactionTemplate != null) {
+            transactionTemplate.executeWithoutResult(status -> action.run());
+        } else {
+            action.run();
+        }
+    }
     private static final String EARLY_UNBLOCK_SPEC_NOTIFIED_KEY = "earlyUnblockedSpecNotified";
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
@@ -1053,7 +1067,11 @@ public class AutoMergeService {
                 .orElse(false);
     }
 
-    @Transactional
+    // Mechanism #9 (2026-11-24, D005/D013 HikariPool leak fix): deliberately NOT @Transactional.
+    // This method performs synchronous GitHub HTTP calls (fetchPullRequestByNumber, mergeableState,
+    // pullRequestChecks, PUT /merge, handleMergeConflict). Holding a JDBC connection across network I/O
+    // triggered Connection leak detection (>30s) and exhausted HikariPool-1 (STALL_BOTTLENECK).
+    // All DB writes use short TransactionTemplate boundaries strictly outside network calls.
     protected void executeMerge(PrReviewEntity review) {
         log.info("AutoMergeService: Evaluating approved PR {} for merge", review.getPrUrl());
         PullRequestTarget pullRequestTarget = null;
@@ -1069,13 +1087,14 @@ public class AutoMergeService {
                     
                     if ("complex".equalsIgnoreCase(task.getCynefinDomain())) {
                         log.info("Cynefin Domain complex: Task {} spike completed. Not merging branch.", task.getId());
-                        if (!task.isTerminal()) {
-                            task.setStatus(com.eneik.production.models.persistence.TaskStatus.spike_completed);
-                            taskRepository.save(task);
-                        }
-                        
-                        review.setMerged(false);
-                        prReviewRepository.save(review);
+                        runInShortTransaction(() -> {
+                            if (!task.isTerminal()) {
+                                task.setStatus(com.eneik.production.models.persistence.TaskStatus.spike_completed);
+                                taskRepository.save(task);
+                            }
+                            review.setMerged(false);
+                            prReviewRepository.save(review);
+                        });
                         return;
                     }
 
@@ -1296,8 +1315,10 @@ public class AutoMergeService {
      * merged externally, not just one this method's own PUT call just merged.
      */
     private void recordSuccessfulMerge(PrReviewEntity review, PullRequestTarget pullRequestTarget) {
-            review.setMerged(true);
-            prReviewRepository.save(review);
+            runInShortTransaction(() -> {
+                review.setMerged(true);
+                prReviewRepository.save(review);
+            });
             systemProgressTracker.recordProgress();
             if (pullRequestTarget != null && gitHubPullRequestService != null) {
                 gitHubPullRequestService.invalidateSnapshotCache(pullRequestTarget.owner(), pullRequestTarget.repo());
@@ -1310,11 +1331,13 @@ public class AutoMergeService {
                 julesSessionRepository.findById(review.getJulesSessionId()).ifPresent(session -> {
                     UUID taskId = session.getTaskId();
                     taskRepository.findById(taskId).ifPresent(task -> {
-                        if (!task.isTerminal()) {
-                            task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
-                            taskRepository.save(task);
-                        }
-                        claimService.releaseTerminalClaim(taskId);
+                        runInShortTransaction(() -> {
+                            if (!task.isTerminal()) {
+                                task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+                                taskRepository.save(task);
+                            }
+                            claimService.releaseTerminalClaim(taskId);
+                        });
                         log.info("AutoMergeService: Marked task {} as DONE because its PR was merged", taskId);
 
                         classifyAndHandleBranch(review, mergedPrTarget, task, session);

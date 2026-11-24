@@ -61,6 +61,20 @@ public class ClientDeliverableReadinessService {
     // @Lazy self-injection pattern elsewhere.
     private final com.eneik.production.services.operational.OperationalPolicyService operationalPolicyService;
     private com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
+    public void setTransactionTemplate(org.springframework.transaction.support.TransactionTemplate transactionTemplate) {
+        this.transactionTemplate = transactionTemplate;
+    }
+
+    private void runInShortTransaction(Runnable action) {
+        if (transactionTemplate != null) {
+            transactionTemplate.executeWithoutResult(status -> action.run());
+        } else {
+            action.run();
+        }
+    }
 
     public ClientDeliverableReadinessService(WishlistRepository wishlistRepository,
                                              FeatureRepository featureRepository,
@@ -907,7 +921,6 @@ public class ClientDeliverableReadinessService {
     private static final long EPIC_CLEANUP_MIN_AGE_MINUTES = 10;
 
     @Scheduled(cron = "${epic-cleanup.cron:0 20 * * * ?}")
-    @Transactional
     public void deleteValuelessEpics() {
         List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = projectRepository
                 .findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
@@ -977,7 +990,7 @@ public class ClientDeliverableReadinessService {
                 })
                 .filter(feature -> featureIdsWithWishlistWork.contains(feature.getId()))
                 .toList();
-        reconcileDuplicateFeatureUnions(sourceMatchedForUnion, allWishlist);
+        runInShortTransaction(() -> reconcileDuplicateFeatureUnions(sourceMatchedForUnion, allWishlist));
 
         java.time.Instant now = java.time.Instant.now();
         for (EpicDiagnostic diagnostic : listEpicDiagnostics(projectId)) {
@@ -1021,16 +1034,18 @@ public class ClientDeliverableReadinessService {
             if (stillActive) {
                 continue; // might still produce real code - not resolved yet
             }
-            featureThreadRepository.findByProjectIdAndFeatureId(projectId, diagnostic.id())
-                    .ifPresent(featureThreadRepository::delete);
-            // 2026-08-04 (3-layer model): soft-delete, not featureRepository.deleteById - a hard delete
-            // destroyed originFeatureId lineage entirely (confirmed live earlier today: manual SQL repair
-            // was needed after this exact call wiped 3 real features during a dedup tie-break incident).
-            // The row survives with its lineage intact for Layer 2 "Delivery" history; it just stops
-            // counting toward active readiness via the dismissedAt-filtered queries above.
-            featureRepository.findById(diagnostic.id()).ifPresent(feature -> {
-                feature.setDismissedAt(now);
-                featureRepository.save(feature);
+            runInShortTransaction(() -> {
+                featureThreadRepository.findByProjectIdAndFeatureId(projectId, diagnostic.id())
+                        .ifPresent(featureThreadRepository::delete);
+                // 2026-08-04 (3-layer model): soft-delete, not featureRepository.deleteById - a hard delete
+                // destroyed originFeatureId lineage entirely (confirmed live earlier today: manual SQL repair
+                // was needed after this exact call wiped 3 real features during a dedup tie-break incident).
+                // The row survives with its lineage intact for Layer 2 "Delivery" history; it just stops
+                // counting toward active readiness via the dismissedAt-filtered queries above.
+                featureRepository.findById(diagnostic.id()).ifPresent(feature -> {
+                    feature.setDismissedAt(now);
+                    featureRepository.save(feature);
+                });
             });
             log.info("ClientDeliverableReadinessService: dismissed valueless epic '{}' ({}) for project {} - "
                             + "zero code-producing items, nothing left pending for it (soft-deleted, lineage preserved)",

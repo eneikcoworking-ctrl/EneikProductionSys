@@ -6,6 +6,7 @@ import com.eneik.production.services.settings.SystemSettingsService;
 import com.eneik.production.services.worker.deepseek.DeepSeekApiClient;
 import com.eneik.production.services.worker.deepseek.DeepSeekResponse;
 import com.eneik.production.services.worker.security.AgyWorkerSecurityGuard;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +18,11 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Sovereign Zero-Cost Local Agy CLI Client.
@@ -35,7 +40,19 @@ public class LocalAgyCliClient {
     private final SystemSettingsService settingsService;
     private ProcessRunner processRunner;
     private boolean customRunnerSet = false;
+    private static final int STREAM_READER_POOL_SIZE = 8;
+    private static final AtomicInteger STREAM_READER_SEQ = new AtomicInteger(1);
+    private final ExecutorService streamReaderPool = Executors.newFixedThreadPool(STREAM_READER_POOL_SIZE, r -> {
+        Thread thread = new Thread(r, "local-agy-stream-reader-" + STREAM_READER_SEQ.getAndIncrement());
+        thread.setDaemon(true);
+        return thread;
+    });
     private final java.net.http.HttpClient sharedHttpClient = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(10)).build();
+
+    @PreDestroy
+    public void shutdown() {
+        streamReaderPool.shutdownNow();
+    }
 
     private static final String[] BRIDGE_URLS = new String[] {
             System.getenv().getOrDefault("SOVEREIGN_HOST_BRIDGE_URL", "http://host.docker.internal:8095/execute-agy"),
@@ -267,21 +284,27 @@ public class LocalAgyCliClient {
         StringBuilder stdout = new StringBuilder();
         StringBuilder stderr = new StringBuilder();
 
-        Thread outThread = new Thread(() -> readStream(process.getInputStream(), stdout));
-        Thread errThread = new Thread(() -> readStream(process.getErrorStream(), stderr));
-        outThread.start();
-        errThread.start();
+        Future<?> outFuture = streamReaderPool.submit(() -> readStream(process.getInputStream(), stdout));
+        Future<?> errFuture = streamReaderPool.submit(() -> readStream(process.getErrorStream(), stderr));
 
         boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
         if (!finished) {
             process.destroyForcibly();
-            outThread.interrupt();
-            errThread.interrupt();
+            outFuture.cancel(true);
+            errFuture.cancel(true);
             throw new IOException("Local agy CLI process timed out after " + timeoutSeconds + " seconds");
         }
 
-        outThread.join(2000);
-        errThread.join(2000);
+        try {
+            outFuture.get(2, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+            outFuture.cancel(true);
+        }
+        try {
+            errFuture.get(2, TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+            errFuture.cancel(true);
+        }
 
         int exitCode = process.exitValue();
         return new ProcessResult(exitCode, stdout.toString(), stderr.toString());

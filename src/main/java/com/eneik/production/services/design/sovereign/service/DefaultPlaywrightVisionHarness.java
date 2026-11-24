@@ -4,6 +4,7 @@ import com.eneik.production.services.design.sovereign.domain.SynthesizedDomDocum
 import com.eneik.production.services.design.sovereign.domain.ViewportCapture;
 import com.eneik.production.services.design.sovereign.domain.ViewportType;
 import com.eneik.production.services.design.sovereign.exception.RenderTimeoutException;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -60,9 +61,12 @@ public class DefaultPlaywrightVisionHarness implements PlaywrightVisionHarness {
         this(DEFAULT_TIMEOUT);
     }
 
+    private static final int DEFAULT_RENDER_POOL_SIZE = 4;
+    private static final java.util.concurrent.atomic.AtomicInteger WORKER_SEQ = new java.util.concurrent.atomic.AtomicInteger(1);
+
     public DefaultPlaywrightVisionHarness(Duration renderTimeout) {
-        this(renderTimeout, Executors.newCachedThreadPool(r -> {
-            Thread thread = new Thread(r, "playwright-vision-harness");
+        this(renderTimeout, Executors.newFixedThreadPool(DEFAULT_RENDER_POOL_SIZE, r -> {
+            Thread thread = new Thread(r, "playwright-vision-harness-" + WORKER_SEQ.getAndIncrement());
             thread.setDaemon(true);
             return thread;
         }), false);
@@ -284,6 +288,7 @@ public class DefaultPlaywrightVisionHarness implements PlaywrightVisionHarness {
         return renderTimeout;
     }
 
+    @PreDestroy
     public void shutdown() {
         if (!externalExecutor && !executor.isShutdown()) {
             executor.shutdownNow();

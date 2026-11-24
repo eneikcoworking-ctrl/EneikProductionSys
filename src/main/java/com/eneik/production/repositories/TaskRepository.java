@@ -53,6 +53,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     // Feature-thread closeout (2026-07-24): is every task for this feature in a terminal status? See
     // ClientDeliverableReadinessService.isFeatureReadyForCloseout.
     List<TaskEntity> findByFeatureId(UUID featureId);
+    List<TaskEntity> findByFeatureIdIn(java.util.Collection<UUID> featureIds);
 
     // Live incident, 2026-07-24: a terminal (failed) task got silently resurrected back to queued/claimed
     // by a read-then-write race (self-healing, lease-expiry, and PlannedWorkRecoveryService each read

@@ -118,6 +118,11 @@ public class ProjectFlowService {
     private final com.eneik.production.repositories.TaskConflictRepository taskConflictRepository;
     private final com.eneik.production.repositories.LinearIssueMetadataRepository linearIssueMetadataRepository;
     private final com.eneik.production.repositories.FeatureRepository featureRepository;
+    // Mechanism #9 (2026-11-24, D005 Buchak Tail Risk Block): reuse a single HttpClient instead of
+    // creating one per call (each HttpClient spawns its own SelectorManager + worker threads).
+    private final java.net.http.HttpClient sharedHttpClient = java.net.http.HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(20))
+            .build();
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
@@ -2285,12 +2290,11 @@ public class ProjectFlowService {
             String token = settingsService.effectiveValue("github_token");
             if (token != null && !token.isBlank() && settingsService.effectiveBoolean("github_enabled")) {
                 java.net.URI uri = java.net.URI.create("https://raw.githubusercontent.com/" + projectOwner(project) + "/" + project.getRepositoryName() + "/main/.eneik/task-plan.json");
-                java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
                 java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(uri)
                         .header("Authorization", "Bearer " + token)
                         .GET()
                         .build();
-                java.net.http.HttpResponse<String> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+                java.net.http.HttpResponse<String> resp = this.sharedHttpClient.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
                 if (resp.statusCode() == 200 && resp.body() != null && !resp.body().isBlank()) {
                     var epicPlans = parseCompilerPlanContent(resp.body(), project);
                     if (!epicPlans.isEmpty()) {

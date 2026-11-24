@@ -60,6 +60,7 @@ public class ProcessControlServiceTest {
 
     private ProcessControlService service;
     private UUID projectId;
+    private java.util.Map<UUID, List<TaskEntity>> stubbedTasksByFeature;
 
     private PrReviewRepository prReviewRepository;
     private TaskConflictRepository taskConflictRepository;
@@ -80,7 +81,15 @@ public class ProcessControlServiceTest {
         projectRepository = mock(ProjectRepository.class);
 
         projectId = UUID.randomUUID();
+        stubbedTasksByFeature = new java.util.HashMap<>();
 
+        when(taskRepository.findByFeatureIdIn(any())).thenAnswer(inv -> {
+            java.util.Collection<UUID> ids = inv.getArgument(0);
+            if (ids == null) return List.of();
+            return ids.stream()
+                    .flatMap(id -> stubbedTasksByFeature.getOrDefault(id, List.of()).stream())
+                    .toList();
+        });
         when(snapshotRepository.findByProjectIdAndStreamOrderBySequenceIndexAsc(any(), any())).thenReturn(Collections.emptyList());
         when(snapshotRepository.saveAll(any())).thenAnswer(inv -> inv.getArgument(0));
         when(reviewConcernRepository.findByFeatureId(any())).thenReturn(Collections.emptyList());
@@ -123,7 +132,7 @@ public class ProcessControlServiceTest {
         task.setStatus(TaskStatus.done);
         task.setCreatedAt(completedAt.minusSeconds(60));
         task.setUpdatedAt(completedAt);
-        when(taskRepository.findByFeatureId(featureId)).thenReturn(List.of(task));
+        stubbedTasksByFeature.put(featureId, List.of(task));
     }
 
     @Test
@@ -182,7 +191,7 @@ public class ProcessControlServiceTest {
 
         when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId))
                 .thenReturn(List.of(epic(epicAId, projectA)));
-        when(taskRepository.findByFeatureId(epicAId)).thenReturn(List.of(taskA));
+        stubbedTasksByFeature.put(epicAId, List.of(taskA));
         when(julesSessionRepository.findByTaskIdIn(List.of(taskAId))).thenReturn(List.of(sessionA));
         when(prReviewRepository.findByJulesSessionIdIn(List.of(sessionAId))).thenReturn(List.of(reviewA));
         when(taskConflictRepository.findByTaskIdIn(List.of(taskAId))).thenReturn(List.of(conflictA));
@@ -277,8 +286,8 @@ public class ProcessControlServiceTest {
         task2.setCreatedAt(Instant.now().minus(2, ChronoUnit.DAYS));
         task2.setUpdatedAt(Instant.now().minus(1, ChronoUnit.DAYS));
 
-        when(taskRepository.findByFeatureId(canonicalEpicId)).thenReturn(List.of(task1));
-        when(taskRepository.findByFeatureId(duplicateEpicId)).thenReturn(List.of(task2));
+        stubbedTasksByFeature.put(canonicalEpicId, List.of(task1));
+        stubbedTasksByFeature.put(duplicateEpicId, List.of(task2));
 
         UUID session1Id = UUID.randomUUID();
         JulesSessionEntity session1 = new JulesSessionEntity();

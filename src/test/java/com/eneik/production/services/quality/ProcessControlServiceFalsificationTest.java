@@ -54,11 +54,20 @@ class ProcessControlServiceFalsificationTest {
 
     private ProcessControlService service;
     private final UUID projectId = UUID.randomUUID();
+    private java.util.Map<UUID, List<TaskEntity>> stubbedTasksByFeature;
 
     @BeforeEach
     void setUp() {
+        stubbedTasksByFeature = new java.util.HashMap<>();
         featureRepository = mock(FeatureRepository.class);
         taskRepository = mock(TaskRepository.class);
+        when(taskRepository.findByFeatureIdIn(any())).thenAnswer(inv -> {
+            java.util.Collection<UUID> ids = inv.getArgument(0);
+            if (ids == null) return List.of();
+            return ids.stream()
+                    .flatMap(id -> stubbedTasksByFeature.getOrDefault(id, List.of()).stream())
+                    .toList();
+        });
         snapshotRepository = mock(ProcessControlSnapshotRepository.class);
         sixSigmaAuditService = mock(SixSigmaAuditService.class);
         reviewConcernRepository = mock(ReviewConcernRepository.class);
@@ -110,6 +119,7 @@ class ProcessControlServiceFalsificationTest {
         task.setCreatedAt(completedAt.minusSeconds(100));
         task.setUpdatedAt(completedAt);
         when(taskRepository.findByFeatureId(featureId)).thenReturn(List.of(task));
+        stubbedTasksByFeature.put(featureId, List.of(task));
     }
 
     // =========================================================================

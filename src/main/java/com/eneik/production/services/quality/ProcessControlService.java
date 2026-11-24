@@ -105,6 +105,13 @@ public class ProcessControlService {
     @Value("${process-control.baseline-epic-count:2}")
     private int baselineEpicCount;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private org.springframework.transaction.support.TransactionTemplate transactionTemplate;
+
+    public void setTransactionTemplate(org.springframework.transaction.support.TransactionTemplate transactionTemplate) {
+        this.transactionTemplate = transactionTemplate;
+    }
+
     public ProcessControlService(FeatureRepository featureRepository,
                                   TaskRepository taskRepository,
                                   ProcessControlSnapshotRepository snapshotRepository,
@@ -143,7 +150,8 @@ public class ProcessControlService {
             List<PrReviewEntity> reviews,
             List<TaskConflictEntity> conflicts,
             Map<UUID, UUID> taskBySessionId,
-            Map<UUID, UUID> featureByTaskId
+            Map<UUID, UUID> featureByTaskId,
+            Map<UUID, List<TaskEntity>> tasksByCanonicalFeatureId
     ) {}
 
     /**
@@ -152,7 +160,7 @@ public class ProcessControlService {
      */
     private ScopedEvidencePacket acquireEvidencePacket(List<EpicPoint> completedEpics) {
         if (completedEpics == null || completedEpics.isEmpty()) {
-            return new ScopedEvidencePacket(List.of(), List.of(), Map.of(), Map.of());
+            return new ScopedEvidencePacket(List.of(), List.of(), Map.of(), Map.of(), Map.of());
         }
 
         List<UUID> allFeatureIds = completedEpics.stream()
@@ -161,13 +169,14 @@ public class ProcessControlService {
                 .distinct()
                 .toList();
 
-        List<TaskEntity> scopedTasks = allFeatureIds.stream()
-                .flatMap(fId -> taskRepository.findByFeatureId(fId).stream())
-                .filter(java.util.Objects::nonNull)
-                .toList();
+        List<TaskEntity> scopedTasks = allFeatureIds.isEmpty()
+                ? List.of()
+                : taskRepository.findByFeatureIdIn(allFeatureIds).stream()
+                        .filter(java.util.Objects::nonNull)
+                        .toList();
 
         if (scopedTasks.isEmpty()) {
-            return new ScopedEvidencePacket(List.of(), List.of(), Map.of(), Map.of());
+            return new ScopedEvidencePacket(List.of(), List.of(), Map.of(), Map.of(), Map.of());
         }
 
         Map<UUID, UUID> canonicalByMemberFeatureId = new java.util.HashMap<>();
@@ -178,6 +187,7 @@ public class ProcessControlService {
         }
 
         Map<UUID, UUID> featureByTaskId = new java.util.HashMap<>();
+        Map<UUID, List<TaskEntity>> tasksByCanonicalFeatureId = new java.util.HashMap<>();
         List<UUID> taskIds = new ArrayList<>();
         for (TaskEntity task : scopedTasks) {
             if (task.getId() != null) {
@@ -185,6 +195,7 @@ public class ProcessControlService {
                 if (task.getFeatureId() != null) {
                     UUID canonical = canonicalByMemberFeatureId.getOrDefault(task.getFeatureId(), task.getFeatureId());
                     featureByTaskId.put(task.getId(), canonical);
+                    tasksByCanonicalFeatureId.computeIfAbsent(canonical, k -> new ArrayList<>()).add(task);
                 }
             }
         }
@@ -212,7 +223,7 @@ public class ProcessControlService {
                 ? List.of()
                 : taskConflictRepository.findByTaskIdIn(taskIds);
 
-        return new ScopedEvidencePacket(reviews, conflicts, taskBySessionId, featureByTaskId);
+        return new ScopedEvidencePacket(reviews, conflicts, taskBySessionId, featureByTaskId, tasksByCanonicalFeatureId);
     }
 
     /**
@@ -238,8 +249,11 @@ public class ProcessControlService {
      * Recomputes and persists every u-chart snapshot for one project, one stream at a time. Idempotent:
      * wipes this project's existing snapshots for the stream and rewrites from scratch, since epic
      * completion order within a project never changes retroactively (only grows).
+     *
+     * Mechanism #9 (2026-11-24, D013/HikariPool): deliberately NOT @Transactional at the outer level so
+     * read/computation passes never pin a Hikari connection past the 30s leak threshold; only the per-stream
+     * snapshot replacement runs in a short TransactionTemplate boundary.
      */
-    @org.springframework.transaction.annotation.Transactional
     public List<ProcessControlSnapshotEntity> recomputeForProject(UUID projectId) {
         List<EpicPoint> completedEpics = completedEpicsInOrder(projectId);
         List<ProcessControlSnapshotEntity> all = new ArrayList<>();
@@ -257,7 +271,7 @@ public class ProcessControlService {
                 featureId -> sixSigmaAuditService.computePrConflictCounts(null, featureId,
                         packet.reviews(), packet.conflicts())));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_TASK_REVIVAL,
-                this::taskRevivalCounts));
+                featureId -> taskRevivalCounts(featureId, packet)));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_REVIEW_CONCERNS,
                 featureId -> reviewConcernCounts(featureId, packet)));
         return all;
@@ -278,6 +292,17 @@ public class ProcessControlService {
             UUID canonical = epic.getCanonicalFeatureId() != null ? epic.getCanonicalFeatureId() : epic.getId();
             memberIdsByCanonical.computeIfAbsent(canonical, k -> new ArrayList<>()).add(epic.getId());
         }
+        List<UUID> allEpicIds = epics.stream()
+                .map(FeatureEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<UUID, List<TaskEntity>> tasksByFeatureId = allEpicIds.isEmpty()
+                ? Map.of()
+                : taskRepository.findByFeatureIdIn(allEpicIds).stream()
+                        .filter(t -> t != null && t.getFeatureId() != null)
+                        .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getFeatureId));
+
         List<EpicPoint> points = new ArrayList<>();
         for (FeatureEntity epic : epics) {
             if (epic.getCanonicalFeatureId() != null) {
@@ -285,7 +310,7 @@ public class ProcessControlService {
             }
             List<UUID> memberIds = memberIdsByCanonical.getOrDefault(epic.getId(), List.of(epic.getId()));
             List<TaskEntity> tasks = memberIds.stream()
-                    .flatMap(id -> taskRepository.findByFeatureId(id).stream())
+                    .flatMap(id -> tasksByFeatureId.getOrDefault(id, List.of()).stream())
                     .toList();
             if (tasks.isEmpty()) continue;
             boolean allTerminal = tasks.stream().allMatch(t -> TERMINAL_STATUSES.contains(t.getStatus()));
@@ -308,8 +333,6 @@ public class ProcessControlService {
 
     private List<ProcessControlSnapshotEntity> recomputeStream(UUID projectId, List<EpicPoint> completedEpics,
                                                                  String stream, CountFn countFn) {
-        snapshotRepository.deleteAll(snapshotRepository.findByProjectIdAndStreamOrderBySequenceIndexAsc(projectId, stream));
-
         int total = completedEpics.size();
         int locked = Math.min(baselineEpicCount, total);
 
@@ -380,7 +403,7 @@ public class ProcessControlService {
             snapshots.add(snap);
         }
 
-        List<ProcessControlSnapshotEntity> saved = snapshotRepository.saveAll(snapshots);
+        List<ProcessControlSnapshotEntity> saved = replaceStreamSnapshotsInShortTx(projectId, stream, snapshots);
         long outOfControlCount = saved.stream().filter(ProcessControlSnapshotEntity::isOutOfControl).count();
         if (outOfControlCount > 0) {
             log.warn("[PROCESS-CONTROL] project={} stream={} {} out-of-control point(s) of {} monitoring point(s)",
@@ -397,6 +420,19 @@ public class ProcessControlService {
             }
         }
         return saved;
+    }
+
+    private List<ProcessControlSnapshotEntity> replaceStreamSnapshotsInShortTx(
+            UUID projectId, String stream, List<ProcessControlSnapshotEntity> snapshots) {
+        if (transactionTemplate != null) {
+            List<ProcessControlSnapshotEntity> result = transactionTemplate.execute(status -> {
+                snapshotRepository.deleteAll(snapshotRepository.findByProjectIdAndStreamOrderBySequenceIndexAsc(projectId, stream));
+                return snapshotRepository.saveAll(snapshots);
+            });
+            return result != null ? result : List.of();
+        }
+        snapshotRepository.deleteAll(snapshotRepository.findByProjectIdAndStreamOrderBySequenceIndexAsc(projectId, stream));
+        return snapshotRepository.saveAll(snapshots);
     }
 
     /**
@@ -484,8 +520,8 @@ public class ProcessControlService {
         return null;
     }
 
-    private DefectOpportunityCount taskRevivalCounts(UUID featureId) {
-        List<TaskEntity> tasks = taskRepository.findByFeatureId(featureId);
+    private DefectOpportunityCount taskRevivalCounts(UUID featureId, ScopedEvidencePacket packet) {
+        List<TaskEntity> tasks = packet.tasksByCanonicalFeatureId().getOrDefault(featureId, List.of());
         long defects = tasks.stream()
                 .filter(t -> t.getPayload() != null && t.getPayload().path(RESUME_COUNT_KEY).asInt(0) > 0)
                 .count();
@@ -519,6 +555,6 @@ public class ProcessControlService {
 
     private DefectOpportunityCount reviewConcernCounts(UUID featureId,
             List<PrReviewEntity> reviewEvidence) {
-        return reviewConcernCounts(featureId, new ScopedEvidencePacket(reviewEvidence, List.of(), Map.of(), Map.of()));
+        return reviewConcernCounts(featureId, new ScopedEvidencePacket(reviewEvidence, List.of(), Map.of(), Map.of(), Map.of()));
     }
 }

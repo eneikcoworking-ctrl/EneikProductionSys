@@ -9,9 +9,10 @@ import com.eneik.production.repositories.TrustSignalSnapshotRepository;
 import com.eneik.production.services.ClientDeliverableReadinessService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -40,6 +41,20 @@ public class TrustSnapshotService {
     private final TrustSignalSnapshotRepository snapshotRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final com.eneik.production.repositories.InvariantStatusChangeRepository invariantChangeRepository;
+    @Autowired(required = false)
+    private TransactionTemplate transactionTemplate;
+
+    public void setTransactionTemplate(TransactionTemplate transactionTemplate) {
+        this.transactionTemplate = transactionTemplate;
+    }
+
+    private void runInShortTransaction(Runnable action) {
+        if (transactionTemplate != null) {
+            transactionTemplate.executeWithoutResult(status -> action.run());
+        } else {
+            action.run();
+        }
+    }
 
     public TrustSnapshotService(ProjectRepository projectRepository,
                                  OperationalTruthService operationalTruthService,
@@ -54,7 +69,6 @@ public class TrustSnapshotService {
     }
 
     @Scheduled(fixedRate = 7200000, initialDelay = 180000)
-    @Transactional
     public void captureAndBackfillSnapshots() {
         List<ProjectEntity> activeProjects = null;
         try {
@@ -91,9 +105,10 @@ public class TrustSnapshotService {
         snapshot.setDuplicateContent(duplicateContent);
         snapshot.setRecentDefectsCount(dto.defects().recentDefects());
         snapshot.setComputedScore(dto.trust().score());
-        snapshotRepository.save(snapshot);
-
-        recordInvariantTransitions(projectId, dto);
+        runInShortTransaction(() -> {
+            snapshotRepository.save(snapshot);
+            recordInvariantTransitions(projectId, dto);
+        });
     }
 
     /**
@@ -174,8 +189,10 @@ public class TrustSnapshotService {
     }
 
     private void resolve(TrustSignalSnapshotEntity snapshot, String outcome) {
-        snapshot.setEventualOutcome(outcome);
-        snapshot.setOutcomeRecordedAt(Instant.now());
-        snapshotRepository.save(snapshot);
+        runInShortTransaction(() -> {
+            snapshot.setEventualOutcome(outcome);
+            snapshot.setOutcomeRecordedAt(Instant.now());
+            snapshotRepository.save(snapshot);
+        });
     }
 }
