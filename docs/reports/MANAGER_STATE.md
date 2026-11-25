@@ -1,20 +1,22 @@
-# STATUS: ACTIVE_AUTONOMOUS_WORK_ORDER — ТАКТ 3 ПРИНЯТ (P0 ЗАКРЫТ), СТАРТ ТАКТА 4 (2026-11-24 23:58 UTC)
+# STATUS: ACTIVE_AUTONOMOUS_WORK_ORDER — ТАКТ 4 ПРИНЯТ (P0+P1 ЗАКРЫТЫ), СТАРТ ТАКТА 5 (2026-11-25 00:14 UTC)
 
-- **Приёмка L1 (Такт 3 — P0 #3, `4586e14e`) — ПРИНЯТО (вся серия P0 #1–#3 закрыта):**
-  - Инварианты `D003`/`D010`/`D008` (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `KARL_POPPER_01_FALSIFICATION_HARNESS`) подтверждены: `judgment-proxy/server.js` переведён на `JUDGMENT_PRIMARY=deepseek` (`callDeepSeekPrimary`, 45с timeout, `json_object`, state-machine `sanitizeJsonControlChars`), явная цепочка `primary -> secondary LLM -> explicit heuristic-fallback` (без отравления кэша `verdicts/`) или `UNAVAILABLE`, честный `GET /health` и проброс `DEEPSEEK_*`/`JUDGMENT_*` в `docker-compose.yml`.
-  - Независимая верификация L1: `node --test judgment-proxy/server.test.js` **7/7 green**; Docker Maven (`-m 2g`) **`DennettAutonomyFalsificationTest` 100% green**; живой `curl http://127.0.0.1:8093/health` -> `primary="deepseek", activeProvider="deepseek", deepseekAvailable=true, fallbackChain=["deepseek","heuristic-fallback"]`. Ручных правок продуктов нет.
-- **Живая телеметрия хоста, фабрики и продукта (23:58 UTC):**
-  - Диск `/`: **62%** (`< 70%`, `14G` avail); RAM: `1.2Gi` avail (`Swap 2.1/4.0Gi`); `:8093` `healthy` (`30.2MiB/256MiB`); `:8080` `UP` (`CPU 1.30%`, `766.1MiB/1GiB`, **`0` зомби `git`**, цикл оркестрации `~1.2–1.5с`); продукт `:18080` `UP`, `dmitryefremov-db` `PG_READY`.
-- **Закрытые такты Work Order (P0 100% закрыт):**
-  - [x] **Такт 1 — P0 #1 (`D003`/`D008`, `a07690a1`)** — `DeepSeekPatchParser` CTRL-CHAR санитайзер.
-  - [x] **Такт 2 — P0 #2 (`D013`/`D005`/`D008`, `1d1e3eee`)** — монотонный бюджет отказов, exponential backoff, `fixedDelay` + `init: true`.
-  - [x] **Такт 3 — P0 #3 (`D003`/`D010`/`D008`, `4586e14e`)** — `judgment-proxy :8093` на `DeepSeek` primary + явный fallback.
-- **СЛЕДУЮЩИЙ ТАКТ ДЛЯ L2 (СТРОГО ОДИН МЕХАНИЗМ СЕЙЧАС):**
-  - [ ] **Такт 4 — P1 #4 (WO #11, Механизм №13, `D010`/`D003`/`D006`/`D001`, `PROGRAMMER_DIRECTIVES.md` §13):**
-    - `4A`: удалить симулякр `local-repo/pulls` в `DeepSeekWorktreeExecutionEngine`, проверять exit code `push` и общий предок с `origin/<base>`, потокобезопасный bare-mirror (`ReentrantLock`, refspec без `--mirror` prune поверх `worker/*`, `resyncMirrorWithOriginMain`) в `GitWorktreeExecutionManager`, закрывать предсохранённую сессию.
-    - `4B`: передать `listRepositoryFiles` в `DeepSeekWorktreeExecutionEngine`, классифицировать `POISONED_CROSS_STACK_SCOPE_INSUFFICIENT` и терминировать (`blocked`/`NEEDS_RECOMPILATION`) без возврата в `queued`, учитывать `scope_insufficient` в `ClaimService`.
-    - `4C`: настройка `external_ui_owned_projects` (`knowledge-base-crie`) в `SystemSettingsService`, запрет правок `src/main/resources/static/index.html` в `FileScopeEnforcer`, пропуск UI-синка в `LocalVerificationRunner`, пропуск дизайн-цикла в `DesignShopOrchestrationService.tick()`, граница ответственности в промптах `DeepSeekApiClient`/`LocalAgyCliClient`.
-    - Покрыть заслон-тестами (§13.4 + `DennettAutonomyFalsificationTest` 100% green) в Docker Maven (`-m 2g`), пересобрать `eneikproductionsys-backend-1` и подтвердить живую телеметрию.
-- **Оставшаяся очередь (после приёмки Такта 4):**
-  - [ ] **Такт 5 — P2 #5 (WO #12, Механизм №14, `D014`/`D010`/`D001`/`D013`/`D006`/`D008`, §14):** `SovereignWorkerContextAssembler` (динамическая роль + Charter + Tarski L0 Memorilla $K=16$) в `DeepSeek`/`LOCAL_AGY`/оркестратор с сохранением `BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX` на offset 0 + телеметрия пустой выборки в `GeminiContextService`.
+- **Приёмка L1 (Такт 4 — P1 #4, WO #11, Механизм №13, `050a39f5`) — ПРИНЯТО (серии P0 #1–#3 и P1 #4 закрыты):**
+  - Инварианты `D010`/`D003`/`D006`/`D001`/`D013` (`ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK`, `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE`, `KARL_POPPER_01_FALSIFICATION_HARNESS`, `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY`) подтверждены:
+    - `4A`: симулякр `local-repo/pulls` полностью удалён (`0` вхождений в `src/main/java`), `verifyCommonHistoryWithBase` + проверка exit code `push` + `resyncMirrorWithOriginMain` + честный `pr_creation_failed`/`Belnap=FALSE` + per-mirror `ReentrantLock` и безопасный refspec `+refs/heads/*:refs/remotes/origin/*` в `GitWorktreeExecutionManager` + закрытие superseded-сессий в `JulesDispatchService`.
+    - `4B`: передача `listRepositoryFiles` в промпт, детекция `POISONED_CROSS_STACK_SCOPE_INSUFFICIENT`, немедленная терминация (`TaskStatus.blocked` / `NEEDS_RECOMPILATION` + `DefectJournal`) и учёт `scope_insufficient`/`pr_creation_failed` в монотонной вариант-функции `ClaimService`.
+    - `4C`: `external_ui_owned_projects` (`knowledge-base-crie`), безусловный Raz D006 rollback `static/index.html` в `FileScopeEnforcer`, пропуск UI-синка/lock в `LocalVerificationRunner`, пропуск дизайн-цикла `EXTERNAL_UI_OWNER` в `DesignShopOrchestrationService`, директива границы в `DeepSeekApiClient`/`LocalAgyCliClient`.
+  - Независимая верификация L1 (Docker Maven `-m 2g`): **35/35 green** (`DeepSeekWorktreeExecutionEngineTest` 4/4, `GitWorktreeExecutionManagerTest` 3/3, `FileScopeEnforcerTest` 2/2, `LocalVerificationRunnerTest` 1/1, `DesignShopOrchestrationServiceTest` 14/14, `ClaimServiceTest` 5/5, **`DennettAutonomyFalsificationTest` 6/6 — 100% green**). Ручных правок продуктов нет.
+- **Живая телеметрия хоста, фабрики и продукта (00:14 UTC):**
+  - Диск `/`: **63%** (`< 70%`, `14G` avail после `docker builder prune -f`); RAM: `1.1Gi` avail (`Swap 1.6/4.0Gi`); `:8080` `UP` (`CPU 0.76%`, `788.5MiB/1GiB`, **`0` зомби `git`**, `ORCHESTRATION_PROCESSING` `1.16–1.31с`); `:8093` `healthy` (`primary="deepseek"`, `6.7MiB/256MiB`); продукт `:18080` `UP`, `dmitryefremov-db` `PG_READY`.
+- **Закрытые такты Work Order (P0 + P1 100% закрыты):**
+  - [x] **Такт 1 — P0 #1 (`a07690a1`)** — `DeepSeekPatchParser` CTRL-CHAR санитайзер.
+  - [x] **Такт 2 — P0 #2 (`1d1e3eee`)** — монотонный бюджет отказов, exponential backoff, `fixedDelay` + `init: true`.
+  - [x] **Такт 3 — P0 #3 (`4586e14e`)** — `judgment-proxy :8093` на `DeepSeek` primary + явный fallback.
+  - [x] **Такт 4 — P1 #4 (`050a39f5`)** — честность PR/анти-орфан mirror, терминация `SCOPE_INSUFFICIENT`, граница UI `aesthetic-master`.
+- **СЛЕДУЮЩИЙ (ФИНАЛЬНЫЙ) ТАКТ ДЛЯ L2 (СТРОГО ОДИН МЕХАНИЗМ СЕЙЧАС):**
+  - [ ] **Такт 5 — P2 #5 (WO #12, Механизм №14, `D014`/`D010`/`D001`/`D013`/`D006`/`D008`, `PROGRAMMER_DIRECTIVES.md` §14):**
+    - Создать `SovereignWorkerContextAssembler` (динамический `task.getRole()` + `RoleCapabilityLoader.loadRawCharter` `<= 4000` симв. без обрезки `task.getDescription()` + Memorilla $K=16$ со строгой Тарский-L0 демаркацией: `PRODUCT_CODEBASE`/null -> только `buildProductWorkerLatentMemoryBlock`, `ORCHESTRATOR_SYSTEM` -> `buildLatentSemanticMemoryBlock`).
+    - Подключить в `DeepSeekWorktreeExecutionEngine`/`DeepSeekApiClient` (побайтово сохранив `BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX` на `offset 0`) и `LocalAgyWorktreeExecutionEngine`/`LocalAgyCliClient` (устранив слепоту к роли).
+    - Перевести `OpsAuditorService`, `FalsificationCycleService` и облачный резерв `JulesDispatchService` (2-строчный точечный патч, не трогая контур Деннетта) на Memorilla $K=16$; добавить телеметрию причин пустой выборки в `GeminiContextService.retrieveLatentMemorySlots`.
+    - Покрыть `SovereignWorkerMemorillaWiringTest` (§14.3, заслоны 5-1..5-5) + смежные сьюты + **`DennettAutonomyFalsificationTest` 100% green** в Docker Maven (`-m 2g`), пересобрать `eneikproductionsys-backend-1`, подтвердить живые логи, коммит `feat(d014,d010,d001): wire Memorilla K=16 and dynamic BARCAN role charter into sovereign workers`, обновить `PROGRAMMER_STATE.md`.
 - **Инварианты (`GEMINI.md` §0–§1):** 1 механизм за такт, 0 ручных правок продуктов, `DennettAutonomyFalsificationTest` 100% green, отчёт L2 в `docs/reports/PROGRAMMER_STATE.md`.
