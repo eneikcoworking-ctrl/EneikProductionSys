@@ -112,6 +112,15 @@ class ModelPolicyAndBudgetTest(unittest.TestCase):
         self.assertEqual(st["status"], "exhausted")
         self.assertIn("429", st["last_error"])
         self.assertGreater(st["rem_sec"], 1700)
+        self.assertEqual(st["limit_type"], "5h")
+
+        # Test weekly quota parsing from CLI error string
+        err_weekly = "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 124h11m18s.: RESOURCE_EXHAUSTED (code 429)"
+        self.bg.mark_agy_limit("account_primary", err_weekly)
+        st_w = self.bg.get_agy_account_status("account_primary")
+        self.assertEqual(st_w["status"], "exhausted")
+        self.assertEqual(st_w["limit_type"], "weekly")
+        self.assertGreater(st_w["rem_sec"], 440000)
 
         st2 = self.bg.get_agy_account_status("account_secondary")
         self.assertEqual(st2["status"], "ok")

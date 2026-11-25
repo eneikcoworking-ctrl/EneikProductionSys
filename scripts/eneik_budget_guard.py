@@ -298,14 +298,30 @@ def record_deepseek_usage(
     return _with_lock(_op)
 
 
+def parse_reset_seconds(text: str) -> int:
+    m = re.search(r"Resets in (?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?", text, re.IGNORECASE)
+    if m and any(m.groups()):
+        d = int(m.group(1) or 0)
+        h = int(m.group(2) or 0)
+        mn = int(m.group(3) or 0)
+        s = int(m.group(4) or 0)
+        return d * 86400 + h * 3600 + mn * 60 + s
+    return 0
+
+
 def mark_agy_limit(profile: str, reason: str = "429_resource_exhausted", cooldown_sec: int = 1800) -> None:
     now = time.time()
+    parsed_sec = parse_reset_seconds(reason)
+    eff_cooldown = parsed_sec if parsed_sec > 0 else cooldown_sec
+    is_weekly = eff_cooldown > 86400 or "individual quota reached" in reason.lower()
+
     def _op(st):
         accs = st.setdefault("agy_accounts", {})
         acc_info = accs.setdefault(profile, {})
         acc_info["status"] = "exhausted"
-        acc_info["exhausted_until"] = now + cooldown_sec
+        acc_info["exhausted_until"] = now + eff_cooldown
         acc_info["last_error"] = reason[:200]
+        acc_info["limit_type"] = "weekly" if is_weekly else "5h"
         return None, True
     _with_lock(_op)
 
@@ -316,16 +332,20 @@ def get_agy_account_status(profile: str) -> dict[str, Any]:
     acc_info = (st.get("agy_accounts") or {}).get(profile, {})
     exh_until = float(acc_info.get("exhausted_until", 0.0))
     if exh_until > now:
+        rem = int(exh_until - now)
+        limit_type = acc_info.get("limit_type") or ("weekly" if rem > 86400 else "5h")
         return {
             "status": "exhausted",
             "exhausted_until": exh_until,
-            "rem_sec": int(exh_until - now),
+            "rem_sec": rem,
+            "limit_type": limit_type,
             "last_error": acc_info.get("last_error", "resource_exhausted"),
         }
     return {
         "status": "ok",
         "exhausted_until": 0.0,
         "rem_sec": 0,
+        "limit_type": "",
         "last_error": "",
     }
 
