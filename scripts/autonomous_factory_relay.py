@@ -9,6 +9,9 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import eneik_budget_guard as budget_guard
+
 REPO_DIR = "/opt/EneikProductionSys"
 MECHANISMS_FILE = os.path.join(REPO_DIR, "docs", "FACTORY_MECHANISMS.md")
 MANAGER_STATE_FILE = os.path.join(REPO_DIR, "docs", "reports", "MANAGER_STATE.md")
@@ -339,14 +342,16 @@ def run_agent_command(user, prompt, timeout_seconds=1800):
     except Exception:
         pass
 
-    selected_model = "gemini-4-neon-high" if user == "remotecli2" else "gemini-4-neon-medium"
+    # Unified model policy: both L1 (remotecli2) and L2 (remotecli) run on Gemini 4 Neon (Medium)
+    selected_model = os.environ.get("ENEIK_RELAY_MODEL", "gemini-4-neon-medium")
+    budget_guard.record_relay_tick(source=f"factory_relay:{user}")
     cmd = [
         "sudo", "-u", user, bin_path,
         "--model", selected_model,
         "--dangerously-skip-permissions",
         "-p", prompt,
     ]
-    log(f"Запуск такта агента [{user}] (таймаут сессии {timeout_seconds}s)...")
+    log(f"Запуск такта агента [{user}] (модель={selected_model}, таймаут сессии {timeout_seconds}s)...")
     try:
         res = subprocess.run(cmd, cwd=REPO_DIR, capture_output=True, text=True, timeout=timeout_seconds)
         if res.returncode == 0:
@@ -439,6 +444,12 @@ def record_directive_outcome(rs, now, ok, err_text="", stage="l1"):
 def execute_relay_round():
     if not check_disk_and_resources():
         time.sleep(300)
+        return
+
+    b_dec, b_wait, b_detail = budget_guard.check_relay_budget()
+    if b_dec != "run":
+        log(f"BUDGET_GUARD ({b_dec}): {b_detail}. Пауза {min(300, max(60, b_wait))}с (нулевой расход LLM).")
+        time.sleep(min(300, max(60, b_wait)))
         return
 
     resolve_dead_parents_and_stalls()

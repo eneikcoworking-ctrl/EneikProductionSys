@@ -14,11 +14,18 @@ import hashlib
 import base64
 import subprocess
 import threading
+import urllib.error
+import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import eneik_budget_guard as budget_guard
+
 HOST = "0.0.0.0"
 PORT = 8095
+DEEPSEEK_API_URL = os.environ.get("DEEPSEEK_API_URL", "https://api.deepseek.com/chat/completions")
+BRIDGE_PRIMARY_PROVIDER = os.environ.get("SOVEREIGN_BRIDGE_PROVIDER", "deepseek_first").strip().lower()
 
 FORBIDDEN_USERS = {"remotecli", "remotecli2"}
 ALLOWED_WORKER_USERS = {f"remotecli{i}" for i in range(3, 11)} | {"root"}
@@ -102,17 +109,77 @@ run().catch(err => {
 
 def normalize_model_name(model_str):
     if not model_str:
-        return "Gemini 4 Hydrogen (High)"
+        return "Gemini 4 Hydrogen (Medium)"
     m = model_str.lower()
-    if "argon" in m or "pro" in m:
-        return "Gemini 4 Argon (High)"
-    if "neon" in m or "vision" in m or "compiler" in m:
-        return "Gemini 4 Neon (High)" if "high" in m else "Gemini 4 Neon (Medium)"
+    if "argon" in m or "pro" in m or "neon" in m or "vision" in m or "compiler" in m:
+        return "Gemini 4 Neon (Medium)"
     if "hydrogen" in m:
-        return "Gemini 4 Hydrogen (Medium)" if "medium" in m else "Gemini 4 Hydrogen (High)"
+        return "Gemini 4 Hydrogen (Medium)"
     if "flash" in m:
-        return "Gemini 4 Hydrogen (High)"
-    return "Gemini 4 Hydrogen (High)"
+        return "Gemini 3.8 Flash (Medium)"
+    return "Gemini 4 Hydrogen (Medium)"
+
+
+def select_deepseek_models(raw_model, payload):
+    m = (raw_model or "").lower()
+    attempt = int(payload.get("attempt") or payload.get("retryCount") or 1)
+    escalate = bool(payload.get("escalate", False)) or attempt >= 2
+    heavy_hint = any(tok in m for tok in ("v4-pro", "pro", "argon", "carbon", "opus", "high", "compiler"))
+    if escalate or heavy_hint:
+        return ["deepseek-v4-pro", "deepseek-flash"]
+    return ["deepseek-flash", "deepseek-v4-pro"]
+
+
+def call_deepseek_worker(prompt, model_name, timeout_sec=180):
+    api_key = budget_guard.read_deepseek_api_key()
+    if not api_key:
+        raise RuntimeError("DEEPSEEK_API_KEY not configured")
+    req_body = {
+        "model": model_name,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an autonomous software engineering worker. "
+                    "Respond with ONLY a single valid raw JSON object matching the user contract. "
+                    "Do not call tools or wrap output in prose."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.15,
+        "max_tokens": 16000,
+        "response_format": {"type": "json_object"},
+    }
+    req = urllib.request.Request(
+        DEEPSEEK_API_URL,
+        data=json.dumps(req_body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=min(max(timeout_sec, 30), 240)) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        content = data["choices"][0]["message"]["content"]
+        tokens = int((data.get("usage") or {}).get("total_tokens", 0))
+        budget_guard.record_deepseek_usage(model_name, total_tokens=tokens, source="sovereign_bridge")
+        return content
+    except urllib.error.HTTPError as he:
+        err_body = ""
+        try:
+            err_body = he.read().decode("utf-8", errors="ignore")
+        except Exception:
+            pass
+        if budget_guard.is_deepseek_balance_error(err_body, he.code):
+            budget_guard.mark_deepseek_exhausted(f"HTTP {he.code}: {err_body[:160]}")
+        raise RuntimeError(f"DeepSeek HTTP {he.code}: {err_body[:240]}") from he
+    except Exception as exc:
+        if budget_guard.is_deepseek_balance_error(str(exc)):
+            budget_guard.mark_deepseek_exhausted(str(exc)[:160])
+        raise
 
 class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -186,7 +253,7 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
             })
             return
 
-        raw_model = payload.get("model", "gemini-4-hydrogen-high")
+        raw_model = payload.get("model", "deepseek-flash")
         model = normalize_model_name(raw_model)
         raw_prompt = payload.get("prompt", "")
         no_tools_header = (
@@ -196,13 +263,74 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
             "3. Any instruction to 'create a branch', 'open a PR', or 'write a file' is satisfied SOLELY by returning that file inside the 'files' array of your JSON output.\n"
             "4. Respond IMMEDIATELY in your VERY FIRST turn with ZERO tool calls and ONLY the raw JSON object!\n\n"
         )
+        timeout_sec = int(payload.get("timeoutSeconds", 180))
+        start_time = time.time()
+
+        paused, pause_reason = budget_guard.is_factory_paused()
+        if paused:
+            self._send_json(503, {
+                "exitCode": 1,
+                "stdout": "",
+                "stderr": f"Factory paused by operator: {pause_reason}",
+                "durationMs": 0,
+                "provider": "paused",
+            })
+            return
+
+        # 1. DeepSeek-first cascade (deepseek-flash -> deepseek-v4-pro) with 0% AGY quota usage
+        deepseek_fail_reason = ""
+        if BRIDGE_PRIMARY_PROVIDER != "agy_only":
+            ds_ok, ds_reason = budget_guard.can_use_deepseek(estimated_usd=0.03)
+            if ds_ok:
+                ds_prompt = no_tools_header + raw_prompt + "\n\nREMINDER: Output ONLY the raw JSON object now."
+                for ds_model in select_deepseek_models(raw_model, payload):
+                    try:
+                        ds_content = call_deepseek_worker(ds_prompt, ds_model, timeout_sec=timeout_sec)
+                        if ds_content and ds_content.strip():
+                            duration_ms = int((time.time() - start_time) * 1000)
+                            sys.stderr.write(
+                                f"[SovereignBridge] DeepSeek ({ds_model}) succeeded for {user} in {duration_ms}ms ({len(ds_content)} chars)\n"
+                            )
+                            self._send_json(200, {
+                                "exitCode": 0,
+                                "stdout": ds_content,
+                                "stderr": "",
+                                "durationMs": duration_ms,
+                                "provider": f"deepseek:{ds_model}",
+                            })
+                            return
+                    except Exception as ds_exc:
+                        deepseek_fail_reason = str(ds_exc)
+                        sys.stderr.write(f"[SovereignBridge] DeepSeek ({ds_model}) failed: {deepseek_fail_reason[:200]}\n")
+                        still_ok, _ = budget_guard.can_use_deepseek(estimated_usd=0.03, check_remote_balance=False)
+                        if not still_ok:
+                            break
+            else:
+                deepseek_fail_reason = ds_reason
+                sys.stderr.write(f"[SovereignBridge] DeepSeek unavailable ({ds_reason}), activating bounded AGY reserve...\n")
+
+        # 2. Bounded AGY Reserve (when DeepSeek balance runs out or fails)
+        agy_ok, agy_reason = budget_guard.can_use_agy(source="sovereign_bridge", is_worker_fallback=True)
+        if not agy_ok:
+            duration_ms = int((time.time() - start_time) * 1000)
+            err_msg = f"Both DeepSeek ({deepseek_fail_reason or 'disabled'}) and AGY reserve ({agy_reason}) exhausted"
+            sys.stderr.write(f"[SovereignBridge] 429 BUDGET_EXHAUSTED: {err_msg}\n")
+            self._send_json(429, {
+                "exitCode": 1,
+                "stdout": "",
+                "stderr": err_msg,
+                "durationMs": duration_ms,
+                "provider": "exhausted",
+            })
+            return
+
+        budget_guard.record_agy_call(source="sovereign_bridge", is_worker_fallback=True)
         raw_bytes = raw_prompt.encode("utf-8")
         if len(raw_bytes) > 110000:
             head_part = raw_bytes[:95000].decode("utf-8", errors="ignore")
             tail_part = raw_bytes[-12000:].decode("utf-8", errors="ignore")
             raw_prompt = head_part + "\n...[middle truncated to fit Linux MAX_ARG_STRLEN 128KB]...\n" + tail_part
         prompt = no_tools_header + raw_prompt + "\n\nREMINDER: DO NOT CALL ANY TOOLS. Output ONLY the raw JSON object now."
-        timeout_sec = int(payload.get("timeoutSeconds", 180))
         sandbox_dir = "/tmp/agy-worker-sandbox"
         os.makedirs(sandbox_dir, exist_ok=True)
         os.chmod(sandbox_dir, 0o777)
@@ -216,7 +344,6 @@ class SovereignBridgeHandler(BaseHTTPRequestHandler):
             bin_path = f"/home/{user}/.local/bin/agy"
             cmd = ["sudo", "-n", "-u", user, bin_path, "--model", model, "-p", prompt]
 
-        start_time = time.time()
         proc_obj = None
         try:
             proc_obj = subprocess.Popen(
