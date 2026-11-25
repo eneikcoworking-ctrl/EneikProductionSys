@@ -721,6 +721,17 @@ public class JulesDispatchService {
                             try {
                                 var asyncResult = workerExecutionRouter.dispatch(task, account, mode);
                                 JulesSessionEntity finished = julesSessionRepository.findById(preSavedId).orElse(null);
+                                // Mechanism #13 (4A): If router/engine created a separate session, close orphaned preSaved session
+                                if (asyncResult != null && asyncResult.sessionId() != null && !asyncResult.sessionId().equals(preSavedId)) {
+                                    if (finished != null && ("running".equalsIgnoreCase(finished.getStatus()) || "queued".equalsIgnoreCase(finished.getStatus()))) {
+                                        finished.setStatus("superseded");
+                                        finished.setClosureReason("Superseded by engine session " + asyncResult.sessionId());
+                                        finished.setClosedAt(Instant.now());
+                                        finished.setUpdatedAt(Instant.now());
+                                        julesSessionRepository.save(finished);
+                                    }
+                                    finished = julesSessionRepository.findById(asyncResult.sessionId()).orElse(finished);
+                                }
                                 if (finished != null) {
                                     String st = finished.getStatus();
                                     if ("pr_opened".equalsIgnoreCase(st) || "completed".equalsIgnoreCase(st)) {

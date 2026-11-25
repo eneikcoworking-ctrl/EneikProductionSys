@@ -25,6 +25,12 @@ public class ExclusionaryReasonViolationException extends RuntimeException {
         this.declaredScope = declaredScope;
     }
 
+    public ExclusionaryReasonViolationException(String message, List<String> violatingFiles, List<String> declaredScope) {
+        super(message);
+        this.violatingFiles = violatingFiles != null ? violatingFiles : Collections.emptyList();
+        this.declaredScope = declaredScope != null ? declaredScope : Collections.emptyList();
+    }
+
     public List<String> getViolatingFiles() {
         return violatingFiles;
     }

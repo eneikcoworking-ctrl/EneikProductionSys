@@ -105,6 +105,98 @@ public class SystemSettingsService {
                 valueless.size(), valueless);
     }
 
+    public static final String DEFAULT_EXTERNAL_UI_OWNED_PROJECTS = "knowledge-base-crie";
+
+    public static final List<String> PROTECTED_EXTERNAL_UI_PATHS = List.of(
+            "src/main/resources/static/index.html"
+    );
+
+    public static final String EXTERNAL_UI_BOUNDARY_DIRECTIVE =
+            "\n## EXTERNAL UI OWNERSHIP BOUNDARY (D006 — aesthetic-master)\n"
+            + "- Frontend UI (`src/main/resources/static/index.html`) is EXCLUSIVELY owned by `aesthetic-master` (READ-ONLY for backend workers; any modification is strictly prohibited and will be rolled back).\n"
+            + "- Your responsibility is STRICTLY Java 21 / Spring Boot 3 backend, SQLite (`data/agent_memory.sqlite`), and REST API endpoints (`/crie/api/chat`, `/crie/api/documents/upload`, `/crie/api/dialogues/history`, `/crie/api/catalog/search`, `/crie/api/download/...`).\n";
+
+    public java.util.Set<String> externalUiOwnedProjects() {
+        EffectiveSetting setting = effectiveSetting("external_ui_owned_projects");
+        String raw = setting.value();
+        if ((raw == null || raw.isBlank()) && "none".equals(setting.source())) {
+            raw = DEFAULT_EXTERNAL_UI_OWNED_PROJECTS;
+        }
+        return parseProjectSlugSet(raw);
+    }
+
+    public boolean isExternalUiOwnedProject(com.eneik.production.models.persistence.ProjectEntity project) {
+        return matchesProjectSlugSet(project, externalUiOwnedProjects());
+    }
+
+    public static boolean isExternalUiOwnedProject(
+            SystemSettingsService settingsService,
+            com.eneik.production.models.persistence.ProjectEntity project) {
+        if (project == null) {
+            return false;
+        }
+        if (settingsService != null) {
+            return settingsService.isExternalUiOwnedProject(project);
+        }
+        return matchesProjectSlugSet(project, parseProjectSlugSet(DEFAULT_EXTERNAL_UI_OWNED_PROJECTS));
+    }
+
+    public static boolean isProtectedExternalUiPath(String relativePath) {
+        if (relativePath == null || relativePath.isBlank()) {
+            return false;
+        }
+        String norm = relativePath.trim().replace('\\', '/');
+        while (norm.startsWith("./")) {
+            norm = norm.substring(2);
+        }
+        if (norm.startsWith("/")) {
+            norm = norm.substring(1);
+        }
+        for (String protectedPath : PROTECTED_EXTERNAL_UI_PATHS) {
+            if (protectedPath.equalsIgnoreCase(norm)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static java.util.Set<String> parseProjectSlugSet(String raw) {
+        java.util.Set<String> slugs = new java.util.LinkedHashSet<>();
+        if (raw == null || raw.isBlank()) {
+            return slugs;
+        }
+        for (String token : raw.split("[,;\\s]+")) {
+            String clean = token.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!clean.isEmpty()) {
+                slugs.add(clean);
+            }
+        }
+        return slugs;
+    }
+
+    private static boolean matchesProjectSlugSet(
+            com.eneik.production.models.persistence.ProjectEntity project,
+            java.util.Set<String> slugs) {
+        if (project == null || slugs == null || slugs.isEmpty()) {
+            return false;
+        }
+        if (project.getName() != null && slugs.contains(project.getName().trim().toLowerCase(java.util.Locale.ROOT))) {
+            return true;
+        }
+        String repoName = project.getRepositoryName();
+        if (repoName != null && !repoName.isBlank()) {
+            String lowerRepo = repoName.trim().toLowerCase(java.util.Locale.ROOT);
+            if (slugs.contains(lowerRepo)) {
+                return true;
+            }
+            int slash = lowerRepo.lastIndexOf('/');
+            if (slash >= 0 && slugs.contains(lowerRepo.substring(slash + 1))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public boolean isKnownKey(String key) {
         return key != null && DEFINITIONS.containsKey(key);
     }
@@ -492,6 +584,10 @@ public class SystemSettingsService {
         definitions.put("deepseek_fallback_api_key", secret("deepseek_fallback_api_key", "DEEPSEEK_FALLBACK_API_KEY", "deepseek.fallback-api-key"));
         definitions.put("deepseek_chat_model", plain("deepseek_chat_model", "DEEPSEEK_CHAT_MODEL", "deepseek.chat-model"));
         definitions.put("deepseek_reasoner_model", plain("deepseek_reasoner_model", "DEEPSEEK_REASONER_MODEL", "deepseek.reasoner-model"));
+        // Mechanism #13 (4C, D006): Projects whose frontend UI (src/main/resources/static/index.html) is
+        // exclusively owned by aesthetic-master; factory owns Java backend, SQLite, and REST API only.
+        definitions.put("external_ui_owned_projects", plain("external_ui_owned_projects",
+                "EXTERNAL_UI_OWNED_PROJECTS", "factory.external-ui-owned-projects"));
 
         return definitions;
     }

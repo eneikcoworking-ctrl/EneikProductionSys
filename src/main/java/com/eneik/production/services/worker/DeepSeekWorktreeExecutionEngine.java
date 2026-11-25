@@ -82,20 +82,54 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
         log.info("DeepSeekWorktreeEngine: dispatching task {} [Cynefin: {}, Mode: {}]",
                 taskId, task.getCynefinDomain(), mode);
 
-        // 1. Initialize persistent session entity with Belnap NEITHER
-        JulesSessionEntity session = new JulesSessionEntity();
-        session.setTaskId(taskId);
-        if (account != null) {
-            session.setAccountId(account.getId());
+        // 1. Initialize or reuse pre-dispatched session entity (from JulesDispatchService) with Belnap NEITHER
+        JulesSessionEntity session = null;
+        UUID worktreeToken = null;
+        List<JulesSessionEntity> existingSessions = sessionRepository.findByTaskId(taskId);
+        if (existingSessions != null) {
+            for (JulesSessionEntity s : existingSessions) {
+                if (("running".equalsIgnoreCase(s.getStatus()) || "queued".equalsIgnoreCase(s.getStatus()))
+                        && s.getWorktreePath() == null
+                        && s.getExternalSessionId() != null
+                        && (s.getExternalSessionId().startsWith("local-agy-") || s.getExternalSessionId().startsWith("deepseek-"))) {
+                    String extId = s.getExternalSessionId();
+                    String suffix = extId.startsWith("local-agy-")
+                            ? extId.substring("local-agy-".length())
+                            : extId.substring("deepseek-".length());
+                    try {
+                        worktreeToken = UUID.fromString(suffix);
+                    } catch (IllegalArgumentException ignored) {
+                        worktreeToken = UUID.randomUUID();
+                    }
+                    session = s;
+                    session.setWorkerEngine("DEEPSEEK_WORKTREE");
+                    session.setExternalSessionId("deepseek-" + worktreeToken);
+                    if (account != null) {
+                        session.setAccountId(account.getId());
+                    }
+                    session.setUpdatedAt(Instant.now());
+                    session.setLastProgressAt(Instant.now());
+                    session = sessionRepository.save(session);
+                    break;
+                }
+            }
         }
-        session.setWorkerEngine("DEEPSEEK_WORKTREE");
-        session.setExternalSessionId("deepseek-" + UUID.randomUUID());
-        session.setStatus("queued");
-        session.setBelnapStatus(BelnapStatus.NEITHER.name());
-        session.setCreatedAt(Instant.now());
-        session.setUpdatedAt(Instant.now());
-        session.setLastProgressAt(Instant.now());
-        session = sessionRepository.save(session);
+        if (session == null) {
+            worktreeToken = UUID.randomUUID();
+            session = new JulesSessionEntity();
+            session.setTaskId(taskId);
+            if (account != null) {
+                session.setAccountId(account.getId());
+            }
+            session.setWorkerEngine("DEEPSEEK_WORKTREE");
+            session.setExternalSessionId("deepseek-" + worktreeToken);
+            session.setStatus("queued");
+            session.setBelnapStatus(BelnapStatus.NEITHER.name());
+            session.setCreatedAt(Instant.now());
+            session.setUpdatedAt(Instant.now());
+            session.setLastProgressAt(Instant.now());
+            session = sessionRepository.save(session);
+        }
         UUID sessionId = session.getId();
 
         Path baseRepo = null;
@@ -113,8 +147,17 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
             session.setLastProgressAt(Instant.now());
             sessionRepository.save(session);
 
+            // Mechanism #13 (4B): Ground prompt with actual repository file tree (git ls-files)
+            List<String> repoFiles = worktreeManager.listRepositoryFiles(worktreePath);
+            if (repoFiles == null) {
+                repoFiles = List.of();
+            }
+            String repoTreeBlock = buildRepositoryFileTreeBlock(repoFiles);
             List<String> declaredScope = fileScopeEnforcer.parseDeclaredScope(task.getFileScope());
-            String scopedFilesContent = worktreeManager.readScopedFiles(worktreePath, declaredScope);
+            String rawScopedContent = worktreeManager.readScopedFiles(worktreePath, declaredScope);
+            String scopedFilesContent = repoTreeBlock.isEmpty()
+                    ? (rawScopedContent != null ? rawScopedContent : "")
+                    : (rawScopedContent == null || rawScopedContent.isBlank() ? repoTreeBlock : repoTreeBlock + "\n\n" + rawScopedContent);
 
             // Multiple Drafts loop (up to 2 attempts)
             String reflectionFeedback = null;
@@ -136,15 +179,31 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
                 // Update token accounting
                 recordTokenUsage(session, account, response);
 
-                // Duhem-Quine check 1: Scope Insufficient escalation
+                // Duhem-Quine check 1: Scope Insufficient escalation & Mechanism #13 (4B) cross-stack classification
                 if (response.scopeStatus() == ScopeStatus.SCOPE_INSUFFICIENT) {
-                    log.warn("Task {}: DeepSeek returned SCOPE_INSUFFICIENT. Missing files: {}",
-                            taskId, response.missingFiles());
+                    boolean poisonedCrossStack = isCrossStackPoisonedScope(response.missingFiles(), repoFiles);
+                    boolean allMissingNonExistent = areAllMissingFilesAbsent(response.missingFiles(), repoFiles);
+                    String reason;
+                    if (poisonedCrossStack) {
+                        reason = "POISONED_CROSS_STACK_SCOPE_INSUFFICIENT: missing foreign-stack files "
+                                + response.missingFiles() + " do not exist in repository";
+                        session.setBelnapStatus(BelnapStatus.FALSE.name());
+                    } else if (allMissingNonExistent) {
+                        reason = "SCOPE_INSUFFICIENT (NON_EXISTENT_FILES): missing " + response.missingFiles();
+                        session.setBelnapStatus(BelnapStatus.NEITHER.name());
+                    } else {
+                        reason = "SCOPE_INSUFFICIENT: missing " + response.missingFiles();
+                        session.setBelnapStatus(BelnapStatus.NEITHER.name());
+                    }
+                    log.warn("Task {}: DeepSeek returned {}. Missing files: {}",
+                            taskId, poisonedCrossStack ? "POISONED_CROSS_STACK_SCOPE_INSUFFICIENT" : "SCOPE_INSUFFICIENT",
+                            response.missingFiles());
                     session.setStatus("scope_insufficient");
-                    session.setBelnapStatus(BelnapStatus.NEITHER.name());
-                    session.setClosureReason("SCOPE_INSUFFICIENT: missing " + response.missingFiles());
+                    session.setClosureReason(reason);
+                    session.setClosedAt(Instant.now());
+                    session.setUpdatedAt(Instant.now());
                     sessionRepository.save(session);
-                    return WorkerDispatchResult.failed(sessionId, "SCOPE_INSUFFICIENT: " + response.missingFiles(), WorkerEngineType.DEEPSEEK_WORKTREE);
+                    return WorkerDispatchResult.failed(sessionId, reason, WorkerEngineType.DEEPSEEK_WORKTREE);
                 }
 
                 // Apply surgical patch
@@ -194,16 +253,51 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
             }
 
             if (success) {
-                // Epistemic Pulse: PR_OPENED
+                // Epistemic Pulse: PR_OPENED (Mechanism #13, 4A: strictly honest PR publication, zero simulacra)
                 String workerBranch = "worker/" + taskId;
                 worktreeManager.commit(worktreePath, "feat(" + (task.getTitle() != null ? task.getTitle() : "worker") + "): implement task " + taskId);
+
+                // Verify HEAD shares common ancestry with origin/<startingBranch> (reject orphan commits before push/PR)
                 try {
-                    worktreeManager.push(worktreePath, workerBranch);
-                } catch (Exception pe) {
-                    log.warn("worktreeManager.push failed for branch {}: {}", workerBranch, pe.getMessage());
+                    worktreeManager.verifyCommonHistoryWithBase(worktreePath, startingBranch);
+                } catch (Exception orphanEx) {
+                    log.error("Task {}: Orphan history detected before PR creation: {}", taskId, orphanEx.getMessage());
+                    if (task.getProject() != null) {
+                        worktreeManager.resyncMirrorWithOriginMain(task.getProject());
+                    }
+                    String err = "PR_CREATION_FAILED: " + orphanEx.getMessage();
+                    session.setPrUrl(null);
+                    session.setStatus("pr_creation_failed");
+                    session.setBelnapStatus(BelnapStatus.FALSE.name());
+                    session.setClosureReason(err);
+                    session.setClosedAt(Instant.now());
+                    session.setUpdatedAt(Instant.now());
+                    sessionRepository.save(session);
+                    return WorkerDispatchResult.failed(sessionId, err, WorkerEngineType.DEEPSEEK_WORKTREE);
                 }
 
-                pullRequestUrl = openPullRequest(task, workerBranch, startingBranch);
+                // Push MUST succeed; never swallow push failure
+                worktreeManager.push(worktreePath, workerBranch);
+
+                PrOpenOutcome prOutcome = openPullRequest(task, workerBranch, startingBranch);
+                if (!prOutcome.created()) {
+                    if (task.getProject() != null) {
+                        worktreeManager.resyncMirrorWithOriginMain(task.getProject());
+                    }
+                    String err = "PR_CREATION_FAILED: " + prOutcome.errorReason();
+                    session.setPrUrl(null);
+                    session.setStatus("pr_creation_failed");
+                    session.setBelnapStatus(BelnapStatus.FALSE.name());
+                    session.setClosureReason(err);
+                    session.setClosedAt(Instant.now());
+                    session.setUpdatedAt(Instant.now());
+                    sessionRepository.save(session);
+
+                    log.error("DeepSeekWorktreeEngine: Task {} PR creation FAILED (honest D010 refusal, no fake URL): {}", taskId, err);
+                    return WorkerDispatchResult.failed(sessionId, err, WorkerEngineType.DEEPSEEK_WORKTREE);
+                }
+
+                pullRequestUrl = prOutcome.url();
                 session.setPrUrl(pullRequestUrl);
                 session.setStatus("pr_opened");
                 session.setBelnapStatus(BelnapStatus.TRUE.name());
@@ -294,27 +388,150 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
     }
 
     private String resolveStartingBranch(TaskEntity task) {
+        if (task != null && task.getProject() != null
+                && task.getProject().getDefaultBranch() != null
+                && !task.getProject().getDefaultBranch().isBlank()) {
+            return task.getProject().getDefaultBranch().trim();
+        }
         return "main";
     }
 
-    private String openPullRequest(TaskEntity task, String workerBranch, String startingBranch) {
-        if (task.getProject() != null && githubPrService != null) {
-            try {
-                var prOpt = githubPrService.createPullRequest(
-                        task.getProject(),
-                        workerBranch,
-                        startingBranch,
-                        "feat: " + (task.getTitle() != null ? task.getTitle() : "Task " + task.getId()),
-                        "Autonomous implementation by Sovereign DeepSeek Worker.\nTask ID: " + task.getId()
-                );
-                if (prOpt.isPresent()) {
-                    return prOpt.get().url();
-                }
-            } catch (Exception e) {
-                log.warn("Failed to create GitHub PR via API: {}", e.getMessage());
+    private record PrOpenOutcome(String url, String errorReason) {
+        boolean created() {
+            return url != null && !url.isBlank();
+        }
+    }
+
+    private PrOpenOutcome openPullRequest(TaskEntity task, String workerBranch, String startingBranch) {
+        if (task == null || task.getProject() == null) {
+            return new PrOpenOutcome(null, "Task project is null; cannot create GitHub PR");
+        }
+        if (githubPrService == null) {
+            return new PrOpenOutcome(null, "GitHubPullRequestService is unavailable");
+        }
+        try {
+            var prOpt = githubPrService.createPullRequest(
+                    task.getProject(),
+                    workerBranch,
+                    startingBranch,
+                    "feat: " + (task.getTitle() != null ? task.getTitle() : "Task " + task.getId()),
+                    "Autonomous implementation by Sovereign DeepSeek Worker.\nTask ID: " + task.getId()
+            );
+            if (prOpt != null && prOpt.isPresent() && prOpt.get().url() != null && !prOpt.get().url().isBlank()) {
+                return new PrOpenOutcome(prOpt.get().url(), null);
+            }
+            var failureOpt = githubPrService.lastCreatePullRequestFailure();
+            String detail = (failureOpt != null && failureOpt.isPresent())
+                    ? failureOpt.get().summary()
+                    : "GitHubPullRequestService.createPullRequest returned empty Optional for branch " + workerBranch + " -> " + startingBranch;
+            return new PrOpenOutcome(null, detail);
+        } catch (Exception e) {
+            log.warn("Failed to create GitHub PR via API: {}", e.getMessage());
+            return new PrOpenOutcome(null, "Exception calling GitHub createPullRequest: " + e.getMessage());
+        }
+    }
+
+    static String buildRepositoryFileTreeBlock(List<String> repoFiles) {
+        if (repoFiles == null || repoFiles.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("### REPOSITORY FILE TREE (git ls-files — use ONLY real package/directory paths from this tree):\n");
+        int count = 0;
+        for (String f : repoFiles) {
+            if (count >= 120) {
+                sb.append("... (truncated)\n");
+                break;
+            }
+            sb.append("- ").append(f).append("\n");
+            count++;
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Mechanism #13 (4B): Detects poisoned cross-stack SCOPE_INSUFFICIENT (e.g. missing *.py files
+     * requested in a Java/Maven repository containing pom.xml and zero *.py files).
+     */
+    public static boolean isCrossStackPoisonedScope(List<String> missingFiles, List<String> repoFiles) {
+        if (missingFiles == null || missingFiles.isEmpty() || repoFiles == null || repoFiles.isEmpty()) {
+            return false;
+        }
+        if (!areAllMissingFilesAbsent(missingFiles, repoFiles)) {
+            return false;
+        }
+
+        boolean repoHasPomOrGradle = false;
+        boolean repoHasJava = false;
+        boolean repoHasPython = false;
+        boolean repoHasGo = false;
+        boolean repoHasRust = false;
+        for (String rf : repoFiles) {
+            if (rf == null) continue;
+            String lower = rf.trim().toLowerCase(java.util.Locale.ROOT);
+            if (lower.equals("pom.xml") || lower.endsWith("/pom.xml") || lower.equals("build.gradle") || lower.equals("build.gradle.kts")) {
+                repoHasPomOrGradle = true;
+            }
+            if (lower.endsWith(".java")) repoHasJava = true;
+            if (lower.endsWith(".py")) repoHasPython = true;
+            if (lower.endsWith(".go")) repoHasGo = true;
+            if (lower.endsWith(".rs")) repoHasRust = true;
+        }
+
+        boolean missingHasPython = false;
+        boolean missingHasJava = false;
+        boolean missingHasGo = false;
+        boolean missingHasRust = false;
+        for (String mf : missingFiles) {
+            if (mf == null) continue;
+            String lower = mf.trim().toLowerCase(java.util.Locale.ROOT);
+            if (lower.endsWith(".py")) missingHasPython = true;
+            if (lower.endsWith(".java")) missingHasJava = true;
+            if (lower.endsWith(".go")) missingHasGo = true;
+            if (lower.endsWith(".rs")) missingHasRust = true;
+        }
+
+        if ((repoHasPomOrGradle || repoHasJava) && !repoHasPython && missingHasPython) {
+            return true;
+        }
+        if ((repoHasPomOrGradle || repoHasJava) && !repoHasGo && missingHasGo) {
+            return true;
+        }
+        if ((repoHasPomOrGradle || repoHasJava) && !repoHasRust && missingHasRust) {
+            return true;
+        }
+        if (repoHasPython && !repoHasPomOrGradle && !repoHasJava && missingHasJava) {
+            return true;
+        }
+        return false;
+    }
+
+    public static boolean areAllMissingFilesAbsent(List<String> missingFiles, List<String> repoFiles) {
+        if (missingFiles == null || missingFiles.isEmpty()) {
+            return false;
+        }
+        if (repoFiles == null || repoFiles.isEmpty()) {
+            return true;
+        }
+        java.util.Set<String> exactPaths = new java.util.HashSet<>();
+        java.util.Set<String> baseNames = new java.util.HashSet<>();
+        for (String rf : repoFiles) {
+            if (rf == null || rf.isBlank()) continue;
+            String norm = rf.trim().replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
+            exactPaths.add(norm);
+            int slash = norm.lastIndexOf('/');
+            baseNames.add(slash >= 0 ? norm.substring(slash + 1) : norm);
+        }
+        for (String mf : missingFiles) {
+            if (mf == null || mf.isBlank()) continue;
+            String norm = mf.trim().replace('\\', '/').toLowerCase(java.util.Locale.ROOT);
+            int slash = norm.lastIndexOf('/');
+            String base = slash >= 0 ? norm.substring(slash + 1) : norm;
+            if (exactPaths.contains(norm) || baseNames.contains(base)) {
+                return false;
             }
         }
-        return "https://github.com/local-repo/pulls/task-" + task.getId();
+        return true;
     }
 
     private String truncateLogs(String text, int maxLength) {

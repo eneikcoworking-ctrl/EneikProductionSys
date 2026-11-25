@@ -17,7 +17,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Multi-Project Git Worktree and Bare Mirror Pool Manager (GEMINI.md §0, Frugal Engineering).
@@ -28,6 +30,9 @@ import java.util.concurrent.TimeUnit;
 public class GitWorktreeExecutionManager {
 
     private static final Logger log = LoggerFactory.getLogger(GitWorktreeExecutionManager.class);
+    private static final String SAFE_ORIGIN_FETCH_REFSPEC = "+refs/heads/*:refs/remotes/origin/*";
+
+    private final ConcurrentHashMap<Path, ReentrantLock> mirrorLocks = new ConcurrentHashMap<>();
 
     @Value("${factory.worktree.base-dir:/var/lib/eneik/worktrees}")
     private String configuredWorktreeBaseDir = "/var/lib/eneik/worktrees";
@@ -79,78 +84,182 @@ public class GitWorktreeExecutionManager {
         return getOrCreateBareMirror(project);
     }
 
+    private ReentrantLock lockForMirror(Path repoPath) {
+        Path key = repoPath != null ? repoPath.toAbsolutePath().normalize() : Paths.get(".").toAbsolutePath().normalize();
+        return mirrorLocks.computeIfAbsent(key, k -> new ReentrantLock());
+    }
+
     public Path getOrCreateBareMirror(ProjectEntity project) {
         Path mirrorsDir = resolveWorkableDirectory(configuredMirrorsBaseDir, "eneik-mirrors");
         String sanitizedName = sanitizeRepoName(project != null ? project.getName() : "default-repo") + ".git";
         Path mirrorPath = mirrorsDir.resolve(sanitizedName);
 
-        if (!Files.exists(mirrorPath)) {
-            try {
-                Files.createDirectories(mirrorPath);
-                String repoUrl = project != null ? project.getRepoUrl() : null;
-                if (repoUrl != null && !repoUrl.isBlank()) {
-                    String cloneUrl = repoUrl;
-                    String token = resolveGitHubToken();
-                    if (token != null && repoUrl.contains("github.com")) {
-                        cloneUrl = formatAuthenticatedGitHubUrl(repoUrl, token);
-                    }
-                    log.info("Cloning bare mirror for {} from {} to {}", project.getName(), repoUrl, mirrorPath);
-                    runCommand(mirrorsDir, 120, "git", "clone", "--mirror", cloneUrl, mirrorPath.toString());
-                } else {
-                    // Initialize empty bare git repo if no remote URL
-                    runCommand(mirrorsDir, 30, "git", "init", "--bare", mirrorPath.toString());
+        ReentrantLock lock = lockForMirror(mirrorPath);
+        lock.lock();
+        try {
+            if (!Files.exists(mirrorPath)) {
+                try {
+                    initializeBareMirror(mirrorsDir, mirrorPath, project);
+                } catch (Exception e) {
+                    log.warn("Failed to create bare mirror at {}: {}", mirrorPath, e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("Failed to create bare mirror at {}: {}", mirrorPath, e.getMessage());
+            } else {
+                // D013/D010 (Mechanism #13, 4A): Never run `--mirror` prune over local refs/heads/worker/*.
+                // Enforce safe remote-tracking refspec (+refs/heads/*:refs/remotes/origin/*) under per-mirror lock.
+                try {
+                    ensureSafeOriginFetchRefspec(mirrorPath);
+                    log.info("Fetching origin --prune with safe refspec for bare mirror at {}", mirrorPath);
+                    runCommand(mirrorPath, 60, "git", "fetch", "origin", SAFE_ORIGIN_FETCH_REFSPEC, "--prune");
+                } catch (Exception e) {
+                    log.warn("Fetch failed for mirror at {}: {}", mirrorPath, e.getMessage());
+                }
+            }
+            return mirrorPath;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
+     * D013/D010 (Mechanism #13, 4A): Force-resyncs bare mirror with origin/<defaultBranch> under per-mirror lock.
+     * If the mirror is corrupted or history diverged, safely reinitializes the bare mirror.
+     */
+    public boolean resyncMirrorWithOriginMain(ProjectEntity project) {
+        if (project == null) {
+            return false;
+        }
+        Path baseRepo = resolveMirrorPathWithoutFetch(project);
+        ReentrantLock lock = lockForMirror(baseRepo);
+        lock.lock();
+        try {
+            String defaultBranch = (project.getDefaultBranch() != null && !project.getDefaultBranch().isBlank())
+                    ? project.getDefaultBranch().trim()
+                    : "main";
+            log.warn("Mechanism #13 (4A): Resyncing mirror {} with origin/{}", baseRepo, defaultBranch);
+
+            if (Files.exists(baseRepo)) {
+                ensureSafeOriginFetchRefspec(baseRepo);
+                int fetchExit = runCommand(baseRepo, 60, "git", "fetch", "--force", "origin", SAFE_ORIGIN_FETCH_REFSPEC, "--prune");
+                if (fetchExit == 0 && hasBranchOrRef(baseRepo, "refs/remotes/origin/" + defaultBranch)) {
+                    // Best-effort fast-forward refs/heads/<defaultBranch> to match origin/<defaultBranch>
+                    runCommand(baseRepo, 15, "git", "update-ref", "refs/heads/" + defaultBranch, "refs/remotes/origin/" + defaultBranch);
+                    log.info("Resynced mirror {} successfully to origin/{}", baseRepo, defaultBranch);
+                    return true;
+                }
+                // If bare mirror is damaged and we have a repoUrl, safely reinitialize it
+                if (project.getRepoUrl() != null && !project.getRepoUrl().isBlank() && isBareMirrorDirectory(baseRepo)) {
+                    log.warn("Mirror {} fetch failed (exit={}); reinitializing bare mirror from {}", baseRepo, fetchExit, project.getRepoUrl());
+                    deleteRecursively(baseRepo.toFile());
+                    initializeBareMirror(baseRepo.getParent(), baseRepo, project);
+                    return hasBranchOrRef(baseRepo, "refs/remotes/origin/" + defaultBranch)
+                            || hasBranchOrRef(baseRepo, defaultBranch);
+                }
+                return fetchExit == 0;
+            } else {
+                initializeBareMirror(baseRepo.getParent(), baseRepo, project);
+                return hasBranchOrRef(baseRepo, "refs/remotes/origin/" + defaultBranch)
+                        || hasBranchOrRef(baseRepo, defaultBranch);
+            }
+        } catch (Exception e) {
+            log.error("resyncMirrorWithOriginMain failed for project {}: {}", project.getName(), e.getMessage());
+            return false;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private Path resolveMirrorPathWithoutFetch(ProjectEntity project) {
+        Path mirrorsDir = resolveWorkableDirectory(configuredMirrorsBaseDir, "eneik-mirrors");
+        String sanitizedName = sanitizeRepoName(project.getName() != null ? project.getName() : "default-repo") + ".git";
+        return mirrorsDir.resolve(sanitizedName);
+    }
+
+    private boolean isBareMirrorDirectory(Path path) {
+        return path != null && path.getFileName() != null && path.getFileName().toString().endsWith(".git")
+                && !Files.exists(path.resolve(".git"));
+    }
+
+    private void initializeBareMirror(Path mirrorsDir, Path mirrorPath, ProjectEntity project) throws IOException {
+        if (mirrorsDir != null) {
+            Files.createDirectories(mirrorsDir);
+        }
+        String repoUrl = project != null ? project.getRepoUrl() : null;
+        if (repoUrl != null && !repoUrl.isBlank()) {
+            String cloneUrl = repoUrl;
+            String token = resolveGitHubToken();
+            if (token != null && repoUrl.contains("github.com")) {
+                cloneUrl = formatAuthenticatedGitHubUrl(repoUrl, token);
+            }
+            log.info("Cloning bare repo for {} from {} to {}", project.getName(), repoUrl, mirrorPath);
+            int cloneExit = runCommand(mirrorsDir, 120, "git", "clone", "--bare", cloneUrl, mirrorPath.toString());
+            if (cloneExit == 0 && Files.exists(mirrorPath)) {
+                ensureSafeOriginFetchRefspec(mirrorPath);
+                runCommand(mirrorPath, 60, "git", "fetch", "origin", SAFE_ORIGIN_FETCH_REFSPEC, "--prune");
             }
         } else {
-            // Prune and fetch updates
-            try {
-                log.info("Fetching origin --prune for bare mirror at {}", mirrorPath);
-                runCommand(mirrorPath, 60, "git", "fetch", "origin", "--prune");
-            } catch (Exception e) {
-                log.warn("Fetch failed for mirror at {}: {}", mirrorPath, e.getMessage());
-            }
+            runCommand(mirrorsDir, 30, "git", "init", "--bare", mirrorPath.toString());
         }
-        return mirrorPath;
+    }
+
+    private void ensureSafeOriginFetchRefspec(Path repoPath) {
+        if (repoPath == null || !Files.exists(repoPath)) {
+            return;
+        }
+        // Remove mirror=true if present from legacy `--mirror` clones so `git fetch --prune`
+        // never deletes local refs/heads/worker/* branches out from under active worktrees.
+        runCommand(repoPath, 10, "git", "config", "--unset-all", "remote.origin.mirror");
+        runCommand(repoPath, 10, "git", "config", "remote.origin.fetch", SAFE_ORIGIN_FETCH_REFSPEC);
     }
 
     /**
      * Creates an isolated ephemeral worktree for a task.
-     * Command: git worktree add -B worker/{taskId} {worktreePath} {startingBranch}
+     * Command: git worktree add -B worker/{taskId} {worktreePath} {origin/startingBranch | startingBranch}
      */
     public Path createWorktree(UUID taskId, Path baseRepoPath, String startingBranch) {
         Path worktreeBase = resolveWorkableDirectory(configuredWorktreeBaseDir, "eneik-worktrees");
         Path worktreePath = worktreeBase.resolve("task-" + taskId);
 
-        // Clean up any stale directory first
-        if (Files.exists(worktreePath)) {
-            removeWorktree(baseRepoPath, worktreePath);
-        }
-
-        String branch = (startingBranch != null && !startingBranch.isBlank()) ? startingBranch : "main";
-        String workerBranch = "worker/" + taskId;
-
-        log.info("Creating ephemeral git worktree at {} from base {} on branch {}", worktreePath, baseRepoPath, branch);
-
+        ReentrantLock lock = lockForMirror(baseRepoPath);
+        lock.lock();
         try {
-            // Check if starting branch exists; if not, try HEAD or origin/main
-            List<String> cmd = new ArrayList<>(Arrays.asList("git", "worktree", "add", "-B", workerBranch, worktreePath.toString()));
-            if (hasBranchOrRef(baseRepoPath, branch)) {
-                cmd.add(branch);
-            } else if (hasBranchOrRef(baseRepoPath, "origin/" + branch)) {
-                cmd.add("origin/" + branch);
-            } else {
-                cmd.add("HEAD");
+            // Clean up any stale directory first
+            if (Files.exists(worktreePath)) {
+                removeWorktree(baseRepoPath, worktreePath);
             }
 
-            runCommand(baseRepoPath, 30, cmd.toArray(new String[0]));
-        } catch (Exception e) {
-            log.error("Failed to create git worktree at {}: {}", worktreePath, e.getMessage());
-            throw new RuntimeException("Failed to create worktree: " + e.getMessage(), e);
-        }
+            String branch = (startingBranch != null && !startingBranch.isBlank()) ? startingBranch : "main";
+            String workerBranch = "worker/" + taskId;
 
-        return worktreePath;
+            log.info("Creating ephemeral git worktree at {} from base {} on branch {}", worktreePath, baseRepoPath, branch);
+
+            try {
+                // Prefer freshly-fetched origin/<branch>, then local <branch>, then origin/main, then main, then HEAD
+                List<String> cmd = new ArrayList<>(Arrays.asList("git", "worktree", "add", "-B", workerBranch, worktreePath.toString()));
+                if (hasBranchOrRef(baseRepoPath, "refs/remotes/origin/" + branch)) {
+                    cmd.add("refs/remotes/origin/" + branch);
+                } else if (hasBranchOrRef(baseRepoPath, branch)) {
+                    cmd.add(branch);
+                } else if (hasBranchOrRef(baseRepoPath, "refs/remotes/origin/main")) {
+                    cmd.add("refs/remotes/origin/main");
+                } else if (hasBranchOrRef(baseRepoPath, "main")) {
+                    cmd.add("main");
+                } else {
+                    cmd.add("HEAD");
+                }
+
+                int exit = runCommand(baseRepoPath, 30, cmd.toArray(new String[0]));
+                if (exit != 0) {
+                    throw new RuntimeException("git worktree add exited with code " + exit);
+                }
+            } catch (Exception e) {
+                log.error("Failed to create git worktree at {}: {}", worktreePath, e.getMessage());
+                throw new RuntimeException("Failed to create worktree: " + e.getMessage(), e);
+            }
+
+            return worktreePath;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /**
@@ -205,11 +314,15 @@ public class GitWorktreeExecutionManager {
 
         log.info("Tearing down git worktree at {}", worktreePath);
         if (baseRepoPath != null && Files.exists(baseRepoPath)) {
+            ReentrantLock lock = lockForMirror(baseRepoPath);
+            lock.lock();
             try {
                 runCommand(baseRepoPath, 30, "git", "worktree", "remove", "--force", worktreePath.toString());
                 runCommand(baseRepoPath, 30, "git", "worktree", "prune");
             } catch (Exception e) {
                 log.warn("git worktree remove failed for {}: {}", worktreePath, e.getMessage());
+            } finally {
+                lock.unlock();
             }
         }
 
@@ -290,6 +403,49 @@ public class GitWorktreeExecutionManager {
         }
     }
 
+    /**
+     * D013/D010 (Mechanism #13, 4A): Verifies that HEAD in the worktree shares a real common ancestor
+     * with origin/<baseBranch> (or <baseBranch>), ruling out orphan commits (parents=[]) that trigger
+     * GitHub HTTP 422 "no history in common with main".
+     */
+    public boolean hasCommonHistoryWithBase(Path worktreePath, String baseBranch) {
+        if (worktreePath == null || !Files.exists(worktreePath)) {
+            return false;
+        }
+        String branch = (baseBranch != null && !baseBranch.isBlank()) ? baseBranch.trim() : "main";
+        String baseRef = null;
+        if (hasBranchOrRef(worktreePath, "refs/remotes/origin/" + branch)) {
+            baseRef = "refs/remotes/origin/" + branch;
+        } else if (hasBranchOrRef(worktreePath, branch)) {
+            baseRef = branch;
+        } else if (hasBranchOrRef(worktreePath, "refs/remotes/origin/main")) {
+            baseRef = "refs/remotes/origin/main";
+        } else if (hasBranchOrRef(worktreePath, "main")) {
+            baseRef = "main";
+        }
+        if (baseRef == null) {
+            return false;
+        }
+        try {
+            int exit = runCommand(worktreePath, 15, "git", "merge-base", "HEAD", baseRef);
+            return exit == 0;
+        } catch (Exception e) {
+            log.warn("Failed to check merge-base between HEAD and {} in {}: {}", baseRef, worktreePath, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Throws IllegalStateException if HEAD in the worktree has no common ancestor with baseBranch.
+     */
+    public void verifyCommonHistoryWithBase(Path worktreePath, String baseBranch) {
+        if (!hasCommonHistoryWithBase(worktreePath, baseBranch)) {
+            throw new IllegalStateException(
+                    "ORPHAN_COMMIT_NO_COMMON_HISTORY: worktree HEAD at " + worktreePath
+                            + " has no common ancestor with origin/" + (baseBranch != null ? baseBranch : "main"));
+        }
+    }
+
     public void push(Path worktreePath, String branch) {
         String token = resolveGitHubToken();
         if (token != null && !token.isBlank()) {
@@ -308,7 +464,10 @@ public class GitWorktreeExecutionManager {
                 log.warn("Authenticated git push failed, falling back to standard push: {}", e.getMessage());
             }
         }
-        runCommand(worktreePath, 60, "git", "push", "--force", "-u", "origin", branch);
+        int exit = runCommand(worktreePath, 60, "git", "push", "--force", "-u", "origin", branch);
+        if (exit != 0) {
+            throw new RuntimeException("git push failed with exit code " + exit + " for branch " + branch);
+        }
     }
 
     public String resolveGitHubToken() {

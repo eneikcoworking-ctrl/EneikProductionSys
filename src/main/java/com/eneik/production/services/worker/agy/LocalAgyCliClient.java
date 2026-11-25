@@ -238,6 +238,9 @@ public class LocalAgyCliClient {
             }
             sb.append("File Scope: ").append(scopeDisplay).append("\n");
             sb.append("Description & Acceptance Criteria:\n").append(task.getDescription()).append("\n\n");
+            if (SystemSettingsService.isExternalUiOwnedProject(settingsService, task.getProject())) {
+                sb.append(SystemSettingsService.EXTERNAL_UI_BOUNDARY_DIRECTIVE).append("\n");
+            }
         }
 
         if (fileContentsContext != null && !fileContentsContext.isBlank()) {

@@ -679,6 +679,14 @@ public class ClaimService {
                     roleTag);
         }
 
+        // Mechanism #13 (4B, D003/D002/D010): Immediately terminate poisoned cross-stack SCOPE_INSUFFICIENT
+        // or repeated (>=2) SCOPE_INSUFFICIENT on non-existent files without requeuing into TaskStatus.queued.
+        if (shouldTerminatePoisonedScopeInsufficient(taskId, reason)) {
+            taskBackoffUntil.remove(taskId);
+            retireForPoisonedScopeInsufficient(taskId, reason);
+            return;
+        }
+
         long refusals = refusedSessionCreations(taskId);
         long budget = dispatchAttemptBudget();
         if (refusals >= budget) {
@@ -1077,6 +1085,56 @@ public class ClaimService {
 
         log.warn("Task {} left the dispatch queue: {} refused session creations against a budget of {}. Status: {}",
                 taskId, refusals, budget, dispatchStatus);
+    }
+
+    public static boolean isPoisonedCrossStackScopeReason(String reason) {
+        return reason != null && reason.toUpperCase(Locale.ROOT).contains("POISONED_CROSS_STACK_SCOPE_INSUFFICIENT");
+    }
+
+    private boolean shouldTerminatePoisonedScopeInsufficient(UUID taskId, String reason) {
+        if (isPoisonedCrossStackScopeReason(reason)) {
+            return true;
+        }
+        if (reason == null || !reason.toUpperCase(Locale.ROOT).contains("SCOPE_INSUFFICIENT")) {
+            return false;
+        }
+        TaskEntity task = taskRepository.findById(taskId).orElse(null);
+        Instant resetAt = (task != null) ? task.getLastBudgetResetAt() : null;
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(taskId);
+        if (sessions == null || sessions.isEmpty()) {
+            return false;
+        }
+        long scopeInsufficientCount = sessions.stream()
+                .filter(s -> s != null && "scope_insufficient".equalsIgnoreCase(s.getStatus()))
+                .filter(s -> resetAt == null || (s.getCreatedAt() != null && s.getCreatedAt().isAfter(resetAt)))
+                .count();
+        return scopeInsufficientCount >= 2;
+    }
+
+    private void retireForPoisonedScopeInsufficient(UUID taskId, String reason) {
+        int written = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        if (written == 0) {
+            log.info("ClaimService: task {} reached terminal status concurrently; poisoned SCOPE_INSUFFICIENT retirement skipped", taskId);
+            return;
+        }
+        String dispatchStatus = "NEEDS_RECOMPILATION: " + (reason != null ? reason : "POISONED_SCOPE_INSUFFICIENT");
+        taskRepository.findById(taskId).ifPresent(task -> {
+            task.setStatus(TaskStatus.blocked);
+            task.setDispatchVerdict(com.eneik.production.models.persistence.TaskDispatchVerdict.DISPATCH_BUDGET_EXHAUSTED);
+            task.setJulesDispatchStatus(dispatchStatus);
+            writeTaskBackoffToPayload(task, null);
+            taskRepository.save(task);
+
+            if (defectJournalRepository != null) {
+                UUID projectId = task.getProject() != null ? task.getProject().getId() : null;
+                String sourceComponent = task.isCarrier() ? "carrier" : "task";
+                defectJournalRepository.save(new DefectJournalEntity(
+                        projectId, taskId, null, "HIGH", "SCOPE_INSUFFICIENT", sourceComponent,
+                        "POISONED_SCOPE_INSUFFICIENT", dispatchStatus, 1.0));
+            }
+        });
+        log.warn("Mechanism #13 (4B): Task {} terminated from queue into blocked (NEEDS_RECOMPILATION): {}",
+                taskId, dispatchStatus);
     }
 
     public static boolean isExternalDispatchRefusal(String closureReason) {

@@ -2008,6 +2008,20 @@ public class GitHubPullRequestService {
         }
     }
 
+    public record PullRequestCreationFailure(int statusCode, String body, boolean noHistoryInCommon) {
+        public String summary() {
+            return "HTTP " + statusCode
+                    + (noHistoryInCommon ? " (no history in common with base)" : "")
+                    + (body != null && !body.isBlank() ? ": " + body : "");
+        }
+    }
+
+    private final ThreadLocal<PullRequestCreationFailure> lastCreatePrFailure = new ThreadLocal<>();
+
+    public Optional<PullRequestCreationFailure> lastCreatePullRequestFailure() {
+        return Optional.ofNullable(lastCreatePrFailure.get());
+    }
+
     /**
      * Opens a real PR head-&gt;base with no Jules session involved - used for feature-thread closeout
      * (AutoMergeService.closeOutReadyFeatureThreads), where the "task" is folding an already-reviewed
@@ -2015,6 +2029,7 @@ public class GitHubPullRequestService {
      */
     public Optional<GitHubPullRequest> createPullRequest(ProjectEntity project, String head, String base,
             String title, String body) {
+        lastCreatePrFailure.remove();
         if (project == null || head == null || head.isBlank() || base == null || base.isBlank()
                 || !settingsService.effectiveBoolean("github_enabled")) {
             return Optional.empty();
@@ -2048,11 +2063,17 @@ public class GitHubPullRequestService {
                         pr.hasNonNull("merged_at"), pr.path("base").path("ref").asText(""),
                         "closed".equals(pr.path("state").asText("")), parsePrCreatedAt(pr)));
             }
+            String bodyPreview = preview(response.body());
+            boolean noCommonHistory = response.statusCode() == 422
+                    && response.body() != null
+                    && response.body().toLowerCase(java.util.Locale.ROOT).contains("no history in common");
+            lastCreatePrFailure.set(new PullRequestCreationFailure(response.statusCode(), bodyPreview, noCommonHistory));
             // 422 "No commits between base and head" is a real, expected outcome when the thread branch has
             // already fully landed elsewhere or has nothing new relative to base - not an error to retry loudly.
             log.warn("GitHub create-PR failed for {}/{} head={} base={}: status={} body={}",
-                    repoRef.owner(), repoRef.repo(), head, base, response.statusCode(), preview(response.body()));
+                    repoRef.owner(), repoRef.repo(), head, base, response.statusCode(), bodyPreview);
         } catch (Exception e) {
+            lastCreatePrFailure.set(new PullRequestCreationFailure(0, e.getMessage(), false));
             log.warn("Could not create PR {}->{} for project {}: {}", head, base, project.getId(), e.getMessage());
         }
         return Optional.empty();

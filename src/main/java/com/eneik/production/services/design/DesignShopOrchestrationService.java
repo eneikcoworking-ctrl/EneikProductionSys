@@ -117,6 +117,11 @@ public class DesignShopOrchestrationService {
         }
         List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
         for (ProjectEntity project : activeProjects) {
+            if (settingsService != null && settingsService.isExternalUiOwnedProject(project)) {
+                log.info("DesignShopOrchestrationService: skipping project {} ({}) — EXTERNAL_UI_OWNER (UI managed by aesthetic-master)",
+                        project.getName(), project.getId());
+                continue;
+            }
             LogScope.project(project.getId());
             try {
                 processProject(project);

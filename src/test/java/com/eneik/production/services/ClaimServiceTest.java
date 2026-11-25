@@ -215,4 +215,46 @@ class ClaimServiceTest {
                 eq("Individual quota reached (exit 3)"),
                 eq("BARCAN-TAG-02"));
     }
+
+    @Test
+    @DisplayName("Gate 4B (D003/D002): POISONED_CROSS_STACK_SCOPE_INSUFFICIENT terminates task to blocked/NEEDS_RECOMPILATION without requeuing")
+    void poisonedCrossStackScopeInsufficientTerminatesWithoutRequeue() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = newTask(taskId, TaskStatus.claimed);
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)).thenReturn(Optional.empty());
+        when(taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.blocked)).thenReturn(1);
+
+        String reason = "POISONED_CROSS_STACK_SCOPE_INSUFFICIENT: missing foreign-stack files [crie_persistent_memory.py]";
+        claimService.releaseClaimToQueue(taskId, reason);
+
+        verify(taskRepository, org.mockito.Mockito.never()).writeStatusUnlessTerminal(taskId, TaskStatus.queued);
+        verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        assertEquals(TaskStatus.blocked, task.getStatus());
+        assertTrue(task.getJulesDispatchStatus().startsWith("NEEDS_RECOMPILATION:"));
+        assertTrue(task.getJulesDispatchStatus().contains("POISONED_CROSS_STACK_SCOPE_INSUFFICIENT"));
+    }
+
+    @Test
+    @DisplayName("Gate 4B (D003/D002): Repeated (>=2) SCOPE_INSUFFICIENT terminates task to blocked/NEEDS_RECOMPILATION without requeuing")
+    void repeatedScopeInsufficientTerminatesWithoutRequeue() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = newTask(taskId, TaskStatus.claimed);
+
+        JulesSessionEntity s1 = sovereignSession(taskId, "deepseek-" + UUID.randomUUID(), "scope_insufficient", null, "SCOPE_INSUFFICIENT: missing [a.py]");
+        JulesSessionEntity s2 = sovereignSession(taskId, "deepseek-" + UUID.randomUUID(), "scope_insufficient", null, "SCOPE_INSUFFICIENT: missing [a.py]");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)).thenReturn(Optional.empty());
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(s1, s2));
+        when(taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.blocked)).thenReturn(1);
+
+        claimService.releaseClaimToQueue(taskId, "SCOPE_INSUFFICIENT: missing [a.py]");
+
+        verify(taskRepository, org.mockito.Mockito.never()).writeStatusUnlessTerminal(taskId, TaskStatus.queued);
+        verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        assertEquals(TaskStatus.blocked, task.getStatus());
+        assertTrue(task.getJulesDispatchStatus().startsWith("NEEDS_RECOMPILATION:"));
+    }
 }

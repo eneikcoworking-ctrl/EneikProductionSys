@@ -25,12 +25,19 @@ public class FileScopeEnforcer {
     private static final Logger log = LoggerFactory.getLogger(FileScopeEnforcer.class);
     private final ObjectMapper objectMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.settings.SystemSettingsService settingsService;
+
     public FileScopeEnforcer(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
     }
 
     public FileScopeEnforcer() {
         this(new ObjectMapper());
+    }
+
+    public void setSettingsService(com.eneik.production.services.settings.SystemSettingsService settingsService) {
+        this.settingsService = settingsService;
     }
 
     /**
@@ -111,6 +118,25 @@ public class FileScopeEnforcer {
             }
         }
         List<String> actualModifiedFiles = readGitStatusPorcelain(worktreePath);
+
+        // Mechanism #13 (4C, Raz Deontic Gate D006): Unconditionally prohibit modifying externally owned UI
+        // files (e.g. src/main/resources/static/index.html owned by aesthetic-master), even if listed in
+        // task.fileScope or if task.fileScope is empty.
+        if (task != null && com.eneik.production.services.settings.SystemSettingsService.isExternalUiOwnedProject(settingsService, task.getProject())) {
+            List<String> protectedUiViolations = actualModifiedFiles.stream()
+                    .filter(com.eneik.production.services.settings.SystemSettingsService::isProtectedExternalUiPath)
+                    .toList();
+            if (!protectedUiViolations.isEmpty()) {
+                log.error("Raz Deontic Gate D006 BREACH (EXTERNAL_UI_OWNED_BY_AESTHETIC_MASTER): project {} attempted to modify protected UI files {}",
+                        task.getProject() != null ? task.getProject().getName() : "unknown", protectedUiViolations);
+                rollbackWorktree(worktreePath);
+                throw new ExclusionaryReasonViolationException(
+                        "EXTERNAL_UI_OWNED_BY_AESTHETIC_MASTER: Raz Deontic Gate (D006) prohibits modifying " + protectedUiViolations,
+                        protectedUiViolations,
+                        declaredScope);
+            }
+        }
+
         if (declaredScope.isEmpty()) {
             log.info("Task {} has no explicit fileScope; Raz gate permits product worktree modifications ({} files)",
                     task != null ? task.getId() : "unknown", actualModifiedFiles.size());

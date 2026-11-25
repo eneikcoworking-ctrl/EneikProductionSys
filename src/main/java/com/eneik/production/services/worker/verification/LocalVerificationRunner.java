@@ -39,6 +39,9 @@ public class LocalVerificationRunner {
 
     private final SimulationStubDetector stubDetector;
 
+    @Autowired(required = false)
+    private com.eneik.production.services.settings.SystemSettingsService settingsService;
+
     public LocalVerificationRunner() {
         this(new SimulationStubDetector());
     }
@@ -46,6 +49,14 @@ public class LocalVerificationRunner {
     @Autowired
     public LocalVerificationRunner(SimulationStubDetector stubDetector) {
         this.stubDetector = stubDetector != null ? stubDetector : new SimulationStubDetector();
+    }
+
+    public void setSettingsService(com.eneik.production.services.settings.SystemSettingsService settingsService) {
+        this.settingsService = settingsService;
+    }
+
+    private boolean isExternalUiOwned(TaskEntity task) {
+        return task != null && com.eneik.production.services.settings.SystemSettingsService.isExternalUiOwnedProject(settingsService, task.getProject());
     }
 
     /**
@@ -71,7 +82,13 @@ public class LocalVerificationRunner {
                 HOST_VERIFICATION_SEMAPHORE.availablePermits());
 
         // Alvin Goldman Level of Abstraction Lock (D010): Conjugated build step compiling/syncing Svelte to static/index.html
-        compileAndSyncFrontendToStatic(worktreePath);
+        // Mechanism #13 (4C): Skip UI sync for projects whose UI is externally owned by aesthetic-master.
+        if (isExternalUiOwned(task)) {
+            log.info("Mechanism #13 (4C): Skipping compileAndSyncFrontendToStatic for external-UI-owned project {}",
+                    task.getProject() != null ? task.getProject().getName() : "unknown");
+        } else {
+            compileAndSyncFrontendToStatic(worktreePath);
+        }
 
         boolean acquired = false;
         try {
@@ -166,9 +183,15 @@ public class LocalVerificationRunner {
         }
 
         // ELVIN_GOLDMAN_16_LEVEL_OF_ABSTRACTION_LOCK (D010): Verify static/index.html is not decoupled from App.svelte
-        VerificationResult abstractionLock = verifyLevelOfAbstractionLock(worktreePath);
-        if (!abstractionLock.passed()) {
-            return abstractionLock;
+        // Mechanism #13 (4C): Skip abstraction lock on static/index.html when UI is externally owned by aesthetic-master.
+        if (!isExternalUiOwned(task)) {
+            VerificationResult abstractionLock = verifyLevelOfAbstractionLock(worktreePath);
+            if (!abstractionLock.passed()) {
+                return abstractionLock;
+            }
+        } else {
+            log.info("Mechanism #13 (4C): Skipping verifyLevelOfAbstractionLock on static/index.html for external-UI-owned project {}",
+                    task.getProject() != null ? task.getProject().getName() : "unknown");
         }
 
         return VerificationResult.success(0, "Goldman D010 Gate: Verified clean of simulacra");

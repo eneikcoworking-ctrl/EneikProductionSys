@@ -213,6 +213,9 @@ public class DeepSeekApiClient {
                 sb.append("DEONTIC FILE SCOPE (RAZ D006 - STRICT PROHIBITION): ").append(task.getFileScope()).append("\n");
                 sb.append("You are strictly prohibited from modifying or creating ANY file outside this scope.\n");
             }
+            if (SystemSettingsService.isExternalUiOwnedProject(settingsService, task.getProject())) {
+                sb.append(SystemSettingsService.EXTERNAL_UI_BOUNDARY_DIRECTIVE);
+            }
         }
         return sb.toString();
     }

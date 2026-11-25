@@ -352,6 +352,25 @@ class DesignShopOrchestrationServiceTest {
         assertFalse(logs.contains("the readiness front has not occurred"));
     }
 
+    @Test
+    void gate4c_skipsExternalUiOwnedProjectWithoutCreatingDesignCycle() {
+        ProjectEntity externalUiProject = new ProjectEntity();
+        externalUiProject.setId(UUID.randomUUID());
+        externalUiProject.setName("knowledge-base-crie");
+        externalUiProject.setStatus(ProjectStatus.active);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active))
+                .thenReturn(List.of(externalUiProject));
+        when(settingsService.isExternalUiOwnedProject(externalUiProject)).thenReturn(true);
+
+        service.tick();
+
+        verifyNoInteractions(designShopCycleRepository);
+        verifyNoInteractions(readinessService);
+        verifyNoInteractions(designAssetService);
+        verifyNoInteractions(projectFlowService);
+    }
+
     private static final class Logs {
         private final ch.qos.logback.classic.Logger logger;
         private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
