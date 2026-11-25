@@ -26,6 +26,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Query("SELECT a FROM AccountEntity a WHERE " +
             "a.status <> com.eneik.production.models.persistence.AccountStatus.decommissioned AND " +
+            "UPPER(COALESCE(a.provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES' AND " +
             "(a.currentProjectId IS NULL OR a.currentProjectId = :projectId) " +
             "ORDER BY LOWER(a.name) ASC")
     List<AccountEntity> findAvailableForProjectOrderByNameAsc(@Param("projectId") UUID projectId);
@@ -60,7 +61,8 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Modifying
     @Transactional
     @Query("UPDATE AccountEntity a SET a.status = com.eneik.production.models.persistence.AccountStatus.idle, a.statusChangedAt = :now " +
-            "WHERE a.status = com.eneik.production.models.persistence.AccountStatus.daily_limited")
+            "WHERE a.status = com.eneik.production.models.persistence.AccountStatus.daily_limited " +
+            "AND UPPER(COALESCE(a.provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES'")
     int resetDailyLimitedAccounts(@Param("now") Instant now);
 
     // api_blocked has no clean "resets at midnight" signal like daily_limited does, so instead of a fixed
@@ -106,6 +108,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             UPDATE accounts
             SET status = 'api_blocked', status_changed_at = CURRENT_TIMESTAMP
             WHERE status = 'daily_limited'
+              AND UPPER(COALESCE(provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES'
               AND id IN (
                   SELECT DISTINCT account_id
                   FROM jules_sessions s
@@ -131,11 +134,13 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     void assignFreeAccountsToProject(@Param("newProjectId") UUID newProjectId);
 
     @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
+            "AND UPPER(COALESCE(provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES' " +
             "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
             "ORDER BY last_heartbeat ASC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProject(@Param("projectId") UUID projectId);
 
     @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
+            "AND UPPER(COALESCE(provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES' " +
             "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
             "AND (:tag IS NULL OR capabilities = '*' OR ',' || capabilities || ',' LIKE '%,' || :tag || ',%') " +
             "ORDER BY last_heartbeat ASC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
@@ -168,6 +173,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Query(value = """
             SELECT * FROM accounts a
             WHERE a.enabled = true
+              AND UPPER(COALESCE(a.provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES'
               AND a.api_key IS NOT NULL AND CHAR_LENGTH(TRIM(a.api_key)) > 0
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
@@ -280,6 +286,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Query(value = """
             SELECT COUNT(*) > 0 FROM accounts a
             WHERE a.enabled = true
+              AND UPPER(COALESCE(a.provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES'
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (
@@ -314,13 +321,16 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     // (api_blocked, daily_limited, offline) is a condition the account recovers from, so an account in it
     // is still a witness the task has not yet been offered to.
     @Query("SELECT COUNT(a) FROM AccountEntity a WHERE " +
-            "a.status <> com.eneik.production.models.persistence.AccountStatus.decommissioned")
+            "a.status <> com.eneik.production.models.persistence.AccountStatus.decommissioned AND " +
+            "UPPER(COALESCE(a.provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES'")
     long countLiveAccounts();
 
     // Operational accounts actively capable of taking work (enabled=true and not in non-operational statuses).
     // Used by monopoly detection so that temporarily unavailable accounts (api_blocked, offline) do not inflate the pool denominator.
     @Query("SELECT COUNT(a) FROM AccountEntity a WHERE " +
-            "a.enabled = true AND a.status NOT IN (" +
+            "a.enabled = true AND " +
+            "UPPER(COALESCE(a.provider, 'GOOGLE_JULES')) <> 'GOOGLE_JULES' AND " +
+            "a.status NOT IN (" +
             "com.eneik.production.models.persistence.AccountStatus.decommissioned, " +
             "com.eneik.production.models.persistence.AccountStatus.offline, " +
             "com.eneik.production.models.persistence.AccountStatus.daily_limited, " +

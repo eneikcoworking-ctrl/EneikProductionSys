@@ -371,6 +371,14 @@ public class SystemSettingsService {
                     + "GeminiProjectObserverService has been permanently decommissioned as Muda (V111).");
         }
 
+        // Mechanism #15 (WO #13, DZHOZEF_RAZ_01_PROHIBITION_AS_CODE / D006 & D013):
+        // Google Jules has been permanently removed from the execution chain and cannot be re-enabled via API/UI.
+        if ("jules_enabled".equals(key)) {
+            throw new IllegalArgumentException(
+                    "Setting 'jules_enabled' cannot be modified via API. "
+                    + "Google Jules has been permanently decommissioned from the execution chain.");
+        }
+
         if (definition != null && definition.enabledFlag()) {
             String normalized = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
             if (!"true".equals(normalized) && !"false".equals(normalized)) {
@@ -400,6 +408,17 @@ public class SystemSettingsService {
 
     private EffectiveSetting effectiveSetting(String key) {
         SettingDefinition definition = requireDefinition(key);
+        if ("jules_enabled".equals(key)) {
+            String featureFlag = firstNonBlank(
+                    environment.getProperty("ENEIK_JULES_ENABLED"),
+                    environment.getProperty("eneik.jules.enabled"),
+                    System.getenv("ENEIK_JULES_ENABLED")
+            );
+            if (!"true".equalsIgnoreCase(featureFlag)) {
+                return new EffectiveSetting("false", "policy");
+            }
+            return new EffectiveSetting("true", "env");
+        }
         if (!"debug_sql_endpoint_enabled".equals(key)) {
             Optional<String> databaseValue = databaseValue(definition.key());
             if (databaseValue.isPresent() && !databaseValue.get().isBlank()) {
@@ -469,7 +488,7 @@ public class SystemSettingsService {
         definitions.put("linear_enabled", flag("linear_enabled", "LINEAR_ENABLED", "linear.enabled"));
         definitions.put("linear_api_key", secret("linear_api_key", "LINEAR_API_KEY", "linear.api-key"));
         definitions.put("linear_team_id", plain("linear_team_id", "LINEAR_TEAM_ID", "linear.team-id"));
-        definitions.put("jules_enabled", flag("jules_enabled", "JULES_ENABLED", "JULES_ENABLED"));
+        definitions.put("jules_enabled", flag("jules_enabled", "ENEIK_JULES_ENABLED", "eneik.jules.enabled"));
         definitions.put("jules_api_key", secret("jules_api_key", "JULES_API_KEY", "JULES_API_KEY"));
         definitions.put("gemini_enabled", flag("gemini_enabled", "GEMINI_ENABLED", "GEMINI_ENABLED"));
         definitions.put("gemini_api_key", secret("gemini_api_key", "GEMINI_API_KEY", "GEMINI_API_KEY"));

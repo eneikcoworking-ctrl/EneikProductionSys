@@ -53,6 +53,7 @@ class SessionLifecycleServiceTest {
         // JulesDispatchServiceTest.self, since there's no real Spring proxy in a plain unit test.
         ReflectionTestUtils.setField(service, "self", service);
         ReflectionTestUtils.setField(service, "cleanupBatchSize", 30);
+        ReflectionTestUtils.setField(service, "julesFeatureEnabled", true);
         when(julesSessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 

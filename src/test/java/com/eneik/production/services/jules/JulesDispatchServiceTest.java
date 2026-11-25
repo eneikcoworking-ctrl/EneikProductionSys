@@ -128,6 +128,7 @@ class JulesDispatchServiceTest {
         ReflectionTestUtils.setField(julesDispatchService, "davidsonVetoCeilingMinutes", 360);
         ReflectionTestUtils.setField(julesDispatchService, "activitiesPageSize", 20);
         ReflectionTestUtils.setField(julesDispatchService, "maxActivityPagesPerCycle", 20);
+        ReflectionTestUtils.setField(julesDispatchService, "julesFeatureEnabled", true);
     }
 
     // 2026-08-14 (bug-hunt sweep): SessionLifecycleService now needs its own self-proxy field (same

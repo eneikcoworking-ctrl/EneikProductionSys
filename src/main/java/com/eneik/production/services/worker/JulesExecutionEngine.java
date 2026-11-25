@@ -21,6 +21,9 @@ public class JulesExecutionEngine implements WorkerExecutionEngine {
 
     private final JulesDispatchService julesDispatchService;
 
+    @org.springframework.beans.factory.annotation.Value("${eneik.jules.enabled:false}")
+    private boolean julesFeatureEnabled = false;
+
     public JulesExecutionEngine(@org.springframework.context.annotation.Lazy JulesDispatchService julesDispatchService) {
         this.julesDispatchService = julesDispatchService;
     }
@@ -32,11 +35,16 @@ public class JulesExecutionEngine implements WorkerExecutionEngine {
 
     @Override
     public boolean supports(TaskEntity task) {
-        return true;
+        return julesFeatureEnabled;
     }
 
     @Override
     public WorkerDispatchResult dispatch(TaskEntity task, AccountEntity account, String mode) {
+        if (!julesFeatureEnabled) {
+            log.warn("JulesExecutionEngine: dispatch rejected for task {} — GOOGLE_JULES_DECOMMISSIONED",
+                    task != null ? task.getId() : null);
+            return WorkerDispatchResult.failed("GOOGLE_JULES_DECOMMISSIONED", WorkerEngineType.JULES);
+        }
         UUID accountId = account != null ? account.getId() : null;
         log.info("JulesExecutionEngine: delegating task {} to Jules cloud (account {})", task.getId(), accountId);
         JulesDispatchResult result = julesDispatchService.dispatch(task, accountId, mode);
@@ -50,6 +58,9 @@ public class JulesExecutionEngine implements WorkerExecutionEngine {
 
     @Override
     public WorkerPollResult poll(UUID sessionId) {
+        if (!julesFeatureEnabled) {
+            return WorkerPollResult.failed(sessionId, "GOOGLE_JULES_DECOMMISSIONED");
+        }
         JulesSessionEntity session = julesDispatchService.pollStatus(sessionId);
         if (session == null) {
             return WorkerPollResult.failed(sessionId, "Session not found");

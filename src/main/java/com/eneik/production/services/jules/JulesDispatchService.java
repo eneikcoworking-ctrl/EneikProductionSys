@@ -393,6 +393,10 @@ public class JulesDispatchService {
                         .orElse(null);
             }
         }
+        if (!julesFeatureEnabled) {
+            log.info("JulesDispatchService: skipping ad-hoc Jules session for branch {} (GOOGLE_JULES_DECOMMISSIONED)", branchName);
+            return;
+        }
         JulesApiClient.CreateSessionResult result = julesApiClient.createSessionDetailed(
                 repoUrl, description, "", apiKey, title == null ? "Ad-hoc branch fix" : title, branchName);
         if (result == null || result.sessionName() == null) {
@@ -403,6 +407,9 @@ public class JulesDispatchService {
                     result.sessionName(), branchName);
         }
     }
+
+    @Value("${eneik.jules.enabled:false}")
+    private boolean julesFeatureEnabled = false;
 
     @Value("${jules.stuck-threshold-minutes:60}")
     private int stuckThresholdMinutes;
@@ -781,7 +788,24 @@ public class JulesDispatchService {
                         return dispatchedSession;
                     }
                 }
+                if (!julesFeatureEnabled) {
+                    String err = dispatchResult != null && dispatchResult.errorMessage() != null
+                            ? dispatchResult.errorMessage()
+                            : "NO_SOVEREIGN_WORKER_AVAILABLE";
+                    session.setStatus("failed");
+                    session.setClosureReason(err);
+                    session.setClosedAt(Instant.now());
+                    return julesSessionRepository.save(session);
+                }
             }
+        }
+
+        if (!julesFeatureEnabled) {
+            log.warn("JulesDispatchService: rejecting legacy Google Jules dispatch for task {} (GOOGLE_JULES_DECOMMISSIONED)", task.getId());
+            session.setStatus("failed");
+            session.setClosureReason("GOOGLE_JULES_DECOMMISSIONED: Google Jules is removed from the execution chain");
+            session.setClosedAt(Instant.now());
+            return julesSessionRepository.save(session);
         }
 
         String repoName;
@@ -1194,6 +1218,10 @@ public class JulesDispatchService {
                     claimService.releaseClaimToQueue(currentTask.getId(), "Orphaned local sovereign session after container restart");
                 }
             }
+            return session;
+        }
+
+        if (!julesFeatureEnabled) {
             return session;
         }
 
@@ -3531,6 +3559,10 @@ public class JulesDispatchService {
     // convention reviewFallbackTargetsInFlight and ProjectFlowService.restoreUnreachedBriefs follow.
     void dispatchReviewerFallbackBatch(List<PendingFallbackReview> items) {
         if (items == null || items.isEmpty()) {
+            return;
+        }
+        if (!julesFeatureEnabled) {
+            log.info("PR review fallback: skipping Jules reviewer fallback batch ({} item(s)) because GOOGLE_JULES_DECOMMISSIONED.", items.size());
             return;
         }
         UUID projectId = items.get(0).task().getProject().getId();

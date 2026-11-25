@@ -1033,6 +1033,9 @@ public class ContinuousOrchestrationService {
         }
     }
 
+    @org.springframework.beans.factory.annotation.Value("${eneik.jules.enabled:false}")
+    private boolean julesFeatureEnabled = false;
+
     private void pollActiveJulesSessions() {
         try {
             // Status pushed into the query (2026-08-28): four statuses are wanted, and asking for them
@@ -1043,6 +1046,9 @@ public class ContinuousOrchestrationService {
                             || "queued".equals(s.getStatus())
                             || "revising".equals(s.getStatus())
                             || "stuck".equals(s.getStatus()))
+                    .filter(s -> julesFeatureEnabled
+                            || com.eneik.production.services.jules.JulesApiClient.isSovereignSessionId(s.getExternalSessionId())
+                            || (s.getWorkerEngine() != null && !"JULES".equalsIgnoreCase(s.getWorkerEngine())))
                     .toList();
             for (com.eneik.production.models.persistence.JulesSessionEntity session : activeSessions) {
                 taskRepository.findById(session.getTaskId())

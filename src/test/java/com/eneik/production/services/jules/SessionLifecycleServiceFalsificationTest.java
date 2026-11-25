@@ -61,6 +61,7 @@ class SessionLifecycleServiceFalsificationTest {
         // Self-injected proxy wired to instance for unit falsification test
         ReflectionTestUtils.setField(service, "self", service);
         ReflectionTestUtils.setField(service, "cleanupBatchSize", 30);
+        ReflectionTestUtils.setField(service, "julesFeatureEnabled", true);
         when(julesSessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
 

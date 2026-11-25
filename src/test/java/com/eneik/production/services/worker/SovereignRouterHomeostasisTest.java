@@ -91,7 +91,7 @@ class SovereignRouterHomeostasisTest {
     }
 
     @Test
-    @DisplayName("Cranes Homeostasis: if both DeepSeek and LOCAL_AGY fail, seamlessly cascades to Jules reserve")
+    @DisplayName("WO #13 Cranes Homeostasis: if both DeepSeek and LOCAL_AGY fail, returns honest failure and NEVER cascades to decommissioned Jules")
     void testCascadeToJulesReserve() {
         when(mockSettings.effectiveValue("worker_engine_mode")).thenReturn("HYBRID");
 
@@ -110,10 +110,6 @@ class SovereignRouterHomeostasisTest {
         // LOCAL_AGY also encounters an issue
         when(mockLocalAgy.dispatch(any(), any(), any())).thenThrow(new RuntimeException("Local process error"));
 
-        // Jules reserve succeeds
-        WorkerDispatchResult julesSuccess = WorkerDispatchResult.ok(UUID.randomUUID(), "jules-session-99", WorkerEngineType.JULES, null);
-        when(mockJules.dispatch(any(), any(), any())).thenReturn(julesSuccess);
-
         WorkerExecutionRouter router = new WorkerExecutionRouter(
                 mockDeepSeek,
                 mockJules,
@@ -126,12 +122,12 @@ class SovereignRouterHomeostasisTest {
         WorkerDispatchResult result = router.dispatch(task, deepSeekAccount, "IMPLEMENTER");
 
         assertNotNull(result);
-        assertTrue(result.success());
-        assertEquals(WorkerEngineType.JULES, result.engineType());
+        assertFalse(result.success());
+        assertTrue(result.errorMessage().contains("NO_SOVEREIGN_WORKER_AVAILABLE"));
 
         verify(mockDeepSeek).dispatch(any(), any(), any());
         verify(mockLocalAgy).dispatch(any(), any(), any());
-        verify(mockJules).dispatch(task, null, "IMPLEMENTER");
+        verifyNoInteractions(mockJules);
     }
 
     @Test

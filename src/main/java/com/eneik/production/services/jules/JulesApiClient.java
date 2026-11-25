@@ -35,6 +35,11 @@ public class JulesApiClient {
     @Value("${jules.max-activities-response-bytes:10485760}")
     private int maxActivitiesResponseBytes;
 
+    // Mechanism #15 (WO #13, DZHOZEF_RAZ_01_PROHIBITION_AS_CODE / D006 & D013):
+    // Hard config-level kill switch. Default false; guarantees zero outbound HTTP calls to jules.googleapis.com.
+    @Value("${eneik.jules.enabled:false}")
+    private boolean julesFeatureEnabled = false;
+
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final String apiBaseUrl;
@@ -79,8 +84,8 @@ public class JulesApiClient {
      */
     public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext,
                                                      String apiKey, String title, String startingBranch) {
-        if (!settingsService.effectiveBoolean("jules_enabled")) {
-            log.info("Jules integration disabled (JULES_ENABLED != true). Returning 'skipped'.");
+        if (!isEnabled()) {
+            log.info("Jules integration disabled (eneik.jules.enabled=false). Returning 'skipped'.");
             return new CreateSessionResult("skipped", 0, "jules_disabled");
         }
 
@@ -155,6 +160,9 @@ public class JulesApiClient {
     }
 
     private SourceCheckResult sourceAvailability(String sourceName, String apiKey) {
+        if (!isEnabled()) {
+            return SourceCheckResult.unverified(410, "jules_disabled");
+        }
         if (sourceName == null || sourceName.isBlank() || !sourceName.startsWith("sources/github/")) {
             return SourceCheckResult.unverified(400, "sourceName is invalid or not a github source: " + sourceName);
         }
@@ -452,7 +460,7 @@ public class JulesApiClient {
     }
 
     public String getSessionStatus(String externalSessionId, String apiKey) {
-        if (isSovereignSessionId(externalSessionId) || !settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+        if (isSovereignSessionId(externalSessionId) || !isEnabled() || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
             return null;
         }
 
@@ -494,7 +502,7 @@ public class JulesApiClient {
      * pageSize &lt;= 0 keeps the old default-page behavior; pageToken null requests the first page.
      */
     public JsonNode getSessionActivities(String externalSessionId, String apiKey, int pageSize, String pageToken) {
-        if (isSovereignSessionId(externalSessionId) || !settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+        if (isSovereignSessionId(externalSessionId) || !isEnabled() || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
             return null;
         }
 
@@ -562,7 +570,7 @@ public class JulesApiClient {
     }
 
     public String getSessionPrUrl(String externalSessionId, String apiKey) {
-        if (isSovereignSessionId(externalSessionId) || !settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+        if (isSovereignSessionId(externalSessionId) || !isEnabled() || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
             return null;
         }
 
@@ -591,7 +599,7 @@ public class JulesApiClient {
     }
 
     public boolean sendMessage(String externalSessionId, String message, String apiKey) {
-        if (isSovereignSessionId(externalSessionId) || !settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+        if (isSovereignSessionId(externalSessionId) || !isEnabled() || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
             return false;
         }
 
@@ -669,6 +677,9 @@ public class JulesApiClient {
         if (isSovereignSessionId(externalSessionId)) {
             return new RawSessionCheckResult(200, "{}");
         }
+        if (!isEnabled()) {
+            return new RawSessionCheckResult(410, "jules_disabled");
+        }
         try {
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(apiBaseUrl + "/" + normalizeSessionPath(externalSessionId)))
@@ -689,7 +700,7 @@ public class JulesApiClient {
         if (isSovereignSessionId(externalSessionId)) {
             return new DeleteSessionResult(true, 200, "");
         }
-        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank()
+        if (!isEnabled() || apiKey == null || apiKey.isBlank()
                 || externalSessionId == null || "skipped".equals(externalSessionId)) {
             return new DeleteSessionResult(false, 0, "jules disabled or missing api key/session id");
         }
@@ -722,6 +733,6 @@ public class JulesApiClient {
     }
 
     public boolean isEnabled() {
-        return settingsService.effectiveBoolean("jules_enabled");
+        return julesFeatureEnabled && settingsService != null && settingsService.effectiveBoolean("jules_enabled");
     }
 }

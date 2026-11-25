@@ -75,54 +75,63 @@ public class WorkerExecutionRouter {
     public WorkerExecutionEngine resolveEngine(TaskEntity task) {
         WorkerEngineType mode = resolveEngineMode();
         return switch (mode) {
-            case JULES -> julesEngine;
+            case JULES -> {
+                log.warn("WorkerExecutionRouter: mode=JULES requested but Google Jules is decommissioned.");
+                yield null;
+            }
             case DEEPSEEK_WORKTREE -> deepSeekEngine;
-            case LOCAL_AGY, LOCAL_AGY_CLI -> (localAgyEngine != null ? localAgyEngine : julesEngine);
+            case LOCAL_AGY, LOCAL_AGY_CLI -> localAgyEngine;
             case HYBRID -> {
-                // Dennett's Cranes: Prefer sovereign DeepSeek if key available, else LOCAL_AGY, fallback to Jules
+                // Sovereign Cranes (WO #13): Strictly DeepSeek -> LOCAL_AGY (Google Jules removed).
                 if (hasAvailableDeepSeekAccountOrKey()) {
                     yield deepSeekEngine;
                 } else if (localAgyEngine != null) {
                     yield localAgyEngine;
                 } else {
-                    log.info("WorkerExecutionRouter: No active sovereign engines; routing to Jules");
-                    yield julesEngine;
+                    log.warn("WorkerExecutionRouter: No active sovereign engines available (Google Jules decommissioned).");
+                    yield null;
                 }
             }
         };
     }
 
     /**
-     * Dispatches task with Cranes Homeostasis across tiers:
-     * LOCAL_AGY <-> DEEPSEEK <-> GOOGLE_JULES.
+     * Dispatches task with sovereign Cranes Homeostasis:
+     * DEEPSEEK -> LOCAL_AGY (Google Jules permanently removed from execution chain, WO #13).
      */
     public WorkerDispatchResult dispatch(TaskEntity task, AccountEntity account, String mode) {
         WorkerEngineType engineMode = resolveEngineMode();
 
         if (engineMode == WorkerEngineType.JULES) {
-            return julesEngine.dispatch(task, account, mode);
+            log.warn("WorkerExecutionRouter: rejecting dispatch for task {} because GOOGLE_JULES_DECOMMISSIONED",
+                    task != null ? task.getId() : null);
+            return WorkerDispatchResult.failed(
+                    "GOOGLE_JULES_DECOMMISSIONED: Google Jules is removed from the execution chain",
+                    WorkerEngineType.JULES);
         }
 
         if (engineMode == WorkerEngineType.LOCAL_AGY || engineMode == WorkerEngineType.LOCAL_AGY_CLI) {
             if (localAgyEngine != null) {
                 return localAgyEngine.dispatch(task, account, mode);
             }
-            log.warn("LOCAL_AGY requested but engine bean is null, falling back to Jules");
-            return julesEngine.dispatch(task, account, mode);
+            log.warn("LOCAL_AGY requested but engine bean is null (Google Jules decommissioned)");
+            return WorkerDispatchResult.failed(
+                    "NO_SOVEREIGN_WORKER_AVAILABLE: LOCAL_AGY engine is not available",
+                    WorkerEngineType.LOCAL_AGY);
         }
 
         if (engineMode == WorkerEngineType.DEEPSEEK_WORKTREE) {
             return deepSeekEngine.dispatch(task, account, mode);
         }
 
-        // HYBRID MODE with Cranes, not Skyhooks Homeostasis
+        // HYBRID MODE with sovereign Cranes Homeostasis: DeepSeek -> LOCAL_AGY (never Google Jules)
         if (hasAvailableDeepSeekAccountOrKey()) {
             AccountEntity targetAccount = account != null ? account : findAvailableDeepSeekAccount().orElse(null);
             try {
                 log.info("WorkerExecutionRouter (HYBRID): Attempting dispatch via sovereign DeepSeek Worktree...");
                 return deepSeekEngine.dispatch(task, targetAccount, mode);
             } catch (DeepSeekQuotaExhaustedException e) {
-                log.warn("Cranes Homeostasis triggered! DeepSeek account {} quota/rate limit error ({}): {}. Falling back to Tier 1 LOCAL_AGY...",
+                log.warn("Cranes Homeostasis triggered! DeepSeek account {} quota/rate limit error ({}): {}. Falling back to LOCAL_AGY...",
                         targetAccount != null ? targetAccount.getName() : "default", e.getStatusCode(), e.getMessage());
 
                 if (targetAccount != null) {
@@ -131,19 +140,19 @@ public class WorkerExecutionRouter {
                     accountRepository.save(targetAccount);
                 }
 
-                // Seamless failover to Tier 1 (LOCAL_AGY) or Tier 3 (Jules)
-                return dispatchLocalAgyOrJules(task, account, mode);
+                // Sovereign failover to LOCAL_AGY only (never Jules)
+                return dispatchLocalAgyOnly(task, account, mode, "DeepSeek quota exhausted (" + e.getStatusCode() + ")");
             } catch (Exception e) {
-                log.warn("DeepSeek execution encountered error: {}. Cranes fallback to Tier 1 LOCAL_AGY...", e.getMessage());
-                return dispatchLocalAgyOrJules(task, account, mode);
+                log.warn("DeepSeek execution encountered error: {}. Cranes fallback to LOCAL_AGY...", e.getMessage());
+                return dispatchLocalAgyOnly(task, account, mode, "DeepSeek error: " + e.getMessage());
             }
         }
 
-        // No DeepSeek keys -> directly engage zero-cost sovereign Tier 1 (LOCAL_AGY)
-        return dispatchLocalAgyOrJules(task, account, mode);
+        // No DeepSeek keys -> directly engage zero-cost sovereign LOCAL_AGY
+        return dispatchLocalAgyOnly(task, account, mode, "DeepSeek unavailable");
     }
 
-    private WorkerDispatchResult dispatchLocalAgyOrJules(TaskEntity task, AccountEntity account, String mode) {
+    private WorkerDispatchResult dispatchLocalAgyOnly(TaskEntity task, AccountEntity account, String mode, String priorReason) {
         if (localAgyEngine != null) {
             try {
                 log.info("WorkerExecutionRouter: Dispatching via Zero-Cost LOCAL_AGY sovereign engine...");
@@ -151,13 +160,24 @@ public class WorkerExecutionRouter {
                 if (agyResult != null && agyResult.success()) {
                     return agyResult;
                 }
-                log.warn("LOCAL_AGY dispatch returned failure/unconfirmed. Falling back to Jules reserve...");
+                String agyErr = agyResult != null && agyResult.errorMessage() != null
+                        ? agyResult.errorMessage()
+                        : "LOCAL_AGY returned unconfirmed/failed result";
+                log.warn("LOCAL_AGY dispatch failed ({}); Google Jules is decommissioned — releasing task to queue.", agyErr);
+                return WorkerDispatchResult.failed(
+                        "NO_SOVEREIGN_WORKER_AVAILABLE: " + priorReason + "; LOCAL_AGY failed: " + agyErr,
+                        WorkerEngineType.LOCAL_AGY);
             } catch (Exception e) {
-                log.warn("LOCAL_AGY encountered exception ({}). Cranes fallback to Jules reserve...", e.getMessage());
+                log.warn("LOCAL_AGY encountered exception ({}); Google Jules is decommissioned — releasing task to queue.", e.getMessage());
+                return WorkerDispatchResult.failed(
+                        "NO_SOVEREIGN_WORKER_AVAILABLE: " + priorReason + "; LOCAL_AGY exception: " + e.getMessage(),
+                        WorkerEngineType.LOCAL_AGY);
             }
         }
-        log.info("WorkerExecutionRouter: Dispatching via GOOGLE_JULES cloud reserve...");
-        return julesEngine.dispatch(task, null, mode);
+        log.warn("WorkerExecutionRouter: No sovereign worker available ({}; LOCAL_AGY bean is null). Google Jules is decommissioned.", priorReason);
+        return WorkerDispatchResult.failed(
+                "NO_SOVEREIGN_WORKER_AVAILABLE: " + priorReason + "; LOCAL_AGY engine is not available",
+                WorkerEngineType.LOCAL_AGY);
     }
 
     public WorkerPollResult poll(UUID sessionId) {
@@ -168,10 +188,12 @@ public class WorkerExecutionRouter {
             if ("DEEPSEEK_WORKTREE".equalsIgnoreCase(engine)) {
                 return deepSeekEngine.poll(sessionId);
             } else if ("LOCAL_AGY".equalsIgnoreCase(engine) || "LOCAL_AGY_CLI".equalsIgnoreCase(engine)) {
-                return localAgyEngine != null ? localAgyEngine.poll(sessionId) : julesEngine.poll(sessionId);
+                return localAgyEngine != null
+                        ? localAgyEngine.poll(sessionId)
+                        : WorkerPollResult.failed(sessionId, "LOCAL_AGY_UNAVAILABLE");
             }
         }
-        return julesEngine.poll(sessionId);
+        return WorkerPollResult.failed(sessionId, "GOOGLE_JULES_DECOMMISSIONED");
     }
 
     public void cancel(UUID sessionId, String reason) {
@@ -189,7 +211,7 @@ public class WorkerExecutionRouter {
                 }
             }
         }
-        julesEngine.cancel(sessionId, reason);
+        log.info("WorkerExecutionRouter.cancel: skipping remote Jules cancel for session {} (GOOGLE_JULES_DECOMMISSIONED)", sessionId);
     }
 
     public boolean hasAvailableDeepSeekAccountOrKey() {

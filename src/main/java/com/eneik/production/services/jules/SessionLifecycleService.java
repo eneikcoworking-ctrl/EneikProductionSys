@@ -57,6 +57,9 @@ public class SessionLifecycleService {
     @Value("${jules.session-cleanup-batch-size:30}")
     private int cleanupBatchSize;
 
+    @Value("${eneik.jules.enabled:false}")
+    private boolean julesFeatureEnabled = false;
+
     public SessionLifecycleService(JulesSessionRepository julesSessionRepository,
                                     AccountRepository accountRepository,
                                     TaskRepository taskRepository,
@@ -103,6 +106,9 @@ public class SessionLifecycleService {
     }
 
     private void deleteRemote(UUID sessionId) {
+        if (!julesFeatureEnabled) {
+            return;
+        }
         RemoteDeleteContext context = self.prepareRemoteDeleteContext(sessionId);
         if (context == null) {
             return;
@@ -166,6 +172,9 @@ public class SessionLifecycleService {
     // spans (via self) handle the actual writes.
     @Scheduled(fixedRateString = "${jules.session-cleanup-rate-ms:1800000}")
     public int cleanupEligibleSessions() {
+        if (!julesFeatureEnabled) {
+            return 0;
+        }
         List<JulesSessionEntity> candidates = julesSessionRepository.findByRemoteDeletedAtIsNullAndExternalSessionIdIsNotNull();
         int processed = 0;
         for (JulesSessionEntity session : candidates) {

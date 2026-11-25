@@ -442,7 +442,9 @@ public class AccountHealthService {
             }
         }
 
-        List<AccountEntity> blocked = accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked);
+        List<AccountEntity> blocked = accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked).stream()
+                .filter(a -> !isDecommissionedJulesProvider(a))
+                .toList();
         int recovered = 0;
         for (AccountEntity account : blocked) {
             Instant changedAt = account.getStatusChangedAt();
@@ -466,7 +468,9 @@ public class AccountHealthService {
         // Law 9 / Prescription 14 (RELIABILITY_CHAIN / D010):
         // daily_limited accounts are recovered when the next replenishment period begins or cooldown elapses,
         // rather than remaining trapped until an arbitrary midnight cron.
-        List<AccountEntity> dailyLimited = accountRepository.findByStatusAndEnabledTrue(AccountStatus.daily_limited);
+        List<AccountEntity> dailyLimited = accountRepository.findByStatusAndEnabledTrue(AccountStatus.daily_limited).stream()
+                .filter(a -> !isDecommissionedJulesProvider(a))
+                .toList();
         for (AccountEntity account : dailyLimited) {
             Instant changedAt = account.getStatusChangedAt();
             if (changedAt == null) {
@@ -485,7 +489,9 @@ public class AccountHealthService {
         }
 
         // Liveness Invariant: auto-relax offline accounts if they have recent heartbeat activity
-        List<AccountEntity> offline = accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline);
+        List<AccountEntity> offline = accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline).stream()
+                .filter(a -> !isDecommissionedJulesProvider(a))
+                .toList();
         for (AccountEntity account : offline) {
             Instant heartbeat = account.getLastHeartbeat();
             if (heartbeat != null && Duration.between(heartbeat, current).toMinutes() < offlineRelaxationMinutes) {
@@ -500,7 +506,11 @@ public class AccountHealthService {
         // NUEL_BELNAP_03_TRUTH_STATUS_TABLE (D012) / LUDWIG_WITTGENSTEIN_01_FACT_STATE_TABLE (D002):
         // Absorbing state visibility: disabled accounts must not be invisible to the recovery sweep.
         // When recovery candidates are zero, report disabled operational accounts with explicit conjunction reason.
-        List<AccountEntity> disabledOperational = accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned);
+        // WO #13 (Mechanism #15): Ignore decommissioned GOOGLE_JULES accounts so stale cloud accounts (e.g. eneikcoworking-ctrl)
+        // never emit recovery warnings.
+        List<AccountEntity> disabledOperational = accountRepository.findByEnabledFalseAndStatusNot(AccountStatus.decommissioned).stream()
+                .filter(a -> !isDecommissionedJulesProvider(a))
+                .toList();
         if (!disabledOperational.isEmpty()) {
             if (blocked.isEmpty() && dailyLimited.isEmpty() && offline.isEmpty()) {
                 log.info("AccountHealthService: zero recovery candidates in pool; {} operational account(s) are currently disabled (enabled=false)",
@@ -880,6 +890,14 @@ public class AccountHealthService {
     @Transactional
     public int reclassifyPreconditionDailyLimitedAccounts() {
         return accountRepository.reclassifyPreconditionDailyLimitedAccounts();
+    }
+
+    private static boolean isDecommissionedJulesProvider(AccountEntity account) {
+        if (account == null) {
+            return false;
+        }
+        String provider = account.getProvider();
+        return provider == null || "GOOGLE_JULES".equalsIgnoreCase(provider.trim());
     }
 
     private List<Double> observedDurations(List<DefectJournalEntity> entries) {

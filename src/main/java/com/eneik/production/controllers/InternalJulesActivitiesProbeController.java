@@ -43,6 +43,9 @@ public class InternalJulesActivitiesProbeController {
     private final BranchGarbageCollectorService branchGarbageCollectorService;
     private final ProjectRepository projectRepository;
 
+    @org.springframework.beans.factory.annotation.Value("${eneik.jules.enabled:false}")
+    private boolean julesFeatureEnabled = false;
+
     public InternalJulesActivitiesProbeController(JulesApiClient julesApiClient, SystemSettingsService settingsService,
                                                     JulesSessionRepository julesSessionRepository, AccountRepository accountRepository,
                                                     BranchGarbageCollectorService branchGarbageCollectorService,
@@ -59,6 +62,12 @@ public class InternalJulesActivitiesProbeController {
     public ResponseEntity<?> probe(@RequestParam String sessionId,
                                     @RequestParam(defaultValue = "5") int pageSize,
                                     @RequestParam(required = false) String pageToken) {
+        if (!julesFeatureEnabled) {
+            return ResponseEntity.status(410).body(Map.of(
+                    "error", "GOOGLE_JULES_DECOMMISSIONED",
+                    "message", "Google Jules has been permanently removed from the execution chain"
+            ));
+        }
         // Each session is dispatched under a specific account's own key (JulesDispatchService.
         // apiKeyForSession) - the generic "jules_api_key" setting is a different, unrelated default and
         // returns 403 for a session that belongs to another account (confirmed live on this exact probe).

@@ -75,6 +75,7 @@ class AccountHealthServiceTest {
         AccountEntity account = new AccountEntity();
         account.setId(UUID.randomUUID());
         account.setName(name);
+        account.setProvider("DEEPSEEK");
         account.setCapabilities("*");
         account.setStatus(status);
         account.setConsecutiveApiBlockCount(consecutiveApiBlockCount);
