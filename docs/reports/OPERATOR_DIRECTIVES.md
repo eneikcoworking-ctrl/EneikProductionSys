@@ -105,3 +105,8 @@
    - **Отравленные задачи `SCOPE_INSUFFICIENT` (`crie_*.py` в Java-репозитории):** если задача повторно возвращает `SCOPE_INSUFFICIENT` на несуществующие в репозитории файлы другого стека (например, `*.py` в Java/Maven-проекте `knowledge-base-crie`), переводить её в терминальный отказ / перекомпиляцию без бесконечного цикла ретраев.
    - **Граница ответственности с Aesthetic Master:** для `knowledge-base-crie` Фабрика отвечает исключительно за Java 21 / Spring Boot 3 бэкенд, SQLite (`data/agent_memory.sqlite`) и REST API (`/crie/api/chat`, `/crie/api/documents/upload`, `/crie/api/dialogues/history`, `/crie/api/catalog/search`, `/crie/api/download/...`); фронтенд `src/main/resources/static/index.html` ведёт `aesthetic-master`.
 3. **Запрет:** никаких ручных правок репозитория продукта; отчёт в `docs/reports/PROGRAMMER_STATE.md`, приёмка L1 в `docs/reports/MANAGER_STATE.md`.
+
+
+## [2026-11-25 11:55:41 UTC] ДИРЕКТИВА ОПЕРАТОРА (Дмитрий Ефремов) -> L1/L2
+**Текст:** Джулсы полностью убрать из цепочки. Вишлисты для замороженных проектов накапливать и при разморозке — группировать и обобщать. Остальное пока не трогать.
+**Трансляция L1:** WO #13 (исключение Jules, D013/D003) и WO #14 (накопление + консолидация вишлистов, D010/D002) — `PROGRAMMER_DIRECTIVES.md`.
