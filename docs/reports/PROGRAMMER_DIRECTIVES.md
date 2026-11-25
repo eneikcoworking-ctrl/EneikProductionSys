@@ -1,25 +1,12 @@
-# НАРЯД L1 → L2: WO #13–#14 (2026-11-25 11:56 UTC)
-**Основание:** директива Оператора 2026-11-25 11:55 UTC: «джулсы полностью убрать из цепочки. вишлисты для замороженных проектов накапливать и при разморозке — группировать и обобщать. остальное пока не трогать.»
-**Правило:** один механизм за такт; каждый изъян закрыт тестом-заслоном (`mvn test` в `docker run --rm -m 2g`); семантический коммит; запись ≤ 20 строк в `PROGRAMMER_STATE.md`.
+# НАРЯД L1 → L2: WO #13–#14 (ОБНОВЛЕНО С ФОРЕНЗИКОЙ И КОНТРАКТАМИ: 2026-11-25 13:05 UTC)
+**Основание:** директива Оператора 2026-11-25 11:55 UTC: «Джулсы полностью убрать из цепочки. Вишлисты для замороженных проектов накапливать и при разморозке — группировать и обобщать. Остальное пока не трогать.»
+**Полная диагностика L1 и карта ответственных механизмов:** [INCIDENT_DIAGNOSIS_2026-11-25_WO13_WO14_JULES_REMOVAL_FROZEN_WISHLISTS.md](INCIDENT_DIAGNOSIS_2026-11-25_WO13_WO14_JULES_REMOVAL_FROZEN_WISHLISTS.md)  
+**Детальные спецификации, контракты, миграции `V147`/`V148` и заслоны-тесты:** см. **§15 (Такт 1 — WO #13 / Механизм №15)** и **§16 (Такт 2 — WO #14 / Механизм №16)** в конце этого документа.
+**Правило (`GEMINI.md §0–§1`):** строго **один механизм за такт** (сначала §15, затем §16); на каждый такт — попперовский тест-заслон в Docker Maven (`-m 2g`), сохранение `100% green` `DennettAutonomyFalsificationTest`, пересборка `eneikproductionsys-backend-1`, живая проверка, семантический коммит и отчёт `<= 20` строк в `docs/reports/PROGRAMMER_STATE.md`. Ручных правок продуктов нет.
 
-## Такт 1 — WO #13: исключение Google Jules из цепочки исполнения (`D013` Runtime drift, `D003` Contract drift)
-Паттерн: `ELVIN_GOLDMAN_06_CAUSAL_PROCESS_TRACE` — trigger → mechanism → state change: ни один триггер не должен доходить до Jules.
-1. `services/worker/WorkerExecutionRouter.java`: удалить Tier 3 `GOOGLE_JULES` — роутер выбирает только DeepSeek → LOCAL_AGY; при их недоступности задача остаётся в очереди (не уходит в Jules), с явной причиной.
-2. `services/jules/JulesDispatchService.java`, `services/jules/SessionLifecycleService.java` и прочие `@Scheduled`-методы, вызывающие Jules API (проверь `ContinuousOrchestrationService`, `AutoMergeService`, `StrandedFinalizingSweepService`): выключить (бины не создаются / расписания не регистрируются по умолчанию; флаг `eneik.jules.enabled=false`, без пути включения через UI).
-3. Пул аккаунтов: записи типа Jules не выбираются ни одним селектором (claim/lease). Исторические данные (`jules_sessions`, аккаунты, PR-история) НЕ удалять — только вывести из цепочки.
-4. Заслон: тест «роутер никогда не возвращает Jules ни при каком состоянии пула» + тест «в контексте нет активных Jules-расписаний / dispatch не вызывается» + проверка, что DeepSeek/LOCAL_AGY-маршрут не изменился.
-5. Живая проверка после выкатки: в логах `backend` нет обращений к Jules API за 15 мин.
-
-## Такт 2 — WO #14: вишлисты замороженных проектов (`D010` Data lineage loss, `D002` Invalid state)
-Паттерн: `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` — источник, время, правило свежести и путь валидации у каждой записи.
-1. Приём: вишлист в проект со статусом `frozen` (и `paused`) принимается и сохраняется в статусе накопления (напр. `DEFERRED_FROZEN`), НЕ декомпозируется в задачи и НЕ отклоняется. Сохраняются исходный текст, автор/роль, время.
-2. Разморозка: перед первой декомпозицией после смены статуса с `frozen` — этап консолидации: накопленные записи группируются по смыслу (дубли и близкие темы), по каждой группе формируется одно обобщённое пожелание со ссылками на все исходные id (lineage); исходные записи помечаются как поглощённые (`MERGED_INTO=<id>`), не удаляются. Противоречащие записи не сливаются молча — помечаются конфликтом в обобщённой записи.
-3. В декомпозицию идут только обобщённые записи. Консолидация идемпотентна (повторная разморозка не плодит дублей).
-4. Уже ожидающие записи (3 шт. в `knowledge-base-crie`) не трогать вручную — их подхватит механизм при разморозке.
-5. Заслон: тест «вишлист во frozen-проект сохраняется и не создаёт задач»; тест «при разморозке N близких записей → 1 обобщённая с N ссылками»; тест идемпотентности; тест «конфликт не теряется».
-
-## Вне наряда (не трогать)
-Порядок DeepSeek/LOCAL_AGY, пул `remotecli3…10`, потеря отклонённых вишлистов 00:50 UTC, ресурсные наблюдения.
+- [ ] **Такт 1 — WO #13 (Механизм №15, §15 ниже, `D013`/`D006`/`D003`):** полное исключение Google Jules из цепочки исполнения + `V147` (перетегировать `remotecli3..10` из `GOOGLE_JULES` в `LOCAL_AGY`, декомиссировать остальные `GOOGLE_JULES` без удаления истории; **сохранить** суверенный PR-конвейер в `JulesDispatchService` и `DeepSeek → LOCAL_AGY`).
+- [ ] **Такт 2 — WO #14 (Механизм №16, §16 ниже, `D010`/`D012`/`D002`):** накопление вишлистов замороженных проектов (`deferred_frozen`, разрешить `ADD_WISHLIST` для `frozen` без открытия `isOperational`) + `V148` + `FrozenWishlistConsolidationService` при разморозке (`activateProject` / `executeOrchestrate`) с lineage (`merged_into_wishlist_id`, `consolidated_from_ids`), явной детекцией конфликтов и идемпотентностью.
+- **Вне наряда (НЕ ТРОГАТЬ):** порядок `DeepSeek → LOCAL_AGY`, ОС-профили `remotecli3..10`, потерю отклонённых вишлистов `00:50 UTC`, исторические строки `jules_sessions`/`accounts`, 3 существующих `pending`-вишлиста `knowledge-base-crie` вручную, ресурсные настройки.
 
 ---
 
@@ -487,3 +474,114 @@ rounded-2xl, чистая микро-граница, естественная м
    - **Заслон 5-5 (Graceful Degradation & Full Description Preservation):** при недоступности `GeminiContextService` / `RoleCapabilityLoader` (или пустых слотах) сборка промпта не бросает исключений и на 100% сохраняет `task.getDescription()`.
 2. Прогнать в Docker Maven (`-m 2g`): `SovereignWorkerMemorillaWiringTest`, `GeminiContextServiceTest`, `DeepSeekApiClientTest`, `LocalAgyCliClientTest`, `DeepSeekWorktreeExecutionEngineTest`, `LocalAgyWorktreeExecutionEngineTest` и регрессионный контрольный прогон `DennettAutonomyFalsificationTest` (100% green).
 3. Пересобрать `eneikproductionsys-backend-1`, проверить в живом логе появление записей сборки ролевого контекста и Memorilla ($K=16$) при диспетчеризации суверенного воркера, коммит `feat(d014,d010,d001): wire Memorilla K=16 and dynamic BARCAN role charter into sovereign workers`, отчёт в `docs/reports/PROGRAMMER_STATE.md` для финальной приёмки L1.
+
+
+---
+
+## 15. МЕХАНИЗМ №15 (СРОЧНЫЙ WORK ORDER #13 ОТ 2026-11-25 — ТАКТ 1): ПОЛНОЕ ИСКЛЮЧЕНИЕ GOOGLE JULES ИЗ ЦЕПОЧКИ ИСПОЛНЕНИЯ (`D013` / `D006` / `D003` / `D008`)
+
+**Статус:** СРОЧНЫЙ ОБЯЗЫВАЮЩИЙ НАРЯД L1 → L2 (`STANDBY СНЯТ`, ВЫПОЛНЯТЬ ПЕРВЫМ — ТАКТ 1)  
+**Основание:** Срочная директива Оператора Дмитрия Ефремова (`2026-11-25 11:55:41 UTC`, [OPERATOR_DIRECTIVES.md](OPERATOR_DIRECTIVES.md#L110-L112)) и форензика L1 ([INCIDENT_DIAGNOSIS_2026-11-25_WO13_WO14_JULES_REMOVAL_FROZEN_WISHLISTS.md](INCIDENT_DIAGNOSIS_2026-11-25_WO13_WO14_JULES_REMOVAL_FROZEN_WISHLISTS.md)).  
+**Философский корпус (верифицировано в `docs/philosopher-patterns/philosophers/`):**
+- `ELVIN_GOLDMAN_06_CAUSAL_PROCESS_TRACE` (`D013 Runtime drift`): ни один триггер (роутер, fallback-ревью, планировщик, селектор аккаунтов) не должен каузально достигать Google Jules API.
+- `DZHOZEF_RAZ_01_PROHIBITION_AS_CODE` (`D006 Authorization ambiguity`): деонтический запрет `eneik.jules.enabled=false` по умолчанию в коде и конфигурации без пути включения через UI/БД.
+- `LYUDVIG_VITGENSHTEYN_14_ANTI_MIRROR_TELEMETRY` (`D013 Runtime drift`): верификация по живым логам контейнера.
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` (`D008 False green`): попперовские тесты-заслоны в Docker Maven (`-m 2g`).
+
+### 15.1. Критические инварианты безопасности (НЕ СЛОМАТЬ СУВЕРЕННЫЙ КОНВЕЙЕР!)
+1. **КРИТИЧЕСКАЯ НАХОДКА ПО `accounts` (`remotecli3..10`):** в живой БД профили `remotecli3..10` (суверенные воркеры `LOCAL_AGY`) сейчас имеют `provider = 'GOOGLE_JULES'`. Перед тем как исключить `GOOGLE_JULES` из селекторов аккаунтов, **ОБЯЗАТЕЛЬНО** перевести `remotecli3..10` на `provider = 'LOCAL_AGY'` миграцией `V147`, сохранив их `id`, `enabled=true`, `status='idle'` и историю.
+2. **КРИТИЧЕСКАЯ НАХОДКА ПО `JulesDispatchService`:** класс `JulesDispatchService` (несмотря на историческое имя) обслуживает общий суверенный конвейер (`DeepSeek` + `LOCAL_AGY`): маршрутизацию через `WorkerExecutionRouter` (`lines 698-785`), `reconcileStrandedPrOpenedWorkflows` (`@Scheduled`, `line 2231`), `processPendingReviewBatch` (`@Scheduled`, `line 2472`), `detectStuck` (`@Scheduled`, `line 5262`), `reconcileTaskStatusAgainstGitHubTruth` (`@Scheduled`, `line 5664`). **НЕЛЬЗЯ** отключать бин `JulesDispatchService` или эти 4 общих расписания — нужно хирургически отсечь **только** облачные ветви Google Jules (`julesApiClient.*`, `PendingFallbackReview` на Jules, fallthrough после `WorkerExecutionRouter`).
+3. **КРИТИЧЕСКАЯ НАХОДКА ПО `SessionLifecycleService`:** бин инъектируется в `BranchGarbageCollectorService:45` и `JulesDispatchService` для локальной отмены (`retireSessionOnly` / `applyLocalCancelStatus`). Оставить локальную отмену доступной, но полностью отключить удалённый Jules-планировщик (`@Scheduled cleanupEligibleSessions`) и любые HTTP DELETE к Jules API при `eneik.jules.enabled=false`.
+4. **Контур Деннетта (`SLOT-14`):** `DennettAutonomyFalsificationTest` обязан оставаться **100% green**. Исторические таблицы (`jules_sessions`, `accounts`, PR-история) **НЕ удалять**.
+
+### 15.2. Обязательные изменения L2
+1. **Жёсткий флаг запрета без UI-обхода (`application.properties` + `SystemSettingsService.java` + `JulesApiClient.java`):**
+   - В `src/main/resources/application.properties` явно добавить:
+     `eneik.jules.enabled=${ENEIK_JULES_ENABLED:false}`
+   - В `SystemSettingsService.java`: закрыть возможность включать `jules_enabled` через UI/API (`effectiveBoolean("jules_enabled")` при `eneik.jules.enabled=false` всегда возвращает `false`; попытка сохранить `jules_enabled=true` через API/UI отвергается либо деонтически игнорируется с явным предупреждением).
+   - В `JulesApiClient.java`: внедрить `@Value("${eneik.jules.enabled:false}") private boolean julesFeatureEnabled;` и гарантировать short-circuit (0 исходящих HTTP-запросов к `jules.googleapis.com`) во всех методах (`createSessionDetailed`, `sendMessage`, `getSessionStatus`, `getSessionPrUrl`, `getSessionActivities`, `deleteSession`, `checkSessionRaw`, `sourceAvailability`, `isEnabled`) при `!julesFeatureEnabled`.
+2. **Удаление Tier 3 `GOOGLE_JULES` из `WorkerExecutionRouter.java` (`lines 24, 75-193`) и `JulesExecutionEngine.java`:**
+   - В `WorkerExecutionRouter`:
+     - Удалить fallback на `julesEngine` из `resolveEngine`, `dispatch`, `dispatchLocalAgyOrJules` (переименовать в `dispatchLocalAgyOnly`), `poll`, `cancel`.
+     - Маршрут в `HYBRID`: строго **DeepSeek → LOCAL_AGY** (порядок НЕ менять!).
+     - Если `worker_engine_mode=JULES` — не вызывать `julesEngine`; возвращать `WorkerDispatchResult.failed("GOOGLE_JULES_DECOMMISSIONED: Google Jules is removed from the execution chain", WorkerEngineType.JULES)` (или при `resolveEngine` не возвращать `julesEngine`).
+     - Если оба суверенных движка (`DeepSeek` и `LOCAL_AGY`) недоступны или вернули отказ — вернуть `WorkerDispatchResult.failed("NO_SOVEREIGN_WORKER_AVAILABLE: ...", ...)` с явной причиной, чтобы задача осталась в очереди (освободилась в `queued` через `ClaimService`), а **не** ушла в Google Jules.
+   - В `JulesExecutionEngine.dispatch`: при `!julesFeatureEnabled` немедленно возвращать `WorkerDispatchResult.failed("GOOGLE_JULES_DECOMMISSIONED", WorkerEngineType.JULES)` без вызова `julesDispatchService`.
+3. **Отсечение Jules API в планировщиках и обработчиках:**
+   - `SessionLifecycleService.java` (`lines 105-192`): вынести/отключить `@Scheduled cleanupEligibleSessions` при `eneik.jules.enabled=false` (например, `@ConditionalOnProperty(name = "eneik.jules.enabled", havingValue = "true")` на scheduler-компоненте или ранний выход в `cleanupEligibleSessions` и `deleteRemote` без вызова `julesApiClient.deleteSession`), сохранив `retireSessionOnly` / `applyLocalCancelStatus` для локального закрытия сессий.
+   - `JulesDispatchService.java`:
+     - В `dispatch(...)` (`lines 698-785`): если `workerExecutionRouter` не обработал задачу или режим `JULES` — **не проваливаться** в legacy `julesApiClient.createSessionDetailed` (`lines 787-980`), а завершать сессию с `closureReason = "GOOGLE_JULES_DECOMMISSIONED"` и возвращать отказ.
+     - В `dispatchInternal` (`line 396`) и `processPendingReviewBatch` (`PendingFallbackReview`, `lines 2489+`): не создавать облачные Jules-сессии при `!julesFeatureEnabled`.
+     - В `pollStatus` (`lines 1188-1240`) и `ContinuousOrchestrationService.pollActiveJulesSessions()` (`lines 1036-1060`): пропускать non-sovereign legacy Jules-сессии без вызова `julesApiClient`.
+   - `InternalJulesActivitiesProbeController.java`: возвращать `410 Gone` при `eneik.jules.enabled=false`.
+4. **Миграция `V147` и очистка селекторов пула аккаунтов (БЕЗ удаления истории и БЕЗ поломки `remotecli3..10`!):**
+   - Создать `src/main/resources/db/migration/V147__decommission_jules_cloud_accounts_and_retag_local_agy.sql`:
+     - Перетегировать суверенные локальные профили: `UPDATE accounts SET provider = 'LOCAL_AGY' WHERE LOWER(name) LIKE 'remotecli%' AND UPPER(COALESCE(provider, 'GOOGLE_JULES')) = 'GOOGLE_JULES';`
+     - Декомиссировать все оставшиеся облачные Jules-аккаунты (включая stray `eneikcoworking-ctrl` со `status='idle', enabled=false`): `UPDATE accounts SET status = 'decommissioned', enabled = FALSE WHERE UPPER(COALESCE(provider, 'GOOGLE_JULES')) = 'GOOGLE_JULES';`
+     - **НИ ОДНОЙ строки из `accounts` или `jules_sessions` НЕ удалять!**
+   - `AccountRepository.java`: во всех селекторах выбора/подсчёта рабочих аккаунтов (`lockNextJulesAccountWithCapacity`, `lockNextIdleAccountForProject`, `lockNextIdleAccountForProjectAndCapability`, `existsJulesAccountWithCapacity`, `findAvailableForProjectOrderByNameAsc`, `countOperationalAccounts`, `countLiveAccounts`) исключить `UPPER(COALESCE(provider, 'GOOGLE_JULES')) = 'GOOGLE_JULES'`.
+   - `AccountHealthService.java`: игнорировать `GOOGLE_JULES` в `recoverEligibleAccounts`, `resetDailyLimitedAccounts`, `reclassifyPreconditionDailyLimitedAccounts` и `logStaleDisabledAccounts` (прекратить 15-минутный спам про `eneikcoworking-ctrl`, сохранив восстановление `DEEPSEEK` и `LOCAL_AGY`).
+
+### 15.3. Тесты-заслоны (`KARL_POPPER_01_FALSIFICATION_HARNESS`, Docker Maven `-m 2g`) и живая приёмка
+1. Создать `src/test/java/com/eneik/production/services/worker/JulesDecommissioningFalsificationTest.java` (и обновить `DennettCranesHomeostasisTest.java` на суверенный failover `DeepSeek → LOCAL_AGY`):
+   - **Заслон 13-1 (Router Never Picks Jules):** при любом режиме (`HYBRID`, `JULES`, `LOCAL_AGY`, `DEEPSEEK_WORKTREE`) и при недоступности/падении обоих суверенных движков `WorkerExecutionRouter` **никогда** не вызывает `JulesExecutionEngine`, возвращает `WorkerDispatchResult.failed(...)` с явной причиной, а при доступности DeepSeek / LOCAL_AGY сохраняет точный порядок `DeepSeek → LOCAL_AGY`.
+   - **Заслон 13-2 (Zero Jules API Calls & No UI Re-enable):** `JulesApiClient` при `eneik.jules.enabled=false` (даже если в `system_settings` записано `jules_enabled=true`) не совершает ни одного HTTP-вызова; `SessionLifecycleService.cleanupEligibleSessions()` и `JulesDispatchService` не вызывают `julesApiClient`.
+   - **Заслон 13-3 (Account Pool & `V147` Integrity):** интеграционный тест на H2 + Flyway (`V1..V147`) подтверждает, что `remotecli3..10` получили `provider='LOCAL_AGY'` и выбираются, а `GOOGLE_JULES`-аккаунты не выбираются ни одним селектором `AccountRepository`, при этом исторические записи `accounts` и `jules_sessions` сохранены.
+2. Прогнать в Docker Maven (`-m 2g`): `JulesDecommissioningFalsificationTest`, `DennettCranesHomeostasisTest`, `DennettAutonomyFalsificationTest` (100% green), `FlywayMigrationValidationTest`, `SessionLifecycleServiceTest`, `SessionLifecycleServiceFalsificationTest`, `AccountHealthServiceTest`, `JulesDispatchServiceTest`.
+3. Пересобрать `eneikproductionsys-backend-1` (`docker compose up -d --build backend`), подтвердить в живом логе за 15+ мин: `0` обращений к Jules API, `0` запусков `SessionLifecycleService` remote cleanup, `0` предупреждений `AccountHealthService` про `eneikcoworking-ctrl`, `remotecli3..10` и `deepseek-worker-1..8` доступны.
+4. Коммит `fix(d013,d006): decommission Google Jules from execution chain and retag remotecli pool to LOCAL_AGY`, отчёт `<= 20` строк в `docs/reports/PROGRAMMER_STATE.md`.
+
+---
+
+## 16. МЕХАНИЗМ №16 (СРОЧНЫЙ WORK ORDER #14 ОТ 2026-11-25 — ТАКТ 2 ПОСЛЕ ПРИЁМКИ/ЗАКРЫТИЯ WO #13): НАКОПЛЕНИЕ И КОНСОЛИДАЦИЯ ВИШЛИСТОВ ЗАМОРОЖЕННЫХ ПРОЕКТОВ (`D010` / `D012` / `D002` / `D008`)
+
+**Статус:** СРОЧНЫЙ ОБЯЗЫВАЮЩИЙ НАРЯД L1 → L2 (ВЫПОЛНЯТЬ ВТОРЫМ — ТАКТ 2, СТРОГО ПОСЛЕ ЗАКРЫТИЯ §15)  
+**Основание:** Срочная директива Оператора Дмитрия Ефремова (`2026-11-25 11:55:41 UTC`, [OPERATOR_DIRECTIVES.md](OPERATOR_DIRECTIVES.md#L110-L112)) и форензика L1 ([INCIDENT_DIAGNOSIS_2026-11-25_WO13_WO14_JULES_REMOVAL_FROZEN_WISHLISTS.md](INCIDENT_DIAGNOSIS_2026-11-25_WO13_WO14_JULES_REMOVAL_FROZEN_WISHLISTS.md)).  
+**Философский корпус (верифицировано в `docs/philosopher-patterns/philosophers/`):**
+- `ELVIN_GOLDMAN_01_RELIABILITY_CHAIN` (`D010 Data lineage loss`): источник, роль, временная метка и неразрывная ссылка `merged_into_wishlist_id` / `consolidated_from_ids` у каждой записи.
+- `NUEL_BELNAP_03_TRUTH_STATUS_TABLE` (`D012 Policy contradiction` / `D002 Invalid state`): явные статусы `deferred_frozen` и `consolidated`; противоречащие директивы (`BOTH`) никогда не затираются молча.
+- `KARL_POPPER_01_FALSIFICATION_HARNESS` (`D008 False green`): попперовские тесты-заслоны на накопление, группировку, lineage, идемпотентность и сохранение конфликтов.
+
+### 16.1. Обязательные изменения L2
+1. **Схема БД и модель (`V148__wishlist_frozen_consolidation_lineage.sql` + `WishlistStatus.java` + `WishlistEntity.java` + `WishlistResponseDto.java`):**
+   - В `WishlistStatus.java`: добавить `deferred_frozen` (15 симв.) и `consolidated` (12 симв.) — оба укладываются в `VARCHAR(24)` (`V14`).
+   - В `V148__wishlist_frozen_consolidation_lineage.sql`:
+     - `ALTER TABLE wishlist ADD COLUMN merged_into_wishlist_id UUID NULL REFERENCES wishlist(id) ON DELETE SET NULL;`
+     - `ALTER TABLE wishlist ADD COLUMN consolidated_from_ids TEXT NULL;`
+     - `ALTER TABLE wishlist ADD COLUMN consolidation_conflict BOOLEAN NOT NULL DEFAULT FALSE;`
+     - `ALTER TABLE wishlist ADD COLUMN consolidation_notes TEXT NULL;`
+     - `CREATE INDEX idx_wishlist_project_merged_into ON wishlist(project_id, merged_into_wishlist_id);`
+   - В `WishlistEntity.java`: добавить поля + геттеры/сеттеры; убедиться, что `movable()` возвращает `false` для `deferred_frozen` и `consolidated`.
+   - В `WishlistResponseDto.java` (с сохранением обратной совместимости конструктора): пробросить `mergedIntoWishlistId`, `consolidatedFromIds`, `consolidationConflict` (при необходимости).
+2. **Приём вишлистов в замороженный проект без отклонения и без декомпозиции (`OperationalPolicyService.java` + `ProjectFlowService.java`):**
+   - `ProjectStatus.frozen.isOperational()` (`ProjectStatus.java:40`) **НЕ МЕНЯТЬ** (должен оставаться `false`, `DennettAutonomyFalsificationTest` обязан остаться green!).
+   - `OperationalPolicyService.java:116`: разрешить `OperationalAction.ADD_WISHLIST` также для `ProjectStatus.frozen` (и `waiting`), оставив запрет для `accepted`, `archived`, `analyzing` и сохранив полный запрет `ORCHESTRATE`, `DISPATCH_*`, `MERGE_PR`, `RECOVER_*` для `frozen`.
+   - `ProjectFlowService.addWishlistItem` (`lines 804-832`): если `project.getStatus() == ProjectStatus.frozen` (или `ProjectStatus.waiting`), сохранять запись в статусе **`WishlistStatus.deferred_frozen`** (сохраняя `content`, `source`, `sourceRoleTag`, `createdAt`, `targetContext`), **НЕ** запуская декомпозицию и **НЕ** создавая задач.
+3. **Сервис консолидации при разморозке (`FrozenWishlistConsolidationService.java`):**
+   - Новый выделенный сервис (подключается в `ProjectFlowService.activateProject` при переходе с `frozen` → `active`, а также вызывается как идемпотентный защитный этап в `ProjectFlowService.executeOrchestrate` строго **до** любой декомпозиции).
+   - Алгоритм `consolidateForProject(UUID projectId)` (в короткой транзакции БД, без сетевого I/O, `HikariPool`-safe):
+     1. Загружает все записи проекта в статусе `WishlistStatus.deferred_frozen`, а также нескомпилированные корневые `pending`-записи, у которых `originWishlistId == null`, `mergedIntoWishlistId == null`, `consolidatedFromIds == null` (это автоматически подхватит 3 существующие записи в `knowledge-base-crie` `caa495f4`, `e41fc341`, `62f73c58` при разморозке, без ручного вмешательства!).
+     2. Если кандидатов `0` — немедленный no-op (строгая идемпотентность).
+     3. Группирует кандидатов по смыслу (связные компоненты по нормализованному сходству токенов/якорей + совместимость `targetContext`, с соблюдением запрета слияния записей с разными непустыми `sourceTaskId` и разных скомпилированных слайсов).
+     4. **Детекция противоречий (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE`, D012):** внутри каждой группы проверяет пары на полярные/конфликтующие директивы (например, пары «добавить/включить/разрешить/оставить/использовать» vs «удалить/убрать/отключить/запретить/не использовать» в отношении общего объекта, или взаимоисключающие целевые значения). При обнаружении противоречия:
+        - записи **НЕ** сливаются молча;
+        - в обобщённой записи выставляется `consolidationConflict = true`, в `consolidationNotes` и в тексте `content` добавляется явный раздел `[CONFLICT DETECTED — REQUIRES RESOLUTION]` с цитированием обеих сторон, их `id`, источников/ролей и временных меток `createdAt`.
+     5. Для каждой группы формирует **одну** обобщённую запись (`WishlistStatus.pending`):
+        - `content`: структурированное обобщение группы + явный блок `Lineage / Source Wishlists` с перечнем всех исходных `id`, `source`, `sourceRoleTag` и `createdAt`;
+        - `consolidatedFromIds`: сериализованный JSON-массив исходных UUID (в детерминированном хронологическом порядке);
+        - `source` и `sourceRoleTag`: канонические (если среди исходников есть `client` → `source = client`, `sourceRoleTag = null`; если только `role` → объединённый валидный `BARCAN-TAG-XX` через `WishlistEntity.validateCanonicalSourceRoleTag`).
+     6. Каждую исходную запись группы переводит в `WishlistStatus.consolidated` с `mergedIntoWishlistId = consolidated.getId()` (**не удаляет** и не переписывает её исходный `content`/`createdAt`!).
+     7. В декомпозицию (`executeOrchestrate`) идут строго обобщённые `pending`-записи.
+4. **Согласованность знаменателей (`ClientDeliverableReadinessService` + `FlowSpineService` + `OperationalTruthService`):**
+   - Исключить `WishlistStatus.consolidated` из незакрытых знаменателей (аналогично `dismissed`), а `deferred_frozen` не считать активным `pendingWishlist` для запуска декомпозиции.
+
+### 16.2. Тесты-заслоны (`KARL_POPPER_01_FALSIFICATION_HARNESS`, Docker Maven `-m 2g`) и живая приёмка
+1. Создать `src/test/java/com/eneik/production/services/FrozenWishlistConsolidationTest.java`:
+   - **Заслон 14-1 (Frozen Accumulation, No Tasks):** `addWishlistItem` для `ProjectStatus.frozen` сохраняет запись в `WishlistStatus.deferred_frozen` (сохранены текст, источник/роль, `createdAt`), не отклоняется `OperationalPolicyService` и создаёт `0` задач; при этом `ORCHESTRATE` / `DISPATCH_QUEUED_TASKS` для `frozen` по-прежнему запрещены.
+   - **Заслон 14-2 (Semantic Grouping + Lineage):** при разморозке (`activateProject`) $N$ близких накопленных записей сворачиваются в `1` обобщённую `pending`-запись с `consolidatedFromIds` на все $N$ UUID, а все $N$ исходных записей сохраняются в БД со статусом `consolidated` и `mergedIntoWishlistId = <id обобщённой>`.
+   - **Заслон 14-3 (Idempotency):** повторная заморозка/разморозка и повторный вызов `consolidateForProject` не создают дубликатов обобщённых записей (`count == 1`).
+   - **Заслон 14-4 (Conflict Preservation, Belnap BOTH):** противоречащие накопленные записи (например, «включить X» и «полностью отключить и удалить X») не сливаются молча — `consolidationConflict == true`, обе позиции и оба исходных `id` явно присутствуют в обобщённой записи.
+   - **Заслон 14-5 (H2 + Flyway `V1..V148`):** миграция `V148` проходит `FlywayMigrationValidationTest`, а существующие `pending`-записи на замороженном проекте подхватываются консолидацией при разморозке.
+2. Прогнать в Docker Maven (`-m 2g`): `FrozenWishlistConsolidationTest`, `FlywayMigrationValidationTest`, `DennettAutonomyFalsificationTest` (100% green), `ProjectFlowIntegrationTest` / `ProjectFlowServiceTest`, `ClientDeliverableReadinessServiceTest`.
+3. Пересобрать `eneikproductionsys-backend-1`, проверить на живом рантайме `UP`, `0` ошибок старта/Flyway, 3 существующих вишлиста `knowledge-base-crie` не тронуты вручную.
+4. Коммит `feat(d010,d012): accumulate wishlists for frozen projects and consolidate with lineage on unfreeze`, отчёт `<= 20` строк в `docs/reports/PROGRAMMER_STATE.md`.
