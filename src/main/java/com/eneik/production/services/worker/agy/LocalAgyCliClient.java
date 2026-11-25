@@ -114,6 +114,17 @@ public class LocalAgyCliClient {
                                              String fileContentsContext,
                                              AccountEntity account,
                                              String reflectionFeedback) throws Exception {
+        return generateSolution(task, fileContentsContext, account, reflectionFeedback, null);
+    }
+
+    /**
+     * Generates code solution via local agy CLI with dynamic Role Charter and Memorilla (K=16) context.
+     */
+    public DeepSeekResponse generateSolution(TaskEntity task,
+                                             String fileContentsContext,
+                                             AccountEntity account,
+                                             String reflectionFeedback,
+                                             String workerDoctrineContext) throws Exception {
         String executionUser;
         if (account != null && account.getName() != null && account.getName().trim().startsWith("remotecli")) {
             executionUser = account.getName().trim();
@@ -125,7 +136,7 @@ public class LocalAgyCliClient {
         String cynefin = task != null ? task.getCynefinDomain() : "complicated";
         String model = commandBuilder.resolveModel(cynefin);
 
-        String fullPrompt = buildAgyPrompt(task, fileContentsContext, reflectionFeedback);
+        String fullPrompt = buildAgyPrompt(task, fileContentsContext, reflectionFeedback, workerDoctrineContext);
         List<String> command = commandBuilder.buildCommand(executionUser, cynefin, fullPrompt);
 
         log.info("LocalAgyCliClient: Executing agy under [{}] with model [{}] for task {}",
@@ -224,12 +235,30 @@ public class LocalAgyCliClient {
     }
 
     public String buildAgyPrompt(TaskEntity task, String fileContentsContext, String reflectionFeedback) {
+        return buildAgyPrompt(task, fileContentsContext, reflectionFeedback, null);
+    }
+
+    public String buildAgyPrompt(TaskEntity task, String fileContentsContext, String reflectionFeedback, String workerDoctrineContext) {
         StringBuilder sb = new StringBuilder();
         sb.append("You are an autonomous sovereign coding agent operating within EneikProductionSys.\n");
         sb.append("## DEONTIC BOUNDARY (JOSEPH RAZ D006):\n");
         sb.append("You must ONLY modify files within the declared fileScope. Modifying or creating any other file is strictly forbidden.\n\n");
 
         if (task != null) {
+            if (task.getRole() != null) {
+                sb.append("### ACTIVE ROLE IDENTITY (BARCAN-TAG)\n");
+                sb.append("Role Tag: ").append(task.getRole().getTag()).append("\n");
+                if (task.getRole().getDescription() != null && !task.getRole().getDescription().isBlank()) {
+                    sb.append("Role Description: ").append(task.getRole().getDescription()).append("\n");
+                }
+                sb.append("\n");
+            }
+            if (workerDoctrineContext != null && !workerDoctrineContext.isBlank()) {
+                if (!workerDoctrineContext.contains("### ACTIVE ROLE CHARTER & MEMORILLA DOCTRINE MEMORY")) {
+                    sb.append("### ACTIVE ROLE CHARTER & MEMORILLA DOCTRINE MEMORY (K=16)\n");
+                }
+                sb.append(workerDoctrineContext.stripTrailing()).append("\n\n");
+            }
             sb.append("### TASK DEFINITION\n");
             sb.append("Title: ").append(task.getTitle()).append("\n");
             String scopeDisplay = task.getFileScope();
@@ -241,6 +270,8 @@ public class LocalAgyCliClient {
             if (SystemSettingsService.isExternalUiOwnedProject(settingsService, task.getProject())) {
                 sb.append(SystemSettingsService.EXTERNAL_UI_BOUNDARY_DIRECTIVE).append("\n");
             }
+        } else if (workerDoctrineContext != null && !workerDoctrineContext.isBlank()) {
+            sb.append(workerDoctrineContext.stripTrailing()).append("\n\n");
         }
 
         if (fileContentsContext != null && !fileContentsContext.isBlank()) {

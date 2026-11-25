@@ -643,9 +643,15 @@ public class FalsificationCycleService {
         // incidents, known architecture gaps, engineering invariants) the auditing session should know
         // about before critiquing - retrieval degrades to "" whenever unavailable (flag off, empty corpus,
         // embedding call failed), so this is always safe to splice in unconditionally.
-        String knownContext = geminiContextService.buildContextBlock(
-                "philosophical falsification of " + project.getName()
-                        + " - known architecture gaps, standing engineering principles, prior incidents");
+        String knownContext = "";
+        try {
+            String block = geminiContextService.buildLatentSemanticMemoryBlock(
+                    "philosophical falsification of " + project.getName()
+                            + " - known architecture gaps, standing engineering principles, prior incidents");
+            knownContext = block != null ? block : "";
+        } catch (Exception e) {
+            log.warn("FalsificationCycleService: Memorilla K=16 retrieval failed for project {}: {}", project.getName(), e.getMessage());
+        }
 
         return """
                 You are running a PHILOSOPHICAL PRODUCT FALSIFICATION for this project. This is NOT a charter-

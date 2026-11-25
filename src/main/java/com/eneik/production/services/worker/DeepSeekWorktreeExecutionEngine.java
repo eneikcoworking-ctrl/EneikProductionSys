@@ -18,6 +18,7 @@ import com.eneik.production.services.worker.worktree.FileScopeEnforcer;
 import com.eneik.production.services.worker.worktree.GitWorktreeExecutionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -48,6 +49,7 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
     private final JulesSessionRepository sessionRepository;
     private final AccountRepository accountRepository;
     private final GitHubPullRequestService githubPrService;
+    private final SovereignWorkerContextAssembler workerContextAssembler;
 
     public DeepSeekWorktreeExecutionEngine(
             DeepSeekApiClient deepSeekClient,
@@ -57,6 +59,20 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
             JulesSessionRepository sessionRepository,
             AccountRepository accountRepository,
             GitHubPullRequestService githubPrService) {
+        this(deepSeekClient, worktreeManager, fileScopeEnforcer, verificationRunner,
+                sessionRepository, accountRepository, githubPrService, null);
+    }
+
+    @Autowired
+    public DeepSeekWorktreeExecutionEngine(
+            DeepSeekApiClient deepSeekClient,
+            GitWorktreeExecutionManager worktreeManager,
+            FileScopeEnforcer fileScopeEnforcer,
+            LocalVerificationRunner verificationRunner,
+            JulesSessionRepository sessionRepository,
+            AccountRepository accountRepository,
+            GitHubPullRequestService githubPrService,
+            @Autowired(required = false) SovereignWorkerContextAssembler workerContextAssembler) {
         this.deepSeekClient = deepSeekClient;
         this.worktreeManager = worktreeManager;
         this.fileScopeEnforcer = fileScopeEnforcer;
@@ -64,6 +80,7 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
         this.sessionRepository = sessionRepository;
         this.accountRepository = accountRepository;
         this.githubPrService = githubPrService;
+        this.workerContextAssembler = workerContextAssembler;
     }
 
     @Override
@@ -159,6 +176,11 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
                     ? (rawScopedContent != null ? rawScopedContent : "")
                     : (rawScopedContent == null || rawScopedContent.isBlank() ? repoTreeBlock : repoTreeBlock + "\n\n" + rawScopedContent);
 
+            // Mechanism #14 (D014/D010/D001): Assemble dynamic BARCAN role charter + Memorilla K=16 once before draft attempts
+            String workerDoctrineContext = workerContextAssembler != null
+                    ? workerContextAssembler.assemble(task, mode)
+                    : "";
+
             // Multiple Drafts loop (up to 2 attempts)
             String reflectionFeedback = null;
             boolean success = false;
@@ -170,7 +192,11 @@ public class DeepSeekWorktreeExecutionEngine implements WorkerExecutionEngine {
                 // Epistemic Pulse: DEEPSEEK_GENERATING
                 DeepSeekResponse response;
                 try {
-                    response = deepSeekClient.generateSolution(task, scopedFilesContent, account, reflectionFeedback);
+                    if (workerDoctrineContext != null && !workerDoctrineContext.isBlank()) {
+                        response = deepSeekClient.generateSolution(task, scopedFilesContent, account, reflectionFeedback, workerDoctrineContext);
+                    } else {
+                        response = deepSeekClient.generateSolution(task, scopedFilesContent, account, reflectionFeedback);
+                    }
                 } catch (DeepSeekQuotaExhaustedException e) {
                     log.error("DeepSeek quota exhausted during draft #{}: {}", attempt, e.getMessage());
                     throw e; // Caught upstream by WorkerExecutionRouter for Cranes homeostasis

@@ -84,6 +84,18 @@ public class DeepSeekApiClient {
                                              String fileContentsContext,
                                              AccountEntity account,
                                              String previousReflectionFeedback) throws Exception {
+        return generateSolution(task, fileContentsContext, account, previousReflectionFeedback, null);
+    }
+
+    /**
+     * Generates code patch for a task with Context Caching, dynamic Role Charter / Memorilla (K=16) context,
+     * and Fallback-Clutch. Preserves {@code BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX} byte-for-byte at offset 0.
+     */
+    public DeepSeekResponse generateSolution(TaskEntity task,
+                                             String fileContentsContext,
+                                             AccountEntity account,
+                                             String previousReflectionFeedback,
+                                             String workerDoctrineContext) throws Exception {
         String apiKey = resolveApiKey(account);
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException("DeepSeek API key is missing for account " + (account != null ? account.getName() : "default"));
@@ -93,7 +105,7 @@ public class DeepSeekApiClient {
         String model = resolveModel(cynefin);
         Duration readTimeout = REASONER_MODEL.equalsIgnoreCase(model) ? Duration.ofSeconds(180) : Duration.ofSeconds(90);
 
-        String systemPrompt = buildSystemPrompt(task);
+        String systemPrompt = buildSystemPrompt(task, workerDoctrineContext);
         String userPrompt = buildUserPrompt(task, fileContentsContext, previousReflectionFeedback);
 
         String baseUrl = resolveBaseUrl();
@@ -196,8 +208,12 @@ public class DeepSeekApiClient {
     }
 
     public String buildSystemPrompt(TaskEntity task) {
+        return buildSystemPrompt(task, null);
+    }
+
+    public String buildSystemPrompt(TaskEntity task, String workerDoctrineContext) {
         StringBuilder sb = new StringBuilder();
-        // Constant prefix ensuring server-side Context Caching hit (>1024 tokens)
+        // Constant prefix ensuring server-side Context Caching hit (>1024 tokens) — MUST stay byte-for-byte at offset 0
         sb.append(BARCAN_TAG_ONTOLOGICAL_CACHE_PREFIX);
 
         sb.append("\n## Active Task Execution Context\n");
@@ -216,6 +232,13 @@ public class DeepSeekApiClient {
             if (SystemSettingsService.isExternalUiOwnedProject(settingsService, task.getProject())) {
                 sb.append(SystemSettingsService.EXTERNAL_UI_BOUNDARY_DIRECTIVE);
             }
+        }
+        if (workerDoctrineContext != null && !workerDoctrineContext.isBlank()) {
+            sb.append("\n");
+            if (!workerDoctrineContext.contains("### ACTIVE ROLE CHARTER & MEMORILLA DOCTRINE MEMORY")) {
+                sb.append("### ACTIVE ROLE CHARTER & MEMORILLA DOCTRINE MEMORY (K=16)\n");
+            }
+            sb.append(workerDoctrineContext.stripTrailing()).append("\n");
         }
         return sb.toString();
     }

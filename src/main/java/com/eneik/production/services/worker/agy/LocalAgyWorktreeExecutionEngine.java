@@ -7,6 +7,7 @@ import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.worker.BelnapStatus;
+import com.eneik.production.services.worker.SovereignWorkerContextAssembler;
 import com.eneik.production.services.worker.WorkerDispatchResult;
 import com.eneik.production.services.worker.WorkerEngineType;
 import com.eneik.production.services.worker.WorkerExecutionEngine;
@@ -21,6 +22,7 @@ import com.eneik.production.services.worker.worktree.FileScopeEnforcer;
 import com.eneik.production.services.worker.worktree.GitWorktreeExecutionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.file.Path;
@@ -53,6 +55,7 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
     private final JulesSessionRepository sessionRepository;
     private final AccountRepository accountRepository;
     private final GitHubPullRequestService githubPrService;
+    private final SovereignWorkerContextAssembler workerContextAssembler;
 
     public LocalAgyWorktreeExecutionEngine(
             LocalAgyCliClient agyClient,
@@ -62,6 +65,20 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
             JulesSessionRepository sessionRepository,
             AccountRepository accountRepository,
             GitHubPullRequestService githubPrService) {
+        this(agyClient, worktreeManager, fileScopeEnforcer, verificationRunner,
+                sessionRepository, accountRepository, githubPrService, null);
+    }
+
+    @Autowired
+    public LocalAgyWorktreeExecutionEngine(
+            LocalAgyCliClient agyClient,
+            GitWorktreeExecutionManager worktreeManager,
+            FileScopeEnforcer fileScopeEnforcer,
+            LocalVerificationRunner verificationRunner,
+            JulesSessionRepository sessionRepository,
+            AccountRepository accountRepository,
+            GitHubPullRequestService githubPrService,
+            @Autowired(required = false) SovereignWorkerContextAssembler workerContextAssembler) {
         this.agyClient = agyClient;
         this.worktreeManager = worktreeManager;
         this.fileScopeEnforcer = fileScopeEnforcer;
@@ -69,6 +86,7 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
         this.sessionRepository = sessionRepository;
         this.accountRepository = accountRepository;
         this.githubPrService = githubPrService;
+        this.workerContextAssembler = workerContextAssembler;
     }
 
     @Override
@@ -149,6 +167,11 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
                     ? rawScopedContent
                     : (rawScopedContent == null || rawScopedContent.isBlank() ? repoTreeBlock : repoTreeBlock + "\n\n" + rawScopedContent);
 
+            // Mechanism #14 (D014/D010/D001): Assemble dynamic BARCAN role charter + Memorilla K=16 once before draft attempts
+            String workerDoctrineContext = workerContextAssembler != null
+                    ? workerContextAssembler.assemble(task, mode)
+                    : "";
+
             // Multiple Drafts loop (up to 2 attempts, +1 if Dynamic Scope Expansion triggers)
             String reflectionFeedback = null;
             boolean success = false;
@@ -158,7 +181,9 @@ public class LocalAgyWorktreeExecutionEngine implements WorkerExecutionEngine {
             for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                 log.info("Task {}: Generating draft #{} via Local agy CLI...", taskId, attempt);
 
-                DeepSeekResponse response = agyClient.generateSolution(task, scopedFilesContent, account, reflectionFeedback);
+                DeepSeekResponse response = (workerDoctrineContext != null && !workerDoctrineContext.isBlank())
+                        ? agyClient.generateSolution(task, scopedFilesContent, account, reflectionFeedback, workerDoctrineContext)
+                        : agyClient.generateSolution(task, scopedFilesContent, account, reflectionFeedback);
 
                 // Dennett Dynamic Scope Expansion on SCOPE_INSUFFICIENT
                 if (response.scopeStatus() == ScopeStatus.SCOPE_INSUFFICIENT) {

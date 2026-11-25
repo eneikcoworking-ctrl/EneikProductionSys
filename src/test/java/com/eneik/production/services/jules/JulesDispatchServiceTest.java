@@ -1100,9 +1100,9 @@ class JulesDispatchServiceTest {
         // a product worker, and its retrieval must go through buildProductWorkerContextBlock, which filters
         // the factory's own metalanguage out of the corpus before the agent ever sees it. Only
         // factory-scoped tasks take the unfiltered buildContextBlock path.
-        when(geminiContextService.buildProductWorkerContextBlock(any(RoleEntity.class), anyString())).thenReturn("""
-                RELEVANT SYSTEM KNOWLEDGE (retrieved from the indexed knowledge base):
-                - [01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md] Single Writer Ownership and Contract-First Parallelism.
+        when(geminiContextService.buildProductWorkerLatentMemoryBlock(any(RoleEntity.class), anyString())).thenReturn("""
+                MEMORILLA PRODUCT DOCTRINE MEMORY (K=1 orthogonal query-conditioned slots, Tarski L0-stratified):
+                - [Slot #01 | 01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md | sim=0.92] Single Writer Ownership and Contract-First Parallelism.
                 """);
 
         JulesDispatchResult result = julesDispatchService.dispatch(task);
@@ -1110,10 +1110,11 @@ class JulesDispatchServiceTest {
         assertTrue(result.dispatched());
 
         ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
-        verify(geminiContextService).buildProductWorkerContextBlock(eq(role), queryCaptor.capture());
+        verify(geminiContextService).buildProductWorkerLatentMemoryBlock(eq(role), queryCaptor.capture());
         assertTrue(queryCaptor.getValue().contains("roleTag=BARCAN-TAG-02"));
         assertTrue(queryCaptor.getValue().contains("contract-first account ingestion"));
         // The unfiltered corpus must never be consulted for a product task - that is the demarcation.
+        verify(geminiContextService, never()).buildLatentSemanticMemoryBlock(anyString());
         verify(geminiContextService, never()).buildContextBlock(anyString());
 
         verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), anyString(), argThat(context ->

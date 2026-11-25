@@ -158,9 +158,16 @@ public class OpsAuditorService {
         }
 
         String prompt = buildAuditPrompt(project, evidence);
+        String memorillaContext = "";
+        try {
+            String block = geminiContextService.buildLatentSemanticMemoryBlock(prompt);
+            memorillaContext = block != null ? block : "";
+        } catch (Exception e) {
+            log.warn("OpsAuditorService: Memorilla K=16 retrieval failed for project {}: {}", project.getName(), e.getMessage());
+        }
         String systemInstruction = "You are a cautious, evidence-only operations auditor. You may ONLY act on the evidence "
                 + "given to you in this prompt - never invent additional facts. Respond with strict JSON only.\n\n"
-                + geminiContextService.buildContextBlock(prompt);
+                + memorillaContext;
         String response = mlPredictionServiceClient.chatCritical(prompt, systemInstruction);
         List<AuditorDecision> decisions = parseDecisions(response);
         if (decisions.isEmpty()) {

@@ -51,7 +51,7 @@ class OpsAuditorServiceTest {
         mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
         geminiContextService = mock(GeminiContextService.class);
         readinessService = mock(ClientDeliverableReadinessService.class);
-        when(geminiContextService.buildContextBlock(anyString())).thenReturn("");
+        when(geminiContextService.buildLatentSemanticMemoryBlock(anyString())).thenReturn("");
         service = new OpsAuditorService(projectRepository, wishlistRepository, taskRepository, settingsService,
                 mlPredictionServiceClient, geminiContextService, readinessService, null);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);

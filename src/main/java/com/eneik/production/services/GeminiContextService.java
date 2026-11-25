@@ -810,13 +810,17 @@ public class GeminiContextService {
             return List.of();
         }
         if (!settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
+            log.debug("Memorilla retrieveLatentMemorySlots empty: reason=learning_disabled sourceTypes={}", sourceTypes);
             return List.of();
         }
         if (repository.count() == 0) {
+            log.warn("Memorilla retrieveLatentMemorySlots empty: reason=empty_corpus sourceTypes={}", sourceTypes);
             return List.of();
         }
         float[] queryVector = mlPredictionServiceClient.embed(query);
         if (queryVector == null) {
+            log.warn("Memorilla retrieveLatentMemorySlots empty: reason=embed_unavailable sourceTypes={} queryLen={}",
+                    sourceTypes, query != null ? query.length() : 0);
             return List.of();
         }
         List<ContextChunkRepository.VectorRow> corpus = repository.findVectorRowsBySourceTypeIn(sourceTypes);
@@ -824,6 +828,8 @@ public class GeminiContextService {
             corpus = corpus.stream().filter(additionalFilter).toList();
         }
         if (corpus.isEmpty()) {
+            log.warn("Memorilla retrieveLatentMemorySlots empty: reason=empty_corpus sourceTypes={} filtered={}",
+                    sourceTypes, additionalFilter != null);
             return List.of();
         }
 
@@ -840,6 +846,8 @@ public class GeminiContextService {
                 .toList();
 
         if (candidates.isEmpty()) {
+            log.warn("Memorilla retrieveLatentMemorySlots empty: reason=empty_corpus sourceTypes={} queryDimension={}",
+                    sourceTypes, queryDimension);
             return List.of();
         }
 
@@ -847,6 +855,8 @@ public class GeminiContextService {
         List<VectorCandidate> pool = new ArrayList<>(
                 candidates.stream().filter(c -> c.querySimilarity() >= floor).toList());
         if (pool.isEmpty()) {
+            log.debug("Memorilla retrieveLatentMemorySlots empty: reason=below_similarity_floor sourceTypes={} floor={} candidates={}",
+                    sourceTypes, floor, candidates.size());
             return List.of();
         }
 

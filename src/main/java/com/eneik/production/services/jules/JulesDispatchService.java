@@ -1052,9 +1052,9 @@ public class JulesDispatchService {
         try {
             String context;
             if (task != null && task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE) {
-                context = geminiContextService.buildProductWorkerContextBlock(task.getRole(), julesRetrievalQuery(task, mode, buildPhase));
+                context = geminiContextService.buildProductWorkerLatentMemoryBlock(task.getRole(), julesRetrievalQuery(task, mode, buildPhase));
             } else if (task != null && task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM) {
-                context = geminiContextService.buildContextBlock(julesRetrievalQuery(task, mode, buildPhase));
+                context = geminiContextService.buildLatentSemanticMemoryBlock(julesRetrievalQuery(task, mode, buildPhase));
             } else {
                 return;
             }
