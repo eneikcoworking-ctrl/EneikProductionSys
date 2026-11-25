@@ -10,5 +10,9 @@ public enum WishlistStatus {
     // (poller retry, duplicate webhook) sees `finalizing` (not `compiling`) and backs off instead of
     // independently rebuilding the same task graph. See JulesDispatchService.admitWishlistCompilationCompletion.
     finalizing,
-    converted_to_task, dismissed
+    converted_to_task, dismissed,
+    // WO #14 / Mechanism #16 (D010/D012): explicit Belnap truth-status states for frozen-project
+    // wishlist accumulation (deferred_frozen) and non-destructive lineage absorption (consolidated).
+    deferred_frozen,
+    consolidated
 }

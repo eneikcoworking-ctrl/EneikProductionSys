@@ -408,6 +408,7 @@ public class ClientDeliverableReadinessService {
         boolean everyRootCompiled = !iterationRoots.isEmpty() && iterationRoots.stream()
                 .allMatch(w -> w.getStatus() == WishlistStatus.converted_to_task
                         || w.getStatus() == WishlistStatus.dismissed
+                        || w.getStatus() == WishlistStatus.consolidated
                         || w.decompositionRefused());
 
         // Live bug found 2026-07-24: a work-item wishlist that the compiler already stamped with
@@ -421,7 +422,7 @@ public class ClientDeliverableReadinessService {
         // permanent 4/8 on test-thirty-seventh.
         List<WishlistEntity> plannedItems = allWishlist.stream()
                 .filter(w -> w.getCompiledByRole() != null)
-                .filter(w -> w.getStatus() != WishlistStatus.dismissed)
+                .filter(w -> w.getStatus() != WishlistStatus.dismissed && w.getStatus() != WishlistStatus.consolidated)
                 .filter(w -> sources.contains(w.getSource()))
                 .filter(w -> w.getFeatureId() != null && productFeatureIds.contains(dedup.canonicalOrSelf(w.getFeatureId())))
                 .toList();
@@ -689,7 +690,7 @@ public class ClientDeliverableReadinessService {
         return allWishlist.stream()
                 .filter(w -> w.getFeatureId() != null)
                 .filter(w -> w.getCompiledByRole() != null)
-                .filter(w -> w.getStatus() != WishlistStatus.dismissed)
+                .filter(w -> w.getStatus() != WishlistStatus.dismissed && w.getStatus() != WishlistStatus.consolidated)
                 .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId, java.util.stream.Collectors.counting()));
     }
@@ -810,7 +811,7 @@ public class ClientDeliverableReadinessService {
         // deliberately mirrors that one's filtering instead of calling it (see class javadoc above).
         List<WishlistEntity> plannedItems = allWishlist.stream()
                 .filter(w -> w.getCompiledByRole() != null)
-                .filter(w -> w.getStatus() != WishlistStatus.dismissed)
+                .filter(w -> w.getStatus() != WishlistStatus.dismissed && w.getStatus() != WishlistStatus.consolidated)
                 .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
                 .filter(w -> w.getFeatureId() != null && productFeatureIds.contains(dedup.canonicalOrSelf(w.getFeatureId())))
                 .toList();

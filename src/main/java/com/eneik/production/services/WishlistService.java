@@ -70,15 +70,6 @@ public class WishlistService {
 
 
     private WishlistResponseDto mapToDto(WishlistEntity entity) {
-        return new WishlistResponseDto(
-                entity.getId(),
-                entity.getProjectId(),
-                entity.getSource(),
-                entity.getSourceRoleTag(),
-                entity.getContent(),
-                entity.getStatus(),
-                entity.getCreatedAt(),
-                entity.getFeatureId()
-        );
+        return WishlistResponseDto.fromEntity(entity);
     }
 }

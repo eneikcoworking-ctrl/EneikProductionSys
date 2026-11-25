@@ -125,6 +125,34 @@ public class WishlistEntity {
     @Column(name = "finalizing_since")
     private Instant finalizingSince;
 
+    /**
+     * WO #14 / Mechanism #16 (V148, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN D010):
+     * Points from an absorbed original wishlist (status = consolidated) to the consolidated pending wishlist.
+     */
+    @Column(name = "merged_into_wishlist_id")
+    private UUID mergedIntoWishlistId;
+
+    /**
+     * WO #14 / Mechanism #16 (V148, ELVIN_GOLDMAN_01_RELIABILITY_CHAIN D010):
+     * JSON array of source wishlist UUIDs (deterministic chronological order) folded into this consolidated wishlist.
+     */
+    @Column(name = "consolidated_from_ids", columnDefinition = "TEXT")
+    private String consolidatedFromIds;
+
+    /**
+     * WO #14 / Mechanism #16 (V148, NUEL_BELNAP_03_TRUTH_STATUS_TABLE D012):
+     * True when conflicting directives (Belnap BOTH) were detected among source wishlists in this group.
+     */
+    @Column(name = "consolidation_conflict", nullable = false)
+    private boolean consolidationConflict = false;
+
+    /**
+     * WO #14 / Mechanism #16 (V148, D010/D012):
+     * Deterministic grouping summary and explicit conflict details when consolidationConflict is true.
+     */
+    @Column(name = "consolidation_notes", columnDefinition = "TEXT")
+    private String consolidationNotes;
+
     public UUID getId() {
         return id;
     }
@@ -477,5 +505,37 @@ public class WishlistEntity {
 
     public void setFinalizingSince(Instant finalizingSince) {
         this.finalizingSince = finalizingSince;
+    }
+
+    public UUID getMergedIntoWishlistId() {
+        return mergedIntoWishlistId;
+    }
+
+    public void setMergedIntoWishlistId(UUID mergedIntoWishlistId) {
+        this.mergedIntoWishlistId = mergedIntoWishlistId;
+    }
+
+    public String getConsolidatedFromIds() {
+        return consolidatedFromIds;
+    }
+
+    public void setConsolidatedFromIds(String consolidatedFromIds) {
+        this.consolidatedFromIds = consolidatedFromIds;
+    }
+
+    public boolean isConsolidationConflict() {
+        return consolidationConflict;
+    }
+
+    public void setConsolidationConflict(boolean consolidationConflict) {
+        this.consolidationConflict = consolidationConflict;
+    }
+
+    public String getConsolidationNotes() {
+        return consolidationNotes;
+    }
+
+    public void setConsolidationNotes(String consolidationNotes) {
+        this.consolidationNotes = consolidationNotes;
     }
 }

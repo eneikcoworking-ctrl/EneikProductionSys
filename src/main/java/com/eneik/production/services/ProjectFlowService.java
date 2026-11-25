@@ -293,6 +293,13 @@ public class ProjectFlowService {
         this.tocSentinelService = tocSentinelService;
     }
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private FrozenWishlistConsolidationService frozenWishlistConsolidationService;
+
+    public void setFrozenWishlistConsolidationService(FrozenWishlistConsolidationService frozenWishlistConsolidationService) {
+        this.frozenWishlistConsolidationService = frozenWishlistConsolidationService;
+    }
+
     /**
      * Law 25a (Clean Project Admission Law):
      * dom(admit) = { w : content(w) != empty }
@@ -598,8 +605,13 @@ public class ProjectFlowService {
             }
         });
 
+        ProjectStatus previousStatus = project.getStatus();
         project.setStatus(ProjectStatus.active);
         ProjectEntity saved = projectRepository.save(project);
+        if ((previousStatus == ProjectStatus.frozen || previousStatus == ProjectStatus.waiting)
+                && frozenWishlistConsolidationService != null) {
+            frozenWishlistConsolidationService.consolidateForProject(projectId);
+        }
         resetStallTelemetryOnActivation();
         return toProjectDto(saved);
     }
@@ -825,10 +837,14 @@ public class ProjectFlowService {
         }
         item.setSource(source);
         item.setSourceRoleTag(source == com.eneik.production.models.persistence.WishlistSource.client ? null : request.sourceRoleTag());
-        item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+        if (project.getStatus() == ProjectStatus.frozen || project.getStatus() == ProjectStatus.waiting) {
+            item.setStatus(com.eneik.production.models.persistence.WishlistStatus.deferred_frozen);
+        } else {
+            item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+        }
         item = wishlistRepository.save(item);
 
-        return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt(), item.getFeatureId());
+        return com.eneik.production.dto.WishlistResponseDto.fromEntity(item);
     }
 
     // 2026-08-14 (bug-hunt sweep, second attempt - first attempt reverted): used to be @Transactional,
@@ -872,6 +888,12 @@ public class ProjectFlowService {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.ORCHESTRATE);
         recordOrchestrationStartOrThrow(projectId);
+
+        // WO #14 / Mechanism #16: idempotent safety net before any decomposition so deferred_frozen
+        // items are always consolidated with lineage before entering the compiler.
+        if (frozenWishlistConsolidationService != null) {
+            frozenWishlistConsolidationService.consolidateDeferredBeforeOrchestrate(project.getId());
+        }
 
         // Group similar pending wishlist items using graph theory connected components
         groupSimilarWishlistItems(project.getId());
@@ -7102,7 +7124,7 @@ public class ProjectFlowService {
         List<com.eneik.production.dto.WishlistResponseDto> wishlist = wishlistEntities
                 .stream()
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                .map(w -> new com.eneik.production.dto.WishlistResponseDto(w.getId(), w.getProjectId(), w.getSource(), w.getSourceRoleTag(), w.getContent(), w.getStatus(), w.getCreatedAt(), w.getFeatureId()))
+                .map(com.eneik.production.dto.WishlistResponseDto::fromEntity)
                 .toList();
         List<TaskDto> tasks = taskEntities.stream()
                 .map(task -> new TaskDto(

@@ -101,19 +101,30 @@ public class OperationalPolicyService {
         return "active".equalsIgnoreCase(projectStatus) || "stalled".equalsIgnoreCase(projectStatus);
     }
 
+    /**
+     * WO #14 / Mechanism #16 (D010/D012): Frozen and waiting projects remain strictly non-operational
+     * (ORCHESTRATE, DISPATCH_*, MERGE_PR, RECOVER_* stay forbidden), while ADD_WISHLIST is permitted
+     * so wishes accumulate in {@code WishlistStatus.deferred_frozen} without creating tasks.
+     */
+    public static boolean isDeferredWishlistIntakeStatus(String projectStatus) {
+        return "frozen".equalsIgnoreCase(projectStatus) || "waiting".equalsIgnoreCase(projectStatus);
+    }
+
     public OperationalDecision authorize(FlowCoreDto core, OperationalAction action) {
         FlowSpineDto snapshot = core.snapshot();
         FlowCoreDto.Authorization authorization = core.authorization();
         boolean activeProject = isOperationalProjectStatus(core.project().status());
+        boolean deferredIntakeProject = isDeferredWishlistIntakeStatus(core.project().status());
         boolean hardBlocked = isHardBlocked(snapshot.currentState());
         boolean terminal = isTerminal(snapshot.currentState());
+        boolean permanentlyClosed = "ACCEPTED".equals(snapshot.currentState()) || "ARCHIVED".equals(snapshot.currentState());
         boolean hasPendingScope = snapshot.evidence().pendingWishlist() > 0
                 || snapshot.evidence().compilingWishlist() > 0
                 || !snapshot.counts().decompositionComplete();
 
         boolean allowed = switch (action) {
             case OBSERVE -> authorization.journalAppendAllowed();
-            case ADD_WISHLIST -> activeProject && !terminal;
+            case ADD_WISHLIST -> (activeProject && !terminal) || (deferredIntakeProject && !permanentlyClosed);
             // Deliberately narrower than hardBlocked (2026-07-31): a task/review/stall-specific blocker
             // (BLOCKED_BY_TASK, BLOCKED_BY_REVIEW, SYSTEM_STALLED, BLOCKED_BY_FAILED_FRONTIER) means
             // something ELSEWHERE in the project needs attention - it carries no evidence that a brand-new,

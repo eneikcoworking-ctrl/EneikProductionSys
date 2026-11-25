@@ -2660,7 +2660,9 @@ public class JulesDispatchService {
         // the legitimate first one (caught live: it stuck a wishlist in an infinite
         // compile->discard->blocked->recover->compile loop that never produced real work).
         boolean allAlreadyResolved = wishlists.stream()
-                .allMatch(w -> w.getStatus() == WishlistStatus.converted_to_task || w.getStatus() == WishlistStatus.dismissed);
+                .allMatch(w -> w.getStatus() == WishlistStatus.converted_to_task
+                        || w.getStatus() == WishlistStatus.dismissed
+                        || w.getStatus() == WishlistStatus.consolidated);
         if (allAlreadyResolved) {
             return new CompilerCompletionAdmission(CompilationAdmissionOutcome.ALREADY_COMPILED, wishlists, java.util.Set.of());
         }
@@ -2675,7 +2677,9 @@ public class JulesDispatchService {
         java.util.Set<UUID> claimedIds = new java.util.HashSet<>();
         Instant claimTime = Instant.now();
         for (WishlistEntity w : wishlists) {
-            if (w.getStatus() == WishlistStatus.converted_to_task || w.getStatus() == WishlistStatus.dismissed) {
+            if (w.getStatus() == WishlistStatus.converted_to_task
+                    || w.getStatus() == WishlistStatus.dismissed
+                    || w.getStatus() == WishlistStatus.consolidated) {
                 continue;
             }
             if (wishlistRepository.compareAndSetStatusWithTimestamp(w.getId(), WishlistStatus.compiling, WishlistStatus.finalizing, claimTime) == 1) {
