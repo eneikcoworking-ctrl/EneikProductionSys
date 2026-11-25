@@ -5,7 +5,7 @@
 **Правило (`GEMINI.md §0–§1`):** строго **один механизм за такт** (сначала §15, затем §16); на каждый такт — попперовский тест-заслон в Docker Maven (`-m 2g`), сохранение `100% green` `DennettAutonomyFalsificationTest`, пересборка `eneikproductionsys-backend-1`, живая проверка, семантический коммит и отчёт `<= 20` строк в `docs/reports/PROGRAMMER_STATE.md`. Ручных правок продуктов нет.
 
 - [x] **Такт 1 — WO #13 (Механизм №15, §15 ниже, `D013`/`D006`/`D003`):** полное исключение Google Jules из цепочки исполнения + `V147` — **ПРИНЯТО L1 (`1c408a66`, 2026-11-25 14:32 UTC)**.
-- [ ] **Такт 2 — WO #14 (Механизм №16, §16 ниже, `D010`/`D012`/`D002` — СЛЕДУЮЩИЙ ТАКТ):** накопление вишлистов замороженных проектов (`deferred_frozen`, разрешить `ADD_WISHLIST` для `frozen` без открытия `isOperational`) + `V148` + `FrozenWishlistConsolidationService` при разморозке (`activateProject` / `executeOrchestrate`) с lineage (`merged_into_wishlist_id`, `consolidated_from_ids`), явной детекцией конфликтов и идемпотентностью.
+- [x] **Такт 2 — WO #14 (Механизм №16, §16 ниже, `D010`/`D012`/`D002`):** накопление вишлистов замороженных проектов (`deferred_frozen`, разрешить `ADD_WISHLIST` для `frozen` без открытия `isOperational`) + `V148` + `FrozenWishlistConsolidationService` при разморозке (`activateProject` / `executeOrchestrate`) с lineage (`merged_into_wishlist_id`, `consolidated_from_ids`), явной детекцией конфликтов и идемпотентностью — **ПРИНЯТО L1 (`06dac76e`, 2026-11-25 15:36 UTC)**.
 - **Вне наряда (НЕ ТРОГАТЬ):** порядок `DeepSeek → LOCAL_AGY`, ОС-профили `remotecli3..10`, потерю отклонённых вишлистов `00:50 UTC`, исторические строки `jules_sessions`/`accounts`, 3 существующих `pending`-вишлиста `knowledge-base-crie` вручную, ресурсные настройки.
 
 ---
