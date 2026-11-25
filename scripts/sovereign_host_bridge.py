@@ -164,8 +164,9 @@ def call_deepseek_worker(prompt, model_name, timeout_sec=180):
         with urllib.request.urlopen(req, timeout=min(max(timeout_sec, 30), 240)) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         content = data["choices"][0]["message"]["content"]
-        tokens = int((data.get("usage") or {}).get("total_tokens", 0))
-        budget_guard.record_deepseek_usage(model_name, total_tokens=tokens, source="sovereign_bridge")
+        usage_dict = data.get("usage") or {}
+        tokens = int(usage_dict.get("total_tokens", 0))
+        budget_guard.record_deepseek_usage(model_name, total_tokens=tokens, source="sovereign_bridge", usage=usage_dict)
         return content
     except urllib.error.HTTPError as he:
         err_body = ""

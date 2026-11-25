@@ -80,6 +80,7 @@ def _empty_state(day: str) -> dict[str, Any]:
         "limits": dict(DEFAULT_LIMITS),
         "agy_calls": 0,
         "agy_calls_by_source": {},
+        "agy_accounts": {},
         "agy_worker_fallback_calls": 0,
         "relay_ticks": 0,
         "last_relay_tick_ts": 0.0,
@@ -121,10 +122,12 @@ def _load_unlocked(now: float | None = None) -> dict[str, Any]:
                     fresh["deepseek_last_balance_usd"] = data.get("deepseek_last_balance_usd")
                     fresh["deepseek_balance_checked_at"] = data.get("deepseek_balance_checked_at", 0.0)
                     fresh["deepseek_exhausted_until"] = data.get("deepseek_exhausted_until", 0.0)
+                    fresh["agy_accounts"] = dict(data.get("agy_accounts") or {})
                     return fresh
                 merged = _empty_state(day)
                 merged.update(data)
                 merged["limits"] = {**DEFAULT_LIMITS, **(data.get("limits") or {})}
+                merged["agy_accounts"] = dict(data.get("agy_accounts") or {})
                 return merged
         except Exception:
             pass
@@ -219,8 +222,15 @@ def can_use_deepseek(estimated_usd: float = 0.02, check_remote_balance: bool = T
         rem = int(float(st["deepseek_exhausted_until"]) - now)
         return False, f"deepseek_balance_exhausted_cooldown({rem}s)"
 
-    if float(st.get("deepseek_usd_est", 0.0)) + estimated_usd > float(limits["deepseek_daily_usd"]):
-        return False, f"deepseek_daily_usd_limit({st['deepseek_usd_est']:.3f}/{limits['deepseek_daily_usd']})"
+    # Safety ceiling: daily spend limit
+    usd_est = float(st.get("deepseek_usd_est", 0.0))
+    daily_usd = float(limits["deepseek_daily_usd"])
+    if usd_est + estimated_usd > daily_usd:
+        # If user has healthy real balance (>= $0.50), do not hard block solely on local estimate
+        if cached_bal is not None and float(cached_bal) >= 0.50 and (usd_est + estimated_usd) <= daily_usd * 2.0:
+            pass
+        else:
+            return False, f"deepseek_daily_usd_limit({usd_est:.3f}/{daily_usd})"
 
     if check_remote_balance:
         last_checked = float(st.get("deepseek_balance_checked_at", 0.0))
@@ -252,16 +262,72 @@ def mark_deepseek_exhausted(reason: str = "http_402") -> None:
     _with_lock(_op)
 
 
-def record_deepseek_usage(model: str, total_tokens: int = 0, source: str = "generic") -> None:
-    rate = MODEL_USD_PER_1M.get(model, 0.80)
-    usd = (max(total_tokens, 500) / 1_000_000.0) * rate
+def record_deepseek_usage(
+    model: str,
+    total_tokens: int = 0,
+    source: str = "generic",
+    usage: dict[str, Any] | None = None,
+) -> float:
+    """
+    Records DeepSeek API usage with exact token breakdown when available:
+    - prompt_cache_hit_tokens: $0.07 / 1M
+    - prompt_cache_miss_tokens: $0.27 / 1M
+    - completion_tokens: $1.10 / 1M
+    When only total_tokens is provided, uses realistic blended rate ($0.35/1M pro, $0.20/1M flash).
+    """
+    if usage and isinstance(usage, dict):
+        hit = int(usage.get("prompt_cache_hit_tokens", 0))
+        miss = int(usage.get("prompt_cache_miss_tokens", 0))
+        prompt_total = int(usage.get("prompt_tokens", 0))
+        if miss == 0 and prompt_total > hit:
+            miss = prompt_total - hit
+        comp = int(usage.get("completion_tokens", 0))
+        usd = (hit * 0.07 + miss * 0.27 + comp * 1.10) / 1_000_000.0
+    else:
+        rate = 0.35 if ("pro" in model or model == "deepseek-api-fallback") else 0.20
+        usd = (max(total_tokens, 0) / 1_000_000.0) * rate
+
+    usd = round(max(usd, 0.0), 6)
+
     def _op(st):
         st["deepseek_calls"] = int(st.get("deepseek_calls", 0)) + 1
         by_m = st.setdefault("deepseek_calls_by_model", {})
         by_m[model] = int(by_m.get(model, 0)) + 1
         st["deepseek_usd_est"] = round(float(st.get("deepseek_usd_est", 0.0)) + usd, 6)
+        return usd, True
+    return _with_lock(_op)
+
+
+def mark_agy_limit(profile: str, reason: str = "429_resource_exhausted", cooldown_sec: int = 1800) -> None:
+    now = time.time()
+    def _op(st):
+        accs = st.setdefault("agy_accounts", {})
+        acc_info = accs.setdefault(profile, {})
+        acc_info["status"] = "exhausted"
+        acc_info["exhausted_until"] = now + cooldown_sec
+        acc_info["last_error"] = reason[:200]
         return None, True
     _with_lock(_op)
+
+
+def get_agy_account_status(profile: str) -> dict[str, Any]:
+    st = get_status()
+    now = time.time()
+    acc_info = (st.get("agy_accounts") or {}).get(profile, {})
+    exh_until = float(acc_info.get("exhausted_until", 0.0))
+    if exh_until > now:
+        return {
+            "status": "exhausted",
+            "exhausted_until": exh_until,
+            "rem_sec": int(exh_until - now),
+            "last_error": acc_info.get("last_error", "resource_exhausted"),
+        }
+    return {
+        "status": "ok",
+        "exhausted_until": 0.0,
+        "rem_sec": 0,
+        "last_error": "",
+    }
 
 
 def can_use_agy(source: str = "generic", is_worker_fallback: bool = False) -> tuple[bool, str]:

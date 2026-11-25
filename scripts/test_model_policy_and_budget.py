@@ -87,6 +87,36 @@ class ModelPolicyAndBudgetTest(unittest.TestCase):
         self.assertEqual(bridge.normalize_model_name("gemini-4-neon-high"), "Gemini 4 Neon (Medium)")
         self.assertEqual(bridge.normalize_model_name("gemini-4-hydrogen-high"), "Gemini 4 Hydrogen (Medium)")
 
+    def test_deepseek_token_usage_pricing_breakdown(self):
+        # Exact usage breakdown test
+        usage = {
+            "prompt_tokens": 10000,
+            "prompt_cache_hit_tokens": 8000,
+            "prompt_cache_miss_tokens": 2000,
+            "completion_tokens": 500,
+            "total_tokens": 10500,
+        }
+        # 8000 * 0.07/1M + 2000 * 0.27/1M + 500 * 1.10/1M = 0.00056 + 0.00054 + 0.00055 = 0.00165 USD
+        usd = self.bg.record_deepseek_usage("deepseek-v4-pro", usage=usage)
+        self.assertAlmostEqual(usd, 0.00165, places=5)
+        st = self.bg.get_status()
+        self.assertAlmostEqual(st["deepseek_usd_est"], 0.00165, places=5)
+
+        # Legacy total_tokens call without artificial 500-token inflation
+        usd2 = self.bg.record_deepseek_usage("deepseek-flash", total_tokens=100)
+        self.assertAlmostEqual(usd2, 0.00002, places=6)
+
+    def test_agy_account_limit_marking_and_status(self):
+        self.bg.mark_agy_limit("account_primary", "429 RESOURCE_EXHAUSTED", cooldown_sec=1800)
+        st = self.bg.get_agy_account_status("account_primary")
+        self.assertEqual(st["status"], "exhausted")
+        self.assertIn("429", st["last_error"])
+        self.assertGreater(st["rem_sec"], 1700)
+
+        st2 = self.bg.get_agy_account_status("account_secondary")
+        self.assertEqual(st2["status"], "ok")
+        self.assertEqual(st2["rem_sec"], 0)
+
     def test_all_modified_scripts_compile_and_honor_policy(self):
         files = [
             SCRIPTS_DIR / "eneik_budget_guard.py",
