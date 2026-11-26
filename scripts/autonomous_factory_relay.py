@@ -343,7 +343,7 @@ def run_agent_command(user, prompt, timeout_seconds=1800):
         pass
 
     # Unified model policy: both L1 (remotecli2) and L2 (remotecli) run on Gemini 4 Neon (Medium)
-    selected_model = os.environ.get("ENEIK_RELAY_MODEL", "gemini-4-neon-medium")
+    selected_model = os.environ.get("ENEIK_RELAY_MODEL", "gemini-3.8-flash-medium")
     budget_guard.record_relay_tick(source=f"factory_relay:{user}")
     cmd = [
         "sudo", "-u", user, bin_path,

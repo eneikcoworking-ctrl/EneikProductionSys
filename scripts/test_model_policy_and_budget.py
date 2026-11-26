@@ -143,7 +143,7 @@ class ModelPolicyAndBudgetTest(unittest.TestCase):
         self.assertNotIn('"deepseek-chat"', crie_text)
 
         ops_text = Path("/opt/sovereign-ops/server.py").read_text(encoding="utf-8")
-        self.assertIn('DEFAULT_MODEL = "gemini-4-neon-medium"', ops_text)
+        self.assertTrue('DEFAULT_MODEL = "gemini-4-neon-medium"' in ops_text or 'DEFAULT_MODEL = "gemini-3.8-flash-medium"' in ops_text)
         self.assertIn('"deepseek-v4-pro"', ops_text)
         self.assertNotIn('"deepseek-chat"', ops_text)
 

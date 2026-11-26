@@ -318,10 +318,18 @@ def mark_agy_limit(profile: str, reason: str = "429_resource_exhausted", cooldow
     def _op(st):
         accs = st.setdefault("agy_accounts", {})
         acc_info = accs.setdefault(profile, {})
+        new_until = now + eff_cooldown
+        prev_until = float(acc_info.get("exhausted_until", 0.0))
+        eff_is_weekly = is_weekly
+        # Не откатывать более длинный сброс коротким дефолтом: недельный exhausted_until
+        # не должен схлопнуться до 30 мин из-за "AI credits too low" без строки "Resets in".
+        if parsed_sec == 0 and prev_until > new_until:
+            new_until = prev_until
+            eff_is_weekly = (prev_until - now) > 86400 or "individual quota reached" in reason.lower()
         acc_info["status"] = "exhausted"
-        acc_info["exhausted_until"] = now + eff_cooldown
+        acc_info["exhausted_until"] = new_until
         acc_info["last_error"] = reason[:200]
-        acc_info["limit_type"] = "weekly" if is_weekly else "5h"
+        acc_info["limit_type"] = "weekly" if eff_is_weekly else "5h"
         return None, True
     _with_lock(_op)
 
